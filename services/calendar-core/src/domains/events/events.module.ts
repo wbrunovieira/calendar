@@ -4,7 +4,10 @@ import { CreateEventUseCase } from './application/use-cases/create-event.use-cas
 import { DeleteEventUseCase } from './application/use-cases/delete-event.use-case';
 import { ListEventsUseCase } from './application/use-cases/list-events.use-case';
 import { UpdateEventUseCase } from './application/use-cases/update-event.use-case';
+import { ToggleEventExecutionUseCase } from './application/use-cases/toggle-event-execution.use-case';
+import { GetEventExecutionsUseCase } from './application/use-cases/get-event-executions.use-case';
 import { EventRepository } from './infrastructure/repositories/event.repository';
+import { EventExecutionRepository } from './infrastructure/repositories/event-execution.repository';
 
 @Module({
   controllers: [EventsController],
@@ -13,8 +16,11 @@ import { EventRepository } from './infrastructure/repositories/event.repository'
     DeleteEventUseCase,
     ListEventsUseCase,
     UpdateEventUseCase,
+    ToggleEventExecutionUseCase,
+    GetEventExecutionsUseCase,
     EventRepository,
+    EventExecutionRepository,
   ],
-  exports: [EventRepository],
+  exports: [EventRepository, EventExecutionRepository],
 })
 export class EventsModule {}
