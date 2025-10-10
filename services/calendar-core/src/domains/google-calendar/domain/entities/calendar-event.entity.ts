@@ -4,18 +4,18 @@ export class CalendarEvent {
     public readonly googleEventId: string,
     public readonly calendarId: string,
     public readonly title: string,
-    public readonly description?: string,
     public readonly startDateTime: Date,
     public readonly endDateTime: Date,
     public readonly isAllDay: boolean,
-    public readonly location?: string,
     public readonly attendees: string[],
-    public readonly recurrence?: string,
-    public readonly reminders?: Reminder[],
     public readonly status: EventStatus,
     public readonly visibility: EventVisibility,
     public readonly createdAt: Date,
     public readonly updatedAt: Date,
+    public readonly description?: string,
+    public readonly location?: string,
+    public readonly recurrence?: string,
+    public readonly reminders?: Reminder[],
   ) {}
 }
 
