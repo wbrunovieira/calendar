@@ -121,8 +121,8 @@ export default function CreateEventModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-gradient-to-r from-[#350545] to-[#792990] text-white px-6 py-4 flex items-center justify-between">
+      <div className="bg-[#350545] rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-gradient-to-r from-[#350545] to-[#792990] text-white px-6 py-4 flex items-center justify-between border-b border-white/10">
           <h2 className="text-2xl font-bold">Criar Novo Evento</h2>
           <button
             onClick={onClose}
@@ -137,23 +137,23 @@ export default function CreateEventModal({
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && (
-            <div className="bg-red-50 text-red-600 px-4 py-3 rounded-lg text-sm">{error}</div>
+            <div className="bg-red-900/50 text-red-200 px-4 py-3 rounded-lg text-sm border border-red-500/50">{error}</div>
           )}
 
           {/* Calendário */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Calendário <span className="text-red-500">*</span>
+            <label className="block text-sm font-semibold text-white mb-2">
+              Calendário <span className="text-red-400">*</span>
             </label>
             <select
               value={formData.calendarId}
               onChange={(e) => setFormData({ ...formData, calendarId: e.target.value, categoryId: '' })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#792990] focus:border-transparent"
+              className="w-full px-4 py-2 bg-white/10 border border-white/20 text-white rounded-lg focus:ring-2 focus:ring-[#792990] focus:border-transparent"
               required
             >
-              <option value="">Selecione um calendário</option>
+              <option value="" className="bg-[#350545] text-white">Selecione um calendário</option>
               {calendars.map((calendar) => (
-                <option key={calendar.id} value={calendar.id}>
+                <option key={calendar.id} value={calendar.id} className="bg-[#350545] text-white">
                   {calendar.name}
                 </option>
               ))}
@@ -162,16 +162,16 @@ export default function CreateEventModal({
 
           {/* Categoria */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Categoria</label>
+            <label className="block text-sm font-semibold text-white mb-2">Categoria</label>
             <select
               value={formData.categoryId}
               onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#792990] focus:border-transparent"
+              className="w-full px-4 py-2 bg-white/10 border border-white/20 text-white rounded-lg focus:ring-2 focus:ring-[#792990] focus:border-transparent disabled:opacity-50"
               disabled={!formData.calendarId}
             >
-              <option value="">Sem categoria</option>
+              <option value="" className="bg-[#350545] text-white">Sem categoria</option>
               {filteredCategories.map((category) => (
-                <option key={category.id} value={category.id}>
+                <option key={category.id} value={category.id} className="bg-[#350545] text-white">
                   {category.icon} {category.name}
                 </option>
               ))}
@@ -180,14 +180,14 @@ export default function CreateEventModal({
 
           {/* Título */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Título <span className="text-red-500">*</span>
+            <label className="block text-sm font-semibold text-white mb-2">
+              Título <span className="text-red-400">*</span>
             </label>
             <input
               type="text"
               value={formData.title}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#792990] focus:border-transparent"
+              className="w-full px-4 py-2 bg-white/10 border border-white/20 text-white placeholder-white/50 rounded-lg focus:ring-2 focus:ring-[#792990] focus:border-transparent"
               placeholder="Ex: Reunião com cliente"
               required
             />
@@ -195,11 +195,11 @@ export default function CreateEventModal({
 
           {/* Descrição */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Descrição</label>
+            <label className="block text-sm font-semibold text-white mb-2">Descrição</label>
             <textarea
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#792990] focus:border-transparent resize-none"
+              className="w-full px-4 py-2 bg-white/10 border border-white/20 text-white placeholder-white/50 rounded-lg focus:ring-2 focus:ring-[#792990] focus:border-transparent resize-none"
               rows={3}
               placeholder="Detalhes do evento..."
             />
@@ -208,54 +208,54 @@ export default function CreateEventModal({
           {/* Data e Hora */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Data Início <span className="text-red-500">*</span>
+              <label className="block text-sm font-semibold text-white mb-2">
+                Data Início <span className="text-red-400">*</span>
               </label>
               <input
                 type="date"
                 value={formData.startDate}
                 onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#792990] focus:border-transparent"
+                className="w-full px-4 py-2 bg-white/10 border border-white/20 text-white rounded-lg focus:ring-2 focus:ring-[#792990] focus:border-transparent"
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Data Fim</label>
+              <label className="block text-sm font-semibold text-white mb-2">Data Fim</label>
               <input
                 type="date"
                 value={formData.endDate}
                 onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#792990] focus:border-transparent"
+                className="w-full px-4 py-2 bg-white/10 border border-white/20 text-white rounded-lg focus:ring-2 focus:ring-[#792990] focus:border-transparent"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Hora Início <span className="text-red-500">*</span>
+              <label className="block text-sm font-semibold text-white mb-2">
+                Hora Início <span className="text-red-400">*</span>
               </label>
               <input
                 type="time"
                 value={formData.startTime}
                 onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#792990] focus:border-transparent"
+                className="w-full px-4 py-2 bg-white/10 border border-white/20 text-white rounded-lg focus:ring-2 focus:ring-[#792990] focus:border-transparent"
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Hora Fim</label>
+              <label className="block text-sm font-semibold text-white mb-2">Hora Fim</label>
               <input
                 type="time"
                 value={formData.endTime}
                 onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#792990] focus:border-transparent"
+                className="w-full px-4 py-2 bg-white/10 border border-white/20 text-white rounded-lg focus:ring-2 focus:ring-[#792990] focus:border-transparent"
               />
             </div>
           </div>
 
           {/* Evento Recorrente */}
-          <div className="border-t pt-4">
+          <div className="border-t border-white/10 pt-4">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -263,15 +263,15 @@ export default function CreateEventModal({
                 onChange={(e) => setFormData({ ...formData, isRecurring: e.target.checked })}
                 className="w-4 h-4 text-[#792990] rounded focus:ring-[#792990]"
               />
-              <span className="text-sm font-semibold text-gray-700">Evento Recorrente</span>
+              <span className="text-sm font-semibold text-white">Evento Recorrente</span>
             </label>
           </div>
 
           {formData.isRecurring && (
-            <div className="space-y-4 bg-gray-50 p-4 rounded-lg">
+            <div className="space-y-4 bg-white/5 p-4 rounded-lg border border-white/10">
               {/* Frequência */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Frequência</label>
+                <label className="block text-sm font-semibold text-white mb-2">Frequência</label>
                 <select
                   value={formData.recurrenceFrequency}
                   onChange={(e) =>
@@ -280,19 +280,19 @@ export default function CreateEventModal({
                       recurrenceFrequency: e.target.value as 'daily' | 'weekly' | 'monthly' | 'yearly',
                     })
                   }
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#792990] focus:border-transparent"
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 text-white rounded-lg focus:ring-2 focus:ring-[#792990] focus:border-transparent"
                 >
-                  <option value="daily">Diário</option>
-                  <option value="weekly">Semanal</option>
-                  <option value="monthly">Mensal</option>
-                  <option value="yearly">Anual</option>
+                  <option value="daily" className="bg-[#350545] text-white">Diário</option>
+                  <option value="weekly" className="bg-[#350545] text-white">Semanal</option>
+                  <option value="monthly" className="bg-[#350545] text-white">Mensal</option>
+                  <option value="yearly" className="bg-[#350545] text-white">Anual</option>
                 </select>
               </div>
 
               {/* Dias da Semana (apenas para frequência semanal) */}
               {formData.recurrenceFrequency === 'weekly' && (
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  <label className="block text-sm font-semibold text-white mb-2">
                     Dias da Semana
                   </label>
                   <div className="flex gap-2 flex-wrap">
@@ -304,7 +304,7 @@ export default function CreateEventModal({
                         className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                           formData.recurrenceDaysOfWeek.includes(day.value)
                             ? 'bg-[#792990] text-white'
-                            : 'bg-white text-gray-700 border border-gray-300'
+                            : 'bg-white/10 text-white border border-white/20'
                         }`}
                       >
                         {day.label}
@@ -316,14 +316,14 @@ export default function CreateEventModal({
 
               {/* Data de Término da Recorrência */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className="block text-sm font-semibold text-white mb-2">
                   Repetir até
                 </label>
                 <input
                   type="date"
                   value={formData.recurrenceEndDate}
                   onChange={(e) => setFormData({ ...formData, recurrenceEndDate: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#792990] focus:border-transparent"
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 text-white rounded-lg focus:ring-2 focus:ring-[#792990] focus:border-transparent"
                 />
               </div>
             </div>
@@ -334,14 +334,14 @@ export default function CreateEventModal({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
+              className="flex-1 px-6 py-3 bg-white/10 text-white rounded-lg font-semibold hover:bg-white/20 transition-colors border border-white/20"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 px-6 py-3 bg-gradient-to-r from-[#350545] to-[#792990] text-white rounded-lg font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+              className="flex-1 px-6 py-3 bg-gradient-to-r from-[#792990] to-[#350545] text-white rounded-lg font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
             >
               {loading ? 'Criando...' : 'Criar Evento'}
             </button>
