@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   calendar-core:
     build:
@@ -7,18 +5,16 @@ services:
       dockerfile: Dockerfile.dev
     container_name: calendar-core
     ports:
-      - "3000:3000"
+      - "3334:3000"
     volumes:
       - ./services/calendar-core:/app
       - /app/node_modules
     environment:
       - NODE_ENV=development
       - DATABASE_URL=postgresql://calendar:calendar123@postgres:5432/calendar_db
-      - REDIS_URL=redis://redis:6379
       - PORT=3000
     depends_on:
       - postgres
-      - redis
     networks:
       - calendar-network
     command: npm run start:dev
@@ -27,7 +23,7 @@ services:
     image: postgres:15-alpine
     container_name: calendar-postgres
     ports:
-      - "5432:5432"
+      - "5433:5432"
     environment:
       - POSTGRES_USER=calendar
       - POSTGRES_PASSWORD=calendar123
@@ -37,20 +33,8 @@ services:
     networks:
       - calendar-network
 
-  redis:
-    image: redis:7-alpine
-    container_name: calendar-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    networks:
-      - calendar-network
-    command: redis-server --appendonly yes
-
 volumes:
   postgres_data:
-  redis_data:
 
 networks:
   calendar-network:
