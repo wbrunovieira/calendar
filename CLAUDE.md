@@ -9,11 +9,11 @@ Multi-container calendar application integrating Google Calendar accounts (profe
 ## Architecture
 
 ### Container Structure
-- **calendar-core** (NestJS): Main API, authentication, Google Calendar sync, Linear API integration
-- **calendar-frontend** (Next.js - planned): Web interface with separate calendar and financial dashboard pages
+- **calendar-core** (NestJS): Main API, authentication, Google Calendar sync, Linear API integration - Runs in Docker on port 3334
+- **calendar-frontend** (Next.js 15.5): Web interface with separate calendar and financial dashboard pages - Runs locally on port 3000
 - **calendar-ai** (Python - planned): AI services using Llama, PyTorch, Langchain, CrewAI
 - **calendar-worker** (Go/Rust - planned): Heavy processing, batch jobs, ML data preparation
-- **postgres**: Primary database (PostgreSQL 15)
+- **postgres**: Primary database (PostgreSQL 15) - Port 5433
 
 ### Architecture Decision: No Redis
 This is a personal project for a single user, so Redis was removed to reduce costs and complexity:
@@ -35,9 +35,32 @@ Example domain: `src/domains/google-calendar/domain/entities/calendar-event.enti
 - Mercado Pago API for financial transactions
 - Nubank data import (CSV/OFX or email parsing)
 
+### Frontend Development (Local)
+
+The frontend runs locally (not in Docker) for better performance:
+
+```bash
+# Navigate to frontend directory
+cd services/calendar-frontend
+
+# Install dependencies
+npm install
+
+# Run development server (http://localhost:3000)
+npm run dev
+
+# Build for production
+npm run build
+
+# Run linter
+npm run lint
+```
+
+**Note**: Frontend requires backend running on port 3334. Start backend with `docker-compose up -d` first.
+
 ## Development Commands
 
-### Docker Operations
+### Docker Operations (Backend Only)
 ```bash
 # Start all services
 docker-compose up -d
