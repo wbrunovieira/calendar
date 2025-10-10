@@ -206,6 +206,90 @@ export function TimeSlotView({
     });
   };
 
+  // Calculate overlap positions for events
+  const calculateEventPositions = (dayEvents: Event[]) => {
+    // Parse event times and calculate positions
+    const eventsWithTimes = dayEvents.map(event => {
+      const startParts = event.startTime.split(':');
+      const startHours = parseInt(startParts[0], 10);
+      const startMinutes = parseInt(startParts[1] || '0', 10);
+      const startTotalMinutes = startHours * 60 + startMinutes;
+
+      let endTotalMinutes = startTotalMinutes + 60; // Default 1 hour
+      if (event.endTime) {
+        const endParts = event.endTime.split(':');
+        const endHours = parseInt(endParts[0], 10);
+        const endMinutes = parseInt(endParts[1] || '0', 10);
+        endTotalMinutes = endHours * 60 + endMinutes;
+      }
+
+      return {
+        event,
+        start: startTotalMinutes,
+        end: endTotalMinutes,
+        column: 0,
+        totalColumns: 1,
+      };
+    });
+
+    // Sort by start time, then by duration (longer first)
+    eventsWithTimes.sort((a, b) => {
+      if (a.start !== b.start) return a.start - b.start;
+      return (b.end - b.start) - (a.end - a.start);
+    });
+
+    // Detect overlaps and assign columns
+    const columns: Array<Array<typeof eventsWithTimes[0]>> = [];
+
+    eventsWithTimes.forEach(eventTime => {
+      // Find a column where this event doesn't overlap with any existing event
+      let placedInColumn = false;
+
+      for (let i = 0; i < columns.length; i++) {
+        const column = columns[i];
+        const hasOverlap = column.some(existing =>
+          !(eventTime.end <= existing.start || eventTime.start >= existing.end)
+        );
+
+        if (!hasOverlap) {
+          column.push(eventTime);
+          eventTime.column = i;
+          placedInColumn = true;
+          break;
+        }
+      }
+
+      // If no suitable column found, create a new one
+      if (!placedInColumn) {
+        columns.push([eventTime]);
+        eventTime.column = columns.length - 1;
+      }
+    });
+
+    // Calculate total columns for each event group
+    eventsWithTimes.forEach(eventTime => {
+      // Find all events that overlap with this one
+      const overlappingEvents = eventsWithTimes.filter(other =>
+        !(eventTime.end <= other.start || eventTime.start >= other.end)
+      );
+
+      // Find the maximum column number among overlapping events
+      const maxColumn = Math.max(...overlappingEvents.map(e => e.column));
+      eventTime.totalColumns = maxColumn + 1;
+    });
+
+    // Create a map for quick lookup
+    const positionMap = new Map();
+    eventsWithTimes.forEach(eventTime => {
+      positionMap.set(eventTime.event.id, {
+        column: eventTime.column,
+        totalColumns: eventTime.totalColumns,
+      });
+    });
+
+    return positionMap;
+  };
+
   return (
     <div className="p-4 w-full">
       <div className="flex gap-2 max-h-[600px] overflow-y-auto w-full">
@@ -240,6 +324,7 @@ export function TimeSlotView({
         {days.map((date, dayIndex) => {
           const isToday = date.toDateString() === today.toDateString();
           const dayEvents = getEventsForDate(date);
+          const eventPositions = calculateEventPositions(dayEvents);
 
           return (
             <div key={dayIndex} className="flex-1 min-w-0 flex flex-col">
@@ -375,6 +460,11 @@ export function TimeSlotView({
                   const iconSize = days.length === 7 ? 'text-[8px]' : days.length <= 3 ? 'text-xs' : 'text-sm';
                   const padding = days.length === 7 ? 'px-0.5 py-0.5' : days.length <= 3 ? 'px-2 py-1' : 'px-2 py-1';
 
+                  // Get position info for overlapping events
+                  const positionInfo = eventPositions.get(event.id) || { column: 0, totalColumns: 1 };
+                  const widthPercentage = 100 / positionInfo.totalColumns;
+                  const leftPercentage = (positionInfo.column * widthPercentage);
+
                   return (
                     <div
                       key={event.id}
@@ -382,7 +472,7 @@ export function TimeSlotView({
                       draggable
                       onDragStart={handleDragStart(event)}
                       onDragEnd={handleDragEnd}
-                      className={`absolute rounded-lg text-white flex flex-col overflow-visible group ${days.length === 7 ? 'left-0.5 right-0.5' : 'left-2 right-2'} ${
+                      className={`absolute rounded-lg text-white flex flex-col overflow-visible group ${
                         isCompleted
                           ? 'ring-2 ring-green-500 shadow-lg shadow-green-500/50'
                           : ''
@@ -394,7 +484,9 @@ export function TimeSlotView({
                         top: `${topPosition}px`,
                         height: `${eventHeight}px`,
                         minHeight: '48px',
-                        zIndex: 10,
+                        left: `${leftPercentage}%`,
+                        width: `${widthPercentage}%`,
+                        zIndex: 10 + positionInfo.column,
                         cursor: resizingEvent?.id === event.id ? 'ns-resize' : 'move',
                       }}
                     >
