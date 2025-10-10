@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { calendars } from '@/data/calendars';
 import { api } from '@/lib/api';
 import { Event, Category } from '@/types/calendar';
+import CreateEventModal from './CreateEventModal';
 
 type ViewMode = 'month' | 'week' | '3days' | 'day';
 
@@ -17,27 +18,32 @@ export default function Calendar() {
   const [events, setEvents] = useState<Event[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Buscar eventos e categorias do backend
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        const [fetchedEvents, fetchedCategories] = await Promise.all([
-          api.events.list(),
-          api.categories.list(),
-        ]);
-        setEvents(fetchedEvents);
-        setCategories(fetchedCategories);
-      } catch (error) {
-        console.error('Erro ao buscar dados:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const [fetchedEvents, fetchedCategories] = await Promise.all([
+        api.events.list(),
+        api.categories.list(),
+      ]);
+      setEvents(fetchedEvents);
+      setCategories(fetchedCategories);
+    } catch (error) {
+      console.error('Erro ao buscar dados:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     fetchData();
   }, []);
+
+  const handleEventCreated = () => {
+    fetchData();
+  };
 
   const monthNames = [
     'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -480,6 +486,16 @@ export default function Calendar() {
               >
                 Hoje
               </button>
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="ml-2 px-3 py-1 bg-white/20 hover:bg-white/30 rounded text-xs font-medium flex items-center gap-1"
+                title="Criar novo evento"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Novo
+              </button>
             </div>
 
             <button
@@ -600,6 +616,15 @@ export default function Calendar() {
           </div>
         </div>
       </div>
+
+      {/* Modal de Criar Evento */}
+      <CreateEventModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onEventCreated={handleEventCreated}
+        calendars={calendars}
+        categories={categories}
+      />
     </div>
   );
 }
