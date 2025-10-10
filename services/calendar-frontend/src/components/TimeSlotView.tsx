@@ -133,21 +133,34 @@ export function TimeSlotView({
               </div>
 
               {/* Time grid for this day */}
-              <div className="flex-1 relative border-l border-white/10 min-h-[1088px]">
+              <div
+                className="flex-1 relative border-l border-white/10 min-h-[1088px] transition-colors hover:bg-white/5"
+                onDragOver={handleDragOver}
+                onDrop={(e) => {
+                  // Calculate exact time and date based on mouse position
+                  const container = e.currentTarget;
+                  const rect = container.getBoundingClientRect();
+                  const offsetY = e.clientY - rect.top;
+
+                  // Calculate which hour slot we're in (64px per hour)
+                  const totalHours = offsetY / 64;
+                  const hour = Math.floor(totalHours) + 6; // Add 6 because we start at 6am
+                  const fractionalHour = totalHours - Math.floor(totalHours);
+                  const minutes = Math.floor(fractionalHour * 60);
+
+                  // Ensure hour is within bounds (6am-10pm)
+                  const clampedHour = Math.max(6, Math.min(22, hour));
+                  const clampedMinutes = Math.max(0, Math.min(59, minutes));
+
+                  const time = `${clampedHour.toString().padStart(2, '0')}:${clampedMinutes.toString().padStart(2, '0')}`;
+                  handleDrop(date, time)(e, handleEventUpdate);
+                }}
+              >
                 {/* Time slot grid */}
                 {hours.map((hour) => (
                   <div
                     key={hour}
                     className="h-16 border-b border-white/5 relative"
-                    onDragOver={handleDragOver}
-                    onDrop={(e) => {
-                      // Calculate exact time based on mouse position within the slot
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const offsetY = e.clientY - rect.top;
-                      const minutes = Math.floor((offsetY / 64) * 60);
-                      const time = `${hour.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-                      handleDrop(date, time)(e, handleEventUpdate);
-                    }}
                   >
                     <div className="h-8 border-b border-dashed border-white/5" />
                     <div className="h-8" />
