@@ -49,7 +49,7 @@ export class EventRepository {
     return event ? new Event(event) : null;
   }
 
-  async findAll(filters?: FindAllFilters): Promise<Event[]> {
+  async findAll(filters?: FindAllFilters): Promise<any[]> {
     const where: any = { isActive: true };
 
     if (filters?.calendarId) {
@@ -70,9 +70,15 @@ export class EventRepository {
     const events = await this.prisma.event.findMany({
       where,
       orderBy: [{ startDate: 'asc' }, { startTime: 'asc' }],
+      include: {
+        executions: true,
+      },
     });
 
-    return events.map((event) => new Event(event));
+    return events.map((event) => ({
+      ...new Event(event),
+      executions: event.executions,
+    }));
   }
 
   async findByCalendarId(calendarId: string): Promise<Event[]> {

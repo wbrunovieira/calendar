@@ -145,6 +145,26 @@ export function TimeSlotView({
     setTimeout(() => setJustResized(false), 300);
   }, [resizingEvent, events, handleEventUpdate]);
 
+  // Handle checkbox toggle
+  const handleToggleExecution = async (eventId: string, date: Date, currentlyCompleted: boolean) => {
+    const executionDate = date.toISOString().split('T')[0];
+
+    try {
+      await api.events.toggleExecution(
+        eventId,
+        executionDate,
+        !currentlyCompleted
+      );
+
+      // Reload events to get updated execution status
+      if (onEventUpdate) {
+        onEventUpdate();
+      }
+    } catch (error) {
+      console.error('Error toggling execution:', error);
+    }
+  };
+
   // Add mouse event listeners for resize
   useEffect(() => {
     if (resizingEvent) {
@@ -315,6 +335,13 @@ export function TimeSlotView({
                   const calendar = calendars.find(c => c.id === event.calendarId);
                   const calendarIcon = calendar?.type === 'professional' ? '💼' : '👤';
 
+                  // Check execution status from event executions
+                  const executionDate = date.toISOString().split('T')[0];
+                  const execution = event.executions?.find(exec =>
+                    exec.executionDate.split('T')[0] === executionDate
+                  );
+                  const isCompleted = execution?.completed || false;
+
                   // Calculate position and height based on time
                   let topPosition = 0;
                   let eventHeight = 64; // Default 1 hour
@@ -353,9 +380,15 @@ export function TimeSlotView({
                       draggable
                       onDragStart={handleDragStart(event)}
                       onDragEnd={handleDragEnd}
-                      className={`absolute rounded-lg text-white flex flex-col overflow-visible group ${days.length === 7 ? 'left-0.5 right-0.5' : 'left-2 right-2'}`}
+                      className={`absolute rounded-lg text-white flex flex-col overflow-visible group ${days.length === 7 ? 'left-0.5 right-0.5' : 'left-2 right-2'} ${
+                        isCompleted
+                          ? 'ring-2 ring-green-500 shadow-lg shadow-green-500/50'
+                          : ''
+                      } transition-all duration-300`}
                       style={{
-                        backgroundColor: category?.color + '90',
+                        backgroundColor: isCompleted
+                          ? category?.color + '60'
+                          : category?.color + '90',
                         top: `${topPosition}px`,
                         height: `${eventHeight}px`,
                         minHeight: '48px',
@@ -373,30 +406,59 @@ export function TimeSlotView({
                       </div>
 
                       {/* Event content */}
-                      <div className="flex flex-1 overflow-hidden cursor-move">
+                      <div className="flex flex-1 overflow-hidden cursor-move relative">
                         <div
                           className={`${padding} flex items-center justify-center ${iconSize}`}
                           style={{ backgroundColor: calendar?.color }}
                         >
                           {calendarIcon}
                         </div>
-                        <div className={`flex-1 ${padding} flex flex-col justify-center`}>
-                          <div className={`font-semibold ${textSize} flex items-center gap-1`}>
+                        <div className={`flex-1 ${padding} flex flex-col justify-center ${isCompleted ? 'relative' : ''}`}>
+                          <div className={`font-semibold ${textSize} flex items-center gap-1 ${isCompleted ? 'line-through opacity-70' : ''}`}>
                             <span>{category?.icon}</span>
                             <span className="truncate">{event.startTime}</span>
                             {event.endTime && <span className="truncate">- {event.endTime}</span>}
                           </div>
-                          <div className={`${textSize} truncate`}>{event.title}</div>
+                          <div className={`${textSize} truncate ${isCompleted ? 'line-through opacity-70' : ''}`}>{event.title}</div>
+                          {isCompleted && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <div className="bg-green-500 rounded-full p-1 shadow-lg animate-pulse">
+                                <svg className={days.length === 7 ? "w-4 h-4" : "w-6 h-6"} fill="white" viewBox="0 0 24 24">
+                                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                                </svg>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        <button
-                          onClick={(e) => onDeleteClick(event, e)}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-600 rounded self-start"
-                          title="Deletar"
-                        >
-                          <svg className={days.length === 7 ? "w-2 h-2" : "w-3 h-3"} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
+                        <div className="flex gap-1">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleExecution(event.id, date, isCompleted);
+                            }}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-green-600 rounded self-start"
+                            title={isCompleted ? "Marcar como não realizado" : "Marcar como realizado"}
+                          >
+                            {isCompleted ? (
+                              <svg className={days.length === 7 ? "w-3 h-3" : "w-4 h-4"} fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                              </svg>
+                            ) : (
+                              <svg className={days.length === 7 ? "w-3 h-3" : "w-4 h-4"} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <rect x="3" y="3" width="18" height="18" rx="2" strokeWidth={2} />
+                              </svg>
+                            )}
+                          </button>
+                          <button
+                            onClick={(e) => onDeleteClick(event, e)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-600 rounded self-start"
+                            title="Deletar"
+                          >
+                            <svg className={days.length === 7 ? "w-3 h-3" : "w-4 h-4"} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
                       </div>
 
                       {/* Bottom resize handle */}

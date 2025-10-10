@@ -33,7 +33,7 @@ export class EventsController {
       search,
     });
 
-    return events.map((event) => ({
+    return events.map((event: any) => ({
       id: event.id,
       calendarId: event.calendarId,
       categoryId: event.categoryId,
@@ -54,6 +54,7 @@ export class EventsController {
       isActive: event.isActive,
       createdAt: event.createdAt,
       updatedAt: event.updatedAt,
+      executions: event.executions || [],
     }));
   }
 

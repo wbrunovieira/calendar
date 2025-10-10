@@ -19,6 +19,14 @@ export interface Category {
   isActive: boolean;
 }
 
+export interface EventExecution {
+  id: string;
+  eventId: string;
+  executionDate: string;
+  completed: boolean;
+  notes?: string;
+}
+
 export interface Event {
   id: string;
   calendarId: string;
@@ -34,12 +42,5 @@ export interface Event {
   recurrenceInterval?: number;
   recurrenceDaysOfWeek?: number[];
   isActive: boolean;
-}
-
-export interface EventExecution {
-  id: string;
-  eventId: string;
-  executionDate: string;
-  completed: boolean;
-  notes?: string;
+  executions?: EventExecution[];
 }

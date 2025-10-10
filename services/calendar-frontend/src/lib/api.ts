@@ -63,6 +63,15 @@ interface ListEventsParams {
   search?: string;
 }
 
+export interface EventExecution {
+  id: string;
+  eventId: string;
+  executionDate: string;
+  completed: boolean;
+  completedAt?: string;
+  notes?: string;
+}
+
 /**
  * API methods
  */
@@ -92,6 +101,13 @@ export const api = {
       fetchAPI<void>(`/events/${id}`, {
         method: 'DELETE',
       }),
+    toggleExecution: (eventId: string, executionDate: string, completed: boolean, notes?: string) =>
+      fetchAPI<EventExecution>('/events/executions/toggle', {
+        method: 'POST',
+        body: JSON.stringify({ eventId, executionDate, completed, notes }),
+      }),
+    getExecutions: (eventId: string) =>
+      fetchAPI<EventExecution[]>(`/events/${eventId}/executions`),
   },
 
   // Categories
