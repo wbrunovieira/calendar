@@ -1,15 +1,43 @@
 'use client';
 
-import { useState } from 'react';
-import { mockCalendars, mockCategories, mockEvents } from '@/data/mockData';
-import { Calendar as CalendarType, Event } from '@/types/calendar';
+import { useState, useEffect } from 'react';
+import { calendars } from '@/data/calendars';
+import { api } from '@/lib/api';
+import { Event, Category } from '@/types/calendar';
 
 type ViewMode = 'month' | 'week' | '3days' | 'day';
 
 export default function Calendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('month');
-  const [selectedCalendars, setSelectedCalendars] = useState<string[]>(['cal-1', 'cal-2']);
+  const [selectedCalendars, setSelectedCalendars] = useState<string[]>([
+    'wb-digital-calendar',
+    'bruno-personal-calendar',
+  ]);
+  const [events, setEvents] = useState<Event[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Buscar eventos e categorias do backend
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const [fetchedEvents, fetchedCategories] = await Promise.all([
+          api.events.list(),
+          api.categories.list(),
+        ]);
+        setEvents(fetchedEvents);
+        setCategories(fetchedCategories);
+      } catch (error) {
+        console.error('Erro ao buscar dados:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
 
   const monthNames = [
     'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -99,7 +127,7 @@ export default function Calendar() {
   const getEventsForDate = (date: Date): Event[] => {
     const dateString = date.toISOString().split('T')[0];
 
-    return mockEvents.filter(event => {
+    return events.filter(event => {
       // Filtrar por calendários selecionados
       if (!selectedCalendars.includes(event.calendarId)) return false;
 
@@ -174,8 +202,8 @@ export default function Calendar() {
           <span className="text-xs md:text-sm mb-1">{day}</span>
           <div className="flex flex-col gap-0.5 w-full">
             {dayEvents.slice(0, 2).map((event) => {
-              const category = mockCategories.find(c => c.id === event.categoryId);
-              const calendar = mockCalendars.find(c => c.id === event.calendarId);
+              const category = categories.find(c => c.id === event.categoryId);
+              const calendar = calendars.find(c => c.id === event.calendarId);
               const calendarIcon = calendar?.type === 'professional' ? '💼' : '👤';
               return (
                 <div
@@ -232,8 +260,8 @@ export default function Calendar() {
           </div>
           <div className="flex flex-col gap-1 flex-1">
             {dayEvents.map((event) => {
-              const category = mockCategories.find(c => c.id === event.categoryId);
-              const calendar = mockCalendars.find(c => c.id === event.calendarId);
+              const category = categories.find(c => c.id === event.categoryId);
+              const calendar = calendars.find(c => c.id === event.calendarId);
               const calendarIcon = calendar?.type === 'professional' ? '💼' : '👤';
               return (
                 <div
@@ -292,8 +320,8 @@ export default function Calendar() {
           </div>
           <div className="flex flex-col gap-2 flex-1">
             {dayEvents.map((event) => {
-              const category = mockCategories.find(c => c.id === event.categoryId);
-              const calendar = mockCalendars.find(c => c.id === event.calendarId);
+              const category = categories.find(c => c.id === event.categoryId);
+              const calendar = calendars.find(c => c.id === event.calendarId);
               const calendarIcon = calendar?.type === 'professional' ? '💼' : '👤';
               return (
                 <div
@@ -357,8 +385,8 @@ export default function Calendar() {
               </div>
             ) : (
               dayEvents.map((event) => {
-                const category = mockCategories.find(c => c.id === event.categoryId);
-                const calendar = mockCalendars.find(c => c.id === event.calendarId);
+                const category = categories.find(c => c.id === event.categoryId);
+                const calendar = calendars.find(c => c.id === event.calendarId);
                 const calendarIcon = calendar?.type === 'professional' ? '💼' : '👤';
                 return (
                   <div
@@ -409,6 +437,14 @@ export default function Calendar() {
       </div>
     );
   };
+
+  if (loading) {
+    return (
+      <div className="w-full max-w-6xl mx-auto p-2 md:p-4 h-full flex items-center justify-center">
+        <div className="text-white text-xl">Carregando...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-6xl mx-auto p-2 md:p-4 h-full flex items-center justify-center">
@@ -523,7 +559,7 @@ export default function Calendar() {
         {/* Calendar Selector */}
         <div className="px-3 py-2 border-t" style={{ backgroundColor: '#350545', borderColor: '#792990' }}>
           <div className="flex items-center justify-center gap-3 flex-wrap">
-            {mockCalendars.map((calendar) => (
+            {calendars.map((calendar) => (
               <button
                 key={calendar.id}
                 onClick={() => toggleCalendar(calendar.id)}

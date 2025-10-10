@@ -1,3 +1,5 @@
+import type { Event, Category, Calendar } from '@/types/calendar';
+
 /**
  * API client for calendar backend
  */
@@ -30,20 +32,52 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
   }
 }
 
+interface ListEventsParams {
+  calendarId?: string;
+  categoryId?: string;
+  search?: string;
+}
+
 /**
  * API methods
  */
 export const api = {
-  // Health check
-  health: () => fetchAPI<{ status: string }>('/'),
+  // Events
+  events: {
+    list: (params?: ListEventsParams) => {
+      const queryParams = new URLSearchParams();
+      if (params?.calendarId) queryParams.append('calendarId', params.calendarId);
+      if (params?.categoryId) queryParams.append('categoryId', params.categoryId);
+      if (params?.search) queryParams.append('search', params.search);
 
-  // Calendar events (to be implemented)
-  // events: {
-  //   list: () => fetchAPI<Event[]>('/api/events'),
-  //   get: (id: string) => fetchAPI<Event>(`/api/events/${id}`),
-  //   create: (data: CreateEventDto) => fetchAPI<Event>('/api/events', {
-  //     method: 'POST',
-  //     body: JSON.stringify(data),
-  //   }),
-  // },
+      const query = queryParams.toString();
+      return fetchAPI<Event[]>(`/events${query ? `?${query}` : ''}`);
+    },
+    create: (data: Omit<Event, 'id' | 'isActive'>) =>
+      fetchAPI<Event>('/events', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    delete: (id: string) =>
+      fetchAPI<void>(`/events/${id}`, {
+        method: 'DELETE',
+      }),
+  },
+
+  // Categories
+  categories: {
+    list: (calendarId?: string) => {
+      const query = calendarId ? `?calendarId=${calendarId}` : '';
+      return fetchAPI<Category[]>(`/categories${query}`);
+    },
+    create: (data: Omit<Category, 'id' | 'isActive'>) =>
+      fetchAPI<Category>('/categories', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    delete: (id: string) =>
+      fetchAPI<void>(`/categories/${id}`, {
+        method: 'DELETE',
+      }),
+  },
 };
