@@ -1,10 +1,14 @@
-import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Delete, Body, Param, HttpCode, HttpStatus } from '@nestjs/common';
 import { CreateEventUseCase } from '../../application/use-cases/create-event.use-case';
+import { DeleteEventUseCase } from '../../application/use-cases/delete-event.use-case';
 import { CreateEventDto } from '../dtos/create-event.dto';
 
 @Controller('events')
 export class EventsController {
-  constructor(private readonly createEventUseCase: CreateEventUseCase) {}
+  constructor(
+    private readonly createEventUseCase: CreateEventUseCase,
+    private readonly deleteEventUseCase: DeleteEventUseCase,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -33,5 +37,11 @@ export class EventsController {
       createdAt: event.createdAt,
       updatedAt: event.updatedAt,
     };
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async delete(@Param('id') id: string) {
+    await this.deleteEventUseCase.execute(id);
   }
 }
