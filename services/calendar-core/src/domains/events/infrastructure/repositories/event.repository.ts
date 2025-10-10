@@ -1,0 +1,90 @@
+import { Injectable } from '@nestjs/common';
+import { PrismaClient } from '@prisma/client';
+import { Event } from '../../domain/entities/event.entity';
+
+@Injectable()
+export class EventRepository {
+  private prisma: PrismaClient;
+
+  constructor() {
+    this.prisma = new PrismaClient();
+  }
+
+  async create(event: Event): Promise<Event> {
+    const created = await this.prisma.event.create({
+      data: {
+        calendarId: event.calendarId,
+        categoryId: event.categoryId,
+        title: event.title,
+        description: event.description,
+        startTime: event.startTime,
+        endTime: event.endTime,
+        startDate: event.startDate,
+        endDate: event.endDate,
+        isRecurring: event.isRecurring,
+        recurrenceFrequency: event.recurrenceFrequency,
+        recurrenceInterval: event.recurrenceInterval,
+        recurrenceDaysOfWeek: event.recurrenceDaysOfWeek,
+        recurrenceDayOfMonth: event.recurrenceDayOfMonth,
+        recurrenceWeekOfMonth: event.recurrenceWeekOfMonth,
+        recurrenceEndDate: event.recurrenceEndDate,
+        isActive: event.isActive,
+      },
+    });
+
+    return new Event(created);
+  }
+
+  async findById(id: string): Promise<Event | null> {
+    const event = await this.prisma.event.findUnique({
+      where: { id },
+    });
+
+    return event ? new Event(event) : null;
+  }
+
+  async findByCalendarId(calendarId: string): Promise<Event[]> {
+    const events = await this.prisma.event.findMany({
+      where: { calendarId, isActive: true },
+      orderBy: { startDate: 'asc' },
+    });
+
+    return events.map((event) => new Event(event));
+  }
+
+  async update(id: string, event: Partial<Event>): Promise<Event> {
+    const updated = await this.prisma.event.update({
+      where: { id },
+      data: {
+        title: event.title,
+        description: event.description,
+        startTime: event.startTime,
+        endTime: event.endTime,
+        startDate: event.startDate,
+        endDate: event.endDate,
+        categoryId: event.categoryId,
+        isRecurring: event.isRecurring,
+        recurrenceFrequency: event.recurrenceFrequency,
+        recurrenceInterval: event.recurrenceInterval,
+        recurrenceDaysOfWeek: event.recurrenceDaysOfWeek,
+        recurrenceDayOfMonth: event.recurrenceDayOfMonth,
+        recurrenceWeekOfMonth: event.recurrenceWeekOfMonth,
+        recurrenceEndDate: event.recurrenceEndDate,
+        isActive: event.isActive,
+        updatedAt: new Date(),
+      },
+    });
+
+    return new Event(updated);
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.prisma.event.delete({
+      where: { id },
+    });
+  }
+
+  async onModuleDestroy() {
+    await this.prisma.$disconnect();
+  }
+}
