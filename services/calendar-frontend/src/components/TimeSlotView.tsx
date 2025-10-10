@@ -11,6 +11,7 @@ interface TimeSlotViewProps {
   events: Event[];
   categories: Category[];
   selectedCalendars: string[];
+  onEditClick?: (event: Event, e: React.MouseEvent) => void;
   onDeleteClick: (event: Event, e: React.MouseEvent) => void;
   onEventUpdate?: () => void;
   onTimeSlotClick?: (date: string, time: string) => void;
@@ -24,6 +25,7 @@ export function TimeSlotView({
   events,
   categories,
   selectedCalendars,
+  onEditClick,
   onDeleteClick,
   onEventUpdate,
   onTimeSlotClick,
@@ -449,6 +451,17 @@ export function TimeSlotView({
                               </svg>
                             )}
                           </button>
+                          {onEditClick && (
+                            <button
+                              onClick={(e) => onEditClick(event, e)}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-blue-600 rounded self-start"
+                              title="Editar"
+                            >
+                              <svg className={days.length === 7 ? "w-3 h-3" : "w-4 h-4"} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                            </button>
+                          )}
                           <button
                             onClick={(e) => onDeleteClick(event, e)}
                             className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-600 rounded self-start"
