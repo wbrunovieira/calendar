@@ -60,9 +60,11 @@ npm run lint
 
 ## Development Commands
 
+**IMPORTANT**: calendar-core ALWAYS runs inside Docker. NEVER try to run `npm run start:dev` or any npm commands outside of Docker for the backend. The backend is already running with hot-reload inside the container.
+
 ### Docker Operations (Backend Only)
 ```bash
-# Start all services
+# Start all services (backend is already running with hot-reload)
 docker-compose up -d
 
 # Start with rebuild
@@ -76,46 +78,42 @@ docker-compose down
 
 # Access container shell
 docker-compose exec calendar-core sh
+
+# Restart a specific service
+docker-compose restart calendar-core
 ```
 
 ### calendar-core (NestJS) Commands
+**IMPORTANT**: All backend commands MUST be run inside the Docker container:
+
 ```bash
 # From project root, run commands in container
 docker-compose exec calendar-core npm run [command]
 
-# Or navigate to service directory
-cd services/calendar-core
-
-# Build
-npm run build
-
-# Run in development mode (with hot-reload)
-npm run start:dev
-
-# Run in debug mode
-npm run start:debug
-
+# Examples:
 # Linting
-npm run lint
+docker-compose exec calendar-core npm run lint
 
 # Format code
-npm run format
+docker-compose exec calendar-core npm run format
 
 # Run unit tests
-npm run test
+docker-compose exec calendar-core npm run test
 
 # Run tests in watch mode
-npm run test:watch
+docker-compose exec calendar-core npm run test:watch
 
 # Run specific test file
-npm run test -- calendar-event.entity.spec.ts
+docker-compose exec calendar-core npm run test -- calendar-event.entity.spec.ts
 
 # Run tests with coverage
-npm run test:cov
+docker-compose exec calendar-core npm run test:cov
 
 # Run e2e tests
-npm run test:e2e
+docker-compose exec calendar-core npm run test:e2e
 ```
+
+**Note**: DO NOT run `npm run start:dev` manually - the container is already running with hot-reload via docker-compose.
 
 ### Database Access
 ```bash

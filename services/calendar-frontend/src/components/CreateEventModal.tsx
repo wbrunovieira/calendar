@@ -7,11 +7,12 @@ import { Category } from '@/types/calendar';
 interface CreateEventModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onEventCreated: () => void;
+  onEventCreated: (preservedData?: any) => void;
   calendars: Array<{ id: string; name: string; color: string; type: string }>;
   categories: Category[];
   initialDate?: string;
   initialTime?: string;
+  preservedFormData?: any;
 }
 
 export default function CreateEventModal({
@@ -22,6 +23,7 @@ export default function CreateEventModal({
   categories,
   initialDate,
   initialTime,
+  preservedFormData,
 }: CreateEventModalProps) {
   console.log('CreateEventModal renderizado - isOpen:', isOpen);
 
@@ -42,26 +44,45 @@ export default function CreateEventModal({
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [createAnother, setCreateAnother] = useState(false);
 
-  // Update form data when modal opens with initial values
+  // Update form data when modal opens with initial values or preserved data
   useEffect(() => {
-    if (isOpen && (initialDate || initialTime)) {
-      // Calculate end time as start time + 1 hour
-      let endTime = '';
-      if (initialTime) {
-        const [hours, minutes] = initialTime.split(':').map(Number);
-        const endHour = (hours + 1) % 24;
-        endTime = `${endHour.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-      }
+    console.log('=== useEffect EXECUTADO ===');
+    console.log('isOpen:', isOpen);
+    console.log('preservedFormData:', preservedFormData);
+    console.log('initialDate:', initialDate);
+    console.log('initialTime:', initialTime);
 
-      setFormData(prev => ({
-        ...prev,
-        startDate: initialDate || prev.startDate,
-        startTime: initialTime || prev.startTime,
-        endTime: endTime || prev.endTime,
-      }));
+    if (isOpen) {
+      // If we have preserved data from "create another", use it
+      if (preservedFormData) {
+        console.log('USANDO DADOS PRESERVADOS do parent');
+        setFormData(preservedFormData);
+      } else if (initialDate || initialTime) {
+        console.log('USANDO valores iniciais (data/hora do clique)');
+        // Calculate end time as start time + 1 hour
+        let endTime = '';
+        if (initialTime) {
+          const [hours, minutes] = initialTime.split(':').map(Number);
+          const endHour = (hours + 1) % 24;
+          endTime = `${endHour.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+        }
+
+        setFormData(prev => {
+          console.log('prev formData:', prev);
+          const newData = {
+            ...prev,
+            startDate: initialDate || prev.startDate,
+            startTime: initialTime || prev.startTime,
+            endTime: endTime || prev.endTime,
+          };
+          console.log('new formData:', newData);
+          return newData;
+        });
+      }
     }
-  }, [isOpen, initialDate, initialTime]);
+  }, [isOpen, initialDate, initialTime, preservedFormData]);
 
   const daysOfWeek = [
     { value: 0, label: 'Dom' },
@@ -116,27 +137,45 @@ export default function CreateEventModal({
       console.log('Resposta da API:', response);
       console.log('Evento criado com sucesso!');
 
-      // Reset form
-      setFormData({
-        calendarId: '',
-        categoryId: '',
+      // Calculate new start time (1 hour later)
+      let newStartTime = formData.startTime;
+      let newEndTime = formData.endTime;
+
+      if (createAnother && formData.startTime) {
+        const [hours, minutes] = formData.startTime.split(':').map(Number);
+        const newStartHour = (hours + 1) % 24;
+        newStartTime = `${newStartHour.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+
+        if (formData.endTime) {
+          const [endHours, endMinutes] = formData.endTime.split(':').map(Number);
+          const newEndHour = (endHours + 1) % 24;
+          newEndTime = `${newEndHour.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
+        }
+      }
+
+      // Keep form data for next similar event, but clear title and description
+      const updatedFormData = {
+        ...formData,
         title: '',
         description: '',
-        startTime: '',
-        endTime: '',
-        startDate: '',
-        endDate: '',
-        isRecurring: false,
-        recurrenceFrequency: 'weekly',
-        recurrenceInterval: 1,
-        recurrenceDaysOfWeek: [],
-        recurrenceEndDate: '',
-      });
+        startDate: formData.startDate,
+        startTime: newStartTime,
+        endTime: newEndTime,
+      };
 
-      console.log('Chamando onEventCreated()');
-      onEventCreated();
-      console.log('Fechando modal');
-      onClose();
+      console.log('=== DADOS PRESERVADOS PARA PRÓXIMO EVENTO ===');
+      console.log('createAnother:', createAnother);
+      console.log('updatedFormData:', updatedFormData);
+
+      // Pass preserved data to parent if "create another" is checked
+      if (createAnother) {
+        console.log('Enviando dados preservados para o parent');
+        onEventCreated(updatedFormData);
+      } else {
+        console.log('Fechando modal normalmente');
+        onEventCreated();
+        onClose();
+      }
     } catch (err) {
       console.error('=== ERRO AO CRIAR EVENTO ===');
       console.error('Erro completo:', err);
@@ -400,8 +439,23 @@ export default function CreateEventModal({
             </div>
           )}
 
+          {/* Checkbox Criar Outro Similar */}
+          <div className="border-t border-white/10 pt-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={createAnother}
+                onChange={(e) => setCreateAnother(e.target.checked)}
+                className="w-4 h-4 text-green-600 rounded focus:ring-green-500 focus:ring-2"
+              />
+              <span className="text-sm font-medium text-white">
+                Criar outro evento similar (mantém calendário, categoria e horários)
+              </span>
+            </label>
+          </div>
+
           {/* Botões */}
-          <div className="flex gap-3 pt-4">
+          <div className="flex gap-3 pt-2">
             <button
               type="button"
               onClick={() => {

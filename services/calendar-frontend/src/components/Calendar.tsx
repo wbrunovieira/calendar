@@ -25,6 +25,7 @@ export default function Calendar() {
   const [modalInitialTime, setModalInitialTime] = useState<string>('');
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [eventToDelete, setEventToDelete] = useState<Event | null>(null);
+  const [preservedFormData, setPreservedFormData] = useState<any>(null);
 
   // Buscar eventos e categorias do backend
   const fetchData = async () => {
@@ -47,7 +48,12 @@ export default function Calendar() {
     fetchData();
   }, []);
 
-  const handleEventCreated = () => {
+  const handleEventCreated = (preservedData?: any) => {
+    if (preservedData) {
+      setPreservedFormData(preservedData);
+    } else {
+      setPreservedFormData(null);
+    }
     fetchData();
   };
 
@@ -562,12 +568,16 @@ export default function Calendar() {
       {/* Modal de Criar Evento */}
       <CreateEventModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false);
+          setPreservedFormData(null);
+        }}
         onEventCreated={handleEventCreated}
         calendars={calendars}
         categories={categories}
         initialDate={modalInitialDate}
         initialTime={modalInitialTime}
+        preservedFormData={preservedFormData}
       />
 
       {/* Modal de Confirmação de Exclusão */}
