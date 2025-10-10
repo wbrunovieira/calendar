@@ -19,6 +19,8 @@ export default function CreateEventModal({
   calendars,
   categories,
 }: CreateEventModalProps) {
+  console.log('CreateEventModal renderizado - isOpen:', isOpen);
+
   const [formData, setFormData] = useState({
     calendarId: '',
     categoryId: '',
@@ -51,31 +53,44 @@ export default function CreateEventModal({
     e.preventDefault();
     setError('');
 
+    console.log('=== SUBMIT INICIADO ===');
+    console.log('Form Data:', formData);
+
     if (!formData.calendarId || !formData.title || !formData.startTime || !formData.startDate) {
+      console.log('ERRO: Campos obrigatórios não preenchidos');
       setError('Por favor, preencha os campos obrigatórios');
       return;
     }
 
+    const payload = {
+      calendarId: formData.calendarId,
+      categoryId: formData.categoryId || undefined,
+      title: formData.title,
+      description: formData.description || undefined,
+      startTime: formData.startTime,
+      endTime: formData.endTime || undefined,
+      startDate: formData.startDate,
+      endDate: formData.endDate || undefined,
+      isRecurring: formData.isRecurring,
+      recurrenceFrequency: formData.isRecurring ? formData.recurrenceFrequency : undefined,
+      recurrenceInterval: formData.isRecurring ? formData.recurrenceInterval : undefined,
+      recurrenceDaysOfWeek:
+        formData.isRecurring && formData.recurrenceFrequency === 'weekly'
+          ? formData.recurrenceDaysOfWeek
+          : undefined,
+      recurrenceEndDate: formData.isRecurring && formData.recurrenceEndDate ? formData.recurrenceEndDate : undefined,
+    };
+
+    console.log('Payload que será enviado:', JSON.stringify(payload, null, 2));
+
     try {
       setLoading(true);
-      await api.events.create({
-        calendarId: formData.calendarId,
-        categoryId: formData.categoryId || undefined,
-        title: formData.title,
-        description: formData.description || undefined,
-        startTime: formData.startTime,
-        endTime: formData.endTime || undefined,
-        startDate: formData.startDate,
-        endDate: formData.endDate || undefined,
-        isRecurring: formData.isRecurring,
-        recurrenceFrequency: formData.isRecurring ? formData.recurrenceFrequency : undefined,
-        recurrenceInterval: formData.isRecurring ? formData.recurrenceInterval : undefined,
-        recurrenceDaysOfWeek:
-          formData.isRecurring && formData.recurrenceFrequency === 'weekly'
-            ? formData.recurrenceDaysOfWeek
-            : undefined,
-        recurrenceEndDate: formData.isRecurring && formData.recurrenceEndDate ? formData.recurrenceEndDate : undefined,
-      });
+      console.log('Iniciando chamada API...');
+
+      const response = await api.events.create(payload);
+
+      console.log('Resposta da API:', response);
+      console.log('Evento criado com sucesso!');
 
       // Reset form
       setFormData({
@@ -94,13 +109,19 @@ export default function CreateEventModal({
         recurrenceEndDate: '',
       });
 
+      console.log('Chamando onEventCreated()');
       onEventCreated();
+      console.log('Fechando modal');
       onClose();
     } catch (err) {
+      console.error('=== ERRO AO CRIAR EVENTO ===');
+      console.error('Erro completo:', err);
+      console.error('Tipo do erro:', typeof err);
+      console.error('Erro stringified:', JSON.stringify(err, null, 2));
       setError('Erro ao criar evento. Tente novamente.');
-      console.error(err);
     } finally {
       setLoading(false);
+      console.log('=== SUBMIT FINALIZADO ===');
     }
   };
 
@@ -117,10 +138,26 @@ export default function CreateEventModal({
     ? categories.filter((c) => c.calendarId === formData.calendarId)
     : [];
 
-  if (!isOpen) return null;
+  if (!isOpen) {
+    console.log('Modal não está aberto, não renderizando');
+    return null;
+  }
+
+  console.log('Modal está aberto, renderizando...');
+  console.log('Calendars recebidos:', calendars);
+  console.log('Categories recebidas:', categories);
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      onClick={(e) => {
+        console.log('Clique no backdrop detectado');
+        if (e.target === e.currentTarget) {
+          console.log('Fechando modal via backdrop');
+          onClose();
+        }
+      }}
+    >
       <div className="bg-[#350545] rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-gradient-to-r from-[#350545] to-[#792990] text-white px-6 py-4 flex items-center justify-between border-b border-white/10">
           <h2 className="text-2xl font-bold">Criar Novo Evento</h2>
@@ -333,7 +370,10 @@ export default function CreateEventModal({
           <div className="flex gap-3 pt-4">
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => {
+                console.log('Botão Cancelar clicado');
+                onClose();
+              }}
               className="flex-1 px-6 py-3 bg-white/10 text-white rounded-lg font-semibold hover:bg-white/20 transition-colors border border-white/20"
             >
               Cancelar
@@ -341,6 +381,10 @@ export default function CreateEventModal({
             <button
               type="submit"
               disabled={loading}
+              onClick={(e) => {
+                console.log('Botão Criar Evento clicado!');
+                console.log('Event:', e);
+              }}
               className="flex-1 px-6 py-3 bg-gradient-to-r from-[#792990] to-[#350545] text-white rounded-lg font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
             >
               {loading ? 'Criando...' : 'Criar Evento'}

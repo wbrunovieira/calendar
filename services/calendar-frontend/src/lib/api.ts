@@ -12,7 +12,14 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3334';
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = `${API_URL}${endpoint}`;
 
+  console.log('=== FETCH API ===');
+  console.log('URL:', url);
+  console.log('Method:', options?.method || 'GET');
+  console.log('Headers:', options?.headers);
+  console.log('Body:', options?.body);
+
   try {
+    console.log('Iniciando fetch...');
     const response = await fetch(url, {
       ...options,
       headers: {
@@ -21,13 +28,25 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
       },
     });
 
+    console.log('Response status:', response.status);
+    console.log('Response ok:', response.ok);
+    console.log('Response headers:', response.headers);
+
     if (!response.ok) {
-      throw new Error(`API error: ${response.status} ${response.statusText}`);
+      const errorText = await response.text();
+      console.error('Erro na resposta:', errorText);
+      throw new Error(`API error: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
-    return response.json();
+    const data = await response.json();
+    console.log('Response data:', data);
+    console.log('=== FETCH API SUCESSO ===');
+    return data;
   } catch (error) {
+    console.error('=== FETCH API ERRO ===');
     console.error('API request failed:', error);
+    console.error('Error name:', (error as Error).name);
+    console.error('Error message:', (error as Error).message);
     throw error;
   }
 }

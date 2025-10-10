@@ -133,27 +133,48 @@ export default function Calendar() {
   const getEventsForDate = (date: Date): Event[] => {
     const dateString = date.toISOString().split('T')[0];
 
-    return events.filter(event => {
+    console.log('=== getEventsForDate ===');
+    console.log('Data procurada:', dateString);
+    console.log('Total de eventos:', events.length);
+    console.log('Calendários selecionados:', selectedCalendars);
+
+    const filtered = events.filter(event => {
+      console.log(`Verificando evento: ${event.title} (${event.startDate})`);
+
       // Filtrar por calendários selecionados
-      if (!selectedCalendars.includes(event.calendarId)) return false;
+      if (!selectedCalendars.includes(event.calendarId)) {
+        console.log(`  ❌ Calendário ${event.calendarId} não selecionado`);
+        return false;
+      }
 
       // Evento não recorrente
       if (!event.isRecurring) {
-        return event.startDate === dateString;
+        // Extrair apenas a parte da data (YYYY-MM-DD) do timestamp
+        const eventDate = event.startDate.split('T')[0];
+        const match = eventDate === dateString;
+        console.log(`  ${match ? '✅' : '❌'} Comparando: ${eventDate} === ${dateString} = ${match}`);
+        return match;
       }
 
       // Evento recorrente
       if (event.recurrenceFrequency === 'daily') {
+        console.log('  ✅ Evento recorrente diário');
         return true;
       }
 
       if (event.recurrenceFrequency === 'weekly' && event.recurrenceDaysOfWeek) {
         const dayOfWeek = date.getDay();
-        return event.recurrenceDaysOfWeek.includes(dayOfWeek);
+        const match = event.recurrenceDaysOfWeek.includes(dayOfWeek);
+        console.log(`  ${match ? '✅' : '❌'} Evento recorrente semanal - dia da semana: ${dayOfWeek}`);
+        return match;
       }
 
+      console.log('  ❌ Não passou em nenhum filtro');
       return false;
     });
+
+    console.log(`Eventos filtrados para ${dateString}:`, filtered.length);
+    return filtered;
   };
 
   const toggleCalendar = (calendarId: string) => {
