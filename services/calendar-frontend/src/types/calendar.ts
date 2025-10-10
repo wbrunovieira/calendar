@@ -1,0 +1,45 @@
+export type CalendarType = 'professional' | 'personal';
+
+export interface Calendar {
+  id: string;
+  name: string;
+  email: string;
+  color: string;
+  type: CalendarType;
+  isActive: boolean;
+}
+
+export interface Category {
+  id: string;
+  calendarId: string;
+  name: string;
+  icon: string;
+  color: string;
+  type: string;
+  isActive: boolean;
+}
+
+export interface Event {
+  id: string;
+  calendarId: string;
+  categoryId: string;
+  title: string;
+  description?: string;
+  startTime: string;
+  endTime?: string;
+  startDate: string;
+  endDate?: string;
+  isRecurring: boolean;
+  recurrenceFrequency?: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  recurrenceInterval?: number;
+  recurrenceDaysOfWeek?: number[];
+  isActive: boolean;
+}
+
+export interface EventExecution {
+  id: string;
+  eventId: string;
+  executionDate: string;
+  completed: boolean;
+  notes?: string;
+}

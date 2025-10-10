@@ -1,12 +1,15 @@
 'use client';
 
 import { useState } from 'react';
+import { mockCalendars, mockCategories, mockEvents } from '@/data/mockData';
+import { Calendar as CalendarType, Event } from '@/types/calendar';
 
 type ViewMode = 'month' | 'week' | '3days' | 'day';
 
 export default function Calendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('month');
+  const [selectedCalendars, setSelectedCalendars] = useState<string[]>(['cal-1', 'cal-2']);
 
   const monthNames = [
     'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -92,6 +95,43 @@ export default function Calendar() {
     return days;
   };
 
+  // Função para obter eventos de uma data específica
+  const getEventsForDate = (date: Date): Event[] => {
+    const dateString = date.toISOString().split('T')[0];
+
+    return mockEvents.filter(event => {
+      // Filtrar por calendários selecionados
+      if (!selectedCalendars.includes(event.calendarId)) return false;
+
+      // Evento não recorrente
+      if (!event.isRecurring) {
+        return event.startDate === dateString;
+      }
+
+      // Evento recorrente
+      if (event.recurrenceFrequency === 'daily') {
+        return true;
+      }
+
+      if (event.recurrenceFrequency === 'weekly' && event.recurrenceDaysOfWeek) {
+        const dayOfWeek = date.getDay();
+        return event.recurrenceDaysOfWeek.includes(dayOfWeek);
+      }
+
+      return false;
+    });
+  };
+
+  const toggleCalendar = (calendarId: string) => {
+    setSelectedCalendars(prev => {
+      if (prev.includes(calendarId)) {
+        return prev.filter(id => id !== calendarId);
+      } else {
+        return [...prev, calendarId];
+      }
+    });
+  };
+
   const renderMonthView = () => {
     const daysInMonth = getDaysInMonth(currentDate);
     const firstDay = getFirstDayOfMonth(currentDate);
@@ -107,12 +147,14 @@ export default function Calendar() {
 
     for (let day = 1; day <= daysInMonth; day++) {
       const isToday = isCurrentMonth && day === today.getDate();
+      const dayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
+      const dayEvents = getEventsForDate(dayDate);
 
       days.push(
         <div
           key={day}
           className={`
-            aspect-square p-1 flex flex-col items-center justify-center
+            aspect-square p-1 flex flex-col items-start justify-start
             rounded cursor-pointer transition-all duration-200
             hover:scale-105
             ${isToday ? 'text-white font-bold shadow-lg' : 'text-white'}
@@ -129,7 +171,37 @@ export default function Calendar() {
             if (!isToday) e.currentTarget.style.backgroundColor = '';
           }}
         >
-          <span className="text-xs md:text-sm">{day}</span>
+          <span className="text-xs md:text-sm mb-1">{day}</span>
+          <div className="flex flex-col gap-0.5 w-full">
+            {dayEvents.slice(0, 2).map((event) => {
+              const category = mockCategories.find(c => c.id === event.categoryId);
+              const calendar = mockCalendars.find(c => c.id === event.calendarId);
+              const calendarIcon = calendar?.type === 'professional' ? '💼' : '👤';
+              return (
+                <div
+                  key={event.id}
+                  className="text-[8px] md:text-[9px] rounded flex items-center overflow-hidden"
+                  style={{
+                    backgroundColor: category?.color + '80',
+                  }}
+                  title={`${calendar?.name} - ${event.title} - ${event.startTime}`}
+                >
+                  <div
+                    className="px-1 py-0.5 flex items-center justify-center text-[10px]"
+                    style={{ backgroundColor: calendar?.color }}
+                  >
+                    {calendarIcon}
+                  </div>
+                  <div className="px-1 py-0.5 truncate flex-1">
+                    {category?.icon} {event.title}
+                  </div>
+                </div>
+              );
+            })}
+            {dayEvents.length > 2 && (
+              <div className="text-[8px] opacity-70">+{dayEvents.length - 2} mais</div>
+            )}
+          </div>
         </div>
       );
     }
@@ -143,19 +215,51 @@ export default function Calendar() {
 
     return weekDays.map((date, index) => {
       const isToday = date.toDateString() === today.toDateString();
+      const dayEvents = getEventsForDate(date);
 
       return (
         <div
           key={index}
           className={`p-3 rounded cursor-pointer transition-all duration-200 hover:bg-white/5 ${
             isToday ? 'bg-gradient-to-br from-[#350545] to-[#792990]' : ''
-          }`}
+          } flex flex-col`}
         >
-          <div className="text-center">
+          <div className="text-center mb-2">
             <div className="text-xs opacity-70 text-white">{daysOfWeek[date.getDay()]}</div>
             <div className={`text-2xl font-bold ${isToday ? 'text-white' : 'text-white'}`}>
               {date.getDate()}
             </div>
+          </div>
+          <div className="flex flex-col gap-1 flex-1">
+            {dayEvents.map((event) => {
+              const category = mockCategories.find(c => c.id === event.categoryId);
+              const calendar = mockCalendars.find(c => c.id === event.calendarId);
+              const calendarIcon = calendar?.type === 'professional' ? '💼' : '👤';
+              return (
+                <div
+                  key={event.id}
+                  className="text-[10px] rounded flex overflow-hidden"
+                  style={{
+                    backgroundColor: category?.color + '80',
+                  }}
+                  title={`${calendar?.name} - ${event.description}`}
+                >
+                  <div
+                    className="px-1.5 py-1 flex items-center justify-center text-xs"
+                    style={{ backgroundColor: calendar?.color }}
+                  >
+                    {calendarIcon}
+                  </div>
+                  <div className="px-2 py-1 flex-1">
+                    <div className="font-semibold flex items-center gap-1">
+                      <span>{category?.icon}</span>
+                      <span>{event.startTime}</span>
+                    </div>
+                    <div className="truncate">{event.title}</div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       );
@@ -168,15 +272,16 @@ export default function Calendar() {
 
     return days.map((date, index) => {
       const isToday = date.toDateString() === today.toDateString();
+      const dayEvents = getEventsForDate(date);
 
       return (
         <div
           key={index}
           className={`p-4 rounded cursor-pointer transition-all duration-200 hover:bg-white/5 ${
             isToday ? 'bg-gradient-to-br from-[#350545] to-[#792990]' : ''
-          }`}
+          } flex flex-col`}
         >
-          <div className="text-center">
+          <div className="text-center mb-3">
             <div className="text-sm opacity-70 text-white">{daysOfWeekFull[date.getDay()]}</div>
             <div className={`text-3xl font-bold ${isToday ? 'text-white' : 'text-white'}`}>
               {date.getDate()}
@@ -184,6 +289,38 @@ export default function Calendar() {
             <div className="text-xs opacity-70 text-white mt-1">
               {monthNames[date.getMonth()]}
             </div>
+          </div>
+          <div className="flex flex-col gap-2 flex-1">
+            {dayEvents.map((event) => {
+              const category = mockCategories.find(c => c.id === event.categoryId);
+              const calendar = mockCalendars.find(c => c.id === event.calendarId);
+              const calendarIcon = calendar?.type === 'professional' ? '💼' : '👤';
+              return (
+                <div
+                  key={event.id}
+                  className="text-xs rounded flex overflow-hidden"
+                  style={{
+                    backgroundColor: category?.color + '80',
+                  }}
+                  title={`${calendar?.name} - ${event.description}`}
+                >
+                  <div
+                    className="px-2 py-2 flex items-center justify-center text-sm"
+                    style={{ backgroundColor: calendar?.color }}
+                  >
+                    {calendarIcon}
+                  </div>
+                  <div className="px-3 py-2 flex-1">
+                    <div className="font-semibold flex items-center gap-1">
+                      <span>{category?.icon}</span>
+                      <span>{event.startTime}</span>
+                      {event.endTime && <span>- {event.endTime}</span>}
+                    </div>
+                    <div className="mt-1">{event.title}</div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       );
@@ -193,19 +330,81 @@ export default function Calendar() {
   const renderDayView = () => {
     const today = new Date();
     const isToday = currentDate.toDateString() === today.toDateString();
+    const dayEvents = getEventsForDate(currentDate);
 
     return (
-      <div className="p-8 text-center">
-        <div className="text-sm opacity-70 text-white mb-2">
-          {daysOfWeekFull[currentDate.getDay()]}
+      <div className="p-4 md:p-8">
+        <div className="text-center mb-6">
+          <div className="text-sm opacity-70 text-white mb-2">
+            {daysOfWeekFull[currentDate.getDay()]}
+          </div>
+          <div
+            className={`text-6xl font-bold mb-2 ${isToday ? 'text-white' : 'text-white'}`}
+          >
+            {currentDate.getDate()}
+          </div>
+          <div className="text-xl opacity-90 text-white">
+            {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
+          </div>
         </div>
-        <div
-          className={`text-6xl font-bold mb-2 ${isToday ? 'text-white' : 'text-white'}`}
-        >
-          {currentDate.getDate()}
-        </div>
-        <div className="text-xl opacity-90 text-white">
-          {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
+
+        {/* Lista de eventos do dia */}
+        <div className="max-w-2xl mx-auto">
+          <div className="flex flex-col gap-3">
+            {dayEvents.length === 0 ? (
+              <div className="text-center text-white/50 py-8">
+                Nenhum evento para este dia
+              </div>
+            ) : (
+              dayEvents.map((event) => {
+                const category = mockCategories.find(c => c.id === event.categoryId);
+                const calendar = mockCalendars.find(c => c.id === event.calendarId);
+                const calendarIcon = calendar?.type === 'professional' ? '💼' : '👤';
+                return (
+                  <div
+                    key={event.id}
+                    className="rounded-lg text-white flex overflow-hidden"
+                    style={{ backgroundColor: category?.color + '40' }}
+                  >
+                    <div
+                      className="px-3 py-4 flex items-center justify-center text-3xl"
+                      style={{ backgroundColor: calendar?.color }}
+                    >
+                      {calendarIcon}
+                    </div>
+                    <div className="flex-1 p-4">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-2xl">{category?.icon}</span>
+                          <div>
+                            <div className="font-bold text-lg">{event.title}</div>
+                            <div className="text-sm opacity-80 flex items-center gap-1">
+                              <span>{calendar?.name}</span>
+                              <span className="text-xs opacity-50">•</span>
+                              <span>{category?.name}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-semibold">{event.startTime}</div>
+                          {event.endTime && <div className="text-sm opacity-80">até {event.endTime}</div>}
+                        </div>
+                      </div>
+                      {event.description && (
+                        <div className="text-sm opacity-90 mt-2">{event.description}</div>
+                      )}
+                      {event.isRecurring && (
+                        <div className="text-xs opacity-70 mt-2 flex items-center gap-1">
+                          <span>🔁</span>
+                          <span>Evento recorrente</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
       </div>
     );
@@ -321,12 +520,46 @@ export default function Calendar() {
           {viewMode === 'day' && renderDayView()}
         </div>
 
+        {/* Calendar Selector */}
+        <div className="px-3 py-2 border-t" style={{ backgroundColor: '#350545', borderColor: '#792990' }}>
+          <div className="flex items-center justify-center gap-3 flex-wrap">
+            {mockCalendars.map((calendar) => (
+              <button
+                key={calendar.id}
+                onClick={() => toggleCalendar(calendar.id)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  selectedCalendars.includes(calendar.id)
+                    ? 'bg-white/20 text-white'
+                    : 'bg-white/5 text-white/50 hover:bg-white/10'
+                }`}
+              >
+                <div
+                  className="w-3 h-3 rounded-full"
+                  style={{ backgroundColor: calendar.color }}
+                />
+                <span>{calendar.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Footer Info */}
         <div className="px-3 py-2 border-t" style={{ backgroundColor: '#350545', borderColor: '#792990' }}>
-          <div className="flex items-center justify-center gap-2 text-xs text-white">
+          <div className="flex items-center justify-center gap-4 text-xs text-white flex-wrap">
             <div className="flex items-center gap-1">
               <div className="w-3 h-3 rounded" style={{ background: 'linear-gradient(135deg, #792990 0%, #ffffff 100%)' }}></div>
               <span>Hoje</span>
+            </div>
+            <div className="h-3 w-px bg-white/20"></div>
+            <div className="flex items-center gap-1.5">
+              <span>💼</span>
+              <div className="w-3 h-3 rounded" style={{ backgroundColor: '#350545' }}></div>
+              <span>WB Digital</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span>👤</span>
+              <div className="w-3 h-3 rounded" style={{ backgroundColor: '#792990' }}></div>
+              <span>Pessoal</span>
             </div>
           </div>
         </div>
