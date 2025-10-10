@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { Event, Category } from '@/types/calendar';
 import CreateEventModal from './CreateEventModal';
 import ConfirmDeleteModal from './ConfirmDeleteModal';
+import { TimeSlotView } from './TimeSlotView';
 
 type ViewMode = 'month' | 'week' | '3days' | 'day';
 
@@ -303,231 +304,49 @@ export default function Calendar() {
 
   const renderWeekView = () => {
     const weekDays = getWeekDays();
-    const today = new Date();
-
-    return weekDays.map((date, index) => {
-      const isToday = date.toDateString() === today.toDateString();
-      const dayEvents = getEventsForDate(date);
-
-      return (
-        <div
-          key={index}
-          className={`p-3 rounded cursor-pointer transition-all duration-200 hover:bg-white/5 ${
-            isToday ? 'bg-gradient-to-br from-[#350545] to-[#792990]' : ''
-          } flex flex-col`}
-        >
-          <div className="text-center mb-2">
-            <div className="text-xs opacity-70 text-white">{daysOfWeek[date.getDay()]}</div>
-            <div className={`text-2xl font-bold ${isToday ? 'text-white' : 'text-white'}`}>
-              {date.getDate()}
-            </div>
-          </div>
-          <div className="flex flex-col gap-1 flex-1">
-            {dayEvents.map((event) => {
-              const category = categories.find(c => c.id === event.categoryId);
-              const calendar = calendars.find(c => c.id === event.calendarId);
-              const calendarIcon = calendar?.type === 'professional' ? '💼' : '👤';
-              return (
-                <div
-                  key={event.id}
-                  className="text-[10px] rounded flex overflow-hidden group relative"
-                  style={{
-                    backgroundColor: category?.color + '80',
-                  }}
-                  title={`${calendar?.name} - ${event.description}`}
-                >
-                  <div
-                    className="px-1.5 py-1 flex items-center justify-center text-xs"
-                    style={{ backgroundColor: calendar?.color }}
-                  >
-                    {calendarIcon}
-                  </div>
-                  <div className="px-2 py-1 flex-1">
-                    <div className="font-semibold flex items-center gap-1">
-                      <span>{category?.icon}</span>
-                      <span>{event.startTime}</span>
-                    </div>
-                    <div className="truncate">{event.title}</div>
-                  </div>
-                  <button
-                    onClick={(e) => handleDeleteClick(event, e)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity absolute top-0.5 right-0.5 p-0.5 hover:bg-red-600 rounded"
-                    title="Deletar"
-                  >
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      );
-    });
+    return (
+      <TimeSlotView
+        days={weekDays}
+        events={events}
+        categories={categories}
+        selectedCalendars={selectedCalendars}
+        onDeleteClick={handleDeleteClick}
+        onEventUpdate={fetchData}
+        daysOfWeek={daysOfWeek}
+        daysOfWeekFull={daysOfWeekFull}
+        monthNames={monthNames}
+      />
+    );
   };
 
   const render3DaysView = () => {
     const days = get3Days();
-    const today = new Date();
-
-    return days.map((date, index) => {
-      const isToday = date.toDateString() === today.toDateString();
-      const dayEvents = getEventsForDate(date);
-
-      return (
-        <div
-          key={index}
-          className={`p-4 rounded cursor-pointer transition-all duration-200 hover:bg-white/5 ${
-            isToday ? 'bg-gradient-to-br from-[#350545] to-[#792990]' : ''
-          } flex flex-col`}
-        >
-          <div className="text-center mb-3">
-            <div className="text-sm opacity-70 text-white">{daysOfWeekFull[date.getDay()]}</div>
-            <div className={`text-3xl font-bold ${isToday ? 'text-white' : 'text-white'}`}>
-              {date.getDate()}
-            </div>
-            <div className="text-xs opacity-70 text-white mt-1">
-              {monthNames[date.getMonth()]}
-            </div>
-          </div>
-          <div className="flex flex-col gap-2 flex-1">
-            {dayEvents.map((event) => {
-              const category = categories.find(c => c.id === event.categoryId);
-              const calendar = calendars.find(c => c.id === event.calendarId);
-              const calendarIcon = calendar?.type === 'professional' ? '💼' : '👤';
-              return (
-                <div
-                  key={event.id}
-                  className="text-xs rounded flex overflow-hidden group relative"
-                  style={{
-                    backgroundColor: category?.color + '80',
-                  }}
-                  title={`${calendar?.name} - ${event.description}`}
-                >
-                  <div
-                    className="px-2 py-2 flex items-center justify-center text-sm"
-                    style={{ backgroundColor: calendar?.color }}
-                  >
-                    {calendarIcon}
-                  </div>
-                  <div className="px-3 py-2 flex-1">
-                    <div className="font-semibold flex items-center gap-1">
-                      <span>{category?.icon}</span>
-                      <span>{event.startTime}</span>
-                      {event.endTime && <span>- {event.endTime}</span>}
-                    </div>
-                    <div className="mt-1">{event.title}</div>
-                  </div>
-                  <button
-                    onClick={(e) => handleDeleteClick(event, e)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity absolute top-1 right-1 p-1 hover:bg-red-600 rounded"
-                    title="Deletar"
-                  >
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      );
-    });
+    return (
+      <TimeSlotView
+        days={days}
+        events={events}
+        categories={categories}
+        selectedCalendars={selectedCalendars}
+        onDeleteClick={handleDeleteClick}
+        onEventUpdate={fetchData}
+        daysOfWeekFull={daysOfWeekFull}
+        monthNames={monthNames}
+      />
+    );
   };
 
   const renderDayView = () => {
-    const today = new Date();
-    const isToday = currentDate.toDateString() === today.toDateString();
-    const dayEvents = getEventsForDate(currentDate);
-
     return (
-      <div className="p-4 md:p-8">
-        <div className="text-center mb-6">
-          <div className="text-sm opacity-70 text-white mb-2">
-            {daysOfWeekFull[currentDate.getDay()]}
-          </div>
-          <div
-            className={`text-6xl font-bold mb-2 ${isToday ? 'text-white' : 'text-white'}`}
-          >
-            {currentDate.getDate()}
-          </div>
-          <div className="text-xl opacity-90 text-white">
-            {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
-          </div>
-        </div>
-
-        {/* Lista de eventos do dia */}
-        <div className="max-w-2xl mx-auto">
-          <div className="flex flex-col gap-3">
-            {dayEvents.length === 0 ? (
-              <div className="text-center text-white/50 py-8">
-                Nenhum evento para este dia
-              </div>
-            ) : (
-              dayEvents.map((event) => {
-                const category = categories.find(c => c.id === event.categoryId);
-                const calendar = calendars.find(c => c.id === event.calendarId);
-                const calendarIcon = calendar?.type === 'professional' ? '💼' : '👤';
-                return (
-                  <div
-                    key={event.id}
-                    className="rounded-lg text-white flex overflow-hidden group relative"
-                    style={{ backgroundColor: category?.color + '40' }}
-                  >
-                    <div
-                      className="px-3 py-4 flex items-center justify-center text-3xl"
-                      style={{ backgroundColor: calendar?.color }}
-                    >
-                      {calendarIcon}
-                    </div>
-                    <div className="flex-1 p-4">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-2xl">{category?.icon}</span>
-                          <div>
-                            <div className="font-bold text-lg">{event.title}</div>
-                            <div className="text-sm opacity-80 flex items-center gap-1">
-                              <span>{calendar?.name}</span>
-                              <span className="text-xs opacity-50">•</span>
-                              <span>{category?.name}</span>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="text-right flex items-center gap-2">
-                          <div>
-                            <div className="font-semibold">{event.startTime}</div>
-                            {event.endTime && <div className="text-sm opacity-80">até {event.endTime}</div>}
-                          </div>
-                          <button
-                            onClick={(e) => handleDeleteClick(event, e)}
-                            className="opacity-0 group-hover:opacity-100 transition-opacity p-2 hover:bg-red-600 rounded-lg"
-                            title="Deletar evento"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                      {event.description && (
-                        <div className="text-sm opacity-90 mt-2">{event.description}</div>
-                      )}
-                      {event.isRecurring && (
-                        <div className="text-xs opacity-70 mt-2 flex items-center gap-1">
-                          <span>🔁</span>
-                          <span>Evento recorrente</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-      </div>
+      <TimeSlotView
+        days={[currentDate]}
+        events={events}
+        categories={categories}
+        selectedCalendars={selectedCalendars}
+        onDeleteClick={handleDeleteClick}
+        onEventUpdate={fetchData}
+        daysOfWeekFull={daysOfWeekFull}
+        monthNames={monthNames}
+      />
     );
   };
 
@@ -648,13 +467,9 @@ export default function Calendar() {
             </>
           )}
 
-          {viewMode === 'week' && (
-            <div className="grid grid-cols-7 gap-2">{renderWeekView()}</div>
-          )}
+          {viewMode === 'week' && renderWeekView()}
 
-          {viewMode === '3days' && (
-            <div className="grid grid-cols-3 gap-4">{render3DaysView()}</div>
-          )}
+          {viewMode === '3days' && render3DaysView()}
 
           {viewMode === 'day' && renderDayView()}
         </div>

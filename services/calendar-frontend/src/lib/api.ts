@@ -83,6 +83,11 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
+    update: (id: string, data: Partial<Event>) =>
+      fetchAPI<Event>(`/events/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
     delete: (id: string) =>
       fetchAPI<void>(`/events/${id}`, {
         method: 'DELETE',
