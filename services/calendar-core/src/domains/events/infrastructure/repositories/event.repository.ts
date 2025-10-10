@@ -2,6 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { Event } from '../../domain/entities/event.entity';
 
+export interface FindAllFilters {
+  calendarId?: string;
+  categoryId?: string;
+  search?: string;
+}
+
 @Injectable()
 export class EventRepository {
   private prisma: PrismaClient;
@@ -41,6 +47,32 @@ export class EventRepository {
     });
 
     return event ? new Event(event) : null;
+  }
+
+  async findAll(filters?: FindAllFilters): Promise<Event[]> {
+    const where: any = { isActive: true };
+
+    if (filters?.calendarId) {
+      where.calendarId = filters.calendarId;
+    }
+
+    if (filters?.categoryId) {
+      where.categoryId = filters.categoryId;
+    }
+
+    if (filters?.search) {
+      where.OR = [
+        { title: { contains: filters.search, mode: 'insensitive' } },
+        { description: { contains: filters.search, mode: 'insensitive' } },
+      ];
+    }
+
+    const events = await this.prisma.event.findMany({
+      where,
+      orderBy: [{ startDate: 'asc' }, { startTime: 'asc' }],
+    });
+
+    return events.map((event) => new Event(event));
   }
 
   async findByCalendarId(calendarId: string): Promise<Event[]> {
