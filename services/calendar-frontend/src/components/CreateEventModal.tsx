@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { Category } from '@/types/calendar';
 
@@ -10,6 +10,8 @@ interface CreateEventModalProps {
   onEventCreated: () => void;
   calendars: Array<{ id: string; name: string; color: string; type: string }>;
   categories: Category[];
+  initialDate?: string;
+  initialTime?: string;
 }
 
 export default function CreateEventModal({
@@ -18,6 +20,8 @@ export default function CreateEventModal({
   onEventCreated,
   calendars,
   categories,
+  initialDate,
+  initialTime,
 }: CreateEventModalProps) {
   console.log('CreateEventModal renderizado - isOpen:', isOpen);
 
@@ -26,9 +30,9 @@ export default function CreateEventModal({
     categoryId: '',
     title: '',
     description: '',
-    startTime: '',
+    startTime: initialTime || '',
     endTime: '',
-    startDate: '',
+    startDate: initialDate || '',
     endDate: '',
     isRecurring: false,
     recurrenceFrequency: 'weekly' as 'daily' | 'weekly' | 'monthly' | 'yearly',
@@ -38,6 +42,26 @@ export default function CreateEventModal({
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Update form data when modal opens with initial values
+  useEffect(() => {
+    if (isOpen && (initialDate || initialTime)) {
+      // Calculate end time as start time + 1 hour
+      let endTime = '';
+      if (initialTime) {
+        const [hours, minutes] = initialTime.split(':').map(Number);
+        const endHour = (hours + 1) % 24;
+        endTime = `${endHour.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+      }
+
+      setFormData(prev => ({
+        ...prev,
+        startDate: initialDate || prev.startDate,
+        startTime: initialTime || prev.startTime,
+        endTime: endTime || prev.endTime,
+      }));
+    }
+  }, [isOpen, initialDate, initialTime]);
 
   const daysOfWeek = [
     { value: 0, label: 'Dom' },
@@ -275,7 +299,17 @@ export default function CreateEventModal({
               <input
                 type="time"
                 value={formData.startTime}
-                onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
+                onChange={(e) => {
+                  const newStartTime = e.target.value;
+                  // Calculate end time as start time + 1 hour
+                  let newEndTime = '';
+                  if (newStartTime) {
+                    const [hours, minutes] = newStartTime.split(':').map(Number);
+                    const endHour = (hours + 1) % 24;
+                    newEndTime = `${endHour.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+                  }
+                  setFormData({ ...formData, startTime: newStartTime, endTime: newEndTime });
+                }}
                 className="w-full px-4 py-2 bg-white/10 border border-white/20 text-white rounded-lg focus:ring-2 focus:ring-[#792990] focus:border-transparent"
                 required
               />

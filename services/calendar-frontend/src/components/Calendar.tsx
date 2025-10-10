@@ -21,6 +21,8 @@ export default function Calendar() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalInitialDate, setModalInitialDate] = useState<string>('');
+  const [modalInitialTime, setModalInitialTime] = useState<string>('');
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [eventToDelete, setEventToDelete] = useState<Event | null>(null);
 
@@ -72,6 +74,12 @@ export default function Calendar() {
   const handleCancelDelete = () => {
     setIsDeleteModalOpen(false);
     setEventToDelete(null);
+  };
+
+  const handleTimeSlotClick = (date: string, time: string) => {
+    setModalInitialDate(date);
+    setModalInitialTime(time);
+    setIsModalOpen(true);
   };
 
   const monthNames = [
@@ -238,24 +246,41 @@ export default function Calendar() {
         <div
           key={day}
           className={`
-            aspect-square p-1 flex flex-col items-start justify-start
-            rounded cursor-pointer transition-all duration-200
-            hover:scale-105
-            ${isToday ? 'text-white font-bold shadow-lg' : 'text-white'}
+            aspect-square p-2 flex flex-col items-start justify-start
+            cursor-pointer transition-all duration-200
+            border border-white/10
+            hover:border-[#792990]/50 hover:shadow-lg hover:shadow-[#792990]/20
+            relative overflow-hidden
+            ${isToday ? 'text-white font-bold border-[#792990] shadow-xl shadow-[#792990]/30' : 'text-white'}
           `}
           style={
             isToday
               ? { background: 'linear-gradient(135deg, #350545 0%, #792990 100%)' }
-              : {}
+              : { backgroundColor: 'rgba(255, 255, 255, 0.02)' }
           }
-          onMouseEnter={(e) => {
-            if (!isToday) e.currentTarget.style.backgroundColor = '#79299015';
-          }}
-          onMouseLeave={(e) => {
-            if (!isToday) e.currentTarget.style.backgroundColor = '';
+          onClick={(e) => {
+            // Only open modal if clicking on empty space (not on an event)
+            const target = e.target as HTMLElement;
+            if (target === e.currentTarget || target.tagName === 'SPAN' || target.classList.contains('flex-col') || target.classList.contains('time-grid')) {
+              const dateString = dayDate.toISOString().split('T')[0];
+              handleTimeSlotClick(dateString, '09:00'); // Default to 9am for month view
+            }
           }}
         >
-          <span className="text-xs md:text-sm mb-1">{day}</span>
+          {/* Subtle time grid background with hour labels */}
+          <div className="time-grid absolute inset-0 pointer-events-none">
+            {[6, 10, 14, 18, 22].map((hour, i) => (
+              <div
+                key={i}
+                className="absolute left-0 right-0 border-t border-white/10 flex items-center"
+                style={{ top: `${(i + 1) * 16.66}%` }}
+              >
+                <span className="text-[8px] text-white/30 ml-0.5">{hour.toString().padStart(2, '0')}h</span>
+              </div>
+            ))}
+          </div>
+
+          <span className="text-xs md:text-sm mb-1 relative z-10">{day}</span>
           <div className="flex flex-col gap-0.5 w-full">
             {dayEvents.slice(0, 2).map((event) => {
               const category = categories.find(c => c.id === event.categoryId);
@@ -312,6 +337,7 @@ export default function Calendar() {
         selectedCalendars={selectedCalendars}
         onDeleteClick={handleDeleteClick}
         onEventUpdate={fetchData}
+        onTimeSlotClick={handleTimeSlotClick}
         daysOfWeek={daysOfWeek}
         daysOfWeekFull={daysOfWeekFull}
         monthNames={monthNames}
@@ -329,6 +355,7 @@ export default function Calendar() {
         selectedCalendars={selectedCalendars}
         onDeleteClick={handleDeleteClick}
         onEventUpdate={fetchData}
+        onTimeSlotClick={handleTimeSlotClick}
         daysOfWeekFull={daysOfWeekFull}
         monthNames={monthNames}
       />
@@ -344,6 +371,7 @@ export default function Calendar() {
         selectedCalendars={selectedCalendars}
         onDeleteClick={handleDeleteClick}
         onEventUpdate={fetchData}
+        onTimeSlotClick={handleTimeSlotClick}
         daysOfWeekFull={daysOfWeekFull}
         monthNames={monthNames}
       />
@@ -359,9 +387,20 @@ export default function Calendar() {
   }
 
   return (
-    <div className="w-full max-w-6xl mx-auto p-2 md:p-4 h-full flex items-center justify-center">
+    <div className="w-full max-w-6xl mx-auto p-2 md:p-4 min-h-screen flex items-start justify-center py-4 relative">
+      {/* Floating Add Button */}
+      <button
+        onClick={() => setIsModalOpen(true)}
+        className="fixed top-6 right-6 w-14 h-14 bg-gradient-to-br from-[#792990] to-[#350545] hover:from-[#8b2fa0] hover:to-[#461556] text-white rounded-full shadow-2xl hover:shadow-[#792990]/50 transition-all duration-300 flex items-center justify-center z-50 hover:scale-110"
+        title="Criar novo evento"
+      >
+        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+        </svg>
+      </button>
+
       {/* Calendar Card */}
-      <div className="rounded-2xl shadow-2xl overflow-hidden w-full" style={{ backgroundColor: '#350545', maxHeight: '90vh' }}>
+      <div className="rounded-2xl shadow-2xl w-full" style={{ backgroundColor: '#350545' }}>
 
         {/* Header */}
         <div className="bg-primary px-3 md:px-4 py-2 md:py-3 text-white">
@@ -391,16 +430,6 @@ export default function Calendar() {
                 className="ml-2 px-2 py-1 bg-white/20 hover:bg-white/30 rounded text-xs font-medium"
               >
                 Hoje
-              </button>
-              <button
-                onClick={() => setIsModalOpen(true)}
-                className="ml-2 px-3 py-1 bg-white/20 hover:bg-white/30 rounded text-xs font-medium flex items-center gap-1"
-                title="Criar novo evento"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Novo
               </button>
             </div>
 
@@ -456,9 +485,20 @@ export default function Calendar() {
         <div className="p-2 md:p-3" style={{ backgroundColor: '#350545' }}>
           {viewMode === 'month' && (
             <>
-              <div className="grid grid-cols-7 gap-1 mb-2">
-                {daysOfWeek.map((day) => (
-                  <div key={day} className="text-center font-semibold text-xs md:text-sm py-1 text-white">
+              <div className="grid grid-cols-7 gap-1 mb-3">
+                {daysOfWeek.map((day, index) => (
+                  <div
+                    key={day}
+                    className={`
+                      text-center font-bold text-sm md:text-base py-1.5 rounded-lg
+                      transition-all duration-200
+                      ${index === 0 || index === 6
+                        ? 'bg-gradient-to-r from-[#792990]/30 to-[#350545]/30 text-white/90 border border-[#792990]/40'
+                        : 'bg-white/5 text-white/80 border border-white/10'
+                      }
+                      hover:bg-[#792990]/40 hover:border-[#792990]/60 hover:text-white
+                    `}
+                  >
                     {day}
                   </div>
                 ))}
@@ -526,6 +566,8 @@ export default function Calendar() {
         onEventCreated={handleEventCreated}
         calendars={calendars}
         categories={categories}
+        initialDate={modalInitialDate}
+        initialTime={modalInitialTime}
       />
 
       {/* Modal de Confirmação de Exclusão */}

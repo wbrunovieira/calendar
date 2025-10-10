@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect, useCallback } from 'react';
 import { Event, Category } from '@/types/calendar';
 import { calendars } from '@/data/calendars';
 import { useDragAndDrop } from '@/hooks/useDragAndDrop';
@@ -12,6 +13,7 @@ interface TimeSlotViewProps {
   selectedCalendars: string[];
   onDeleteClick: (event: Event, e: React.MouseEvent) => void;
   onEventUpdate?: () => void;
+  onTimeSlotClick?: (date: string, time: string) => void;
   daysOfWeek?: string[];
   daysOfWeekFull: string[];
   monthNames: string[];
@@ -24,6 +26,7 @@ export function TimeSlotView({
   selectedCalendars,
   onDeleteClick,
   onEventUpdate,
+  onTimeSlotClick,
   daysOfWeek,
   daysOfWeekFull,
   monthNames,
@@ -31,8 +34,11 @@ export function TimeSlotView({
   const hours = Array.from({ length: 17 }, (_, i) => i + 6); // 6am to 10pm
   const today = new Date();
   const { handleDragStart, handleDragEnd, handleDragOver, handleDrop } = useDragAndDrop();
+  const [resizingEvent, setResizingEvent] = useState<{ id: string; edge: 'top' | 'bottom'; startY: number; originalHeight: number; originalTop: number } | null>(null);
+  const [justResized, setJustResized] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
 
-  const handleEventUpdate = async (eventId: string, newDate: string, newTime?: string) => {
+  const handleEventUpdate = async (eventId: string, newDate: string, newTime?: string, newEndTime?: string) => {
     try {
       const event = events.find(e => e.id === eventId);
       if (!event) return;
@@ -40,6 +46,7 @@ export function TimeSlotView({
       await api.events.update(eventId, {
         startDate: newDate,
         ...(newTime && { startTime: newTime }),
+        ...(newEndTime && { endTime: newEndTime }),
       });
 
       if (onEventUpdate) {
@@ -49,6 +56,107 @@ export function TimeSlotView({
       console.error('Error updating event:', error);
     }
   };
+
+  const handleResizeStart = (eventId: string, edge: 'top' | 'bottom', e: React.MouseEvent, currentHeight: number, currentTop: number) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    // Disable dragging on the event element
+    const eventElement = document.querySelector(`[data-event-id="${eventId}"]`) as HTMLElement;
+    if (eventElement) {
+      eventElement.setAttribute('draggable', 'false');
+    }
+
+    setIsResizing(true);
+    setResizingEvent({ id: eventId, edge, startY: e.clientY, originalHeight: currentHeight, originalTop: currentTop });
+  };
+
+  const handleResizeMove = useCallback((e: MouseEvent) => {
+    if (!resizingEvent) return;
+
+    const deltaY = e.clientY - resizingEvent.startY;
+
+    // Find the event element
+    const eventElement = document.querySelector(`[data-event-id="${resizingEvent.id}"]`) as HTMLElement;
+    if (!eventElement) return;
+
+    if (resizingEvent.edge === 'bottom') {
+      // Resizing from bottom - change end time
+      const newHeight = Math.max(32, resizingEvent.originalHeight + deltaY); // Minimum 32px (30 minutes)
+      eventElement.style.height = `${newHeight}px`;
+    } else {
+      // Resizing from top - change start time
+      const newTop = resizingEvent.originalTop + deltaY;
+      const newHeight = resizingEvent.originalHeight - deltaY;
+
+      if (newHeight >= 32) { // Minimum 32px (30 minutes)
+        eventElement.style.top = `${newTop}px`;
+        eventElement.style.height = `${newHeight}px`;
+      }
+    }
+  }, [resizingEvent]);
+
+  const handleResizeEnd = useCallback(async () => {
+    if (!resizingEvent) return;
+
+    const event = events.find(ev => ev.id === resizingEvent.id);
+    if (!event) {
+      setResizingEvent(null);
+      setIsResizing(false);
+      return;
+    }
+
+    const eventElement = document.querySelector(`[data-event-id="${resizingEvent.id}"]`) as HTMLElement;
+    if (!eventElement) {
+      setResizingEvent(null);
+      setIsResizing(false);
+      return;
+    }
+
+    // Re-enable dragging
+    eventElement.setAttribute('draggable', 'true');
+
+    const newTop = parseFloat(eventElement.style.top);
+    const newHeight = parseFloat(eventElement.style.height);
+
+    // Convert pixels to time
+    const startMinutesFromMidnight = (newTop / 64) * 60 + (6 * 60); // 6am offset
+    const durationMinutes = (newHeight / 64) * 60;
+    const endMinutesFromMidnight = startMinutesFromMidnight + durationMinutes;
+
+    const startHours = Math.floor(startMinutesFromMidnight / 60);
+    const startMins = Math.round(startMinutesFromMidnight % 60);
+    const endHours = Math.floor(endMinutesFromMidnight / 60);
+    const endMins = Math.round(endMinutesFromMidnight % 60);
+
+    const newStartTime = `${startHours.toString().padStart(2, '0')}:${startMins.toString().padStart(2, '0')}`;
+    const newEndTime = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
+
+    const dateString = event.startDate.split('T')[0];
+
+    // Set flags to prevent modal opening BEFORE any async operations
+    setJustResized(true);
+    setIsResizing(false);
+    setResizingEvent(null);
+
+    await handleEventUpdate(event.id, dateString, newStartTime, newEndTime);
+
+    // Keep the flag for longer to ensure click event doesn't trigger
+    setTimeout(() => setJustResized(false), 300);
+  }, [resizingEvent, events, handleEventUpdate]);
+
+  // Add mouse event listeners for resize
+  useEffect(() => {
+    if (resizingEvent) {
+      window.addEventListener('mousemove', handleResizeMove);
+      window.addEventListener('mouseup', handleResizeEnd);
+
+      return () => {
+        window.removeEventListener('mousemove', handleResizeMove);
+        window.removeEventListener('mouseup', handleResizeEnd);
+      };
+    }
+  }, [resizingEvent, handleResizeMove, handleResizeEnd]);
 
   const getEventsForDate = (date: Date): Event[] => {
     const dateString = date.toISOString().split('T')[0];
@@ -134,7 +242,7 @@ export function TimeSlotView({
 
               {/* Time grid for this day */}
               <div
-                className="flex-1 relative border-l border-white/10 min-h-[1088px] transition-colors hover:bg-white/5"
+                className="flex-1 relative border-l border-white/10 min-h-[1088px] transition-colors hover:bg-white/5 cursor-pointer"
                 onDragOver={handleDragOver}
                 onDrop={(e) => {
                   // Calculate exact time and date based on mouse position
@@ -155,6 +263,40 @@ export function TimeSlotView({
                   const time = `${clampedHour.toString().padStart(2, '0')}:${clampedMinutes.toString().padStart(2, '0')}`;
                   handleDrop(date, time)(e, handleEventUpdate);
                 }}
+                onClick={(e) => {
+                  // Don't open modal if currently resizing or just finished resizing
+                  if (isResizing || justResized) {
+                    return;
+                  }
+
+                  // Only open modal if clicking on empty space (not on an event or button)
+                  const target = e.target as HTMLElement;
+                  const isEvent = target.closest('.cursor-move'); // Event cards have cursor-move
+                  const isButton = target.closest('button'); // Delete buttons
+                  const isResizeHandle = target.closest('.group\\/handle'); // Resize handles
+
+                  if (!isEvent && !isButton && !isResizeHandle) {
+                    const container = e.currentTarget;
+                    const rect = container.getBoundingClientRect();
+                    const offsetY = e.clientY - rect.top;
+
+                    // Calculate time based on click position
+                    const totalHours = offsetY / 64;
+                    const hour = Math.floor(totalHours) + 6;
+                    const fractionalHour = totalHours - Math.floor(totalHours);
+                    const minutes = Math.floor(fractionalHour * 60);
+
+                    const clampedHour = Math.max(6, Math.min(22, hour));
+                    const clampedMinutes = Math.max(0, Math.min(59, minutes));
+
+                    const time = `${clampedHour.toString().padStart(2, '0')}:${clampedMinutes.toString().padStart(2, '0')}`;
+                    const dateString = date.toISOString().split('T')[0];
+
+                    if (onTimeSlotClick) {
+                      onTimeSlotClick(dateString, time);
+                    }
+                  }
+                }}
               >
                 {/* Time slot grid */}
                 {hours.map((hour) => (
@@ -173,13 +315,29 @@ export function TimeSlotView({
                   const calendar = calendars.find(c => c.id === event.calendarId);
                   const calendarIcon = calendar?.type === 'professional' ? '💼' : '👤';
 
-                  // Calculate position based on time (offset by 6 hours since we start at 6am)
+                  // Calculate position and height based on time
                   let topPosition = 0;
+                  let eventHeight = 64; // Default 1 hour
+
                   try {
-                    const timeParts = event.startTime.split(':');
-                    const eventHours = parseInt(timeParts[0], 10);
-                    const minutes = parseInt(timeParts[1] || '0', 10);
-                    topPosition = ((eventHours - 6) * 64) + (minutes / 60 * 64); // 64px per hour (h-16), offset by 6
+                    // Parse start time
+                    const startParts = event.startTime.split(':');
+                    const startHours = parseInt(startParts[0], 10);
+                    const startMinutes = parseInt(startParts[1] || '0', 10);
+                    topPosition = ((startHours - 6) * 64) + (startMinutes / 60 * 64);
+
+                    // Parse end time if exists
+                    if (event.endTime) {
+                      const endParts = event.endTime.split(':');
+                      const endHours = parseInt(endParts[0], 10);
+                      const endMinutes = parseInt(endParts[1] || '0', 10);
+
+                      const startTotalMinutes = startHours * 60 + startMinutes;
+                      const endTotalMinutes = endHours * 60 + endMinutes;
+                      const durationMinutes = endTotalMinutes - startTotalMinutes;
+
+                      eventHeight = (durationMinutes / 60) * 64; // 64px per hour
+                    }
                   } catch (error) {
                     console.error('Error parsing time for event:', event, error);
                   }
@@ -191,39 +349,64 @@ export function TimeSlotView({
                   return (
                     <div
                       key={event.id}
+                      data-event-id={event.id}
                       draggable
                       onDragStart={handleDragStart(event)}
                       onDragEnd={handleDragEnd}
-                      className={`absolute rounded-lg text-white flex overflow-hidden group cursor-move ${days.length === 7 ? 'left-0.5 right-0.5' : 'left-2 right-2'}`}
+                      className={`absolute rounded-lg text-white flex flex-col overflow-visible group ${days.length === 7 ? 'left-0.5 right-0.5' : 'left-2 right-2'}`}
                       style={{
                         backgroundColor: category?.color + '90',
                         top: `${topPosition}px`,
+                        height: `${eventHeight}px`,
                         minHeight: '48px',
                         zIndex: 10,
+                        cursor: resizingEvent?.id === event.id ? 'ns-resize' : 'move',
                       }}
                     >
+                      {/* Top resize handle */}
                       <div
-                        className={`${padding} flex items-center justify-center ${iconSize}`}
-                        style={{ backgroundColor: calendar?.color }}
+                        className="absolute top-0 left-0 right-0 h-3 cursor-ns-resize group/handle z-20"
+                        onMouseDown={(e) => handleResizeStart(event.id, 'top', e, eventHeight, topPosition)}
+                        title="Arrastar para ajustar início"
                       >
-                        {calendarIcon}
+                        <div className="h-1 bg-white/0 group-hover/handle:bg-white/40 transition-all rounded-t-lg" />
                       </div>
-                      <div className={`flex-1 ${padding}`}>
-                        <div className={`font-semibold ${textSize} flex items-center gap-1`}>
-                          <span>{category?.icon}</span>
-                          <span className="truncate">{event.startTime}</span>
+
+                      {/* Event content */}
+                      <div className="flex flex-1 overflow-hidden cursor-move">
+                        <div
+                          className={`${padding} flex items-center justify-center ${iconSize}`}
+                          style={{ backgroundColor: calendar?.color }}
+                        >
+                          {calendarIcon}
                         </div>
-                        <div className={`${textSize} truncate`}>{event.title}</div>
+                        <div className={`flex-1 ${padding} flex flex-col justify-center`}>
+                          <div className={`font-semibold ${textSize} flex items-center gap-1`}>
+                            <span>{category?.icon}</span>
+                            <span className="truncate">{event.startTime}</span>
+                            {event.endTime && <span className="truncate">- {event.endTime}</span>}
+                          </div>
+                          <div className={`${textSize} truncate`}>{event.title}</div>
+                        </div>
+                        <button
+                          onClick={(e) => onDeleteClick(event, e)}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-600 rounded self-start"
+                          title="Deletar"
+                        >
+                          <svg className={days.length === 7 ? "w-2 h-2" : "w-3 h-3"} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
                       </div>
-                      <button
-                        onClick={(e) => onDeleteClick(event, e)}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-600 rounded"
-                        title="Deletar"
+
+                      {/* Bottom resize handle */}
+                      <div
+                        className="absolute bottom-0 left-0 right-0 h-3 cursor-ns-resize group/handle z-20"
+                        onMouseDown={(e) => handleResizeStart(event.id, 'bottom', e, eventHeight, topPosition)}
+                        title="Arrastar para ajustar fim"
                       >
-                        <svg className={days.length === 7 ? "w-2 h-2" : "w-3 h-3"} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
+                        <div className="h-1 bg-white/0 group-hover/handle:bg-white/40 transition-all rounded-b-lg mt-2" />
+                      </div>
                     </div>
                   );
                 })}
