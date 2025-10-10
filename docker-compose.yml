@@ -5,14 +5,14 @@ services:
       dockerfile: Dockerfile.dev
     container_name: calendar-core
     ports:
-      - "3334:3000"
+      - "3334:3334"
     volumes:
       - ./services/calendar-core:/app
       - /app/node_modules
     environment:
       - NODE_ENV=development
       - DATABASE_URL=postgresql://calendar:calendar123@postgres:5432/calendar_db
-      - PORT=3000
+      - PORT=3334
     depends_on:
       - postgres
     networks:
