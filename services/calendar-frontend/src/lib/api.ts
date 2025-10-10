@@ -38,6 +38,12 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
       throw new Error(`API error: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
+    // Status 204 (No Content) não tem corpo na resposta
+    if (response.status === 204) {
+      console.log('=== FETCH API SUCESSO (204 No Content) ===');
+      return null as T;
+    }
+
     const data = await response.json();
     console.log('Response data:', data);
     console.log('=== FETCH API SUCESSO ===');

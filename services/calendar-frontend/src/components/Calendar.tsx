@@ -5,6 +5,7 @@ import { calendars } from '@/data/calendars';
 import { api } from '@/lib/api';
 import { Event, Category } from '@/types/calendar';
 import CreateEventModal from './CreateEventModal';
+import ConfirmDeleteModal from './ConfirmDeleteModal';
 
 type ViewMode = 'month' | 'week' | '3days' | 'day';
 
@@ -19,6 +20,8 @@ export default function Calendar() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [eventToDelete, setEventToDelete] = useState<Event | null>(null);
 
   // Buscar eventos e categorias do backend
   const fetchData = async () => {
@@ -43,6 +46,31 @@ export default function Calendar() {
 
   const handleEventCreated = () => {
     fetchData();
+  };
+
+  const handleDeleteClick = (event: Event, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEventToDelete(event);
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!eventToDelete) return;
+
+    try {
+      await api.events.delete(eventToDelete.id);
+      setIsDeleteModalOpen(false);
+      setEventToDelete(null);
+      fetchData();
+    } catch (error) {
+      console.error('Erro ao deletar evento:', error);
+      alert('Erro ao deletar evento. Tente novamente.');
+    }
+  };
+
+  const handleCancelDelete = () => {
+    setIsDeleteModalOpen(false);
+    setEventToDelete(null);
   };
 
   const monthNames = [
@@ -235,7 +263,7 @@ export default function Calendar() {
               return (
                 <div
                   key={event.id}
-                  className="text-[8px] md:text-[9px] rounded flex items-center overflow-hidden"
+                  className="text-[8px] md:text-[9px] rounded flex items-center overflow-hidden group relative"
                   style={{
                     backgroundColor: category?.color + '80',
                   }}
@@ -250,6 +278,15 @@ export default function Calendar() {
                   <div className="px-1 py-0.5 truncate flex-1">
                     {category?.icon} {event.title}
                   </div>
+                  <button
+                    onClick={(e) => handleDeleteClick(event, e)}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity absolute top-0 right-0 p-0.5 hover:bg-red-600 rounded"
+                    title="Deletar"
+                  >
+                    <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
                 </div>
               );
             })}
@@ -293,7 +330,7 @@ export default function Calendar() {
               return (
                 <div
                   key={event.id}
-                  className="text-[10px] rounded flex overflow-hidden"
+                  className="text-[10px] rounded flex overflow-hidden group relative"
                   style={{
                     backgroundColor: category?.color + '80',
                   }}
@@ -312,6 +349,15 @@ export default function Calendar() {
                     </div>
                     <div className="truncate">{event.title}</div>
                   </div>
+                  <button
+                    onClick={(e) => handleDeleteClick(event, e)}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity absolute top-0.5 right-0.5 p-0.5 hover:bg-red-600 rounded"
+                    title="Deletar"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
                 </div>
               );
             })}
@@ -353,7 +399,7 @@ export default function Calendar() {
               return (
                 <div
                   key={event.id}
-                  className="text-xs rounded flex overflow-hidden"
+                  className="text-xs rounded flex overflow-hidden group relative"
                   style={{
                     backgroundColor: category?.color + '80',
                   }}
@@ -373,6 +419,15 @@ export default function Calendar() {
                     </div>
                     <div className="mt-1">{event.title}</div>
                   </div>
+                  <button
+                    onClick={(e) => handleDeleteClick(event, e)}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity absolute top-1 right-1 p-1 hover:bg-red-600 rounded"
+                    title="Deletar"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
                 </div>
               );
             })}
@@ -418,7 +473,7 @@ export default function Calendar() {
                 return (
                   <div
                     key={event.id}
-                    className="rounded-lg text-white flex overflow-hidden"
+                    className="rounded-lg text-white flex overflow-hidden group relative"
                     style={{ backgroundColor: category?.color + '40' }}
                   >
                     <div
@@ -440,9 +495,20 @@ export default function Calendar() {
                             </div>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <div className="font-semibold">{event.startTime}</div>
-                          {event.endTime && <div className="text-sm opacity-80">até {event.endTime}</div>}
+                        <div className="text-right flex items-center gap-2">
+                          <div>
+                            <div className="font-semibold">{event.startTime}</div>
+                            {event.endTime && <div className="text-sm opacity-80">até {event.endTime}</div>}
+                          </div>
+                          <button
+                            onClick={(e) => handleDeleteClick(event, e)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-2 hover:bg-red-600 rounded-lg"
+                            title="Deletar evento"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
                         </div>
                       </div>
                       {event.description && (
@@ -645,6 +711,14 @@ export default function Calendar() {
         onEventCreated={handleEventCreated}
         calendars={calendars}
         categories={categories}
+      />
+
+      {/* Modal de Confirmação de Exclusão */}
+      <ConfirmDeleteModal
+        isOpen={isDeleteModalOpen}
+        event={eventToDelete}
+        onConfirm={handleConfirmDelete}
+        onCancel={handleCancelDelete}
       />
     </div>
   );
