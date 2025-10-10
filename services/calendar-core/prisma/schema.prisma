@@ -1,0 +1,169 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String
+  avatarUrl    String?  @map("avatar_url")
+  timezone     String   @default("America/Sao_Paulo")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  calendars Calendar[]
+  reports   Report[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model Calendar {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  name             String
+  email            String?
+  color            String // HEX color (#350545)
+  type             String // 'professional' | 'personal'
+  googleCalendarId String?  @map("google_calendar_id")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categories Category[]
+  events     Event[]
+
+  @@index([userId])
+  @@index([googleCalendarId])
+  @@map("calendars")
+}
+
+model Category {
+  id         String   @id @default(uuid())
+  calendarId String   @map("calendar_id")
+  name       String
+  icon       String? // Emoji (🏃, 💼)
+  color      String // HEX color
+  type       String? // 'health', 'work', 'leisure', etc
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  calendar     Calendar      @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  events       Event[]
+  monthlyGoals MonthlyGoal[]
+
+  @@index([calendarId])
+  @@map("categories")
+}
+
+model Event {
+  id                     String    @id @default(uuid())
+  calendarId             String    @map("calendar_id")
+  categoryId             String?   @map("category_id")
+  title                  String
+  description            String?
+  startTime              String    @map("start_time") // TIME stored as string (HH:mm)
+  endTime                String?   @map("end_time")
+  startDate              DateTime? @map("start_date") @db.Date
+  endDate                DateTime? @map("end_date") @db.Date
+  // Recorrência
+  isRecurring            Boolean   @default(false) @map("is_recurring")
+  recurrenceFrequency    String?   @map("recurrence_frequency") // 'daily', 'weekly', 'monthly', 'yearly'
+  recurrenceInterval     Int?      @default(1) @map("recurrence_interval")
+  recurrenceDaysOfWeek   Int[]     @map("recurrence_days_of_week") // [0,1,2,3,4,5,6]
+  recurrenceDayOfMonth   Int?      @map("recurrence_day_of_month")
+  recurrenceWeekOfMonth  Int?      @map("recurrence_week_of_month")
+  recurrenceEndDate      DateTime? @map("recurrence_end_date") @db.Date
+  // Google Calendar
+  googleEventId          String?   @map("google_event_id")
+  isActive               Boolean   @default(true) @map("is_active")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+
+  calendar   Calendar          @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  category   Category?         @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  executions EventExecution[]
+  reminders  EventReminder[]
+
+  @@index([calendarId])
+  @@index([categoryId])
+  @@index([startDate])
+  @@index([googleEventId])
+  @@map("events")
+}
+
+model EventExecution {
+  id            String    @id @default(uuid())
+  eventId       String    @map("event_id")
+  executionDate DateTime  @map("execution_date") @db.Date
+  completed     Boolean   @default(false)
+  completedAt   DateTime? @map("completed_at")
+  notes         String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, executionDate])
+  @@index([eventId])
+  @@index([executionDate])
+  @@index([completed])
+  @@map("event_executions")
+}
+
+model EventReminder {
+  id            String   @id @default(uuid())
+  eventId       String   @map("event_id")
+  minutesBefore Int      @map("minutes_before")
+  method        String // 'email', 'notification', 'sms'
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@map("event_reminders")
+}
+
+model MonthlyGoal {
+  id               String   @id @default(uuid())
+  categoryId       String   @map("category_id")
+  month            DateTime @db.Date // Primeiro dia do mês (2025-10-01)
+  targetExecutions Int      @map("target_executions")
+  description      String?
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, month])
+  @@index([categoryId])
+  @@index([month])
+  @@map("monthly_goals")
+}
+
+model Report {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  month      DateTime @db.Date
+  data       Json // Relatório completo em JSON
+  aiInsights String[] @map("ai_insights")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, month])
+  @@index([userId])
+  @@index([month])
+  @@map("reports")
+}
