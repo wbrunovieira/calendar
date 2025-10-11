@@ -1,36 +1,25 @@
 'use client';
 
-import { useState } from 'react';
-import { calendars } from '@/data/calendars';
 import { Event } from '@/types/calendar';
-import CreateEventModal from './CreateEventModal';
-import EditEventModal from './EditEventModal';
-import ConfirmDeleteModal from './ConfirmDeleteModal';
-import DeleteRecurringEventModal from './DeleteRecurringEventModal';
-import { TimeSlotView } from './TimeSlotView';
 import CalendarSearch from './CalendarSearch';
 import CalendarHeader from './CalendarHeader';
-import MonthView from './MonthView';
+import CalendarGrid from './CalendarGrid';
 import CalendarFooter from './CalendarFooter';
+import CalendarModals from './CalendarModals';
 import FloatingAddButton from './FloatingAddButton';
-import { MONTH_NAMES, DAYS_OF_WEEK_SHORT, DAYS_OF_WEEK_FULL } from '@/constants/calendar';
-import { getDaysForView } from '@/utils/calendar';
 import { useCalendarData } from '@/hooks/useCalendarData';
 import { useCalendarNavigation } from '@/hooks/useCalendarNavigation';
 import { useCalendarSearch } from '@/hooks/useCalendarSearch';
 import { useEventModals } from '@/hooks/useEventModals';
+import { useCalendarSelection } from '@/hooks/useCalendarSelection';
 
 export default function Calendar() {
-  const [selectedCalendars, setSelectedCalendars] = useState<string[]>([
-    'wb-digital-calendar',
-    'bruno-personal-calendar',
-  ]);
-
   // Custom hooks
   const { events, categories, loading, refetch } = useCalendarData();
-
   const { currentDate, viewMode, setViewMode, previousPeriod, nextPeriod, goToToday, navigateToDate } =
     useCalendarNavigation();
+  const { selectedCalendars, toggleCalendar } = useCalendarSelection();
+  const modals = useEventModals({ onEventChange: refetch });
 
   const handleSearchResultNavigate = (event: Event) => {
     const eventDate = new Date(event.startDate);
@@ -42,20 +31,6 @@ export default function Calendar() {
     categories,
     onResultClick: handleSearchResultNavigate,
   });
-
-  const modals = useEventModals({
-    onEventChange: refetch,
-  });
-
-  const toggleCalendar = (calendarId: string) => {
-    setSelectedCalendars(prev => {
-      if (prev.includes(calendarId)) {
-        return prev.filter(id => id !== calendarId);
-      } else {
-        return [...prev, calendarId];
-      }
-    });
-  };
 
   if (loading) {
     return (
@@ -96,74 +71,42 @@ export default function Calendar() {
         />
 
         {/* Calendar Grid */}
-        <div className="p-2 md:p-3" style={{ backgroundColor: '#350545' }}>
-          {viewMode === 'month' ? (
-            <MonthView
-              currentDate={currentDate}
-              events={events}
-              categories={categories}
-              selectedCalendars={selectedCalendars}
-              onTimeSlotClick={modals.handleTimeSlotClick}
-              onEditClick={modals.handleEditClick}
-              onDeleteClick={modals.handleDeleteClick}
-            />
-          ) : (
-            <TimeSlotView
-              days={getDaysForView(viewMode, currentDate)}
-              events={events}
-              categories={categories}
-              selectedCalendars={selectedCalendars}
-              onEditClick={modals.handleEditClick}
-              onDeleteClick={modals.handleDeleteClick}
-              onEventUpdate={refetch}
-              onTimeSlotClick={modals.handleTimeSlotClick}
-              daysOfWeek={viewMode === 'week' ? [...DAYS_OF_WEEK_SHORT] : undefined}
-              daysOfWeekFull={[...DAYS_OF_WEEK_FULL]}
-              monthNames={[...MONTH_NAMES]}
-            />
-          )}
-        </div>
+        <CalendarGrid
+          viewMode={viewMode}
+          currentDate={currentDate}
+          events={events}
+          categories={categories}
+          selectedCalendars={selectedCalendars}
+          onTimeSlotClick={modals.handleTimeSlotClick}
+          onEditClick={modals.handleEditClick}
+          onDeleteClick={modals.handleDeleteClick}
+          onEventUpdate={refetch}
+        />
 
         {/* Calendar Footer */}
         <CalendarFooter selectedCalendars={selectedCalendars} onToggleCalendar={toggleCalendar} />
       </div>
 
-      {/* Modal de Criar Evento */}
-      <CreateEventModal
-        isOpen={modals.isModalOpen}
-        onClose={modals.closeCreateModal}
+      {/* Modals */}
+      <CalendarModals
+        isCreateModalOpen={modals.isModalOpen}
+        onCloseCreateModal={modals.closeCreateModal}
         onEventCreated={modals.handleEventCreated}
-        calendars={calendars}
         categories={categories}
-        initialDate={modals.modalInitialDate}
-        initialTime={modals.modalInitialTime}
+        modalInitialDate={modals.modalInitialDate}
+        modalInitialTime={modals.modalInitialTime}
         preservedFormData={modals.preservedFormData || undefined}
-      />
-
-      {/* Modal de Editar Evento */}
-      <EditEventModal
-        isOpen={modals.isEditModalOpen}
-        onClose={modals.closeEditModal}
+        isEditModalOpen={modals.isEditModalOpen}
+        onCloseEditModal={modals.closeEditModal}
         onEventUpdated={modals.handleEventUpdated}
-        event={modals.eventToEdit}
-        calendars={calendars}
-        categories={categories}
-      />
-
-      {/* Modal de Confirmação de Exclusão */}
-      <ConfirmDeleteModal
-        isOpen={modals.isDeleteModalOpen}
-        event={modals.eventToDelete}
-        onConfirm={modals.handleConfirmDelete}
-        onCancel={modals.handleCancelDelete}
-      />
-
-      {/* Modal de Deletar Evento Recorrente */}
-      <DeleteRecurringEventModal
-        isOpen={modals.showDeleteRecurringModal}
-        onClose={modals.handleRecurringDeleteClose}
-        onSelect={modals.handleRecurringDeleteSelect}
-        eventTitle={modals.eventToEdit?.title || ''}
+        eventToEdit={modals.eventToEdit}
+        isDeleteModalOpen={modals.isDeleteModalOpen}
+        eventToDelete={modals.eventToDelete}
+        onConfirmDelete={modals.handleConfirmDelete}
+        onCancelDelete={modals.handleCancelDelete}
+        showDeleteRecurringModal={modals.showDeleteRecurringModal}
+        onRecurringDeleteClose={modals.handleRecurringDeleteClose}
+        onRecurringDeleteSelect={modals.handleRecurringDeleteSelect}
       />
     </div>
   );
