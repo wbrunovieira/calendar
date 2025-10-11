@@ -51,7 +51,7 @@ export function TimeSlotView({
     newEndTime?: string;
   } | null>(null);
 
-  const handleEventUpdate = async (eventId: string, newDate: string, newTime?: string, newEndTime?: string, recurringAction?: RecurringEventAction, originalDate?: string) => {
+  const handleEventUpdate = useCallback(async (eventId: string, newDate: string, newTime?: string, newEndTime?: string, recurringAction?: RecurringEventAction, originalDate?: string) => {
     try {
       const event = events.find(e => e.id === eventId);
       if (!event) return;
@@ -80,11 +80,12 @@ export function TimeSlotView({
         baseEventId = eventId.replace(datePattern, '');
       }
 
-      const updatePayload: any = {
+      const updatePayload: Record<string, unknown> = {
         startDate: newDate,
-        ...(newTime && { startTime: newTime }),
-        ...(newEndTime && { endTime: newEndTime }),
       };
+
+      if (newTime) updatePayload.startTime = newTime;
+      if (newEndTime) updatePayload.endTime = newEndTime;
 
       // Add recurring action scope if provided
       if (recurringAction) {
@@ -101,11 +102,11 @@ export function TimeSlotView({
       if (onEventUpdate) {
         onEventUpdate();
       }
-    } catch (error) {
+    } catch {
       // Clear drag context even on error
       setDragContext(null);
     }
-  };
+  }, [events, dragContext, onEventUpdate]);
 
   const handleRecurringActionSelect = async (action: RecurringEventAction) => {
     setShowRecurringActionModal(false);
@@ -231,7 +232,7 @@ export function TimeSlotView({
       if (onEventUpdate) {
         onEventUpdate();
       }
-    } catch (error) {
+    } catch {
       // Error handling for execution toggle
     }
   };
@@ -517,12 +518,11 @@ export function TimeSlotView({
 
                       eventHeight = (durationMinutes / 60) * 96; // 96px per hour
                     }
-                  } catch (error) {
+                  } catch {
                     // Error parsing time for event
                   }
 
                   const textSize = days.length === 7 ? 'text-sm' : days.length <= 3 ? 'text-base' : 'text-lg';
-                  const iconSize = days.length === 7 ? 'text-lg' : days.length <= 3 ? 'text-xl' : 'text-2xl';
                   const padding = days.length === 7 ? 'px-2 py-2' : days.length <= 3 ? 'px-3 py-2' : 'px-4 py-3';
 
                   // Get position info for overlapping events

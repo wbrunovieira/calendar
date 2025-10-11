@@ -27,7 +27,7 @@ export default function Calendar() {
   const [modalInitialTime, setModalInitialTime] = useState<string>('');
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [eventToDelete, setEventToDelete] = useState<Event | null>(null);
-  const [preservedFormData, setPreservedFormData] = useState<any>(null);
+  const [preservedFormData, setPreservedFormData] = useState<Record<string, unknown> | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Event[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -58,7 +58,7 @@ export default function Calendar() {
       ]);
       setEvents(fetchedEvents);
       setCategories(fetchedCategories);
-    } catch (error) {
+    } catch {
       // Error fetching data
     } finally {
       setLoading(false);
@@ -116,7 +116,7 @@ export default function Calendar() {
         results.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
         setSearchResults(results);
         setShowSearchResults(true);
-      } catch (error) {
+      } catch {
         // Error searching events
       } finally {
         setIsSearching(false);
@@ -127,7 +127,7 @@ export default function Calendar() {
     return () => clearTimeout(debounceTimer);
   }, [searchQuery]);
 
-  const handleEventCreated = (preservedData?: any) => {
+  const handleEventCreated = (preservedData?: Record<string, unknown>) => {
     if (preservedData) {
       setPreservedFormData(preservedData);
     } else {
@@ -185,7 +185,7 @@ export default function Calendar() {
       setEventToDelete(null);
       setDeleteOccurrenceDate('');
       fetchData();
-    } catch (error) {
+    } catch {
       alert('Erro ao deletar evento. Tente novamente.');
     }
   };
@@ -204,7 +204,7 @@ export default function Calendar() {
       setIsDeleteModalOpen(false);
       setEventToDelete(null);
       fetchData();
-    } catch (error) {
+    } catch {
       alert('Erro ao deletar evento. Tente novamente.');
     }
   };
@@ -879,7 +879,7 @@ export default function Calendar() {
         categories={categories}
         initialDate={modalInitialDate}
         initialTime={modalInitialTime}
-        preservedFormData={preservedFormData}
+        preservedFormData={preservedFormData || undefined}
       />
 
       {/* Modal de Editar Evento */}

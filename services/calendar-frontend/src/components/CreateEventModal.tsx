@@ -7,12 +7,12 @@ import { Category } from '@/types/calendar';
 interface CreateEventModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onEventCreated: (preservedData?: any) => void;
+  onEventCreated: (preservedData?: Record<string, unknown>) => void;
   calendars: Array<{ id: string; name: string; color: string; type: string }>;
   categories: Category[];
   initialDate?: string;
   initialTime?: string;
-  preservedFormData?: any;
+  preservedFormData?: Record<string, unknown>;
 }
 
 export default function CreateEventModal({
@@ -49,7 +49,7 @@ export default function CreateEventModal({
     if (isOpen) {
       // If we have preserved data from "create another", use it
       if (preservedFormData) {
-        setFormData(preservedFormData);
+        setFormData(preservedFormData as typeof formData);
       } else if (initialDate || initialTime) {
         // Calculate end time as start time + 1 hour
         let endTime = '';
@@ -91,28 +91,34 @@ export default function CreateEventModal({
       return;
     }
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       calendarId: formData.calendarId,
-      categoryId: formData.categoryId || undefined,
       title: formData.title,
-      description: formData.description || undefined,
       startTime: formData.startTime,
-      endTime: formData.endTime || undefined,
       startDate: formData.startDate,
-      endDate: formData.endDate || undefined,
       isRecurring: formData.isRecurring,
-      recurrenceFrequency: formData.isRecurring ? formData.recurrenceFrequency : undefined,
-      recurrenceInterval: formData.isRecurring ? formData.recurrenceInterval : undefined,
-      recurrenceDaysOfWeek:
-        formData.isRecurring && formData.recurrenceFrequency === 'weekly'
-          ? formData.recurrenceDaysOfWeek
-          : undefined,
-      recurrenceEndDate: formData.isRecurring && formData.recurrenceEndDate ? formData.recurrenceEndDate : undefined,
     };
+
+    // Only add optional fields if they have values
+    if (formData.categoryId) payload.categoryId = formData.categoryId;
+    if (formData.description) payload.description = formData.description;
+    if (formData.endTime) payload.endTime = formData.endTime;
+    if (formData.endDate) payload.endDate = formData.endDate;
+
+    if (formData.isRecurring) {
+      payload.recurrenceFrequency = formData.recurrenceFrequency;
+      payload.recurrenceInterval = formData.recurrenceInterval;
+      if (formData.recurrenceFrequency === 'weekly' && formData.recurrenceDaysOfWeek.length > 0) {
+        payload.recurrenceDaysOfWeek = formData.recurrenceDaysOfWeek;
+      }
+      if (formData.recurrenceEndDate) {
+        payload.recurrenceEndDate = formData.recurrenceEndDate;
+      }
+    }
 
     try {
       setLoading(true);
-      const response = await api.events.create(payload);
+      await api.events.create(payload);
 
       // Calculate new start time (1 hour later)
       let newStartTime = formData.startTime;
@@ -147,7 +153,7 @@ export default function CreateEventModal({
         onEventCreated();
         onClose();
       }
-    } catch (err) {
+    } catch {
       setError('Erro ao criar evento. Tente novamente.');
     } finally {
       setLoading(false);

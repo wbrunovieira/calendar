@@ -103,24 +103,30 @@ export default function EditEventModal({
       return;
     }
 
-    const payload: any = {
+    const payload: Record<string, unknown> = {
       calendarId: formData.calendarId,
-      categoryId: formData.categoryId || undefined,
       title: formData.title,
-      description: formData.description || undefined,
       startTime: formData.startTime,
-      endTime: formData.endTime || undefined,
       startDate: formData.startDate,
-      endDate: formData.endDate || undefined,
       isRecurring: formData.isRecurring,
-      recurrenceFrequency: formData.isRecurring ? formData.recurrenceFrequency : undefined,
-      recurrenceInterval: formData.isRecurring ? formData.recurrenceInterval : undefined,
-      recurrenceDaysOfWeek:
-        formData.isRecurring && formData.recurrenceFrequency === 'weekly'
-          ? formData.recurrenceDaysOfWeek
-          : undefined,
-      recurrenceEndDate: formData.isRecurring && formData.recurrenceEndDate ? formData.recurrenceEndDate : undefined,
     };
+
+    // Only add optional fields if they have values
+    if (formData.categoryId) payload.categoryId = formData.categoryId;
+    if (formData.description) payload.description = formData.description;
+    if (formData.endTime) payload.endTime = formData.endTime;
+    if (formData.endDate) payload.endDate = formData.endDate;
+
+    if (formData.isRecurring) {
+      payload.recurrenceFrequency = formData.recurrenceFrequency;
+      payload.recurrenceInterval = formData.recurrenceInterval;
+      if (formData.recurrenceFrequency === 'weekly' && formData.recurrenceDaysOfWeek.length > 0) {
+        payload.recurrenceDaysOfWeek = formData.recurrenceDaysOfWeek;
+      }
+      if (formData.recurrenceEndDate) {
+        payload.recurrenceEndDate = formData.recurrenceEndDate;
+      }
+    }
 
     // Add recurring action scope if this is a recurring event
     if (event.isRecurring && recurringAction) {
@@ -143,7 +149,7 @@ export default function EditEventModal({
       await api.events.update(eventId, payload);
       onEventUpdated();
       onClose();
-    } catch (err) {
+    } catch {
       setError('Erro ao atualizar evento. Tente novamente.');
     } finally {
       setLoading(false);

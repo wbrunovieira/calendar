@@ -39,7 +39,7 @@ export function useDragAndDrop() {
 
     try {
       await onUpdate(draggedEvent.id, dateString, newTime);
-    } catch (error) {
+    } catch {
       // Error updating event
     }
 

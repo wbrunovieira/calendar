@@ -1,4 +1,4 @@
-import type { Event, Category, Calendar } from '@/types/calendar';
+import type { Event, Category } from '@/types/calendar';
 
 /**
  * API client for calendar backend
@@ -72,12 +72,12 @@ export const api = {
       const query = queryParams.toString();
       return fetchAPI<Event[]>(`/events${query ? `?${query}` : ''}`);
     },
-    create: (data: Omit<Event, 'id' | 'isActive'>) =>
+    create: (data: Record<string, unknown>) =>
       fetchAPI<Event>('/events', {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    update: (id: string, data: Partial<Event>) =>
+    update: (id: string, data: Record<string, unknown>) =>
       fetchAPI<Event>(`/events/${id}`, {
         method: 'PUT',
         body: JSON.stringify(data),
