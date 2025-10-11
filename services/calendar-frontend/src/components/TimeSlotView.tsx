@@ -5,6 +5,19 @@ import { Event, Category } from '@/types/calendar';
 import { calendars } from '@/data/calendars';
 import { useDragAndDrop } from '@/hooks/useDragAndDrop';
 import { api } from '@/lib/api';
+import {
+  PIXELS_PER_HOUR,
+  START_HOUR,
+  MIN_EVENT_HEIGHT,
+  HOURS_ARRAY,
+} from '@/constants/timeSlotView';
+import {
+  timeToPixels,
+  pixelsToTime,
+  calculateEventHeight,
+  calculateTimeFromOffset,
+  extractBaseEventId,
+} from '@/utils/timeCalculations';
 import RecurringEventActionModal, { RecurringEventAction } from './RecurringEventActionModal';
 
 interface TimeSlotViewProps {
@@ -34,7 +47,7 @@ export function TimeSlotView({
   daysOfWeekFull,
   monthNames,
 }: TimeSlotViewProps) {
-  const hours = Array.from({ length: 17 }, (_, i) => i + 6); // 6am to 10pm
+  const hours = HOURS_ARRAY;
   const today = new Date();
   const { handleDragStart, handleDragEnd, handleDragOver, handleDrop } = useDragAndDrop();
   const [resizingEvent, setResizingEvent] = useState<{ id: string; edge: 'top' | 'bottom'; startY: number; originalHeight: number; originalTop: number } | null>(null);
@@ -74,11 +87,7 @@ export function TimeSlotView({
       }
 
       // Extract the base event ID if it's an expanded recurring event
-      let baseEventId = eventId;
-      const datePattern = /-\d{4}-\d{2}-\d{2}$/;
-      if (datePattern.test(eventId)) {
-        baseEventId = eventId.replace(datePattern, '');
-      }
+      const baseEventId = extractBaseEventId(eventId);
 
       const updatePayload: Record<string, unknown> = {
         startDate: newDate,
@@ -154,14 +163,14 @@ export function TimeSlotView({
 
     if (resizingEvent.edge === 'bottom') {
       // Resizing from bottom - change end time
-      const newHeight = Math.max(48, resizingEvent.originalHeight + deltaY); // Minimum 48px (30 minutes)
+      const newHeight = Math.max(MIN_EVENT_HEIGHT, resizingEvent.originalHeight + deltaY);
       eventElement.style.height = `${newHeight}px`;
     } else {
       // Resizing from top - change start time
       const newTop = resizingEvent.originalTop + deltaY;
       const newHeight = resizingEvent.originalHeight - deltaY;
 
-      if (newHeight >= 48) { // Minimum 48px (30 minutes)
+      if (newHeight >= MIN_EVENT_HEIGHT) {
         eventElement.style.top = `${newTop}px`;
         eventElement.style.height = `${newHeight}px`;
       }
@@ -191,17 +200,13 @@ export function TimeSlotView({
     const newTop = parseFloat(eventElement.style.top);
     const newHeight = parseFloat(eventElement.style.height);
 
-    // Convert pixels to time (96px per hour)
-    const startMinutesFromMidnight = (newTop / 96) * 60 + (6 * 60); // 6am offset
-    const durationMinutes = (newHeight / 96) * 60;
+    // Convert pixels to time using utils
+    const newStartTime = pixelsToTime(newTop);
+    const startMinutesFromMidnight = (newTop / PIXELS_PER_HOUR) * 60 + (START_HOUR * 60);
+    const durationMinutes = (newHeight / PIXELS_PER_HOUR) * 60;
     const endMinutesFromMidnight = startMinutesFromMidnight + durationMinutes;
-
-    const startHours = Math.floor(startMinutesFromMidnight / 60);
-    const startMins = Math.round(startMinutesFromMidnight % 60);
     const endHours = Math.floor(endMinutesFromMidnight / 60);
     const endMins = Math.round(endMinutesFromMidnight % 60);
-
-    const newStartTime = `${startHours.toString().padStart(2, '0')}:${startMins.toString().padStart(2, '0')}`;
     const newEndTime = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
 
     const dateString = event.startDate.split('T')[0];
@@ -265,89 +270,6 @@ export function TimeSlotView({
     });
   };
 
-  // Calculate overlap positions for events
-  const calculateEventPositions = (dayEvents: Event[]) => {
-    // Parse event times and calculate positions
-    const eventsWithTimes = dayEvents.map(event => {
-      const startParts = event.startTime.split(':');
-      const startHours = parseInt(startParts[0], 10);
-      const startMinutes = parseInt(startParts[1] || '0', 10);
-      const startTotalMinutes = startHours * 60 + startMinutes;
-
-      let endTotalMinutes = startTotalMinutes + 60; // Default 1 hour
-      if (event.endTime) {
-        const endParts = event.endTime.split(':');
-        const endHours = parseInt(endParts[0], 10);
-        const endMinutes = parseInt(endParts[1] || '0', 10);
-        endTotalMinutes = endHours * 60 + endMinutes;
-      }
-
-      return {
-        event,
-        start: startTotalMinutes,
-        end: endTotalMinutes,
-        column: 0,
-        totalColumns: 1,
-      };
-    });
-
-    // Sort by start time, then by duration (longer first)
-    eventsWithTimes.sort((a, b) => {
-      if (a.start !== b.start) return a.start - b.start;
-      return (b.end - b.start) - (a.end - a.start);
-    });
-
-    // Detect overlaps and assign columns
-    const columns: Array<Array<typeof eventsWithTimes[0]>> = [];
-
-    eventsWithTimes.forEach(eventTime => {
-      // Find a column where this event doesn't overlap with any existing event
-      let placedInColumn = false;
-
-      for (let i = 0; i < columns.length; i++) {
-        const column = columns[i];
-        const hasOverlap = column.some(existing =>
-          !(eventTime.end <= existing.start || eventTime.start >= existing.end)
-        );
-
-        if (!hasOverlap) {
-          column.push(eventTime);
-          eventTime.column = i;
-          placedInColumn = true;
-          break;
-        }
-      }
-
-      // If no suitable column found, create a new one
-      if (!placedInColumn) {
-        columns.push([eventTime]);
-        eventTime.column = columns.length - 1;
-      }
-    });
-
-    // Calculate total columns for each event group
-    eventsWithTimes.forEach(eventTime => {
-      // Find all events that overlap with this one
-      const overlappingEvents = eventsWithTimes.filter(other =>
-        !(eventTime.end <= other.start || eventTime.start >= other.end)
-      );
-
-      // Find the maximum column number among overlapping events
-      const maxColumn = Math.max(...overlappingEvents.map(e => e.column));
-      eventTime.totalColumns = maxColumn + 1;
-    });
-
-    // Create a map for quick lookup
-    const positionMap = new Map();
-    eventsWithTimes.forEach(eventTime => {
-      positionMap.set(eventTime.event.id, {
-        column: eventTime.column,
-        totalColumns: eventTime.totalColumns,
-      });
-    });
-
-    return positionMap;
-  };
 
   return (
     <>
@@ -390,7 +312,54 @@ export function TimeSlotView({
         {days.map((date, dayIndex) => {
           const isToday = date.toDateString() === today.toDateString();
           const dayEvents = getEventsForDate(date);
-          const eventPositions = calculateEventPositions(dayEvents);
+
+          // Calculate event positions for this day
+          const eventsWithTimes = dayEvents.map(event => {
+            const startTotalMinutes = event.startTime.split(':').map(Number).reduce((h, m) => h * 60 + m);
+            const endTotalMinutes = event.endTime ? event.endTime.split(':').map(Number).reduce((h, m) => h * 60 + m) : startTotalMinutes + 60;
+            return {
+              event,
+              start: startTotalMinutes,
+              end: endTotalMinutes,
+              column: 0,
+              totalColumns: 1,
+            };
+          });
+
+          eventsWithTimes.sort((a, b) => a.start !== b.start ? a.start - b.start : (b.end - b.start) - (a.end - a.start));
+
+          const columns: Array<Array<typeof eventsWithTimes[0]>> = [];
+          eventsWithTimes.forEach(eventTime => {
+            let placedInColumn = false;
+            for (let i = 0; i < columns.length; i++) {
+              const column = columns[i];
+              const hasOverlap = column.some(existing => !(eventTime.end <= existing.start || eventTime.start >= existing.end));
+              if (!hasOverlap) {
+                column.push(eventTime);
+                eventTime.column = i;
+                placedInColumn = true;
+                break;
+              }
+            }
+            if (!placedInColumn) {
+              columns.push([eventTime]);
+              eventTime.column = columns.length - 1;
+            }
+          });
+
+          eventsWithTimes.forEach(eventTime => {
+            const overlappingEvents = eventsWithTimes.filter(other => !(eventTime.end <= other.start || eventTime.start >= other.end));
+            const maxColumn = Math.max(...overlappingEvents.map(e => e.column));
+            eventTime.totalColumns = maxColumn + 1;
+          });
+
+          const eventPositions = new Map();
+          eventsWithTimes.forEach(eventTime => {
+            eventPositions.set(eventTime.event.id, {
+              column: eventTime.column,
+              totalColumns: eventTime.totalColumns,
+            });
+          });
 
           return (
             <div key={dayIndex} className="flex-1 min-w-0 flex flex-col">
@@ -423,17 +392,7 @@ export function TimeSlotView({
                   const rect = container.getBoundingClientRect();
                   const offsetY = e.clientY - rect.top;
 
-                  // Calculate which hour slot we're in (96px per hour)
-                  const totalHours = offsetY / 96;
-                  const hour = Math.floor(totalHours) + 6; // Add 6 because we start at 6am
-                  const fractionalHour = totalHours - Math.floor(totalHours);
-                  const minutes = Math.floor(fractionalHour * 60);
-
-                  // Ensure hour is within bounds (6am-10pm)
-                  const clampedHour = Math.max(6, Math.min(22, hour));
-                  const clampedMinutes = Math.max(0, Math.min(59, minutes));
-
-                  const time = `${clampedHour.toString().padStart(2, '0')}:${clampedMinutes.toString().padStart(2, '0')}`;
+                  const time = calculateTimeFromOffset(offsetY);
                   handleDrop(date, time)(e, handleEventUpdate);
                 }}
                 onClick={(e) => {
@@ -453,16 +412,7 @@ export function TimeSlotView({
                     const rect = container.getBoundingClientRect();
                     const offsetY = e.clientY - rect.top;
 
-                    // Calculate time based on click position
-                    const totalHours = offsetY / 96;
-                    const hour = Math.floor(totalHours) + 6;
-                    const fractionalHour = totalHours - Math.floor(totalHours);
-                    const minutes = Math.floor(fractionalHour * 60);
-
-                    const clampedHour = Math.max(6, Math.min(22, hour));
-                    const clampedMinutes = Math.max(0, Math.min(59, minutes));
-
-                    const time = `${clampedHour.toString().padStart(2, '0')}:${clampedMinutes.toString().padStart(2, '0')}`;
+                    const time = calculateTimeFromOffset(offsetY);
                     const dateString = date.toISOString().split('T')[0];
 
                     if (onTimeSlotClick) {
@@ -495,28 +445,15 @@ export function TimeSlotView({
                   );
                   const isCompleted = execution?.completed || false;
 
-                  // Calculate position and height based on time (96px per hour)
+                  // Calculate position and height based on time
                   let topPosition = 0;
-                  let eventHeight = 96; // Default 1 hour
+                  let eventHeight = PIXELS_PER_HOUR; // Default 1 hour
 
                   try {
-                    // Parse start time
-                    const startParts = event.startTime.split(':');
-                    const startHours = parseInt(startParts[0], 10);
-                    const startMinutes = parseInt(startParts[1] || '0', 10);
-                    topPosition = ((startHours - 6) * 96) + (startMinutes / 60 * 96);
+                    topPosition = timeToPixels(event.startTime);
 
-                    // Parse end time if exists
                     if (event.endTime) {
-                      const endParts = event.endTime.split(':');
-                      const endHours = parseInt(endParts[0], 10);
-                      const endMinutes = parseInt(endParts[1] || '0', 10);
-
-                      const startTotalMinutes = startHours * 60 + startMinutes;
-                      const endTotalMinutes = endHours * 60 + endMinutes;
-                      const durationMinutes = endTotalMinutes - startTotalMinutes;
-
-                      eventHeight = (durationMinutes / 60) * 96; // 96px per hour
+                      eventHeight = calculateEventHeight(event.startTime, event.endTime);
                     }
                   } catch {
                     // Error parsing time for event
