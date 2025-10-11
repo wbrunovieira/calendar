@@ -12,6 +12,7 @@ import CalendarSearch from './CalendarSearch';
 import CalendarHeader from './CalendarHeader';
 import MonthView from './MonthView';
 import CalendarFooter from './CalendarFooter';
+import FloatingAddButton from './FloatingAddButton';
 import { MONTH_NAMES, DAYS_OF_WEEK_SHORT, DAYS_OF_WEEK_FULL } from '@/constants/calendar';
 import { getWeekDays, getNextNDays } from '@/utils/calendar';
 import { useCalendarData } from '@/hooks/useCalendarData';
@@ -81,15 +82,7 @@ export default function Calendar() {
   return (
     <div className="w-full max-w-[1800px] mx-auto p-2 md:p-4 min-h-screen flex items-start justify-center py-4 relative">
       {/* Floating Add Button */}
-      <button
-        onClick={modals.openCreateModal}
-        className="fixed top-6 right-6 w-14 h-14 bg-gradient-to-br from-[#792990] to-[#350545] hover:from-[#8b2fa0] hover:to-[#461556] text-white rounded-full shadow-2xl hover:shadow-[#792990]/50 transition-all duration-300 flex items-center justify-center z-50 hover:scale-110"
-        title="Criar novo evento"
-      >
-        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-        </svg>
-      </button>
+      <FloatingAddButton onClick={modals.openCreateModal} />
 
       {/* Search Bar */}
       <CalendarSearch
