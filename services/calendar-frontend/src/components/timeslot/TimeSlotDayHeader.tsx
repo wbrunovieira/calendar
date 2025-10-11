@@ -28,7 +28,7 @@ export default function TimeSlotDayHeader({
     >
       {/* Day of week name */}
       {daysCount === 7 && daysOfWeek && <div className="text-xs opacity-70 text-white">{daysOfWeek[date.getDay()]}</div>}
-      {daysCount <= 3 && <div className="text-xs opacity-70 text-white">{daysOfWeekFull[date.getDay()]}</div>}
+      {daysCount > 1 && daysCount <= 3 && <div className="text-xs opacity-70 text-white">{daysOfWeekFull[date.getDay()]}</div>}
       {daysCount === 1 && <div className="text-sm opacity-70 text-white">{daysOfWeekFull[date.getDay()]}</div>}
 
       {/* Day number */}
