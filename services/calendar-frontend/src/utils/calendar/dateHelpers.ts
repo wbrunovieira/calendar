@@ -121,3 +121,31 @@ export function getDaysForView(
       return [];
   }
 }
+
+/**
+ * Get header title text based on view mode
+ */
+export function getHeaderTitleText(
+  viewMode: 'month' | 'week' | '3days' | 'day',
+  currentDate: Date,
+  monthNames: readonly string[]
+): string {
+  switch (viewMode) {
+    case 'month':
+      return monthNames[currentDate.getMonth()];
+    case 'week': {
+      const weekDays = getWeekDays(currentDate);
+      const firstDay = weekDays[0];
+      const lastDay = weekDays[6];
+      const sameMonth = firstDay.getMonth() === lastDay.getMonth();
+      return sameMonth
+        ? monthNames[firstDay.getMonth()]
+        : `${monthNames[firstDay.getMonth()]} / ${monthNames[lastDay.getMonth()]}`;
+    }
+    case '3days':
+    case 'day':
+      return `${currentDate.getDate()} ${monthNames[currentDate.getMonth()]}`;
+    default:
+      return '';
+  }
+}
