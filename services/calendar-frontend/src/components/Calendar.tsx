@@ -297,6 +297,23 @@ export default function Calendar() {
     setCurrentDate(new Date());
   };
 
+  // Calculate week number in the year (ISO 8601)
+  const getWeekNumber = (date: Date): number => {
+    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    const dayNum = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  };
+
+  // Calculate week number in the month
+  const getWeekOfMonth = (date: Date): number => {
+    const firstDay = new Date(date.getFullYear(), date.getMonth(), 1);
+    const firstDayOfWeek = firstDay.getDay();
+    const offsetDate = date.getDate() + firstDayOfWeek - 1;
+    return Math.ceil(offsetDate / 7);
+  };
+
   const getWeekDays = () => {
     const startOfWeek = new Date(currentDate);
     const day = startOfWeek.getDay();
@@ -667,30 +684,63 @@ export default function Calendar() {
               </svg>
             </button>
 
-            <div className="text-center flex items-center gap-2">
-              <h2 className="text-lg md:text-xl font-bold">
-                {viewMode === 'month' && monthNames[currentDate.getMonth()]}
-                {viewMode === 'week' && (() => {
-                  const weekDays = getWeekDays();
-                  const firstDay = weekDays[0];
-                  const lastDay = weekDays[6];
-                  const sameMonth = firstDay.getMonth() === lastDay.getMonth();
-                  return sameMonth
-                    ? `${monthNames[firstDay.getMonth()]} - Semana de ${firstDay.getDate()}`
-                    : `${monthNames[firstDay.getMonth()]}/${monthNames[lastDay.getMonth()]} - Semana de ${firstDay.getDate()}`;
-                })()}
-                {viewMode === '3days' && `${currentDate.getDate()} ${monthNames[currentDate.getMonth()]}`}
-                {viewMode === 'day' && `${currentDate.getDate()} ${monthNames[currentDate.getMonth()]}`}
-              </h2>
-              <span className="text-sm md:text-base opacity-90">
-                {currentDate.getFullYear()}
-              </span>
-              <button
-                onClick={goToToday}
-                className="ml-2 px-2 py-1 bg-white/20 hover:bg-white/30 rounded text-xs font-medium"
-              >
-                Hoje
-              </button>
+            <div className="text-center">
+              {viewMode === 'week' ? (
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center justify-center gap-3">
+                    <h2 className="text-lg md:text-xl font-bold">
+                      {(() => {
+                        const weekDays = getWeekDays();
+                        const firstDay = weekDays[0];
+                        const lastDay = weekDays[6];
+                        const sameMonth = firstDay.getMonth() === lastDay.getMonth();
+                        return sameMonth
+                          ? `${monthNames[firstDay.getMonth()]}`
+                          : `${monthNames[firstDay.getMonth()]} / ${monthNames[lastDay.getMonth()]}`;
+                      })()}
+                    </h2>
+                    <span className="text-sm md:text-base opacity-90">
+                      {currentDate.getFullYear()}
+                    </span>
+                    <button
+                      onClick={goToToday}
+                      className="px-2 py-1 bg-white/20 hover:bg-white/30 rounded text-xs font-medium"
+                    >
+                      Hoje
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-center gap-2 text-xs md:text-sm opacity-80">
+                    <span className="bg-white/10 px-2 py-0.5 rounded">
+                      Semana iniciando dia {getWeekDays()[0].getDate()}
+                    </span>
+                    <span className="text-white/40">•</span>
+                    <span className="bg-white/10 px-2 py-0.5 rounded">
+                      {getWeekOfMonth(getWeekDays()[0])}ª semana do mês
+                    </span>
+                    <span className="text-white/40">•</span>
+                    <span className="bg-white/10 px-2 py-0.5 rounded">
+                      Semana {getWeekNumber(getWeekDays()[0])} do ano
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg md:text-xl font-bold">
+                    {viewMode === 'month' && monthNames[currentDate.getMonth()]}
+                    {viewMode === '3days' && `${currentDate.getDate()} ${monthNames[currentDate.getMonth()]}`}
+                    {viewMode === 'day' && `${currentDate.getDate()} ${monthNames[currentDate.getMonth()]}`}
+                  </h2>
+                  <span className="text-sm md:text-base opacity-90">
+                    {currentDate.getFullYear()}
+                  </span>
+                  <button
+                    onClick={goToToday}
+                    className="ml-2 px-2 py-1 bg-white/20 hover:bg-white/30 rounded text-xs font-medium"
+                  >
+                    Hoje
+                  </button>
+                </div>
+              )}
             </div>
 
             <button
