@@ -59,17 +59,6 @@ export function TimeSlotView({
       // Determine the original date - use dragContext, passed originalDate, or event's startDate
       const eventOriginalDate = originalDate || dragContext?.originalDate || event.startDate.split('T')[0];
 
-      console.log('handleEventUpdate called:', {
-        eventId,
-        eventTitle: event.title,
-        isRecurring: event.isRecurring,
-        originalDate: eventOriginalDate,
-        dragContextDate: dragContext?.originalDate,
-        newDate,
-        newTime,
-        recurringAction
-      });
-
       // If event is recurring and no action specified, show the modal
       if (event.isRecurring && !recurringAction) {
         setPendingUpdate({
@@ -113,7 +102,6 @@ export function TimeSlotView({
         onEventUpdate();
       }
     } catch (error) {
-      console.error('Error updating event:', error);
       // Clear drag context even on error
       setDragContext(null);
     }
@@ -244,7 +232,7 @@ export function TimeSlotView({
         onEventUpdate();
       }
     } catch (error) {
-      console.error('Error toggling execution:', error);
+      // Error handling for execution toggle
     }
   };
 
@@ -530,7 +518,7 @@ export function TimeSlotView({
                       eventHeight = (durationMinutes / 60) * 96; // 96px per hour
                     }
                   } catch (error) {
-                    console.error('Error parsing time for event:', event, error);
+                    // Error parsing time for event
                   }
 
                   const textSize = days.length === 7 ? 'text-sm' : days.length <= 3 ? 'text-base' : 'text-lg';

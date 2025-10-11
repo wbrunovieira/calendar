@@ -59,7 +59,7 @@ export default function Calendar() {
       setEvents(fetchedEvents);
       setCategories(fetchedCategories);
     } catch (error) {
-      console.error('Erro ao buscar dados:', error);
+      // Error fetching data
     } finally {
       setLoading(false);
     }
@@ -117,7 +117,7 @@ export default function Calendar() {
         setSearchResults(results);
         setShowSearchResults(true);
       } catch (error) {
-        console.error('Erro ao buscar eventos:', error);
+        // Error searching events
       } finally {
         setIsSearching(false);
       }
@@ -186,7 +186,6 @@ export default function Calendar() {
       setDeleteOccurrenceDate('');
       fetchData();
     } catch (error) {
-      console.error('Erro ao deletar evento recorrente:', error);
       alert('Erro ao deletar evento. Tente novamente.');
     }
   };
@@ -206,7 +205,6 @@ export default function Calendar() {
       setEventToDelete(null);
       fetchData();
     } catch (error) {
-      console.error('Erro ao deletar evento:', error);
       alert('Erro ao deletar evento. Tente novamente.');
     }
   };

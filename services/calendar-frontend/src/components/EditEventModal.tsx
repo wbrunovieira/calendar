@@ -140,14 +140,10 @@ export default function EditEventModal({
         eventId = event.id.replace(datePattern, '');
       }
 
-      console.log('Original event.id:', event.id);
-      console.log('Extracted eventId for API:', eventId);
-
       await api.events.update(eventId, payload);
       onEventUpdated();
       onClose();
     } catch (err) {
-      console.error('Erro ao atualizar evento:', err);
       setError('Erro ao atualizar evento. Tente novamente.');
     } finally {
       setLoading(false);

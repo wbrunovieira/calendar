@@ -25,8 +25,6 @@ export default function CreateEventModal({
   initialTime,
   preservedFormData,
 }: CreateEventModalProps) {
-  console.log('CreateEventModal renderizado - isOpen:', isOpen);
-
   const [formData, setFormData] = useState({
     calendarId: '',
     categoryId: '',
@@ -48,19 +46,11 @@ export default function CreateEventModal({
 
   // Update form data when modal opens with initial values or preserved data
   useEffect(() => {
-    console.log('=== useEffect EXECUTADO ===');
-    console.log('isOpen:', isOpen);
-    console.log('preservedFormData:', preservedFormData);
-    console.log('initialDate:', initialDate);
-    console.log('initialTime:', initialTime);
-
     if (isOpen) {
       // If we have preserved data from "create another", use it
       if (preservedFormData) {
-        console.log('USANDO DADOS PRESERVADOS do parent');
         setFormData(preservedFormData);
       } else if (initialDate || initialTime) {
-        console.log('USANDO valores iniciais (data/hora do clique)');
         // Calculate end time as start time + 1 hour
         let endTime = '';
         if (initialTime) {
@@ -70,14 +60,12 @@ export default function CreateEventModal({
         }
 
         setFormData(prev => {
-          console.log('prev formData:', prev);
           const newData = {
             ...prev,
             startDate: initialDate || prev.startDate,
             startTime: initialTime || prev.startTime,
             endTime: endTime || prev.endTime,
           };
-          console.log('new formData:', newData);
           return newData;
         });
       }
@@ -98,11 +86,7 @@ export default function CreateEventModal({
     e.preventDefault();
     setError('');
 
-    console.log('=== SUBMIT INICIADO ===');
-    console.log('Form Data:', formData);
-
     if (!formData.calendarId || !formData.title || !formData.startTime || !formData.startDate) {
-      console.log('ERRO: Campos obrigatórios não preenchidos');
       setError('Por favor, preencha os campos obrigatórios');
       return;
     }
@@ -126,16 +110,9 @@ export default function CreateEventModal({
       recurrenceEndDate: formData.isRecurring && formData.recurrenceEndDate ? formData.recurrenceEndDate : undefined,
     };
 
-    console.log('Payload que será enviado:', JSON.stringify(payload, null, 2));
-
     try {
       setLoading(true);
-      console.log('Iniciando chamada API...');
-
       const response = await api.events.create(payload);
-
-      console.log('Resposta da API:', response);
-      console.log('Evento criado com sucesso!');
 
       // Calculate new start time (1 hour later)
       let newStartTime = formData.startTime;
@@ -163,28 +140,17 @@ export default function CreateEventModal({
         endTime: newEndTime,
       };
 
-      console.log('=== DADOS PRESERVADOS PARA PRÓXIMO EVENTO ===');
-      console.log('createAnother:', createAnother);
-      console.log('updatedFormData:', updatedFormData);
-
       // Pass preserved data to parent if "create another" is checked
       if (createAnother) {
-        console.log('Enviando dados preservados para o parent');
         onEventCreated(updatedFormData);
       } else {
-        console.log('Fechando modal normalmente');
         onEventCreated();
         onClose();
       }
     } catch (err) {
-      console.error('=== ERRO AO CRIAR EVENTO ===');
-      console.error('Erro completo:', err);
-      console.error('Tipo do erro:', typeof err);
-      console.error('Erro stringified:', JSON.stringify(err, null, 2));
       setError('Erro ao criar evento. Tente novamente.');
     } finally {
       setLoading(false);
-      console.log('=== SUBMIT FINALIZADO ===');
     }
   };
 
@@ -202,21 +168,14 @@ export default function CreateEventModal({
     : [];
 
   if (!isOpen) {
-    console.log('Modal não está aberto, não renderizando');
     return null;
   }
-
-  console.log('Modal está aberto, renderizando...');
-  console.log('Calendars recebidos:', calendars);
-  console.log('Categories recebidas:', categories);
 
   return (
     <div
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
       onClick={(e) => {
-        console.log('Clique no backdrop detectado');
         if (e.target === e.currentTarget) {
-          console.log('Fechando modal via backdrop');
           onClose();
         }
       }}
@@ -458,10 +417,7 @@ export default function CreateEventModal({
           <div className="flex gap-3 pt-2">
             <button
               type="button"
-              onClick={() => {
-                console.log('Botão Cancelar clicado');
-                onClose();
-              }}
+              onClick={onClose}
               className="flex-1 px-6 py-3 bg-white/10 text-white rounded-lg font-semibold hover:bg-white/20 transition-colors border border-white/20"
             >
               Cancelar
@@ -469,10 +425,6 @@ export default function CreateEventModal({
             <button
               type="submit"
               disabled={loading}
-              onClick={(e) => {
-                console.log('Botão Criar Evento clicado!');
-                console.log('Event:', e);
-              }}
               className="flex-1 px-6 py-3 bg-gradient-to-r from-[#792990] to-[#350545] text-white rounded-lg font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
             >
               {loading ? 'Criando...' : 'Criar Evento'}
