@@ -56,58 +56,18 @@ export default function Calendar() {
     });
   };
 
-  const renderWeekView = () => {
-    const weekDays = getWeekDays(currentDate);
-    return (
-      <TimeSlotView
-        days={weekDays}
-        events={events}
-        categories={categories}
-        selectedCalendars={selectedCalendars}
-        onEditClick={modals.handleEditClick}
-        onDeleteClick={modals.handleDeleteClick}
-        onEventUpdate={refetch}
-        onTimeSlotClick={modals.handleTimeSlotClick}
-        daysOfWeek={[...DAYS_OF_WEEK_SHORT]}
-        daysOfWeekFull={[...DAYS_OF_WEEK_FULL]}
-        monthNames={[...MONTH_NAMES]}
-      />
-    );
-  };
-
-  const render3DaysView = () => {
-    const days = getNextNDays(currentDate, 3);
-    return (
-      <TimeSlotView
-        days={days}
-        events={events}
-        categories={categories}
-        selectedCalendars={selectedCalendars}
-        onEditClick={modals.handleEditClick}
-        onDeleteClick={modals.handleDeleteClick}
-        onEventUpdate={refetch}
-        onTimeSlotClick={modals.handleTimeSlotClick}
-        daysOfWeekFull={[...DAYS_OF_WEEK_FULL]}
-        monthNames={[...MONTH_NAMES]}
-      />
-    );
-  };
-
-  const renderDayView = () => {
-    return (
-      <TimeSlotView
-        days={[currentDate]}
-        events={events}
-        categories={categories}
-        selectedCalendars={selectedCalendars}
-        onEditClick={modals.handleEditClick}
-        onDeleteClick={modals.handleDeleteClick}
-        onEventUpdate={refetch}
-        onTimeSlotClick={modals.handleTimeSlotClick}
-        daysOfWeekFull={[...DAYS_OF_WEEK_FULL]}
-        monthNames={[...MONTH_NAMES]}
-      />
-    );
+  // Helper function to get days based on view mode
+  const getDaysForView = () => {
+    switch (viewMode) {
+      case 'week':
+        return getWeekDays(currentDate);
+      case '3days':
+        return getNextNDays(currentDate, 3);
+      case 'day':
+        return [currentDate];
+      default:
+        return [];
+    }
   };
 
   if (loading) {
@@ -158,7 +118,7 @@ export default function Calendar() {
 
         {/* Calendar Grid */}
         <div className="p-2 md:p-3" style={{ backgroundColor: '#350545' }}>
-          {viewMode === 'month' && (
+          {viewMode === 'month' ? (
             <MonthView
               currentDate={currentDate}
               events={events}
@@ -168,13 +128,21 @@ export default function Calendar() {
               onEditClick={modals.handleEditClick}
               onDeleteClick={modals.handleDeleteClick}
             />
+          ) : (
+            <TimeSlotView
+              days={getDaysForView()}
+              events={events}
+              categories={categories}
+              selectedCalendars={selectedCalendars}
+              onEditClick={modals.handleEditClick}
+              onDeleteClick={modals.handleDeleteClick}
+              onEventUpdate={refetch}
+              onTimeSlotClick={modals.handleTimeSlotClick}
+              daysOfWeek={viewMode === 'week' ? [...DAYS_OF_WEEK_SHORT] : undefined}
+              daysOfWeekFull={[...DAYS_OF_WEEK_FULL]}
+              monthNames={[...MONTH_NAMES]}
+            />
           )}
-
-          {viewMode === 'week' && renderWeekView()}
-
-          {viewMode === '3days' && render3DaysView()}
-
-          {viewMode === 'day' && renderDayView()}
         </div>
 
         {/* Calendar Footer */}
