@@ -470,14 +470,14 @@ export default function Calendar() {
 
   if (loading) {
     return (
-      <div className="w-full max-w-6xl mx-auto p-2 md:p-4 h-full flex items-center justify-center">
+      <div className="w-full max-w-[1800px] mx-auto p-2 md:p-4 h-full flex items-center justify-center">
         <div className="text-white text-xl">Carregando...</div>
       </div>
     );
   }
 
   return (
-    <div className="w-full max-w-6xl mx-auto p-2 md:p-4 min-h-screen flex items-start justify-center py-4 relative">
+    <div className="w-full max-w-[1800px] mx-auto p-2 md:p-4 min-h-screen flex items-start justify-center py-4 relative">
       {/* Floating Add Button */}
       <button
         onClick={() => setIsModalOpen(true)}
@@ -622,7 +622,15 @@ export default function Calendar() {
             <div className="text-center flex items-center gap-2">
               <h2 className="text-lg md:text-xl font-bold">
                 {viewMode === 'month' && monthNames[currentDate.getMonth()]}
-                {viewMode === 'week' && `Semana de ${currentDate.getDate()}`}
+                {viewMode === 'week' && (() => {
+                  const weekDays = getWeekDays();
+                  const firstDay = weekDays[0];
+                  const lastDay = weekDays[6];
+                  const sameMonth = firstDay.getMonth() === lastDay.getMonth();
+                  return sameMonth
+                    ? `${monthNames[firstDay.getMonth()]} - Semana de ${firstDay.getDate()}`
+                    : `${monthNames[firstDay.getMonth()]}/${monthNames[lastDay.getMonth()]} - Semana de ${firstDay.getDate()}`;
+                })()}
                 {viewMode === '3days' && `${currentDate.getDate()} ${monthNames[currentDate.getMonth()]}`}
                 {viewMode === 'day' && `${currentDate.getDate()} ${monthNames[currentDate.getMonth()]}`}
               </h2>

@@ -165,14 +165,14 @@ export function TimeSlotView({
 
     if (resizingEvent.edge === 'bottom') {
       // Resizing from bottom - change end time
-      const newHeight = Math.max(32, resizingEvent.originalHeight + deltaY); // Minimum 32px (30 minutes)
+      const newHeight = Math.max(48, resizingEvent.originalHeight + deltaY); // Minimum 48px (30 minutes)
       eventElement.style.height = `${newHeight}px`;
     } else {
       // Resizing from top - change start time
       const newTop = resizingEvent.originalTop + deltaY;
       const newHeight = resizingEvent.originalHeight - deltaY;
 
-      if (newHeight >= 32) { // Minimum 32px (30 minutes)
+      if (newHeight >= 48) { // Minimum 48px (30 minutes)
         eventElement.style.top = `${newTop}px`;
         eventElement.style.height = `${newHeight}px`;
       }
@@ -202,9 +202,9 @@ export function TimeSlotView({
     const newTop = parseFloat(eventElement.style.top);
     const newHeight = parseFloat(eventElement.style.height);
 
-    // Convert pixels to time
-    const startMinutesFromMidnight = (newTop / 64) * 60 + (6 * 60); // 6am offset
-    const durationMinutes = (newHeight / 64) * 60;
+    // Convert pixels to time (96px per hour)
+    const startMinutesFromMidnight = (newTop / 96) * 60 + (6 * 60); // 6am offset
+    const durationMinutes = (newHeight / 96) * 60;
     const endMinutesFromMidnight = startMinutesFromMidnight + durationMinutes;
 
     const startHours = Math.floor(startMinutesFromMidnight / 60);
@@ -369,9 +369,9 @@ export function TimeSlotView({
         eventTitle={pendingUpdate?.eventTitle || ''}
       />
       <div className="p-4 w-full">
-        <div className="flex gap-2 max-h-[600px] overflow-y-auto w-full">
+        <div className="flex gap-3 max-h-[900px] overflow-y-auto w-full">
         {/* Time column */}
-        <div className="w-16 flex-shrink-0">
+        <div className="w-20 flex-shrink-0">
           {/* Spacer to align with day headers */}
           <div className="text-center mb-2 pb-2 border-b border-white/10 opacity-0">
             {days.length === 7 && daysOfWeek && (
@@ -391,7 +391,7 @@ export function TimeSlotView({
             )}
           </div>
           {hours.map((hour) => (
-            <div key={hour} className="h-16 flex items-start justify-end pr-2 pt-1 text-xs text-white/70">
+            <div key={hour} className="h-24 flex items-start justify-end pr-2 pt-1 text-xs text-white/70">
               {hour.toString().padStart(2, '0')}:00
             </div>
           ))}
@@ -426,7 +426,7 @@ export function TimeSlotView({
 
               {/* Time grid for this day */}
               <div
-                className="flex-1 relative border-l border-white/10 min-h-[1088px] transition-colors hover:bg-white/5 cursor-pointer"
+                className="flex-1 relative border-l border-white/10 min-h-[1632px] transition-colors hover:bg-white/5 cursor-pointer"
                 onDragOver={handleDragOver}
                 onDrop={(e) => {
                   // Calculate exact time and date based on mouse position
@@ -434,8 +434,8 @@ export function TimeSlotView({
                   const rect = container.getBoundingClientRect();
                   const offsetY = e.clientY - rect.top;
 
-                  // Calculate which hour slot we're in (64px per hour)
-                  const totalHours = offsetY / 64;
+                  // Calculate which hour slot we're in (96px per hour)
+                  const totalHours = offsetY / 96;
                   const hour = Math.floor(totalHours) + 6; // Add 6 because we start at 6am
                   const fractionalHour = totalHours - Math.floor(totalHours);
                   const minutes = Math.floor(fractionalHour * 60);
@@ -465,7 +465,7 @@ export function TimeSlotView({
                     const offsetY = e.clientY - rect.top;
 
                     // Calculate time based on click position
-                    const totalHours = offsetY / 64;
+                    const totalHours = offsetY / 96;
                     const hour = Math.floor(totalHours) + 6;
                     const fractionalHour = totalHours - Math.floor(totalHours);
                     const minutes = Math.floor(fractionalHour * 60);
@@ -486,10 +486,10 @@ export function TimeSlotView({
                 {hours.map((hour) => (
                   <div
                     key={hour}
-                    className="h-16 border-b border-white/5 relative"
+                    className="h-24 border-b border-white/5 relative"
                   >
-                    <div className="h-8 border-b border-dashed border-white/5" />
-                    <div className="h-8" />
+                    <div className="h-12 border-b border-dashed border-white/5" />
+                    <div className="h-12" />
                   </div>
                 ))}
 
@@ -506,16 +506,16 @@ export function TimeSlotView({
                   );
                   const isCompleted = execution?.completed || false;
 
-                  // Calculate position and height based on time
+                  // Calculate position and height based on time (96px per hour)
                   let topPosition = 0;
-                  let eventHeight = 64; // Default 1 hour
+                  let eventHeight = 96; // Default 1 hour
 
                   try {
                     // Parse start time
                     const startParts = event.startTime.split(':');
                     const startHours = parseInt(startParts[0], 10);
                     const startMinutes = parseInt(startParts[1] || '0', 10);
-                    topPosition = ((startHours - 6) * 64) + (startMinutes / 60 * 64);
+                    topPosition = ((startHours - 6) * 96) + (startMinutes / 60 * 96);
 
                     // Parse end time if exists
                     if (event.endTime) {
@@ -527,15 +527,15 @@ export function TimeSlotView({
                       const endTotalMinutes = endHours * 60 + endMinutes;
                       const durationMinutes = endTotalMinutes - startTotalMinutes;
 
-                      eventHeight = (durationMinutes / 60) * 64; // 64px per hour
+                      eventHeight = (durationMinutes / 60) * 96; // 96px per hour
                     }
                   } catch (error) {
                     console.error('Error parsing time for event:', event, error);
                   }
 
-                  const textSize = days.length === 7 ? 'text-[8px]' : days.length <= 3 ? 'text-[10px]' : 'text-xs';
-                  const iconSize = days.length === 7 ? 'text-[8px]' : days.length <= 3 ? 'text-xs' : 'text-sm';
-                  const padding = days.length === 7 ? 'px-0.5 py-0.5' : days.length <= 3 ? 'px-2 py-1' : 'px-2 py-1';
+                  const textSize = days.length === 7 ? 'text-sm' : days.length <= 3 ? 'text-base' : 'text-lg';
+                  const iconSize = days.length === 7 ? 'text-lg' : days.length <= 3 ? 'text-xl' : 'text-2xl';
+                  const padding = days.length === 7 ? 'px-2 py-2' : days.length <= 3 ? 'px-3 py-2' : 'px-4 py-3';
 
                   // Get position info for overlapping events
                   const positionInfo = eventPositions.get(event.id) || { column: 0, totalColumns: 1 };
@@ -567,13 +567,26 @@ export function TimeSlotView({
                           : category?.color + '90',
                         top: `${topPosition}px`,
                         height: `${eventHeight}px`,
-                        minHeight: '48px',
+                        minHeight: days.length === 7 ? '96px' : days.length <= 3 ? '110px' : '120px',
                         left: `${leftPercentage}%`,
                         width: `${widthPercentage}%`,
                         zIndex: 10 + positionInfo.column,
                         cursor: resizingEvent?.id === event.id ? 'ns-resize' : 'move',
                       }}
                     >
+                      {/* Calendar icon badge - positioned at top left */}
+                      <div
+                        className="absolute -top-2 -left-2 rounded-full flex items-center justify-center shadow-lg z-30"
+                        style={{
+                          backgroundColor: calendar?.color,
+                          width: days.length === 7 ? '24px' : days.length <= 3 ? '28px' : '32px',
+                          height: days.length === 7 ? '24px' : days.length <= 3 ? '28px' : '32px',
+                          fontSize: days.length === 7 ? '12px' : days.length <= 3 ? '14px' : '16px'
+                        }}
+                      >
+                        {calendarIcon}
+                      </div>
+
                       {/* Top resize handle */}
                       <div
                         className="absolute top-0 left-0 right-0 h-3 cursor-ns-resize group/handle z-20"
@@ -585,30 +598,38 @@ export function TimeSlotView({
 
                       {/* Event content */}
                       <div className="flex flex-1 overflow-hidden cursor-move relative">
-                        <div
-                          className={`${padding} flex items-center justify-center ${iconSize}`}
-                          style={{ backgroundColor: calendar?.color }}
-                        >
-                          {calendarIcon}
-                        </div>
-                        <div className={`flex-1 ${padding} flex flex-col justify-center ${isCompleted ? 'relative' : ''}`}>
-                          <div className={`font-semibold ${textSize} flex items-center gap-1 ${isCompleted ? 'line-through opacity-70' : ''}`}>
-                            <span>{category?.icon}</span>
-                            <span className="truncate">{event.startTime}</span>
-                            {event.endTime && <span className="truncate">- {event.endTime}</span>}
+                        <div className={`flex-1 ${padding} flex flex-col ${isCompleted ? 'relative' : ''}`}>
+                          {/* Category Icon - centered, prominent */}
+                          <div className="text-center pb-1">
+                            <span className={`${days.length === 7 ? 'text-2xl' : days.length <= 3 ? 'text-3xl' : 'text-4xl'}`}>
+                              {category?.icon}
+                            </span>
                           </div>
-                          <div className={`${textSize} truncate ${isCompleted ? 'line-through opacity-70' : ''}`}>{event.title}</div>
+
+                          {/* Time - single line, bold */}
+                          <div className={`font-bold ${days.length === 7 ? 'text-xs' : textSize} text-center leading-none whitespace-nowrap pb-2 ${isCompleted ? 'line-through opacity-70' : ''}`}>
+                            {event.startTime}{event.endTime && ` - ${event.endTime}`}
+                          </div>
+
+                          {/* Subtle divider */}
+                          <div className="w-full h-px bg-white/20 mb-2"></div>
+
+                          {/* Event Title - more space */}
+                          <div className={`${textSize} leading-relaxed ${isCompleted ? 'line-through opacity-70' : ''}`}>
+                            {event.title}
+                          </div>
+
                           {isCompleted && (
                             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                              <div className="bg-green-500 rounded-full p-1 shadow-lg animate-pulse">
-                                <svg className={days.length === 7 ? "w-4 h-4" : "w-6 h-6"} fill="white" viewBox="0 0 24 24">
+                              <div className="bg-green-500 rounded-full p-2 shadow-lg animate-pulse">
+                                <svg className={days.length === 7 ? "w-6 h-6" : "w-8 h-8"} fill="white" viewBox="0 0 24 24">
                                   <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
                                 </svg>
                               </div>
                             </div>
                           )}
                         </div>
-                        <div className="flex gap-1">
+                        <div className="flex gap-1 pr-1">
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -618,11 +639,11 @@ export function TimeSlotView({
                             title={isCompleted ? "Marcar como não realizado" : "Marcar como realizado"}
                           >
                             {isCompleted ? (
-                              <svg className={days.length === 7 ? "w-3 h-3" : "w-4 h-4"} fill="currentColor" viewBox="0 0 24 24">
+                              <svg className={days.length === 7 ? "w-5 h-5" : "w-6 h-6"} fill="currentColor" viewBox="0 0 24 24">
                                 <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
                               </svg>
                             ) : (
-                              <svg className={days.length === 7 ? "w-3 h-3" : "w-4 h-4"} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <svg className={days.length === 7 ? "w-5 h-5" : "w-6 h-6"} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <rect x="3" y="3" width="18" height="18" rx="2" strokeWidth={2} />
                               </svg>
                             )}
@@ -633,7 +654,7 @@ export function TimeSlotView({
                               className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-blue-600 rounded self-start"
                               title="Editar"
                             >
-                              <svg className={days.length === 7 ? "w-3 h-3" : "w-4 h-4"} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <svg className={days.length === 7 ? "w-5 h-5" : "w-6 h-6"} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                               </svg>
                             </button>
@@ -643,7 +664,7 @@ export function TimeSlotView({
                             className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-600 rounded self-start"
                             title="Deletar"
                           >
-                            <svg className={days.length === 7 ? "w-3 h-3" : "w-4 h-4"} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className={days.length === 7 ? "w-5 h-5" : "w-6 h-6"} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                             </svg>
                           </button>
@@ -665,7 +686,7 @@ export function TimeSlotView({
                 {/* Show message if no events for this day */}
                 {dayEvents.length === 0 && (
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <div className={`text-white/30 ${days.length === 7 ? 'text-[8px]' : 'text-xs'}`}>
+                    <div className={`text-white/30 ${days.length === 7 ? 'text-sm' : 'text-base'}`}>
                       {days.length === 7 ? 'Vazio' : 'Sem eventos'}
                     </div>
                   </div>
