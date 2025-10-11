@@ -4,6 +4,7 @@ import { Category } from '@/types/calendar';
 import { useEventForm } from '@/hooks/useEventForm';
 import ModalContainer from './ModalContainer';
 import ModalHeader from './ModalHeader';
+import ModalFooter from './ModalFooter';
 import EventFormFields from './EventFormFields';
 import FormCheckbox from './FormCheckbox';
 import RecurrenceFields from './RecurrenceFields';
@@ -111,22 +112,13 @@ export default function CreateEventModal({
         </div>
 
         {/* Botões */}
-        <div className="flex gap-3 pt-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-1 px-6 py-3 bg-white/10 text-white rounded-lg font-semibold hover:bg-white/20 transition-colors border border-white/20"
-          >
-            Cancelar
-          </button>
-          <button
-            type="submit"
-            disabled={loading}
-            className="flex-1 px-6 py-3 bg-gradient-to-r from-[#792990] to-[#350545] text-white rounded-lg font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
-          >
-            {loading ? 'Criando...' : 'Criar Evento'}
-          </button>
-        </div>
+        <ModalFooter
+          onCancel={onClose}
+          submitText="Criar Evento"
+          submitType="submit"
+          loading={loading}
+          loadingText="Criando..."
+        />
       </form>
     </ModalContainer>
   );

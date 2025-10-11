@@ -5,11 +5,12 @@
 
 interface ModalFooterProps {
   onCancel: () => void;
-  onSubmit: () => void;
+  onSubmit?: () => void;
   submitText?: string;
   cancelText?: string;
   loading?: boolean;
   loadingText?: string;
+  submitType?: 'button' | 'submit';
 }
 
 export default function ModalFooter({
@@ -19,6 +20,7 @@ export default function ModalFooter({
   cancelText = 'Cancelar',
   loading = false,
   loadingText = 'Carregando...',
+  submitType = 'button',
 }: ModalFooterProps) {
   return (
     <div className="flex gap-3 pt-2">
@@ -30,8 +32,8 @@ export default function ModalFooter({
         {cancelText}
       </button>
       <button
-        type="button"
-        onClick={onSubmit}
+        type={submitType}
+        onClick={submitType === 'button' ? onSubmit : undefined}
         disabled={loading}
         className="flex-1 px-6 py-3 bg-gradient-to-r from-[#792990] to-[#350545] text-white rounded-lg font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
       >
