@@ -7,6 +7,7 @@ import { Event, Category } from '@/types/calendar';
 import CreateEventModal from './CreateEventModal';
 import EditEventModal from './EditEventModal';
 import ConfirmDeleteModal from './ConfirmDeleteModal';
+import DeleteRecurringEventModal, { DeleteRecurringEventAction } from './DeleteRecurringEventModal';
 import { TimeSlotView } from './TimeSlotView';
 
 type ViewMode = 'month' | 'week' | '3days' | 'day';
@@ -33,6 +34,8 @@ export default function Calendar() {
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [eventToEdit, setEventToEdit] = useState<Event | null>(null);
+  const [showDeleteRecurringModal, setShowDeleteRecurringModal] = useState(false);
+  const [deleteOccurrenceDate, setDeleteOccurrenceDate] = useState<string>('');
 
   // Buscar eventos e categorias do backend
   const fetchData = async () => {
@@ -141,12 +144,57 @@ export default function Calendar() {
 
   const handleDeleteClick = (event: Event, e: React.MouseEvent) => {
     e.stopPropagation();
+
+    // Extract occurrence date if it's an expanded recurring event
+    let occurrenceDate = event.startDate.split('T')[0];
+    if (event.occurrenceDate) {
+      occurrenceDate = event.occurrenceDate;
+    }
+
     setEventToDelete(event);
-    setIsDeleteModalOpen(true);
+    setDeleteOccurrenceDate(occurrenceDate);
+
+    // If event is recurring, show the recurring delete modal
+    if (event.isRecurring) {
+      setShowDeleteRecurringModal(true);
+    } else {
+      setIsDeleteModalOpen(true);
+    }
   };
 
   const handleEventUpdated = () => {
     fetchData();
+  };
+
+  const handleRecurringDeleteSelect = async (action: DeleteRecurringEventAction) => {
+    setShowDeleteRecurringModal(false);
+
+    if (!eventToDelete) return;
+
+    try {
+      // Extract the base event ID if it's an expanded recurring event
+      let baseEventId = eventToDelete.id;
+      const datePattern = /-\d{4}-\d{2}-\d{2}$/;
+      if (datePattern.test(eventToDelete.id)) {
+        baseEventId = eventToDelete.id.replace(datePattern, '');
+      }
+
+      // Call delete API with the scope
+      await api.events.deleteRecurring(baseEventId, action, deleteOccurrenceDate);
+
+      setEventToDelete(null);
+      setDeleteOccurrenceDate('');
+      fetchData();
+    } catch (error) {
+      console.error('Erro ao deletar evento recorrente:', error);
+      alert('Erro ao deletar evento. Tente novamente.');
+    }
+  };
+
+  const handleRecurringDeleteClose = () => {
+    setShowDeleteRecurringModal(false);
+    setEventToDelete(null);
+    setDeleteOccurrenceDate('');
   };
 
   const handleConfirmDelete = async () => {
@@ -802,6 +850,14 @@ export default function Calendar() {
         event={eventToDelete}
         onConfirm={handleConfirmDelete}
         onCancel={handleCancelDelete}
+      />
+
+      {/* Modal de Deletar Evento Recorrente */}
+      <DeleteRecurringEventModal
+        isOpen={showDeleteRecurringModal}
+        onClose={handleRecurringDeleteClose}
+        onSelect={handleRecurringDeleteSelect}
+        eventTitle={eventToDelete?.title || ''}
       />
     </div>
   );

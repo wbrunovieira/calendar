@@ -105,6 +105,10 @@ export const api = {
       fetchAPI<void>(`/events/${id}`, {
         method: 'DELETE',
       }),
+    deleteRecurring: (id: string, scope: 'this' | 'future' | 'all', occurrenceDate: string) =>
+      fetchAPI<void>(`/events/${id}/recurring?scope=${scope}&occurrenceDate=${occurrenceDate}`, {
+        method: 'DELETE',
+      }),
     toggleExecution: (eventId: string, executionDate: string, completed: boolean, notes?: string) =>
       fetchAPI<EventExecution>('/events/executions/toggle', {
         method: 'POST',

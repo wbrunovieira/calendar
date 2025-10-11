@@ -135,6 +135,16 @@ export class EventsController {
     await this.deleteEventUseCase.execute(id);
   }
 
+  @Delete(':id/recurring')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteRecurring(
+    @Param('id') id: string,
+    @Query('scope') scope: 'this' | 'future' | 'all',
+    @Query('occurrenceDate') occurrenceDate: string,
+  ) {
+    await this.deleteEventUseCase.executeRecurring(id, scope, occurrenceDate);
+  }
+
   @Post('executions/toggle')
   @HttpCode(HttpStatus.OK)
   async toggleExecution(@Body() dto: ToggleEventExecutionDto) {
