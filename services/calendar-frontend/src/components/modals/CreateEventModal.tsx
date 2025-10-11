@@ -1,74 +1,62 @@
 'use client';
 
-import { Event, Category } from '@/types/calendar';
-import { useEditEventForm } from '@/hooks/useEditEventForm';
-import ModalContainer from './ModalContainer';
-import ModalHeader from './ModalHeader';
-import ModalFooter from './ModalFooter';
-import EventFormFields from './EventFormFields';
-import FormCheckbox from './FormCheckbox';
-import RecurrenceFields from './RecurrenceFields';
-import RecurringEventActionModal from './RecurringEventActionModal';
+import { Category } from '@/types/calendar';
+import { useEventForm } from '@/hooks/useEventForm';
+import ModalContainer from '../ui/modal/ModalContainer';
+import ModalHeader from '../ui/modal/ModalHeader';
+import ModalFooter from '../ui/modal/ModalFooter';
+import EventFormFields from '../forms/EventFormFields';
+import FormCheckbox from '../forms/FormCheckbox';
+import RecurrenceFields from '../forms/RecurrenceFields';
 
-interface EditEventModalProps {
+interface CreateEventModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onEventUpdated: () => void;
-  event: Event | null;
+  onEventCreated: (preservedData?: Record<string, unknown>) => void;
   calendars: Array<{ id: string; name: string; color: string; type: string }>;
   categories: Category[];
+  initialDate?: string;
+  initialTime?: string;
+  preservedFormData?: Record<string, unknown>;
 }
 
-export default function EditEventModal({
+export default function CreateEventModal({
   isOpen,
   onClose,
-  onEventUpdated,
-  event,
+  onEventCreated,
   calendars,
   categories,
-}: EditEventModalProps) {
+  initialDate,
+  initialTime,
+  preservedFormData,
+}: CreateEventModalProps) {
   const {
     formData,
     setFormData,
     loading,
     error,
-    showRecurringActionModal,
+    createAnother,
+    setCreateAnother,
     calendarOptions,
     categoryOptions,
     handleCalendarChange,
     handleStartTimeChange,
     toggleDayOfWeek,
     handleSubmit,
-    handleRecurringActionSelect,
-    handleRecurringActionClose,
-  } = useEditEventForm({
+  } = useEventForm({
     isOpen,
-    event,
+    initialDate,
+    initialTime,
+    preservedFormData,
     calendars,
     categories,
-    onEventUpdated,
+    onEventCreated,
     onClose,
   });
 
-  if (!isOpen || !event) {
-    return null;
-  }
-
-  // If this is a recurring event and we haven't selected an action yet, show the action modal
-  if (event.isRecurring && showRecurringActionModal) {
-    return (
-      <RecurringEventActionModal
-        isOpen={showRecurringActionModal}
-        onClose={handleRecurringActionClose}
-        onSelect={handleRecurringActionSelect}
-        eventTitle={event.title}
-      />
-    );
-  }
-
   return (
     <ModalContainer isOpen={isOpen} onClose={onClose}>
-      <ModalHeader title="Editar Evento" onClose={onClose} />
+      <ModalHeader title="Criar Novo Evento" onClose={onClose} />
 
       <form onSubmit={handleSubmit} className="p-6 space-y-4">
         {error && (
@@ -113,13 +101,23 @@ export default function EditEventModal({
           />
         )}
 
+        {/* Checkbox Criar Outro Similar */}
+        <div className="border-t border-white/10 pt-4">
+          <FormCheckbox
+            label="Criar outro evento similar (mantém calendário, categoria e horários)"
+            checked={createAnother}
+            onChange={setCreateAnother}
+            colorClass="text-green-600"
+          />
+        </div>
+
         {/* Botões */}
         <ModalFooter
           onCancel={onClose}
-          submitText="Salvar Alterações"
+          submitText="Criar Evento"
           submitType="submit"
           loading={loading}
-          loadingText="Salvando..."
+          loadingText="Criando..."
         />
       </form>
     </ModalContainer>

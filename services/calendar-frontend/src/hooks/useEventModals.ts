@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { api } from '@/lib/api';
 import { Event } from '@/types/calendar';
-import { DeleteRecurringEventAction } from '@/components/DeleteRecurringEventModal';
+import { DeleteRecurringEventAction } from '@/components/modals/DeleteRecurringEventModal';
 
 interface UseEventModalsProps {
   onEventChange: () => void;

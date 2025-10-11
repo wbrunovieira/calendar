@@ -5,8 +5,8 @@
 
 import { Event, Category } from '@/types/calendar';
 import { useMonthCalendar } from '@/hooks/useMonthCalendar';
-import DaysOfWeekHeader from './DaysOfWeekHeader';
-import MonthDayCell from './MonthDayCell';
+import DaysOfWeekHeader from '../month/DaysOfWeekHeader';
+import MonthDayCell from '../month/MonthDayCell';
 
 interface MonthViewProps {
   currentDate: Date;

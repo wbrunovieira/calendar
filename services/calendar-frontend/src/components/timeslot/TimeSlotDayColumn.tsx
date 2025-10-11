@@ -6,10 +6,10 @@
 import { Event, Category } from '@/types/calendar';
 import { calendars } from '@/data/calendars';
 import { calculateTimeFromOffset } from '@/utils/timeCalculations';
-import TimeSlotDayHeader from './TimeSlotDayHeader';
-import TimeSlotGrid from './TimeSlotGrid';
-import TimeSlotEventCard from './TimeSlotEventCard';
-import EmptyDayMessage from './EmptyDayMessage';
+import TimeSlotDayHeader from '../timeslot/TimeSlotDayHeader';
+import TimeSlotGrid from '../timeslot/TimeSlotGrid';
+import TimeSlotEventCard from '../timeslot/TimeSlotEventCard';
+import EmptyDayMessage from '../ui/common/EmptyDayMessage';
 
 interface TimeSlotDayColumnProps {
   date: Date;

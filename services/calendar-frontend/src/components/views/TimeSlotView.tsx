@@ -7,9 +7,9 @@ import { useEventResize } from '@/hooks/useEventResize';
 import { useEventExecution } from '@/hooks/useEventExecution';
 import { HOURS_ARRAY } from '@/constants/timeSlotView';
 import { calculateTimeFromOffset } from '@/utils/timeCalculations';
-import RecurringEventActionModal from './RecurringEventActionModal';
-import TimeColumn from './TimeColumn';
-import TimeSlotDayColumn from './TimeSlotDayColumn';
+import RecurringEventActionModal from '../modals/RecurringEventActionModal';
+import TimeColumn from '../timeslot/TimeColumn';
+import TimeSlotDayColumn from '../timeslot/TimeSlotDayColumn';
 
 interface TimeSlotViewProps {
   days: Date[];

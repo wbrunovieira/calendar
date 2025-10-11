@@ -7,7 +7,7 @@ import { useState, useCallback } from 'react';
 import { Event } from '@/types/calendar';
 import { api } from '@/lib/api';
 import { extractBaseEventId } from '@/utils/timeCalculations';
-import { RecurringEventAction } from '@/components/RecurringEventActionModal';
+import { RecurringEventAction } from '@/components/modals/RecurringEventActionModal';
 
 interface UseTimeSlotEventUpdateProps {
   events: Event[];

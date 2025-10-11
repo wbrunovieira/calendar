@@ -4,8 +4,8 @@
  */
 
 import { Event, Category } from '@/types/calendar';
-import { TimeSlotView } from './TimeSlotView';
-import MonthView from './MonthView';
+import { TimeSlotView } from '../views/TimeSlotView';
+import MonthView from '../views/MonthView';
 import { MONTH_NAMES, DAYS_OF_WEEK_SHORT, DAYS_OF_WEEK_FULL } from '@/constants/calendar';
 import { getDaysForView } from '@/utils/calendar';
 

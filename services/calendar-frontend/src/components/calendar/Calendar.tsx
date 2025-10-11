@@ -1,11 +1,11 @@
 'use client';
 
 import { Event } from '@/types/calendar';
-import CalendarSearch from './CalendarSearch';
-import CalendarCard from './CalendarCard';
-import CalendarModals from './CalendarModals';
-import CalendarLoading from './CalendarLoading';
-import FloatingAddButton from './FloatingAddButton';
+import CalendarSearch from '../calendar/CalendarSearch';
+import CalendarCard from '../calendar/CalendarCard';
+import CalendarModals from '../calendar/CalendarModals';
+import CalendarLoading from '../calendar/CalendarLoading';
+import FloatingAddButton from '../ui/common/FloatingAddButton';
 import { useCalendarData } from '@/hooks/useCalendarData';
 import { useCalendarNavigation } from '@/hooks/useCalendarNavigation';
 import { useCalendarSearch } from '@/hooks/useCalendarSearch';

@@ -3,9 +3,9 @@
  * Form fields for recurring event configuration
  */
 
-import FormSelect from './FormSelect';
-import FormInput from './FormInput';
-import DaysOfWeekSelector from './DaysOfWeekSelector';
+import FormSelect from '../forms/FormSelect';
+import FormInput from '../forms/FormInput';
+import DaysOfWeekSelector from '../ui/common/DaysOfWeekSelector';
 
 type RecurrenceFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly';
 

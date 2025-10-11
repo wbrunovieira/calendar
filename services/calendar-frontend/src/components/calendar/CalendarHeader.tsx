@@ -3,9 +3,9 @@
  * Displays navigation controls, current date/period, and view mode selector
  */
 
-import NavigationButton from './NavigationButton';
-import HeaderTitle from './HeaderTitle';
-import ViewModeSelector from './ViewModeSelector';
+import NavigationButton from '../ui/common/NavigationButton';
+import HeaderTitle from '../ui/common/HeaderTitle';
+import ViewModeSelector from '../ui/common/ViewModeSelector';
 
 type ViewMode = 'month' | 'week' | '3days' | 'day';
 

@@ -4,9 +4,9 @@
  */
 
 import { Event, Category } from '@/types/calendar';
-import CalendarHeader from './CalendarHeader';
-import CalendarGrid from './CalendarGrid';
-import CalendarFooter from './CalendarFooter';
+import CalendarHeader from '../calendar/CalendarHeader';
+import CalendarGrid from '../calendar/CalendarGrid';
+import CalendarFooter from '../calendar/CalendarFooter';
 
 type ViewMode = 'month' | 'week' | '3days' | 'day';
 

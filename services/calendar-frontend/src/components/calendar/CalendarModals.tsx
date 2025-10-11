@@ -5,10 +5,10 @@
 
 import { calendars } from '@/data/calendars';
 import { Event, Category } from '@/types/calendar';
-import CreateEventModal from './CreateEventModal';
-import EditEventModal from './EditEventModal';
-import ConfirmDeleteModal from './ConfirmDeleteModal';
-import DeleteRecurringEventModal from './DeleteRecurringEventModal';
+import CreateEventModal from '../modals/CreateEventModal';
+import EditEventModal from '../modals/EditEventModal';
+import ConfirmDeleteModal from '../modals/ConfirmDeleteModal';
+import DeleteRecurringEventModal from '../modals/DeleteRecurringEventModal';
 
 interface CalendarModalsProps {
   // Create modal

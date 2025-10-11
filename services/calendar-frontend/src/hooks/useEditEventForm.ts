@@ -8,7 +8,7 @@ import { api } from '@/lib/api';
 import { Event, Category } from '@/types/calendar';
 import { calculateEndTime } from '@/utils/calendar';
 import { buildEventPayload, validateEventForm } from '@/utils/eventHelpers';
-import { RecurringEventAction } from '@/components/RecurringEventActionModal';
+import { RecurringEventAction } from '@/components/modals/RecurringEventActionModal';
 
 interface UseEditEventFormProps {
   isOpen: boolean;

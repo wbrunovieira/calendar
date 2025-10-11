@@ -3,9 +3,9 @@
  * All basic fields for event creation/editing
  */
 
-import FormSelect from './FormSelect';
-import FormInput from './FormInput';
-import FormTextarea from './FormTextarea';
+import FormSelect from '../forms/FormSelect';
+import FormInput from '../forms/FormInput';
+import FormTextarea from '../forms/FormTextarea';
 
 interface EventFormFieldsProps {
   formData: {

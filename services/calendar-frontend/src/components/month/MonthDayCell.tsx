@@ -7,8 +7,8 @@ import { Event, Category } from '@/types/calendar';
 import { calendars } from '@/data/calendars';
 import { DEFAULT_EVENT_TIME } from '@/constants/calendar';
 import { MAX_VISIBLE_EVENTS } from '@/constants/monthView';
-import TimeGridBackground from './TimeGridBackground';
-import MonthEventCard from './MonthEventCard';
+import TimeGridBackground from '../month/TimeGridBackground';
+import MonthEventCard from '../month/MonthEventCard';
 
 interface MonthDayCellProps {
   day: number;

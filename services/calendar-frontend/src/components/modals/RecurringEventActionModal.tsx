@@ -1,8 +1,8 @@
 'use client';
 
-import ModalContainer from './ModalContainer';
-import ModalHeader from './ModalHeader';
-import ActionButton from './ActionButton';
+import ModalContainer from '../ui/modal/ModalContainer';
+import ModalHeader from '../ui/modal/ModalHeader';
+import ActionButton from '../ui/modal/ActionButton';
 
 export type RecurringEventAction = 'this' | 'all' | 'future';
 
