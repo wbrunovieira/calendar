@@ -102,3 +102,22 @@ export function isTomorrow(date: Date): boolean {
 export function formatDateToString(date: Date): string {
   return date.toISOString().split('T')[0];
 }
+
+/**
+ * Get days array based on view mode
+ */
+export function getDaysForView(
+  viewMode: 'month' | 'week' | '3days' | 'day',
+  currentDate: Date
+): Date[] {
+  switch (viewMode) {
+    case 'week':
+      return getWeekDays(currentDate);
+    case '3days':
+      return getNextNDays(currentDate, 3);
+    case 'day':
+      return [currentDate];
+    default:
+      return [];
+  }
+}

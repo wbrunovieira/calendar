@@ -14,7 +14,7 @@ import MonthView from './MonthView';
 import CalendarFooter from './CalendarFooter';
 import FloatingAddButton from './FloatingAddButton';
 import { MONTH_NAMES, DAYS_OF_WEEK_SHORT, DAYS_OF_WEEK_FULL } from '@/constants/calendar';
-import { getWeekDays, getNextNDays } from '@/utils/calendar';
+import { getDaysForView } from '@/utils/calendar';
 import { useCalendarData } from '@/hooks/useCalendarData';
 import { useCalendarNavigation } from '@/hooks/useCalendarNavigation';
 import { useCalendarSearch } from '@/hooks/useCalendarSearch';
@@ -55,20 +55,6 @@ export default function Calendar() {
         return [...prev, calendarId];
       }
     });
-  };
-
-  // Helper function to get days based on view mode
-  const getDaysForView = () => {
-    switch (viewMode) {
-      case 'week':
-        return getWeekDays(currentDate);
-      case '3days':
-        return getNextNDays(currentDate, 3);
-      case 'day':
-        return [currentDate];
-      default:
-        return [];
-    }
   };
 
   if (loading) {
@@ -123,7 +109,7 @@ export default function Calendar() {
             />
           ) : (
             <TimeSlotView
-              days={getDaysForView()}
+              days={getDaysForView(viewMode, currentDate)}
               events={events}
               categories={categories}
               selectedCalendars={selectedCalendars}
