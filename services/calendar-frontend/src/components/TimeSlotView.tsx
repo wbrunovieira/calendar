@@ -19,6 +19,10 @@ import {
   extractBaseEventId,
 } from '@/utils/timeCalculations';
 import RecurringEventActionModal, { RecurringEventAction } from './RecurringEventActionModal';
+import TimeColumn from './TimeColumn';
+import TimeSlotDayHeader from './TimeSlotDayHeader';
+import TimeSlotGrid from './TimeSlotGrid';
+import EmptyDayMessage from './EmptyDayMessage';
 
 interface TimeSlotViewProps {
   days: Date[];
@@ -282,31 +286,7 @@ export function TimeSlotView({
       <div className="p-4 w-full">
         <div className="flex gap-3 max-h-[900px] overflow-y-auto w-full">
         {/* Time column */}
-        <div className="w-20 flex-shrink-0">
-          {/* Spacer to align with day headers */}
-          <div className="text-center mb-2 pb-2 border-b border-white/10 opacity-0">
-            {days.length === 7 && daysOfWeek && (
-              <div className="text-xs opacity-70">X</div>
-            )}
-            {days.length <= 3 && (
-              <div className="text-xs opacity-70">X</div>
-            )}
-            {days.length === 1 && (
-              <div className="text-sm opacity-70">X</div>
-            )}
-            <div className={`font-bold ${days.length === 7 ? 'text-lg' : days.length <= 3 ? 'text-2xl' : 'text-3xl'}`}>
-              00
-            </div>
-            {days.length <= 3 && (
-              <div className="text-xs opacity-70">X</div>
-            )}
-          </div>
-          {hours.map((hour) => (
-            <div key={hour} className="h-24 flex items-start justify-end pr-2 pt-1 text-xs text-white/70">
-              {hour.toString().padStart(2, '0')}:00
-            </div>
-          ))}
-        </div>
+        <TimeColumn hours={hours} days={days} daysOfWeek={daysOfWeek} />
 
         {/* Day columns */}
         {days.map((date, dayIndex) => {
@@ -364,23 +344,14 @@ export function TimeSlotView({
           return (
             <div key={dayIndex} className="flex-1 min-w-0 flex flex-col">
               {/* Day header */}
-              <div className={`text-center mb-2 pb-2 border-b border-white/10 ${isToday ? 'bg-gradient-to-r from-[#350545] to-[#792990] rounded-lg p-2' : ''}`}>
-                {days.length === 7 && daysOfWeek && (
-                  <div className="text-xs opacity-70 text-white">{daysOfWeek[date.getDay()]}</div>
-                )}
-                {days.length <= 3 && (
-                  <div className="text-xs opacity-70 text-white">{daysOfWeekFull[date.getDay()]}</div>
-                )}
-                {days.length === 1 && (
-                  <div className="text-sm opacity-70 text-white">{daysOfWeekFull[date.getDay()]}</div>
-                )}
-                <div className={`font-bold text-white ${days.length === 7 ? 'text-lg' : days.length <= 3 ? 'text-2xl' : 'text-3xl'}`}>
-                  {date.getDate()}
-                </div>
-                {days.length <= 3 && (
-                  <div className="text-xs opacity-70 text-white">{monthNames[date.getMonth()]}</div>
-                )}
-              </div>
+              <TimeSlotDayHeader
+                date={date}
+                isToday={isToday}
+                daysOfWeek={daysOfWeek}
+                daysOfWeekFull={daysOfWeekFull}
+                monthNames={monthNames}
+                daysCount={days.length}
+              />
 
               {/* Time grid for this day */}
               <div
@@ -422,15 +393,7 @@ export function TimeSlotView({
                 }}
               >
                 {/* Time slot grid */}
-                {hours.map((hour) => (
-                  <div
-                    key={hour}
-                    className="h-24 border-b border-white/5 relative"
-                  >
-                    <div className="h-12 border-b border-dashed border-white/5" />
-                    <div className="h-12" />
-                  </div>
-                ))}
+                <TimeSlotGrid hours={hours} />
 
                 {/* Events positioned absolutely */}
                 {dayEvents.map((event) => {
@@ -610,11 +573,7 @@ export function TimeSlotView({
 
                 {/* Show message if no events for this day */}
                 {dayEvents.length === 0 && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className={`text-white/30 ${days.length === 7 ? 'text-sm' : 'text-base'}`}>
-                      {days.length === 7 ? 'Vazio' : 'Sem eventos'}
-                    </div>
-                  </div>
+                  <EmptyDayMessage daysCount={days.length} />
                 )}
               </div>
             </div>
