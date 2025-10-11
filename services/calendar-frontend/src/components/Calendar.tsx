@@ -1,20 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { calendars } from '@/data/calendars';
-import { api } from '@/lib/api';
-import { Event, Category } from '@/types/calendar';
+import { Event } from '@/types/calendar';
 import CreateEventModal from './CreateEventModal';
 import EditEventModal from './EditEventModal';
 import ConfirmDeleteModal from './ConfirmDeleteModal';
-import DeleteRecurringEventModal, { DeleteRecurringEventAction } from './DeleteRecurringEventModal';
+import DeleteRecurringEventModal from './DeleteRecurringEventModal';
 import { TimeSlotView } from './TimeSlotView';
 import {
   MONTH_NAMES,
   DAYS_OF_WEEK_SHORT,
   DAYS_OF_WEEK_FULL,
   DEFAULT_EVENT_TIME,
-  SEARCH_CONFIG,
 } from '@/constants/calendar';
 import {
   getDaysInMonth,
@@ -24,255 +22,37 @@ import {
   getWeekDays,
   getNextNDays,
 } from '@/utils/calendar';
-import { getDefaultDateRange } from '@/utils/calendar/dateRanges';
-
-type ViewMode = 'month' | 'week' | '3days' | 'day';
+import { useCalendarData } from '@/hooks/useCalendarData';
+import { useCalendarNavigation } from '@/hooks/useCalendarNavigation';
+import { useCalendarSearch } from '@/hooks/useCalendarSearch';
+import { useEventModals } from '@/hooks/useEventModals';
 
 export default function Calendar() {
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [selectedCalendars, setSelectedCalendars] = useState<string[]>([
     'wb-digital-calendar',
     'bruno-personal-calendar',
   ]);
-  const [events, setEvents] = useState<Event[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalInitialDate, setModalInitialDate] = useState<string>('');
-  const [modalInitialTime, setModalInitialTime] = useState<string>('');
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [eventToDelete, setEventToDelete] = useState<Event | null>(null);
-  const [preservedFormData, setPreservedFormData] = useState<Record<string, unknown> | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<Event[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const [showSearchResults, setShowSearchResults] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [eventToEdit, setEventToEdit] = useState<Event | null>(null);
-  const [showDeleteRecurringModal, setShowDeleteRecurringModal] = useState(false);
-  const [deleteOccurrenceDate, setDeleteOccurrenceDate] = useState<string>('');
 
-  // Buscar eventos e categorias do backend
-  const fetchData = async () => {
-    try {
-      setLoading(true);
+  // Custom hooks
+  const { events, categories, loading, refetch } = useCalendarData();
 
-      const dateRange = getDefaultDateRange();
+  const { currentDate, viewMode, setViewMode, previousPeriod, nextPeriod, goToToday, navigateToDate } =
+    useCalendarNavigation();
 
-      const [fetchedEvents, fetchedCategories] = await Promise.all([api.events.list(dateRange), api.categories.list()]);
-      setEvents(fetchedEvents);
-      setCategories(fetchedCategories);
-    } catch {
-      // Error fetching data
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  // Close search results when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (!target.closest('.search-container')) {
-        setShowSearchResults(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  // Note: Recurring event expansion is now handled on the backend
-  // Events returned from the API are already expanded into individual occurrences
-
-  // Search handler with debounce
-  useEffect(() => {
-    const searchEvents = async () => {
-      if (searchQuery.trim().length === 0) {
-        setSearchResults([]);
-        setShowSearchResults(false);
-        return;
-      }
-
-      if (searchQuery.trim().length < SEARCH_CONFIG.MIN_QUERY_LENGTH) {
-        return; // Don't search for single character
-      }
-
-      setIsSearching(true);
-      try {
-        const dateRange = getDefaultDateRange();
-
-        const results = await api.events.list({
-          search: searchQuery,
-          ...dateRange,
-        });
-        // Backend already returns expanded occurrences, just sort by date (closest first)
-        results.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
-        setSearchResults(results);
-        setShowSearchResults(true);
-      } catch {
-        // Error searching events
-      } finally {
-        setIsSearching(false);
-      }
-    };
-
-    const debounceTimer = setTimeout(searchEvents, SEARCH_CONFIG.DEBOUNCE_MS);
-    return () => clearTimeout(debounceTimer);
-  }, [searchQuery]);
-
-  const handleEventCreated = (preservedData?: Record<string, unknown>) => {
-    if (preservedData) {
-      setPreservedFormData(preservedData);
-    } else {
-      setPreservedFormData(null);
-    }
-    fetchData();
-  };
-
-  const handleEditClick = (event: Event, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEventToEdit(event);
-    setIsEditModalOpen(true);
-  };
-
-  const handleDeleteClick = (event: Event, e: React.MouseEvent) => {
-    e.stopPropagation();
-
-    // Extract occurrence date if it's an expanded recurring event
-    let occurrenceDate = event.startDate.split('T')[0];
-    if (event.occurrenceDate) {
-      occurrenceDate = event.occurrenceDate;
-    }
-
-    setEventToDelete(event);
-    setDeleteOccurrenceDate(occurrenceDate);
-
-    // If event is recurring, show the recurring delete modal
-    if (event.isRecurring) {
-      setShowDeleteRecurringModal(true);
-    } else {
-      setIsDeleteModalOpen(true);
-    }
-  };
-
-  const handleEventUpdated = () => {
-    fetchData();
-  };
-
-  const handleRecurringDeleteSelect = async (action: DeleteRecurringEventAction) => {
-    setShowDeleteRecurringModal(false);
-
-    if (!eventToDelete) return;
-
-    try {
-      // Extract the base event ID if it's an expanded recurring event
-      let baseEventId = eventToDelete.id;
-      const datePattern = /-\d{4}-\d{2}-\d{2}$/;
-      if (datePattern.test(eventToDelete.id)) {
-        baseEventId = eventToDelete.id.replace(datePattern, '');
-      }
-
-      // Call delete API with the scope
-      await api.events.deleteRecurring(baseEventId, action, deleteOccurrenceDate);
-
-      setEventToDelete(null);
-      setDeleteOccurrenceDate('');
-      fetchData();
-    } catch {
-      alert('Erro ao deletar evento. Tente novamente.');
-    }
-  };
-
-  const handleRecurringDeleteClose = () => {
-    setShowDeleteRecurringModal(false);
-    setEventToDelete(null);
-    setDeleteOccurrenceDate('');
-  };
-
-  const handleConfirmDelete = async () => {
-    if (!eventToDelete) return;
-
-    try {
-      await api.events.delete(eventToDelete.id);
-      setIsDeleteModalOpen(false);
-      setEventToDelete(null);
-      fetchData();
-    } catch {
-      alert('Erro ao deletar evento. Tente novamente.');
-    }
-  };
-
-  const handleCancelDelete = () => {
-    setIsDeleteModalOpen(false);
-    setEventToDelete(null);
-  };
-
-  const handleTimeSlotClick = (date: string, time: string) => {
-    setModalInitialDate(date);
-    setModalInitialTime(time);
-    setIsModalOpen(true);
-  };
-
-  const handleSearchResultClick = (event: Event) => {
-    // Parse the event date
+  const handleSearchResultNavigate = (event: Event) => {
     const eventDate = new Date(event.startDate);
-
-    // Set the current date to the event date
-    setCurrentDate(eventDate);
-
-    // Change to day view to focus on the event
+    navigateToDate(eventDate);
     setViewMode('day');
-
-    // Close search results
-    setShowSearchResults(false);
-    setSearchQuery('');
   };
 
-  const previousPeriod = () => {
-    if (viewMode === 'month') {
-      setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1));
-    } else if (viewMode === 'week') {
-      const newDate = new Date(currentDate);
-      newDate.setDate(newDate.getDate() - 7);
-      setCurrentDate(newDate);
-    } else if (viewMode === '3days') {
-      const newDate = new Date(currentDate);
-      newDate.setDate(newDate.getDate() - 3);
-      setCurrentDate(newDate);
-    } else {
-      const newDate = new Date(currentDate);
-      newDate.setDate(newDate.getDate() - 1);
-      setCurrentDate(newDate);
-    }
-  };
+  const search = useCalendarSearch({
+    categories,
+    onResultClick: handleSearchResultNavigate,
+  });
 
-  const nextPeriod = () => {
-    if (viewMode === 'month') {
-      setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1));
-    } else if (viewMode === 'week') {
-      const newDate = new Date(currentDate);
-      newDate.setDate(newDate.getDate() + 7);
-      setCurrentDate(newDate);
-    } else if (viewMode === '3days') {
-      const newDate = new Date(currentDate);
-      newDate.setDate(newDate.getDate() + 3);
-      setCurrentDate(newDate);
-    } else {
-      const newDate = new Date(currentDate);
-      newDate.setDate(newDate.getDate() + 1);
-      setCurrentDate(newDate);
-    }
-  };
-
-  const goToToday = () => {
-    setCurrentDate(new Date());
-  };
+  const modals = useEventModals({
+    onEventChange: refetch,
+  });
 
   // Função para obter eventos de uma data específica
   // Backend já retorna eventos expandidos, então apenas filtramos por data e calendários selecionados
@@ -344,7 +124,7 @@ export default function Calendar() {
               target.classList.contains('time-grid')
             ) {
               const dateString = dayDate.toISOString().split('T')[0];
-              handleTimeSlotClick(dateString, DEFAULT_EVENT_TIME);
+              modals.handleTimeSlotClick(dateString, DEFAULT_EVENT_TIME);
             }
           }}
         >
@@ -387,7 +167,7 @@ export default function Calendar() {
                   </div>
                   <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute top-0 right-0 flex">
                     <button
-                      onClick={e => handleEditClick(event, e)}
+                      onClick={e => modals.handleEditClick(event, e)}
                       className="p-0.5 hover:bg-blue-600 rounded"
                       title="Editar"
                     >
@@ -401,7 +181,7 @@ export default function Calendar() {
                       </svg>
                     </button>
                     <button
-                      onClick={e => handleDeleteClick(event, e)}
+                      onClick={e => modals.handleDeleteClick(event, e)}
                       className="p-0.5 hover:bg-red-600 rounded"
                       title="Deletar"
                     >
@@ -435,10 +215,10 @@ export default function Calendar() {
         events={events}
         categories={categories}
         selectedCalendars={selectedCalendars}
-        onEditClick={handleEditClick}
-        onDeleteClick={handleDeleteClick}
-        onEventUpdate={fetchData}
-        onTimeSlotClick={handleTimeSlotClick}
+        onEditClick={modals.handleEditClick}
+        onDeleteClick={modals.handleDeleteClick}
+        onEventUpdate={refetch}
+        onTimeSlotClick={modals.handleTimeSlotClick}
         daysOfWeek={[...DAYS_OF_WEEK_SHORT]}
         daysOfWeekFull={[...DAYS_OF_WEEK_FULL]}
         monthNames={[...MONTH_NAMES]}
@@ -454,10 +234,10 @@ export default function Calendar() {
         events={events}
         categories={categories}
         selectedCalendars={selectedCalendars}
-        onEditClick={handleEditClick}
-        onDeleteClick={handleDeleteClick}
-        onEventUpdate={fetchData}
-        onTimeSlotClick={handleTimeSlotClick}
+        onEditClick={modals.handleEditClick}
+        onDeleteClick={modals.handleDeleteClick}
+        onEventUpdate={refetch}
+        onTimeSlotClick={modals.handleTimeSlotClick}
         daysOfWeekFull={[...DAYS_OF_WEEK_FULL]}
         monthNames={[...MONTH_NAMES]}
       />
@@ -471,10 +251,10 @@ export default function Calendar() {
         events={events}
         categories={categories}
         selectedCalendars={selectedCalendars}
-        onEditClick={handleEditClick}
-        onDeleteClick={handleDeleteClick}
-        onEventUpdate={fetchData}
-        onTimeSlotClick={handleTimeSlotClick}
+        onEditClick={modals.handleEditClick}
+        onDeleteClick={modals.handleDeleteClick}
+        onEventUpdate={refetch}
+        onTimeSlotClick={modals.handleTimeSlotClick}
         daysOfWeekFull={[...DAYS_OF_WEEK_FULL]}
         monthNames={[...MONTH_NAMES]}
       />
@@ -493,7 +273,7 @@ export default function Calendar() {
     <div className="w-full max-w-[1800px] mx-auto p-2 md:p-4 min-h-screen flex items-start justify-center py-4 relative">
       {/* Floating Add Button */}
       <button
-        onClick={() => setIsModalOpen(true)}
+        onClick={modals.openCreateModal}
         className="fixed top-6 right-6 w-14 h-14 bg-gradient-to-br from-[#792990] to-[#350545] hover:from-[#8b2fa0] hover:to-[#461556] text-white rounded-full shadow-2xl hover:shadow-[#792990]/50 transition-all duration-300 flex items-center justify-center z-50 hover:scale-110"
         title="Criar novo evento"
       >
@@ -507,9 +287,9 @@ export default function Calendar() {
         <div className="relative">
           <input
             type="text"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            onFocus={() => searchQuery && setShowSearchResults(true)}
+            value={search.searchQuery}
+            onChange={e => search.setSearchQuery(e.target.value)}
+            onFocus={() => search.searchQuery && search.setShowSearchResults(true)}
             placeholder="Buscar eventos..."
             className="w-full px-4 py-3 pl-12 bg-white/10 backdrop-blur-md border border-white/20 text-white placeholder-white/50 rounded-xl focus:ring-2 focus:ring-[#792990] focus:border-transparent shadow-2xl"
           />
@@ -526,12 +306,9 @@ export default function Calendar() {
               d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
             />
           </svg>
-          {searchQuery && (
+          {search.searchQuery && (
             <button
-              onClick={() => {
-                setSearchQuery('');
-                setShowSearchResults(false);
-              }}
+              onClick={search.clearSearch}
               className="absolute right-4 top-1/2 transform -translate-y-1/2 text-white/50 hover:text-white"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -542,17 +319,17 @@ export default function Calendar() {
         </div>
 
         {/* Search Results Dropdown */}
-        {showSearchResults && (
+        {search.showSearchResults && (
           <div className="absolute top-full mt-2 w-full bg-[#350545] border border-white/20 rounded-xl shadow-2xl max-h-96 overflow-y-auto">
-            {isSearching ? (
+            {search.isSearching ? (
               <div className="p-4 text-center text-white/70">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto"></div>
               </div>
-            ) : searchResults.length === 0 ? (
+            ) : search.searchResults.length === 0 ? (
               <div className="p-4 text-center text-white/70">Nenhum evento encontrado</div>
             ) : (
               <div className="divide-y divide-white/10">
-                {searchResults.map(event => {
+                {search.searchResults.map(event => {
                   const category = categories.find(c => c.id === event.categoryId);
                   const calendar = calendars.find(c => c.id === event.calendarId);
                   const eventDate = new Date(event.startDate);
@@ -566,7 +343,7 @@ export default function Calendar() {
                   return (
                     <button
                       key={event.id}
-                      onClick={() => handleSearchResultClick(event)}
+                      onClick={() => search.handleSearchResultClick(event)}
                       className="w-full px-4 py-3 hover:bg-white/10 transition-colors text-left flex items-center gap-3"
                     >
                       <div
@@ -823,43 +600,40 @@ export default function Calendar() {
 
       {/* Modal de Criar Evento */}
       <CreateEventModal
-        isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false);
-          setPreservedFormData(null);
-        }}
-        onEventCreated={handleEventCreated}
+        isOpen={modals.isModalOpen}
+        onClose={modals.closeCreateModal}
+        onEventCreated={modals.handleEventCreated}
         calendars={calendars}
         categories={categories}
-        initialDate={modalInitialDate}
-        initialTime={modalInitialTime}
-        preservedFormData={preservedFormData || undefined}
+        initialDate={modals.modalInitialDate}
+        initialTime={modals.modalInitialTime}
+        preservedFormData={modals.preservedFormData || undefined}
       />
 
       {/* Modal de Editar Evento */}
       <EditEventModal
-        isOpen={isEditModalOpen}
-        onClose={() => setIsEditModalOpen(false)}
-        onEventUpdated={handleEventUpdated}
-        event={eventToEdit}
+        isOpen={modals.isEditModalOpen}
+        onClose={modals.closeEditModal}
+        onEventUpdated={modals.handleEventUpdated}
+        event={modals.eventToEdit}
         calendars={calendars}
         categories={categories}
       />
 
       {/* Modal de Confirmação de Exclusão */}
       <ConfirmDeleteModal
-        isOpen={isDeleteModalOpen}
-        event={eventToDelete}
-        onConfirm={handleConfirmDelete}
-        onCancel={handleCancelDelete}
+        isOpen={modals.isDeleteModalOpen}
+        event={modals.eventToDelete}
+        onConfirm={modals.handleConfirmDelete}
+        onCancel={modals.handleCancelDelete}
       />
 
       {/* Modal de Deletar Evento Recorrente */}
       <DeleteRecurringEventModal
-        isOpen={showDeleteRecurringModal}
-        onClose={handleRecurringDeleteClose}
-        onSelect={handleRecurringDeleteSelect}
-        eventTitle={eventToDelete?.title || ''}
+        isOpen={modals.showDeleteRecurringModal}
+        onClose={modals.handleRecurringDeleteClose}
+        onSelect={modals.handleRecurringDeleteSelect}
+        eventTitle={modals.eventToEdit?.title || ''}
       />
     </div>
   );
