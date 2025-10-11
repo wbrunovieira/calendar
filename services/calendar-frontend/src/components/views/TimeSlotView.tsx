@@ -74,6 +74,8 @@ export function TimeSlotView({
     });
   };
 
+  const isSingleDay = days.length === 1;
+
   return (
     <>
       <RecurringEventActionModal
@@ -82,8 +84,8 @@ export function TimeSlotView({
         onSelect={handleRecurringActionSelect}
         eventTitle={pendingUpdate?.eventTitle || ''}
       />
-      <div className="p-4 w-full">
-        <div className="flex gap-3 max-h-[900px] overflow-y-auto w-full">
+      <div className={`p-4 w-full ${isSingleDay ? 'max-w-5xl mx-auto' : ''}`}>
+        <div className={`flex ${isSingleDay ? 'gap-4' : 'gap-3'} max-h-[900px] overflow-y-auto w-full ${isSingleDay ? 'bg-gradient-to-br from-white/5 to-white/0 rounded-2xl p-4 backdrop-blur-sm shadow-2xl' : ''}`}>
           {/* Time column */}
           <TimeColumn hours={hours} days={days} daysOfWeek={daysOfWeek} />
 

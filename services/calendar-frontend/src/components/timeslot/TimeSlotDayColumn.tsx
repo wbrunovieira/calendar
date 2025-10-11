@@ -134,6 +134,8 @@ export default function TimeSlotDayColumn({
     }
   };
 
+  const isSingleDay = daysCount === 1;
+
   return (
     <div key={dayIndex} className="flex-1 min-w-0 flex flex-col">
       {/* Day header */}
@@ -148,7 +150,11 @@ export default function TimeSlotDayColumn({
 
       {/* Time grid for this day */}
       <div
-        className="flex-1 relative border-l border-white/10 min-h-[1632px] transition-colors hover:bg-white/5 cursor-pointer"
+        className={`flex-1 relative border-l min-h-[1632px] transition-all duration-300 cursor-pointer ${
+          isSingleDay
+            ? 'border-white/20 hover:bg-white/10 rounded-r-xl shadow-inner'
+            : 'border-white/10 hover:bg-white/5'
+        }`}
         onDragOver={onDragOver}
         onDrop={onDrop}
         onClick={handleTimeSlotClick}

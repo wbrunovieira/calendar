@@ -10,10 +10,12 @@ interface TimeColumnProps {
 }
 
 export default function TimeColumn({ hours, days, daysOfWeek }: TimeColumnProps) {
+  const isSingleDay = days.length === 1;
+
   return (
-    <div className="w-20 flex-shrink-0">
+    <div className={`${isSingleDay ? 'w-24' : 'w-20'} flex-shrink-0`}>
       {/* Spacer to align with day headers */}
-      <div className="text-center mb-2 pb-2 border-b border-white/10 opacity-0">
+      <div className={`text-center ${isSingleDay ? 'mb-3 pb-3' : 'mb-2 pb-2'} border-b border-white/10 opacity-0`}>
         {days.length === 7 && daysOfWeek && <div className="text-xs opacity-70">X</div>}
         {days.length <= 3 && <div className="text-xs opacity-70">X</div>}
         {days.length === 1 && <div className="text-sm opacity-70">X</div>}
@@ -25,7 +27,14 @@ export default function TimeColumn({ hours, days, daysOfWeek }: TimeColumnProps)
 
       {/* Hour labels */}
       {hours.map(hour => (
-        <div key={hour} className="h-24 flex items-start justify-end pr-2 pt-1 text-xs text-white/70">
+        <div
+          key={hour}
+          className={`h-24 flex items-start justify-end pr-3 pt-1 ${
+            isSingleDay
+              ? 'text-sm text-white/80 font-medium'
+              : 'text-xs text-white/70'
+          }`}
+        >
           {hour.toString().padStart(2, '0')}:00
         </div>
       ))}
