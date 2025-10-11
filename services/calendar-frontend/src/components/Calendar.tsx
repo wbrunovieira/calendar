@@ -4,6 +4,7 @@ import { Event } from '@/types/calendar';
 import CalendarSearch from './CalendarSearch';
 import CalendarCard from './CalendarCard';
 import CalendarModals from './CalendarModals';
+import CalendarLoading from './CalendarLoading';
 import FloatingAddButton from './FloatingAddButton';
 import { useCalendarData } from '@/hooks/useCalendarData';
 import { useCalendarNavigation } from '@/hooks/useCalendarNavigation';
@@ -31,11 +32,7 @@ export default function Calendar() {
   });
 
   if (loading) {
-    return (
-      <div className="w-full max-w-[1800px] mx-auto p-2 md:p-4 h-full flex items-center justify-center">
-        <div className="text-white text-xl">Carregando...</div>
-      </div>
-    );
+    return <CalendarLoading />;
   }
 
   return (
