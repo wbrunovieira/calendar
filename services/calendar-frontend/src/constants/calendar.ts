@@ -50,3 +50,13 @@ export const SEARCH_CONFIG = {
   MIN_QUERY_LENGTH: 2,
   DEBOUNCE_MS: 300,
 } as const;
+
+export const DAYS_OF_WEEK_OPTIONS = [
+  { value: 0, label: 'Dom' },
+  { value: 1, label: 'Seg' },
+  { value: 2, label: 'Ter' },
+  { value: 3, label: 'Qua' },
+  { value: 4, label: 'Qui' },
+  { value: 5, label: 'Sex' },
+  { value: 6, label: 'Sáb' },
+] as const;
