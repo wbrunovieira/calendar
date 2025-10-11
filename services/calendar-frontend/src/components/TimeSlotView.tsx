@@ -5,6 +5,7 @@ import { Event, Category } from '@/types/calendar';
 import { calendars } from '@/data/calendars';
 import { useDragAndDrop } from '@/hooks/useDragAndDrop';
 import { api } from '@/lib/api';
+import RecurringEventActionModal, { RecurringEventAction } from './RecurringEventActionModal';
 
 interface TimeSlotViewProps {
   days: Date[];
@@ -39,24 +40,104 @@ export function TimeSlotView({
   const [resizingEvent, setResizingEvent] = useState<{ id: string; edge: 'top' | 'bottom'; startY: number; originalHeight: number; originalTop: number } | null>(null);
   const [justResized, setJustResized] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
+  const [showRecurringActionModal, setShowRecurringActionModal] = useState(false);
+  const [dragContext, setDragContext] = useState<{ eventId: string; originalDate: string } | null>(null);
+  const [pendingUpdate, setPendingUpdate] = useState<{
+    eventId: string;
+    eventTitle: string;
+    originalDate: string;
+    newDate: string;
+    newTime?: string;
+    newEndTime?: string;
+  } | null>(null);
 
-  const handleEventUpdate = async (eventId: string, newDate: string, newTime?: string, newEndTime?: string) => {
+  const handleEventUpdate = async (eventId: string, newDate: string, newTime?: string, newEndTime?: string, recurringAction?: RecurringEventAction, originalDate?: string) => {
     try {
       const event = events.find(e => e.id === eventId);
       if (!event) return;
 
-      await api.events.update(eventId, {
+      // Determine the original date - use dragContext, passed originalDate, or event's startDate
+      const eventOriginalDate = originalDate || dragContext?.originalDate || event.startDate.split('T')[0];
+
+      console.log('handleEventUpdate called:', {
+        eventId,
+        eventTitle: event.title,
+        isRecurring: event.isRecurring,
+        originalDate: eventOriginalDate,
+        dragContextDate: dragContext?.originalDate,
+        newDate,
+        newTime,
+        recurringAction
+      });
+
+      // If event is recurring and no action specified, show the modal
+      if (event.isRecurring && !recurringAction) {
+        setPendingUpdate({
+          eventId,
+          eventTitle: event.title,
+          originalDate: eventOriginalDate,
+          newDate,
+          newTime,
+          newEndTime,
+        });
+        setShowRecurringActionModal(true);
+        return;
+      }
+
+      // Extract the base event ID if it's an expanded recurring event
+      let baseEventId = eventId;
+      const datePattern = /-\d{4}-\d{2}-\d{2}$/;
+      if (datePattern.test(eventId)) {
+        baseEventId = eventId.replace(datePattern, '');
+      }
+
+      const updatePayload: any = {
         startDate: newDate,
         ...(newTime && { startTime: newTime }),
         ...(newEndTime && { endTime: newEndTime }),
-      });
+      };
+
+      // Add recurring action scope if provided
+      if (recurringAction) {
+        updatePayload.recurringEditScope = recurringAction;
+        // For all scopes, we need to pass the original occurrence date
+        updatePayload.occurrenceDate = eventOriginalDate;
+      }
+
+      await api.events.update(baseEventId, updatePayload);
+
+      // Clear drag context after update
+      setDragContext(null);
 
       if (onEventUpdate) {
         onEventUpdate();
       }
     } catch (error) {
       console.error('Error updating event:', error);
+      // Clear drag context even on error
+      setDragContext(null);
     }
+  };
+
+  const handleRecurringActionSelect = async (action: RecurringEventAction) => {
+    setShowRecurringActionModal(false);
+
+    if (pendingUpdate) {
+      await handleEventUpdate(
+        pendingUpdate.eventId,
+        pendingUpdate.newDate,
+        pendingUpdate.newTime,
+        pendingUpdate.newEndTime,
+        action,
+        pendingUpdate.originalDate
+      );
+      setPendingUpdate(null);
+    }
+  };
+
+  const handleRecurringActionClose = () => {
+    setShowRecurringActionModal(false);
+    setPendingUpdate(null);
   };
 
   const handleResizeStart = (eventId: string, edge: 'top' | 'bottom', e: React.MouseEvent, currentHeight: number, currentTop: number) => {
@@ -188,21 +269,10 @@ export function TimeSlotView({
         return false;
       }
 
-      if (!event.isRecurring) {
-        const eventDate = event.startDate.split('T')[0];
-        return eventDate === dateString;
-      }
-
-      if (event.recurrenceFrequency === 'daily') {
-        return true;
-      }
-
-      if (event.recurrenceFrequency === 'weekly' && event.recurrenceDaysOfWeek) {
-        const dayOfWeek = date.getDay();
-        return event.recurrenceDaysOfWeek.includes(dayOfWeek);
-      }
-
-      return false;
+      // Backend já expande eventos recorrentes, então apenas comparamos a data
+      // Se o evento tem occurrenceDate, significa que já foi expandido pelo backend
+      const eventDate = event.startDate.split('T')[0];
+      return eventDate === dateString;
     });
   };
 
@@ -291,8 +361,15 @@ export function TimeSlotView({
   };
 
   return (
-    <div className="p-4 w-full">
-      <div className="flex gap-2 max-h-[600px] overflow-y-auto w-full">
+    <>
+      <RecurringEventActionModal
+        isOpen={showRecurringActionModal}
+        onClose={handleRecurringActionClose}
+        onSelect={handleRecurringActionSelect}
+        eventTitle={pendingUpdate?.eventTitle || ''}
+      />
+      <div className="p-4 w-full">
+        <div className="flex gap-2 max-h-[600px] overflow-y-auto w-full">
         {/* Time column */}
         <div className="w-16 flex-shrink-0">
           {/* Spacer to align with day headers */}
@@ -470,7 +547,14 @@ export function TimeSlotView({
                       key={event.id}
                       data-event-id={event.id}
                       draggable
-                      onDragStart={handleDragStart(event)}
+                      onDragStart={(e) => {
+                        // Capture the date of this specific occurrence
+                        setDragContext({
+                          eventId: event.id,
+                          originalDate: executionDate
+                        });
+                        handleDragStart(event)(e);
+                      }}
                       onDragEnd={handleDragEnd}
                       className={`absolute rounded-lg text-white flex flex-col overflow-visible group ${
                         isCompleted
@@ -592,5 +676,6 @@ export function TimeSlotView({
         })}
       </div>
     </div>
+    </>
   );
 }

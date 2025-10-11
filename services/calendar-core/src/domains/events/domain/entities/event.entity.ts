@@ -6,23 +6,25 @@ export class Event {
   description?: string | null;
   startTime: string; // HH:mm format
   endTime?: string | null;
-  startDate?: Date | null;
+  startDate: Date;
   endDate?: Date | null;
-  // Recurrence
-  isRecurring: boolean;
-  recurrenceFrequency?: string | null; // 'daily', 'weekly', 'monthly', 'yearly'
-  recurrenceInterval?: number | null;
-  recurrenceDaysOfWeek: number[]; // [0,1,2,3,4,5,6]
-  recurrenceDayOfMonth?: number | null;
-  recurrenceWeekOfMonth?: number | null;
-  recurrenceEndDate?: Date | null;
+
+  // Recurrence (RRULE format)
+  recurrenceRule?: string | null; // RRULE string ou NULL para one-time events
+
+  // Hierarquia (Google Calendar Pattern)
+  recurrenceMasterId?: string | null; // NULL = master, UUID = filho derivado
+
+  // Status
+  status: string; // CONFIRMED, CANCELLED, TENTATIVE
+
   // Google Calendar
   googleEventId?: string | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
 
-  constructor(data: Event) {
+  constructor(data: any) {
     Object.assign(this, data);
   }
 
@@ -33,17 +35,13 @@ export class Event {
     description?: string;
     startTime: string;
     endTime?: string;
-    startDate?: Date;
+    startDate: Date;
     endDate?: Date;
-    isRecurring?: boolean;
-    recurrenceFrequency?: string;
-    recurrenceInterval?: number;
-    recurrenceDaysOfWeek?: number[];
-    recurrenceDayOfMonth?: number;
-    recurrenceWeekOfMonth?: number;
-    recurrenceEndDate?: Date;
+    recurrenceRule?: string | null;
+    recurrenceMasterId?: string | null;
+    status?: string;
   }): Event {
-    return new Event({
+    const event = new Event({
       id: '',
       calendarId: data.calendarId,
       categoryId: data.categoryId,
@@ -53,17 +51,14 @@ export class Event {
       endTime: data.endTime,
       startDate: data.startDate,
       endDate: data.endDate,
-      isRecurring: data.isRecurring ?? false,
-      recurrenceFrequency: data.recurrenceFrequency,
-      recurrenceInterval: data.recurrenceInterval ?? 1,
-      recurrenceDaysOfWeek: data.recurrenceDaysOfWeek ?? [],
-      recurrenceDayOfMonth: data.recurrenceDayOfMonth,
-      recurrenceWeekOfMonth: data.recurrenceWeekOfMonth,
-      recurrenceEndDate: data.recurrenceEndDate,
+      recurrenceRule: data.recurrenceRule || null,
+      recurrenceMasterId: data.recurrenceMasterId || null,
+      status: data.status || 'CONFIRMED',
       googleEventId: null,
       isActive: true,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+    return event;
   }
 }

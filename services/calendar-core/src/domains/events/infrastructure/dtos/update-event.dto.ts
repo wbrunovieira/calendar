@@ -50,6 +50,18 @@ export class UpdateEventDto {
   recurrenceDaysOfWeek?: number[];
 
   @IsOptional()
+  @IsNumber()
+  recurrenceDayOfMonth?: number;
+
+  @IsOptional()
   @IsString()
   recurrenceEndDate?: string;
+
+  @IsOptional()
+  @IsString()
+  recurringEditScope?: 'this' | 'all' | 'future';
+
+  @IsOptional()
+  @IsString()
+  occurrenceDate?: string; // The specific date of the occurrence being edited
 }

@@ -14,11 +14,11 @@ export class EventExecutionRepository {
     eventId: string,
     executionDate: Date,
   ): Promise<EventExecution | null> {
-    const execution = await this.prisma.eventExecution.findUnique({
+    const execution = await this.prisma.eventCompletion.findUnique({
       where: {
-        eventId_executionDate: {
+        eventId_occurrenceDate: {
           eventId,
-          executionDate,
+          occurrenceDate: executionDate,
         },
       },
     });
@@ -27,9 +27,9 @@ export class EventExecutionRepository {
   }
 
   async findByEventId(eventId: string): Promise<EventExecution[]> {
-    const executions = await this.prisma.eventExecution.findMany({
+    const executions = await this.prisma.eventCompletion.findMany({
       where: { eventId },
-      orderBy: { executionDate: 'desc' },
+      orderBy: { occurrenceDate: 'desc' },
     });
 
     return executions.map((exec) => new EventExecution(exec));
@@ -40,25 +40,25 @@ export class EventExecutionRepository {
     startDate: Date,
     endDate: Date,
   ): Promise<EventExecution[]> {
-    const executions = await this.prisma.eventExecution.findMany({
+    const executions = await this.prisma.eventCompletion.findMany({
       where: {
         eventId,
-        executionDate: {
+        occurrenceDate: {
           gte: startDate,
           lte: endDate,
         },
       },
-      orderBy: { executionDate: 'asc' },
+      orderBy: { occurrenceDate: 'asc' },
     });
 
     return executions.map((exec) => new EventExecution(exec));
   }
 
   async create(execution: Partial<EventExecution>): Promise<EventExecution> {
-    const created = await this.prisma.eventExecution.create({
+    const created = await this.prisma.eventCompletion.create({
       data: {
         eventId: execution.eventId!,
-        executionDate: execution.executionDate!,
+        occurrenceDate: execution.executionDate!,
         completed: execution.completed ?? false,
         completedAt: execution.completedAt,
         notes: execution.notes,
@@ -69,7 +69,7 @@ export class EventExecutionRepository {
   }
 
   async update(id: string, data: Partial<EventExecution>): Promise<EventExecution> {
-    const updated = await this.prisma.eventExecution.update({
+    const updated = await this.prisma.eventCompletion.update({
       where: { id },
       data: {
         completed: data.completed,
@@ -88,16 +88,16 @@ export class EventExecutionRepository {
     completed: boolean,
     notes?: string,
   ): Promise<EventExecution> {
-    const upserted = await this.prisma.eventExecution.upsert({
+    const upserted = await this.prisma.eventCompletion.upsert({
       where: {
-        eventId_executionDate: {
+        eventId_occurrenceDate: {
           eventId,
-          executionDate,
+          occurrenceDate: executionDate,
         },
       },
       create: {
         eventId,
-        executionDate,
+        occurrenceDate: executionDate,
         completed,
         completedAt: completed ? new Date() : null,
         notes,

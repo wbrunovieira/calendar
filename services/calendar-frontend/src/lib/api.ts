@@ -61,6 +61,8 @@ interface ListEventsParams {
   calendarId?: string;
   categoryId?: string;
   search?: string;
+  startDate?: string; // YYYY-MM-DD
+  endDate?: string;   // YYYY-MM-DD
 }
 
 export interface EventExecution {
@@ -83,6 +85,8 @@ export const api = {
       if (params?.calendarId) queryParams.append('calendarId', params.calendarId);
       if (params?.categoryId) queryParams.append('categoryId', params.categoryId);
       if (params?.search) queryParams.append('search', params.search);
+      if (params?.startDate) queryParams.append('startDate', params.startDate);
+      if (params?.endDate) queryParams.append('endDate', params.endDate);
 
       const query = queryParams.toString();
       return fetchAPI<Event[]>(`/events${query ? `?${query}` : ''}`);

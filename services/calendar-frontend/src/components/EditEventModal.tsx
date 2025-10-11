@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { Event, Category } from '@/types/calendar';
+import RecurringEventActionModal, { RecurringEventAction } from './RecurringEventActionModal';
 
 interface EditEventModalProps {
   isOpen: boolean;
@@ -38,6 +39,8 @@ export default function EditEventModal({
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showRecurringActionModal, setShowRecurringActionModal] = useState(false);
+  const [recurringAction, setRecurringAction] = useState<RecurringEventAction | null>(null);
 
   // Load event data when modal opens
   useEffect(() => {
@@ -58,6 +61,14 @@ export default function EditEventModal({
         recurrenceEndDate: event.recurrenceEndDate?.split('T')[0] || '',
       });
       setError('');
+
+      // If event is recurring, show the action modal first
+      if (event.isRecurring) {
+        setShowRecurringActionModal(true);
+        setRecurringAction(null);
+      } else {
+        setShowRecurringActionModal(false);
+      }
     }
   }, [isOpen, event]);
 
@@ -71,6 +82,16 @@ export default function EditEventModal({
     { value: 6, label: 'Sáb' },
   ];
 
+  const handleRecurringActionSelect = (action: RecurringEventAction) => {
+    setRecurringAction(action);
+    setShowRecurringActionModal(false);
+  };
+
+  const handleRecurringActionClose = () => {
+    setShowRecurringActionModal(false);
+    onClose(); // Close the entire edit modal if user cancels recurring action
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -82,7 +103,7 @@ export default function EditEventModal({
       return;
     }
 
-    const payload = {
+    const payload: any = {
       calendarId: formData.calendarId,
       categoryId: formData.categoryId || undefined,
       title: formData.title,
@@ -100,6 +121,11 @@ export default function EditEventModal({
           : undefined,
       recurrenceEndDate: formData.isRecurring && formData.recurrenceEndDate ? formData.recurrenceEndDate : undefined,
     };
+
+    // Add recurring action scope if this is a recurring event
+    if (event.isRecurring && recurringAction) {
+      payload.recurringEditScope = recurringAction;
+    }
 
     try {
       setLoading(true);
@@ -143,6 +169,18 @@ export default function EditEventModal({
 
   if (!isOpen || !event) {
     return null;
+  }
+
+  // If this is a recurring event and we haven't selected an action yet, show the action modal
+  if (event.isRecurring && showRecurringActionModal) {
+    return (
+      <RecurringEventActionModal
+        isOpen={showRecurringActionModal}
+        onClose={handleRecurringActionClose}
+        onSelect={handleRecurringActionSelect}
+        eventTitle={event.title}
+      />
+    );
   }
 
   return (

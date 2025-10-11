@@ -27,13 +27,9 @@ export class EventRepository {
         endTime: event.endTime,
         startDate: event.startDate,
         endDate: event.endDate,
-        isRecurring: event.isRecurring,
-        recurrenceFrequency: event.recurrenceFrequency,
-        recurrenceInterval: event.recurrenceInterval,
-        recurrenceDaysOfWeek: event.recurrenceDaysOfWeek,
-        recurrenceDayOfMonth: event.recurrenceDayOfMonth,
-        recurrenceWeekOfMonth: event.recurrenceWeekOfMonth,
-        recurrenceEndDate: event.recurrenceEndDate,
+        recurrenceRule: event.recurrenceRule,
+        recurrenceMasterId: event.recurrenceMasterId,
+        status: event.status,
         isActive: event.isActive,
       },
     });
@@ -71,13 +67,21 @@ export class EventRepository {
       where,
       orderBy: [{ startDate: 'asc' }, { startTime: 'asc' }],
       include: {
-        executions: true,
+        exceptions: true,
+        overrides: {
+          include: {
+            overrideEvent: true,
+          },
+        },
+        completions: true,
       },
     });
 
     return events.map((event) => ({
       ...new Event(event),
-      executions: event.executions,
+      exceptions: event.exceptions,
+      overrides: event.overrides,
+      completions: event.completions,
     }));
   }
 
@@ -101,13 +105,8 @@ export class EventRepository {
         startDate: event.startDate,
         endDate: event.endDate,
         categoryId: event.categoryId,
-        isRecurring: event.isRecurring,
-        recurrenceFrequency: event.recurrenceFrequency,
-        recurrenceInterval: event.recurrenceInterval,
-        recurrenceDaysOfWeek: event.recurrenceDaysOfWeek,
-        recurrenceDayOfMonth: event.recurrenceDayOfMonth,
-        recurrenceWeekOfMonth: event.recurrenceWeekOfMonth,
-        recurrenceEndDate: event.recurrenceEndDate,
+        recurrenceRule: event.recurrenceRule,
+        status: event.status,
         isActive: event.isActive,
         updatedAt: new Date(),
       },

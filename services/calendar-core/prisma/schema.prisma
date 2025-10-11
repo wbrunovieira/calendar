@@ -68,58 +68,106 @@ model Category {
 }
 
 model Event {
-  id                     String    @id @default(uuid())
-  calendarId             String    @map("calendar_id")
-  categoryId             String?   @map("category_id")
-  title                  String
-  description            String?
-  startTime              String    @map("start_time") // TIME stored as string (HH:mm)
-  endTime                String?   @map("end_time")
-  startDate              DateTime? @map("start_date") @db.Date
-  endDate                DateTime? @map("end_date") @db.Date
-  // Recorrência
-  isRecurring            Boolean   @default(false) @map("is_recurring")
-  recurrenceFrequency    String?   @map("recurrence_frequency") // 'daily', 'weekly', 'monthly', 'yearly'
-  recurrenceInterval     Int?      @default(1) @map("recurrence_interval")
-  recurrenceDaysOfWeek   Int[]     @map("recurrence_days_of_week") // [0,1,2,3,4,5,6]
-  recurrenceDayOfMonth   Int?      @map("recurrence_day_of_month")
-  recurrenceWeekOfMonth  Int?      @map("recurrence_week_of_month")
-  recurrenceEndDate      DateTime? @map("recurrence_end_date") @db.Date
-  // Google Calendar
-  googleEventId          String?   @map("google_event_id")
-  isActive               Boolean   @default(true) @map("is_active")
-  createdAt              DateTime  @default(now()) @map("created_at")
-  updatedAt              DateTime  @updatedAt @map("updated_at")
+  id                    String    @id @default(uuid())
+  calendarId            String    @map("calendar_id")
+  categoryId            String?   @map("category_id")
+  title                 String
+  description           String?
+  startTime             String    @map("start_time") // TIME stored as string (HH:mm)
+  endTime               String?   @map("end_time")
+  startDate             DateTime  @map("start_date") @db.Date
+  endDate               DateTime? @map("end_date") @db.Date
 
-  calendar   Calendar          @relation(fields: [calendarId], references: [id], onDelete: Cascade)
-  category   Category?         @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  executions EventExecution[]
-  reminders  EventReminder[]
+  // Recorrência (RRULE simplificado)
+  recurrenceRule        String?   @map("recurrence_rule") // RRULE format ou NULL para eventos one-time
+
+  // Hierarquia de eventos recorrentes (Google Calendar Pattern)
+  // NULL = é um evento master (recorrente ou one-time normal)
+  // UUID = é um evento derivado/filho de outro evento recorrente
+  recurrenceMasterId    String?   @map("recurrence_master_id")
+
+  // Status do evento
+  status                String    @default("CONFIRMED") // CONFIRMED, CANCELLED, TENTATIVE
+
+  // Google Calendar
+  googleEventId         String?   @map("google_event_id")
+  isActive              Boolean   @default(true) @map("is_active")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  calendar              Calendar              @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  category              Category?             @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  recurrenceMaster      Event?                @relation("RecurrenceHierarchy", fields: [recurrenceMasterId], references: [id], onDelete: Cascade)
+  derivedEvents         Event[]               @relation("RecurrenceHierarchy")
+
+  // Separação de responsabilidades
+  exceptions            RecurrenceException[] @relation("EventExceptions")
+  overrides             RecurrenceOverride[]  @relation("MasterEventOverrides")
+  overriddenBy          RecurrenceOverride[]  @relation("OverrideEvent")
+  completions           EventCompletion[]
+  reminders             EventReminder[]
 
   @@index([calendarId])
   @@index([categoryId])
   @@index([startDate])
+  @@index([recurrenceMasterId])
   @@index([googleEventId])
+  @@index([status])
   @@map("events")
 }
 
-model EventExecution {
-  id            String    @id @default(uuid())
-  eventId       String    @map("event_id")
-  executionDate DateTime  @map("execution_date") @db.Date
-  completed     Boolean   @default(false)
-  completedAt   DateTime? @map("completed_at")
-  notes         String?
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+// Exceções: datas removidas da recorrência
+model RecurrenceException {
+  id            String   @id @default(uuid())
+  eventId       String   @map("event_id")
+  exceptionDate DateTime @map("exception_date") @db.Date
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  event Event @relation("EventExceptions", fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, exceptionDate])
+  @@index([eventId])
+  @@index([exceptionDate])
+  @@map("recurrence_exceptions")
+}
+
+// Sobrescritas: modificações em ocorrências específicas
+model RecurrenceOverride {
+  id              String   @id @default(uuid())
+  masterEventId   String   @map("master_event_id")
+  occurrenceDate  DateTime @map("occurrence_date") @db.Date
+  overrideEventId String   @map("override_event_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  masterEvent   Event @relation("MasterEventOverrides", fields: [masterEventId], references: [id], onDelete: Cascade)
+  overrideEvent Event @relation("OverrideEvent", fields: [overrideEventId], references: [id], onDelete: Cascade)
+
+  @@unique([masterEventId, occurrenceDate])
+  @@index([masterEventId])
+  @@index([overrideEventId])
+  @@index([occurrenceDate])
+  @@map("recurrence_overrides")
+}
+
+// Completions: checkboxes de conclusão (SEPARADO de modificações)
+model EventCompletion {
+  id             String    @id @default(uuid())
+  eventId        String    @map("event_id")
+  occurrenceDate DateTime  @map("occurrence_date") @db.Date
+  completed      Boolean   @default(false)
+  completedAt    DateTime? @map("completed_at")
+  notes          String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
 
   event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
-  @@unique([eventId, executionDate])
+  @@unique([eventId, occurrenceDate])
   @@index([eventId])
-  @@index([executionDate])
+  @@index([occurrenceDate])
   @@index([completed])
-  @@map("event_executions")
+  @@map("event_completions")
 }
 
 model EventReminder {

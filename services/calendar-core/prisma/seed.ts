@@ -103,7 +103,9 @@ async function main() {
     }),
   ]);
 
-  console.log(`✅ ${categoriesWB.length} categories created for WB Digital Solutions`);
+  console.log(
+    `✅ ${categoriesWB.length} categories created for WB Digital Solutions`,
+  );
 
   // Criar categorias para Bruno - Pessoal
   const categoriesPersonal = await Promise.all([
@@ -169,7 +171,9 @@ async function main() {
     }),
   ]);
 
-  console.log(`✅ ${categoriesPersonal.length} categories created for Bruno - Pessoal`);
+  console.log(
+    `✅ ${categoriesPersonal.length} categories created for Bruno - Pessoal`,
+  );
 
   console.log('🎉 Seed completed successfully!');
 }

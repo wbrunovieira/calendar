@@ -38,8 +38,19 @@ export default function Calendar() {
   const fetchData = async () => {
     try {
       setLoading(true);
+
+      // Calculate date range: 3 months before to 1 year ahead
+      const today = new Date();
+      const startDate = new Date(today);
+      startDate.setMonth(startDate.getMonth() - 3);
+      const endDate = new Date(today);
+      endDate.setFullYear(endDate.getFullYear() + 1);
+
       const [fetchedEvents, fetchedCategories] = await Promise.all([
-        api.events.list(),
+        api.events.list({
+          startDate: startDate.toISOString().split('T')[0],
+          endDate: endDate.toISOString().split('T')[0],
+        }),
         api.categories.list(),
       ]);
       setEvents(fetchedEvents);
@@ -68,63 +79,8 @@ export default function Calendar() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Expand recurring events into individual occurrences
-  const expandRecurringEvents = (events: Event[]): Event[] => {
-    const expandedEvents: Event[] = [];
-    const today = new Date();
-    const futureLimit = new Date(today.getTime() + 365 * 24 * 60 * 60 * 1000); // 1 year ahead
-
-    events.forEach(event => {
-      if (!event.isRecurring) {
-        expandedEvents.push(event);
-        return;
-      }
-
-      // For recurring events, generate occurrences
-      const startDate = new Date(event.startDate);
-      let currentDate = new Date(startDate);
-
-      // Limit to 50 occurrences per event to avoid performance issues
-      let occurrenceCount = 0;
-      const maxOccurrences = 50;
-
-      while (currentDate <= futureLimit && occurrenceCount < maxOccurrences) {
-        let shouldInclude = false;
-
-        if (event.recurrenceFrequency === 'daily') {
-          shouldInclude = true;
-        } else if (event.recurrenceFrequency === 'weekly' && event.recurrenceDaysOfWeek) {
-          const dayOfWeek = currentDate.getDay();
-          shouldInclude = event.recurrenceDaysOfWeek.includes(dayOfWeek);
-        } else if (event.recurrenceFrequency === 'monthly') {
-          shouldInclude = currentDate.getDate() === startDate.getDate();
-        } else if (event.recurrenceFrequency === 'yearly') {
-          shouldInclude = currentDate.getMonth() === startDate.getMonth() &&
-                         currentDate.getDate() === startDate.getDate();
-        }
-
-        if (shouldInclude) {
-          expandedEvents.push({
-            ...event,
-            startDate: currentDate.toISOString(),
-            // Add a unique identifier for this occurrence
-            id: `${event.id}-${currentDate.toISOString().split('T')[0]}`,
-          });
-          occurrenceCount++;
-        }
-
-        // Move to next day
-        currentDate.setDate(currentDate.getDate() + 1);
-
-        // Check recurrence end date
-        if (event.recurrenceEndDate && currentDate > new Date(event.recurrenceEndDate)) {
-          break;
-        }
-      }
-    });
-
-    return expandedEvents;
-  };
+  // Note: Recurring event expansion is now handled on the backend
+  // Events returned from the API are already expanded into individual occurrences
 
   // Search handler with debounce
   useEffect(() => {
@@ -141,12 +97,21 @@ export default function Calendar() {
 
       setIsSearching(true);
       try {
-        const results = await api.events.list({ search: searchQuery });
-        // Expand recurring events into individual occurrences
-        const expandedResults = expandRecurringEvents(results);
-        // Sort by date (closest first)
-        expandedResults.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
-        setSearchResults(expandedResults);
+        // Calculate search date range
+        const today = new Date();
+        const startDate = new Date(today);
+        startDate.setMonth(startDate.getMonth() - 3);
+        const endDate = new Date(today);
+        endDate.setFullYear(endDate.getFullYear() + 1);
+
+        const results = await api.events.list({
+          search: searchQuery,
+          startDate: startDate.toISOString().split('T')[0],
+          endDate: endDate.toISOString().split('T')[0],
+        });
+        // Backend already returns expanded occurrences, just sort by date (closest first)
+        results.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+        setSearchResults(results);
         setShowSearchResults(true);
       } catch (error) {
         console.error('Erro ao buscar eventos:', error);
@@ -309,51 +274,20 @@ export default function Calendar() {
   };
 
   // Função para obter eventos de uma data específica
+  // Backend já retorna eventos expandidos, então apenas filtramos por data e calendários selecionados
   const getEventsForDate = (date: Date): Event[] => {
     const dateString = date.toISOString().split('T')[0];
 
-    console.log('=== getEventsForDate ===');
-    console.log('Data procurada:', dateString);
-    console.log('Total de eventos:', events.length);
-    console.log('Calendários selecionados:', selectedCalendars);
-
-    const filtered = events.filter(event => {
-      console.log(`Verificando evento: ${event.title} (${event.startDate})`);
-
+    return events.filter(event => {
       // Filtrar por calendários selecionados
       if (!selectedCalendars.includes(event.calendarId)) {
-        console.log(`  ❌ Calendário ${event.calendarId} não selecionado`);
         return false;
       }
 
-      // Evento não recorrente
-      if (!event.isRecurring) {
-        // Extrair apenas a parte da data (YYYY-MM-DD) do timestamp
-        const eventDate = event.startDate.split('T')[0];
-        const match = eventDate === dateString;
-        console.log(`  ${match ? '✅' : '❌'} Comparando: ${eventDate} === ${dateString} = ${match}`);
-        return match;
-      }
-
-      // Evento recorrente
-      if (event.recurrenceFrequency === 'daily') {
-        console.log('  ✅ Evento recorrente diário');
-        return true;
-      }
-
-      if (event.recurrenceFrequency === 'weekly' && event.recurrenceDaysOfWeek) {
-        const dayOfWeek = date.getDay();
-        const match = event.recurrenceDaysOfWeek.includes(dayOfWeek);
-        console.log(`  ${match ? '✅' : '❌'} Evento recorrente semanal - dia da semana: ${dayOfWeek}`);
-        return match;
-      }
-
-      console.log('  ❌ Não passou em nenhum filtro');
-      return false;
+      // Comparar apenas a data (YYYY-MM-DD)
+      const eventDate = event.startDate.split('T')[0];
+      return eventDate === dateString;
     });
-
-    console.log(`Eventos filtrados para ${dateString}:`, filtered.length);
-    return filtered;
   };
 
   const toggleCalendar = (calendarId: string) => {

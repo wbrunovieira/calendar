@@ -52,15 +52,11 @@ CREATE TABLE "events" (
     "description" TEXT,
     "start_time" TEXT NOT NULL,
     "end_time" TEXT,
-    "start_date" DATE,
+    "start_date" DATE NOT NULL,
     "end_date" DATE,
-    "is_recurring" BOOLEAN NOT NULL DEFAULT false,
-    "recurrence_frequency" TEXT,
-    "recurrence_interval" INTEGER DEFAULT 1,
-    "recurrence_days_of_week" INTEGER[],
-    "recurrence_day_of_month" INTEGER,
-    "recurrence_week_of_month" INTEGER,
-    "recurrence_end_date" DATE,
+    "recurrence_rule" TEXT,
+    "recurrence_master_id" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'CONFIRMED',
     "google_event_id" TEXT,
     "is_active" BOOLEAN NOT NULL DEFAULT true,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -70,17 +66,38 @@ CREATE TABLE "events" (
 );
 
 -- CreateTable
-CREATE TABLE "event_executions" (
+CREATE TABLE "recurrence_exceptions" (
     "id" TEXT NOT NULL,
     "event_id" TEXT NOT NULL,
-    "execution_date" DATE NOT NULL,
+    "exception_date" DATE NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "recurrence_exceptions_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "recurrence_overrides" (
+    "id" TEXT NOT NULL,
+    "master_event_id" TEXT NOT NULL,
+    "occurrence_date" DATE NOT NULL,
+    "override_event_id" TEXT NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "recurrence_overrides_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "event_completions" (
+    "id" TEXT NOT NULL,
+    "event_id" TEXT NOT NULL,
+    "occurrence_date" DATE NOT NULL,
     "completed" BOOLEAN NOT NULL DEFAULT false,
     "completed_at" TIMESTAMP(3),
     "notes" TEXT,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "event_executions_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "event_completions_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -144,19 +161,46 @@ CREATE INDEX "events_category_id_idx" ON "events"("category_id");
 CREATE INDEX "events_start_date_idx" ON "events"("start_date");
 
 -- CreateIndex
+CREATE INDEX "events_recurrence_master_id_idx" ON "events"("recurrence_master_id");
+
+-- CreateIndex
 CREATE INDEX "events_google_event_id_idx" ON "events"("google_event_id");
 
 -- CreateIndex
-CREATE INDEX "event_executions_event_id_idx" ON "event_executions"("event_id");
+CREATE INDEX "events_status_idx" ON "events"("status");
 
 -- CreateIndex
-CREATE INDEX "event_executions_execution_date_idx" ON "event_executions"("execution_date");
+CREATE INDEX "recurrence_exceptions_event_id_idx" ON "recurrence_exceptions"("event_id");
 
 -- CreateIndex
-CREATE INDEX "event_executions_completed_idx" ON "event_executions"("completed");
+CREATE INDEX "recurrence_exceptions_exception_date_idx" ON "recurrence_exceptions"("exception_date");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "event_executions_event_id_execution_date_key" ON "event_executions"("event_id", "execution_date");
+CREATE UNIQUE INDEX "recurrence_exceptions_event_id_exception_date_key" ON "recurrence_exceptions"("event_id", "exception_date");
+
+-- CreateIndex
+CREATE INDEX "recurrence_overrides_master_event_id_idx" ON "recurrence_overrides"("master_event_id");
+
+-- CreateIndex
+CREATE INDEX "recurrence_overrides_override_event_id_idx" ON "recurrence_overrides"("override_event_id");
+
+-- CreateIndex
+CREATE INDEX "recurrence_overrides_occurrence_date_idx" ON "recurrence_overrides"("occurrence_date");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "recurrence_overrides_master_event_id_occurrence_date_key" ON "recurrence_overrides"("master_event_id", "occurrence_date");
+
+-- CreateIndex
+CREATE INDEX "event_completions_event_id_idx" ON "event_completions"("event_id");
+
+-- CreateIndex
+CREATE INDEX "event_completions_occurrence_date_idx" ON "event_completions"("occurrence_date");
+
+-- CreateIndex
+CREATE INDEX "event_completions_completed_idx" ON "event_completions"("completed");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "event_completions_event_id_occurrence_date_key" ON "event_completions"("event_id", "occurrence_date");
 
 -- CreateIndex
 CREATE INDEX "event_reminders_event_id_idx" ON "event_reminders"("event_id");
@@ -192,7 +236,19 @@ ALTER TABLE "events" ADD CONSTRAINT "events_calendar_id_fkey" FOREIGN KEY ("cale
 ALTER TABLE "events" ADD CONSTRAINT "events_category_id_fkey" FOREIGN KEY ("category_id") REFERENCES "categories"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "event_executions" ADD CONSTRAINT "event_executions_event_id_fkey" FOREIGN KEY ("event_id") REFERENCES "events"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "events" ADD CONSTRAINT "events_recurrence_master_id_fkey" FOREIGN KEY ("recurrence_master_id") REFERENCES "events"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "recurrence_exceptions" ADD CONSTRAINT "recurrence_exceptions_event_id_fkey" FOREIGN KEY ("event_id") REFERENCES "events"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "recurrence_overrides" ADD CONSTRAINT "recurrence_overrides_master_event_id_fkey" FOREIGN KEY ("master_event_id") REFERENCES "events"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "recurrence_overrides" ADD CONSTRAINT "recurrence_overrides_override_event_id_fkey" FOREIGN KEY ("override_event_id") REFERENCES "events"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "event_completions" ADD CONSTRAINT "event_completions_event_id_fkey" FOREIGN KEY ("event_id") REFERENCES "events"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "event_reminders" ADD CONSTRAINT "event_reminders_event_id_fkey" FOREIGN KEY ("event_id") REFERENCES "events"("id") ON DELETE CASCADE ON UPDATE CASCADE;

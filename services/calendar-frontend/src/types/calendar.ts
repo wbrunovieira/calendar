@@ -41,6 +41,10 @@ export interface Event {
   recurrenceFrequency?: 'daily' | 'weekly' | 'monthly' | 'yearly';
   recurrenceInterval?: number;
   recurrenceDaysOfWeek?: number[];
+  recurrenceEndDate?: string;
   isActive: boolean;
   executions?: EventExecution[];
+  // For recurring event occurrences (expanded by backend)
+  originalEventId?: string; // The ID of the original recurring event
+  occurrenceDate?: string;  // The specific date (YYYY-MM-DD) this occurrence represents
 }

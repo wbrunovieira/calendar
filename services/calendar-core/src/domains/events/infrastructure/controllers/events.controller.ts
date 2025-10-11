@@ -8,6 +8,7 @@ import { GetEventExecutionsUseCase } from '../../application/use-cases/get-event
 import { CreateEventDto } from '../dtos/create-event.dto';
 import { UpdateEventDto } from '../dtos/update-event.dto';
 import { ToggleEventExecutionDto } from '../dtos/toggle-event-execution.dto';
+import { RRuleHelper } from '../../domain/utils/rrule-helper';
 
 @Controller('events')
 export class EventsController {
@@ -20,48 +21,71 @@ export class EventsController {
     private readonly getEventExecutionsUseCase: GetEventExecutionsUseCase,
   ) {}
 
+  // Helper: converter RRULE para formato antigo (compatibilidade frontend)
+  private convertRRuleToLegacy(recurrenceRule: string | null): any {
+    if (!recurrenceRule) {
+      return {
+        isRecurring: false,
+        recurrenceFrequency: null,
+        recurrenceInterval: null,
+        recurrenceDaysOfWeek: [],
+        recurrenceDayOfMonth: null,
+        recurrenceWeekOfMonth: null,
+        recurrenceEndDate: null,
+      };
+    }
+
+    const rule = RRuleHelper.parse(recurrenceRule);
+    if (!rule) {
+      return {
+        isRecurring: false,
+        recurrenceFrequency: null,
+        recurrenceInterval: null,
+        recurrenceDaysOfWeek: [],
+        recurrenceDayOfMonth: null,
+        recurrenceWeekOfMonth: null,
+        recurrenceEndDate: null,
+      };
+    }
+
+    return {
+      isRecurring: true,
+      recurrenceFrequency: rule.freq.toLowerCase(),
+      recurrenceInterval: rule.interval || 1,
+      recurrenceDaysOfWeek: rule.byweekday || [],
+      recurrenceDayOfMonth: rule.bymonthday || null,
+      recurrenceWeekOfMonth: null,
+      recurrenceEndDate: rule.until || null,
+    };
+  }
+
   @Get()
   @HttpCode(HttpStatus.OK)
   async list(
     @Query('calendarId') calendarId?: string,
     @Query('categoryId') categoryId?: string,
     @Query('search') search?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
   ) {
     const events = await this.listEventsUseCase.execute({
       calendarId,
       categoryId,
       search,
+      startDate,
+      endDate,
     });
 
-    return events.map((event: any) => ({
-      id: event.id,
-      calendarId: event.calendarId,
-      categoryId: event.categoryId,
-      title: event.title,
-      description: event.description,
-      startTime: event.startTime,
-      endTime: event.endTime,
-      startDate: event.startDate,
-      endDate: event.endDate,
-      isRecurring: event.isRecurring,
-      recurrenceFrequency: event.recurrenceFrequency,
-      recurrenceInterval: event.recurrenceInterval,
-      recurrenceDaysOfWeek: event.recurrenceDaysOfWeek,
-      recurrenceDayOfMonth: event.recurrenceDayOfMonth,
-      recurrenceWeekOfMonth: event.recurrenceWeekOfMonth,
-      recurrenceEndDate: event.recurrenceEndDate,
-      googleEventId: event.googleEventId,
-      isActive: event.isActive,
-      createdAt: event.createdAt,
-      updatedAt: event.updatedAt,
-      executions: event.executions || [],
-    }));
+    // Eventos já vêm expandidos e convertidos do ListEventsUseCase
+    // Não precisa converter novamente
+    return events;
   }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() createEventDto: CreateEventDto) {
     const event = await this.createEventUseCase.execute(createEventDto);
+    const legacy = this.convertRRuleToLegacy(event.recurrenceRule ?? null);
 
     return {
       id: event.id,
@@ -73,13 +97,7 @@ export class EventsController {
       endTime: event.endTime,
       startDate: event.startDate,
       endDate: event.endDate,
-      isRecurring: event.isRecurring,
-      recurrenceFrequency: event.recurrenceFrequency,
-      recurrenceInterval: event.recurrenceInterval,
-      recurrenceDaysOfWeek: event.recurrenceDaysOfWeek,
-      recurrenceDayOfMonth: event.recurrenceDayOfMonth,
-      recurrenceWeekOfMonth: event.recurrenceWeekOfMonth,
-      recurrenceEndDate: event.recurrenceEndDate,
+      ...legacy,
       googleEventId: event.googleEventId,
       isActive: event.isActive,
       createdAt: event.createdAt,
@@ -91,6 +109,7 @@ export class EventsController {
   @HttpCode(HttpStatus.OK)
   async update(@Param('id') id: string, @Body() updateEventDto: UpdateEventDto) {
     const event = await this.updateEventUseCase.execute(id, updateEventDto);
+    const legacy = this.convertRRuleToLegacy(event.recurrenceRule ?? null);
 
     return {
       id: event.id,
@@ -102,13 +121,7 @@ export class EventsController {
       endTime: event.endTime,
       startDate: event.startDate,
       endDate: event.endDate,
-      isRecurring: event.isRecurring,
-      recurrenceFrequency: event.recurrenceFrequency,
-      recurrenceInterval: event.recurrenceInterval,
-      recurrenceDaysOfWeek: event.recurrenceDaysOfWeek,
-      recurrenceDayOfMonth: event.recurrenceDayOfMonth,
-      recurrenceWeekOfMonth: event.recurrenceWeekOfMonth,
-      recurrenceEndDate: event.recurrenceEndDate,
+      ...legacy,
       googleEventId: event.googleEventId,
       isActive: event.isActive,
       createdAt: event.createdAt,
