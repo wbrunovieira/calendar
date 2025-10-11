@@ -2,9 +2,7 @@
 
 import { Event } from '@/types/calendar';
 import CalendarSearch from './CalendarSearch';
-import CalendarHeader from './CalendarHeader';
-import CalendarGrid from './CalendarGrid';
-import CalendarFooter from './CalendarFooter';
+import CalendarCard from './CalendarCard';
 import CalendarModals from './CalendarModals';
 import FloatingAddButton from './FloatingAddButton';
 import { useCalendarData } from '@/hooks/useCalendarData';
@@ -46,46 +44,25 @@ export default function Calendar() {
       <FloatingAddButton onClick={modals.openCreateModal} />
 
       {/* Search Bar */}
-      <CalendarSearch
-        searchQuery={search.searchQuery}
-        setSearchQuery={search.setSearchQuery}
-        searchResults={search.searchResults}
-        isSearching={search.isSearching}
-        showSearchResults={search.showSearchResults}
-        setShowSearchResults={search.setShowSearchResults}
-        onSearchResultClick={search.handleSearchResultClick}
-        onClearSearch={search.clearSearch}
-        categories={categories}
-      />
+      <CalendarSearch search={search} categories={categories} />
 
       {/* Calendar Card */}
-      <div className="rounded-2xl shadow-2xl w-full mt-20" style={{ backgroundColor: '#350545' }}>
-        {/* Header */}
-        <CalendarHeader
-          currentDate={currentDate}
-          viewMode={viewMode}
-          onPreviousPeriod={previousPeriod}
-          onNextPeriod={nextPeriod}
-          onGoToToday={goToToday}
-          onViewModeChange={setViewMode}
-        />
-
-        {/* Calendar Grid */}
-        <CalendarGrid
-          viewMode={viewMode}
-          currentDate={currentDate}
-          events={events}
-          categories={categories}
-          selectedCalendars={selectedCalendars}
-          onTimeSlotClick={modals.handleTimeSlotClick}
-          onEditClick={modals.handleEditClick}
-          onDeleteClick={modals.handleDeleteClick}
-          onEventUpdate={refetch}
-        />
-
-        {/* Calendar Footer */}
-        <CalendarFooter selectedCalendars={selectedCalendars} onToggleCalendar={toggleCalendar} />
-      </div>
+      <CalendarCard
+        currentDate={currentDate}
+        viewMode={viewMode}
+        onPreviousPeriod={previousPeriod}
+        onNextPeriod={nextPeriod}
+        onGoToToday={goToToday}
+        onViewModeChange={setViewMode}
+        events={events}
+        categories={categories}
+        selectedCalendars={selectedCalendars}
+        onTimeSlotClick={modals.handleTimeSlotClick}
+        onEditClick={modals.handleEditClick}
+        onDeleteClick={modals.handleDeleteClick}
+        onEventUpdate={refetch}
+        onToggleCalendar={toggleCalendar}
+      />
 
       {/* Modals */}
       <CalendarModals

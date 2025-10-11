@@ -7,29 +7,33 @@ import { calendars } from '@/data/calendars';
 import { Category, Event } from '@/types/calendar';
 import { DAYS_OF_WEEK_SHORT } from '@/constants/calendar';
 
-interface CalendarSearchProps {
+interface SearchState {
   searchQuery: string;
   setSearchQuery: (query: string) => void;
   searchResults: Event[];
   isSearching: boolean;
   showSearchResults: boolean;
   setShowSearchResults: (show: boolean) => void;
-  onSearchResultClick: (event: Event) => void;
-  onClearSearch: () => void;
+  handleSearchResultClick: (event: Event) => void;
+  clearSearch: () => void;
+}
+
+interface CalendarSearchProps {
+  search: SearchState;
   categories: Category[];
 }
 
-export default function CalendarSearch({
-  searchQuery,
-  setSearchQuery,
-  searchResults,
-  isSearching,
-  showSearchResults,
-  setShowSearchResults,
-  onSearchResultClick,
-  onClearSearch,
-  categories,
-}: CalendarSearchProps) {
+export default function CalendarSearch({ search, categories }: CalendarSearchProps) {
+  const {
+    searchQuery,
+    setSearchQuery,
+    searchResults,
+    isSearching,
+    showSearchResults,
+    setShowSearchResults,
+    handleSearchResultClick,
+    clearSearch,
+  } = search;
   return (
     <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-md px-4 search-container">
       <div className="relative">
@@ -56,7 +60,7 @@ export default function CalendarSearch({
         </svg>
         {searchQuery && (
           <button
-            onClick={onClearSearch}
+            onClick={clearSearch}
             className="absolute right-4 top-1/2 transform -translate-y-1/2 text-white/50 hover:text-white"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -91,7 +95,7 @@ export default function CalendarSearch({
                 return (
                   <button
                     key={event.id}
-                    onClick={() => onSearchResultClick(event)}
+                    onClick={() => handleSearchResultClick(event)}
                     className="w-full px-4 py-3 hover:bg-white/10 transition-colors text-left flex items-center gap-3"
                   >
                     <div
