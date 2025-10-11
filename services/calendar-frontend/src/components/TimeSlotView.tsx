@@ -1,24 +1,21 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
 import { Event, Category } from '@/types/calendar';
 import { calendars } from '@/data/calendars';
 import { useDragAndDrop } from '@/hooks/useDragAndDrop';
-import { api } from '@/lib/api';
+import { useTimeSlotEventUpdate } from '@/hooks/useTimeSlotEventUpdate';
+import { useEventResize } from '@/hooks/useEventResize';
+import { useEventExecution } from '@/hooks/useEventExecution';
 import {
   PIXELS_PER_HOUR,
-  START_HOUR,
-  MIN_EVENT_HEIGHT,
   HOURS_ARRAY,
 } from '@/constants/timeSlotView';
 import {
   timeToPixels,
-  pixelsToTime,
   calculateEventHeight,
   calculateTimeFromOffset,
-  extractBaseEventId,
 } from '@/utils/timeCalculations';
-import RecurringEventActionModal, { RecurringEventAction } from './RecurringEventActionModal';
+import RecurringEventActionModal from './RecurringEventActionModal';
 import TimeColumn from './TimeColumn';
 import TimeSlotDayHeader from './TimeSlotDayHeader';
 import TimeSlotGrid from './TimeSlotGrid';
@@ -54,210 +51,23 @@ export function TimeSlotView({
   const hours = HOURS_ARRAY;
   const today = new Date();
   const { handleDragStart, handleDragEnd, handleDragOver, handleDrop } = useDragAndDrop();
-  const [resizingEvent, setResizingEvent] = useState<{ id: string; edge: 'top' | 'bottom'; startY: number; originalHeight: number; originalTop: number } | null>(null);
-  const [justResized, setJustResized] = useState(false);
-  const [isResizing, setIsResizing] = useState(false);
-  const [showRecurringActionModal, setShowRecurringActionModal] = useState(false);
-  const [dragContext, setDragContext] = useState<{ eventId: string; originalDate: string } | null>(null);
-  const [pendingUpdate, setPendingUpdate] = useState<{
-    eventId: string;
-    eventTitle: string;
-    originalDate: string;
-    newDate: string;
-    newTime?: string;
-    newEndTime?: string;
-  } | null>(null);
 
-  const handleEventUpdate = useCallback(async (eventId: string, newDate: string, newTime?: string, newEndTime?: string, recurringAction?: RecurringEventAction, originalDate?: string) => {
-    try {
-      const event = events.find(e => e.id === eventId);
-      if (!event) return;
+  // Custom hooks for business logic
+  const {
+    handleEventUpdate,
+    handleRecurringActionSelect,
+    handleRecurringActionClose,
+    showRecurringActionModal,
+    setDragContext,
+    pendingUpdate,
+  } = useTimeSlotEventUpdate({ events, onEventUpdate });
 
-      // Determine the original date - use dragContext, passed originalDate, or event's startDate
-      const eventOriginalDate = originalDate || dragContext?.originalDate || event.startDate.split('T')[0];
+  const { handleResizeStart, isResizing, justResized, resizingEvent } = useEventResize({
+    events,
+    onEventUpdate: handleEventUpdate,
+  });
 
-      // If event is recurring and no action specified, show the modal
-      if (event.isRecurring && !recurringAction) {
-        setPendingUpdate({
-          eventId,
-          eventTitle: event.title,
-          originalDate: eventOriginalDate,
-          newDate,
-          newTime,
-          newEndTime,
-        });
-        setShowRecurringActionModal(true);
-        return;
-      }
-
-      // Extract the base event ID if it's an expanded recurring event
-      const baseEventId = extractBaseEventId(eventId);
-
-      const updatePayload: Record<string, unknown> = {
-        startDate: newDate,
-      };
-
-      if (newTime) updatePayload.startTime = newTime;
-      if (newEndTime) updatePayload.endTime = newEndTime;
-
-      // Add recurring action scope if provided
-      if (recurringAction) {
-        updatePayload.recurringEditScope = recurringAction;
-        // For all scopes, we need to pass the original occurrence date
-        updatePayload.occurrenceDate = eventOriginalDate;
-      }
-
-      await api.events.update(baseEventId, updatePayload);
-
-      // Clear drag context after update
-      setDragContext(null);
-
-      if (onEventUpdate) {
-        onEventUpdate();
-      }
-    } catch {
-      // Clear drag context even on error
-      setDragContext(null);
-    }
-  }, [events, dragContext, onEventUpdate]);
-
-  const handleRecurringActionSelect = async (action: RecurringEventAction) => {
-    setShowRecurringActionModal(false);
-
-    if (pendingUpdate) {
-      await handleEventUpdate(
-        pendingUpdate.eventId,
-        pendingUpdate.newDate,
-        pendingUpdate.newTime,
-        pendingUpdate.newEndTime,
-        action,
-        pendingUpdate.originalDate
-      );
-      setPendingUpdate(null);
-    }
-  };
-
-  const handleRecurringActionClose = () => {
-    setShowRecurringActionModal(false);
-    setPendingUpdate(null);
-  };
-
-  const handleResizeStart = (eventId: string, edge: 'top' | 'bottom', e: React.MouseEvent, currentHeight: number, currentTop: number) => {
-    e.stopPropagation();
-    e.preventDefault();
-
-    // Disable dragging on the event element
-    const eventElement = document.querySelector(`[data-event-id="${eventId}"]`) as HTMLElement;
-    if (eventElement) {
-      eventElement.setAttribute('draggable', 'false');
-    }
-
-    setIsResizing(true);
-    setResizingEvent({ id: eventId, edge, startY: e.clientY, originalHeight: currentHeight, originalTop: currentTop });
-  };
-
-  const handleResizeMove = useCallback((e: MouseEvent) => {
-    if (!resizingEvent) return;
-
-    const deltaY = e.clientY - resizingEvent.startY;
-
-    // Find the event element
-    const eventElement = document.querySelector(`[data-event-id="${resizingEvent.id}"]`) as HTMLElement;
-    if (!eventElement) return;
-
-    if (resizingEvent.edge === 'bottom') {
-      // Resizing from bottom - change end time
-      const newHeight = Math.max(MIN_EVENT_HEIGHT, resizingEvent.originalHeight + deltaY);
-      eventElement.style.height = `${newHeight}px`;
-    } else {
-      // Resizing from top - change start time
-      const newTop = resizingEvent.originalTop + deltaY;
-      const newHeight = resizingEvent.originalHeight - deltaY;
-
-      if (newHeight >= MIN_EVENT_HEIGHT) {
-        eventElement.style.top = `${newTop}px`;
-        eventElement.style.height = `${newHeight}px`;
-      }
-    }
-  }, [resizingEvent]);
-
-  const handleResizeEnd = useCallback(async () => {
-    if (!resizingEvent) return;
-
-    const event = events.find(ev => ev.id === resizingEvent.id);
-    if (!event) {
-      setResizingEvent(null);
-      setIsResizing(false);
-      return;
-    }
-
-    const eventElement = document.querySelector(`[data-event-id="${resizingEvent.id}"]`) as HTMLElement;
-    if (!eventElement) {
-      setResizingEvent(null);
-      setIsResizing(false);
-      return;
-    }
-
-    // Re-enable dragging
-    eventElement.setAttribute('draggable', 'true');
-
-    const newTop = parseFloat(eventElement.style.top);
-    const newHeight = parseFloat(eventElement.style.height);
-
-    // Convert pixels to time using utils
-    const newStartTime = pixelsToTime(newTop);
-    const startMinutesFromMidnight = (newTop / PIXELS_PER_HOUR) * 60 + (START_HOUR * 60);
-    const durationMinutes = (newHeight / PIXELS_PER_HOUR) * 60;
-    const endMinutesFromMidnight = startMinutesFromMidnight + durationMinutes;
-    const endHours = Math.floor(endMinutesFromMidnight / 60);
-    const endMins = Math.round(endMinutesFromMidnight % 60);
-    const newEndTime = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
-
-    const dateString = event.startDate.split('T')[0];
-
-    // Set flags to prevent modal opening BEFORE any async operations
-    setJustResized(true);
-    setIsResizing(false);
-    setResizingEvent(null);
-
-    await handleEventUpdate(event.id, dateString, newStartTime, newEndTime);
-
-    // Keep the flag for longer to ensure click event doesn't trigger
-    setTimeout(() => setJustResized(false), 300);
-  }, [resizingEvent, events, handleEventUpdate]);
-
-  // Handle checkbox toggle
-  const handleToggleExecution = async (eventId: string, date: Date, currentlyCompleted: boolean) => {
-    const executionDate = date.toISOString().split('T')[0];
-
-    try {
-      await api.events.toggleExecution(
-        eventId,
-        executionDate,
-        !currentlyCompleted
-      );
-
-      // Reload events to get updated execution status
-      if (onEventUpdate) {
-        onEventUpdate();
-      }
-    } catch {
-      // Error handling for execution toggle
-    }
-  };
-
-  // Add mouse event listeners for resize
-  useEffect(() => {
-    if (resizingEvent) {
-      window.addEventListener('mousemove', handleResizeMove);
-      window.addEventListener('mouseup', handleResizeEnd);
-
-      return () => {
-        window.removeEventListener('mousemove', handleResizeMove);
-        window.removeEventListener('mouseup', handleResizeEnd);
-      };
-    }
-  }, [resizingEvent, handleResizeMove, handleResizeEnd]);
+  const { handleToggleExecution } = useEventExecution({ onEventUpdate });
 
   const getEventsForDate = (date: Date): Event[] => {
     const dateString = date.toISOString().split('T')[0];
