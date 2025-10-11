@@ -9,6 +9,22 @@ import EditEventModal from './EditEventModal';
 import ConfirmDeleteModal from './ConfirmDeleteModal';
 import DeleteRecurringEventModal, { DeleteRecurringEventAction } from './DeleteRecurringEventModal';
 import { TimeSlotView } from './TimeSlotView';
+import {
+  MONTH_NAMES,
+  DAYS_OF_WEEK_SHORT,
+  DAYS_OF_WEEK_FULL,
+  DEFAULT_EVENT_TIME,
+  SEARCH_CONFIG,
+} from '@/constants/calendar';
+import {
+  getDaysInMonth,
+  getFirstDayOfMonth,
+  getWeekNumber,
+  getWeekOfMonth,
+  getWeekDays,
+  getNextNDays,
+} from '@/utils/calendar';
+import { getDefaultDateRange } from '@/utils/calendar/dateRanges';
 
 type ViewMode = 'month' | 'week' | '3days' | 'day';
 
@@ -42,20 +58,9 @@ export default function Calendar() {
     try {
       setLoading(true);
 
-      // Calculate date range: 3 months before to 1 year ahead
-      const today = new Date();
-      const startDate = new Date(today);
-      startDate.setMonth(startDate.getMonth() - 3);
-      const endDate = new Date(today);
-      endDate.setFullYear(endDate.getFullYear() + 1);
+      const dateRange = getDefaultDateRange();
 
-      const [fetchedEvents, fetchedCategories] = await Promise.all([
-        api.events.list({
-          startDate: startDate.toISOString().split('T')[0],
-          endDate: endDate.toISOString().split('T')[0],
-        }),
-        api.categories.list(),
-      ]);
+      const [fetchedEvents, fetchedCategories] = await Promise.all([api.events.list(dateRange), api.categories.list()]);
       setEvents(fetchedEvents);
       setCategories(fetchedCategories);
     } catch {
@@ -94,23 +99,17 @@ export default function Calendar() {
         return;
       }
 
-      if (searchQuery.trim().length < 2) {
+      if (searchQuery.trim().length < SEARCH_CONFIG.MIN_QUERY_LENGTH) {
         return; // Don't search for single character
       }
 
       setIsSearching(true);
       try {
-        // Calculate search date range
-        const today = new Date();
-        const startDate = new Date(today);
-        startDate.setMonth(startDate.getMonth() - 3);
-        const endDate = new Date(today);
-        endDate.setFullYear(endDate.getFullYear() + 1);
+        const dateRange = getDefaultDateRange();
 
         const results = await api.events.list({
           search: searchQuery,
-          startDate: startDate.toISOString().split('T')[0],
-          endDate: endDate.toISOString().split('T')[0],
+          ...dateRange,
         });
         // Backend already returns expanded occurrences, just sort by date (closest first)
         results.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
@@ -123,7 +122,7 @@ export default function Calendar() {
       }
     };
 
-    const debounceTimer = setTimeout(searchEvents, 300);
+    const debounceTimer = setTimeout(searchEvents, SEARCH_CONFIG.DEBOUNCE_MS);
     return () => clearTimeout(debounceTimer);
   }, [searchQuery]);
 
@@ -235,26 +234,6 @@ export default function Calendar() {
     setSearchQuery('');
   };
 
-  const monthNames = [
-    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-  ];
-
-  const daysOfWeek = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-  const daysOfWeekFull = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
-
-  const getDaysInMonth = (date: Date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    return new Date(year, month + 1, 0).getDate();
-  };
-
-  const getFirstDayOfMonth = (date: Date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    return new Date(year, month, 1).getDay();
-  };
-
   const previousPeriod = () => {
     if (viewMode === 'month') {
       setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1));
@@ -295,47 +274,6 @@ export default function Calendar() {
     setCurrentDate(new Date());
   };
 
-  // Calculate week number in the year (ISO 8601)
-  const getWeekNumber = (date: Date): number => {
-    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-    const dayNum = d.getUTCDay() || 7;
-    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-  };
-
-  // Calculate week number in the month
-  const getWeekOfMonth = (date: Date): number => {
-    const firstDay = new Date(date.getFullYear(), date.getMonth(), 1);
-    const firstDayOfWeek = firstDay.getDay();
-    const offsetDate = date.getDate() + firstDayOfWeek - 1;
-    return Math.ceil(offsetDate / 7);
-  };
-
-  const getWeekDays = () => {
-    const startOfWeek = new Date(currentDate);
-    const day = startOfWeek.getDay();
-    startOfWeek.setDate(startOfWeek.getDate() - day);
-
-    const days = [];
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(startOfWeek);
-      date.setDate(date.getDate() + i);
-      days.push(date);
-    }
-    return days;
-  };
-
-  const get3Days = () => {
-    const days = [];
-    for (let i = 0; i < 3; i++) {
-      const date = new Date(currentDate);
-      date.setDate(date.getDate() + i);
-      days.push(date);
-    }
-    return days;
-  };
-
   // Função para obter eventos de uma data específica
   // Backend já retorna eventos expandidos, então apenas filtramos por data e calendários selecionados
   const getEventsForDate = (date: Date): Event[] => {
@@ -369,8 +307,7 @@ export default function Calendar() {
     const days = [];
     const today = new Date();
     const isCurrentMonth =
-      currentDate.getMonth() === today.getMonth() &&
-      currentDate.getFullYear() === today.getFullYear();
+      currentDate.getMonth() === today.getMonth() && currentDate.getFullYear() === today.getFullYear();
 
     for (let i = 0; i < firstDay; i++) {
       days.push(<div key={`empty-${i}`} className="aspect-square p-1" />);
@@ -397,12 +334,17 @@ export default function Calendar() {
               ? { background: 'linear-gradient(135deg, #350545 0%, #792990 100%)' }
               : { backgroundColor: 'rgba(255, 255, 255, 0.02)' }
           }
-          onClick={(e) => {
+          onClick={e => {
             // Only open modal if clicking on empty space (not on an event)
             const target = e.target as HTMLElement;
-            if (target === e.currentTarget || target.tagName === 'SPAN' || target.classList.contains('flex-col') || target.classList.contains('time-grid')) {
+            if (
+              target === e.currentTarget ||
+              target.tagName === 'SPAN' ||
+              target.classList.contains('flex-col') ||
+              target.classList.contains('time-grid')
+            ) {
               const dateString = dayDate.toISOString().split('T')[0];
-              handleTimeSlotClick(dateString, '09:00'); // Default to 9am for month view
+              handleTimeSlotClick(dateString, DEFAULT_EVENT_TIME);
             }
           }}
         >
@@ -421,7 +363,7 @@ export default function Calendar() {
 
           <span className="text-xs md:text-sm mb-1 relative z-10">{day}</span>
           <div className="flex flex-col gap-0.5 w-full">
-            {dayEvents.slice(0, 2).map((event) => {
+            {dayEvents.slice(0, 2).map(event => {
               const category = categories.find(c => c.id === event.categoryId);
               const calendar = calendars.find(c => c.id === event.calendarId);
               const calendarIcon = calendar?.type === 'professional' ? '💼' : '👤';
@@ -445,30 +387,38 @@ export default function Calendar() {
                   </div>
                   <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute top-0 right-0 flex">
                     <button
-                      onClick={(e) => handleEditClick(event, e)}
+                      onClick={e => handleEditClick(event, e)}
                       className="p-0.5 hover:bg-blue-600 rounded"
                       title="Editar"
                     >
                       <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                        />
                       </svg>
                     </button>
                     <button
-                      onClick={(e) => handleDeleteClick(event, e)}
+                      onClick={e => handleDeleteClick(event, e)}
                       className="p-0.5 hover:bg-red-600 rounded"
                       title="Deletar"
                     >
                       <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                        />
                       </svg>
                     </button>
                   </div>
                 </div>
               );
             })}
-            {dayEvents.length > 2 && (
-              <div className="text-[8px] opacity-70">+{dayEvents.length - 2} mais</div>
-            )}
+            {dayEvents.length > 2 && <div className="text-[8px] opacity-70">+{dayEvents.length - 2} mais</div>}
           </div>
         </div>
       );
@@ -478,7 +428,7 @@ export default function Calendar() {
   };
 
   const renderWeekView = () => {
-    const weekDays = getWeekDays();
+    const weekDays = getWeekDays(currentDate);
     return (
       <TimeSlotView
         days={weekDays}
@@ -489,15 +439,15 @@ export default function Calendar() {
         onDeleteClick={handleDeleteClick}
         onEventUpdate={fetchData}
         onTimeSlotClick={handleTimeSlotClick}
-        daysOfWeek={daysOfWeek}
-        daysOfWeekFull={daysOfWeekFull}
-        monthNames={monthNames}
+        daysOfWeek={[...DAYS_OF_WEEK_SHORT]}
+        daysOfWeekFull={[...DAYS_OF_WEEK_FULL]}
+        monthNames={[...MONTH_NAMES]}
       />
     );
   };
 
   const render3DaysView = () => {
-    const days = get3Days();
+    const days = getNextNDays(currentDate, 3);
     return (
       <TimeSlotView
         days={days}
@@ -508,8 +458,8 @@ export default function Calendar() {
         onDeleteClick={handleDeleteClick}
         onEventUpdate={fetchData}
         onTimeSlotClick={handleTimeSlotClick}
-        daysOfWeekFull={daysOfWeekFull}
-        monthNames={monthNames}
+        daysOfWeekFull={[...DAYS_OF_WEEK_FULL]}
+        monthNames={[...MONTH_NAMES]}
       />
     );
   };
@@ -525,8 +475,8 @@ export default function Calendar() {
         onDeleteClick={handleDeleteClick}
         onEventUpdate={fetchData}
         onTimeSlotClick={handleTimeSlotClick}
-        daysOfWeekFull={daysOfWeekFull}
-        monthNames={monthNames}
+        daysOfWeekFull={[...DAYS_OF_WEEK_FULL]}
+        monthNames={[...MONTH_NAMES]}
       />
     );
   };
@@ -558,7 +508,7 @@ export default function Calendar() {
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={e => setSearchQuery(e.target.value)}
             onFocus={() => searchQuery && setShowSearchResults(true)}
             placeholder="Buscar eventos..."
             className="w-full px-4 py-3 pl-12 bg-white/10 backdrop-blur-md border border-white/20 text-white placeholder-white/50 rounded-xl focus:ring-2 focus:ring-[#792990] focus:border-transparent shadow-2xl"
@@ -569,7 +519,12 @@ export default function Calendar() {
             stroke="currentColor"
             viewBox="0 0 24 24"
           >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
           </svg>
           {searchQuery && (
             <button
@@ -594,19 +549,17 @@ export default function Calendar() {
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto"></div>
               </div>
             ) : searchResults.length === 0 ? (
-              <div className="p-4 text-center text-white/70">
-                Nenhum evento encontrado
-              </div>
+              <div className="p-4 text-center text-white/70">Nenhum evento encontrado</div>
             ) : (
               <div className="divide-y divide-white/10">
-                {searchResults.map((event) => {
+                {searchResults.map(event => {
                   const category = categories.find(c => c.id === event.categoryId);
                   const calendar = calendars.find(c => c.id === event.calendarId);
                   const eventDate = new Date(event.startDate);
                   const calendarIcon = calendar?.type === 'professional' ? '💼' : '👤';
 
                   // Format date to show day of week
-                  const dayOfWeek = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][eventDate.getDay()];
+                  const dayOfWeek = DAYS_OF_WEEK_SHORT[eventDate.getDay()];
                   const isToday = eventDate.toDateString() === new Date().toDateString();
                   const isTomorrow = eventDate.toDateString() === new Date(Date.now() + 86400000).toDateString();
 
@@ -654,7 +607,12 @@ export default function Calendar() {
                           )}
                         </div>
                       </div>
-                      <svg className="w-5 h-5 text-white/50 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg
+                        className="w-5 h-5 text-white/50 flex-shrink-0"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                       </svg>
                     </button>
@@ -668,7 +626,6 @@ export default function Calendar() {
 
       {/* Calendar Card */}
       <div className="rounded-2xl shadow-2xl w-full mt-20" style={{ backgroundColor: '#350545' }}>
-
         {/* Header */}
         <div className="bg-primary px-3 md:px-4 py-2 md:py-3 text-white">
           <div className="flex items-center justify-between mb-2">
@@ -688,18 +645,16 @@ export default function Calendar() {
                   <div className="flex items-center justify-center gap-3">
                     <h2 className="text-lg md:text-xl font-bold">
                       {(() => {
-                        const weekDays = getWeekDays();
+                        const weekDays = getWeekDays(currentDate);
                         const firstDay = weekDays[0];
                         const lastDay = weekDays[6];
                         const sameMonth = firstDay.getMonth() === lastDay.getMonth();
                         return sameMonth
-                          ? `${monthNames[firstDay.getMonth()]}`
-                          : `${monthNames[firstDay.getMonth()]} / ${monthNames[lastDay.getMonth()]}`;
+                          ? `${MONTH_NAMES[firstDay.getMonth()]}`
+                          : `${MONTH_NAMES[firstDay.getMonth()]} / ${MONTH_NAMES[lastDay.getMonth()]}`;
                       })()}
                     </h2>
-                    <span className="text-sm md:text-base opacity-90">
-                      {currentDate.getFullYear()}
-                    </span>
+                    <span className="text-sm md:text-base opacity-90">{currentDate.getFullYear()}</span>
                     <button
                       onClick={goToToday}
                       className="px-2 py-1 bg-white/20 hover:bg-white/30 rounded text-xs font-medium"
@@ -709,28 +664,26 @@ export default function Calendar() {
                   </div>
                   <div className="flex items-center justify-center gap-2 text-xs md:text-sm opacity-80">
                     <span className="bg-white/10 px-2 py-0.5 rounded">
-                      Semana iniciando dia {getWeekDays()[0].getDate()}
+                      Semana iniciando dia {getWeekDays(currentDate)[0].getDate()}
                     </span>
                     <span className="text-white/40">•</span>
                     <span className="bg-white/10 px-2 py-0.5 rounded">
-                      {getWeekOfMonth(getWeekDays()[0])}ª semana do mês
+                      {getWeekOfMonth(getWeekDays(currentDate)[0])}ª semana do mês
                     </span>
                     <span className="text-white/40">•</span>
                     <span className="bg-white/10 px-2 py-0.5 rounded">
-                      Semana {getWeekNumber(getWeekDays()[0])} do ano
+                      Semana {getWeekNumber(getWeekDays(currentDate)[0])} do ano
                     </span>
                   </div>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg md:text-xl font-bold">
-                    {viewMode === 'month' && monthNames[currentDate.getMonth()]}
-                    {viewMode === '3days' && `${currentDate.getDate()} ${monthNames[currentDate.getMonth()]}`}
-                    {viewMode === 'day' && `${currentDate.getDate()} ${monthNames[currentDate.getMonth()]}`}
+                    {viewMode === 'month' && MONTH_NAMES[currentDate.getMonth()]}
+                    {viewMode === '3days' && `${currentDate.getDate()} ${MONTH_NAMES[currentDate.getMonth()]}`}
+                    {viewMode === 'day' && `${currentDate.getDate()} ${MONTH_NAMES[currentDate.getMonth()]}`}
                   </h2>
-                  <span className="text-sm md:text-base opacity-90">
-                    {currentDate.getFullYear()}
-                  </span>
+                  <span className="text-sm md:text-base opacity-90">{currentDate.getFullYear()}</span>
                   <button
                     onClick={goToToday}
                     className="ml-2 px-2 py-1 bg-white/20 hover:bg-white/30 rounded text-xs font-medium"
@@ -794,15 +747,16 @@ export default function Calendar() {
           {viewMode === 'month' && (
             <>
               <div className="grid grid-cols-7 gap-1 mb-3">
-                {daysOfWeek.map((day, index) => (
+                {DAYS_OF_WEEK_SHORT.map((day, index) => (
                   <div
                     key={day}
                     className={`
                       text-center font-bold text-sm md:text-base py-1.5 rounded-lg
                       transition-all duration-200
-                      ${index === 0 || index === 6
-                        ? 'bg-gradient-to-r from-[#792990]/30 to-[#350545]/30 text-white/90 border border-[#792990]/40'
-                        : 'bg-white/5 text-white/80 border border-white/10'
+                      ${
+                        index === 0 || index === 6
+                          ? 'bg-gradient-to-r from-[#792990]/30 to-[#350545]/30 text-white/90 border border-[#792990]/40'
+                          : 'bg-white/5 text-white/80 border border-white/10'
                       }
                       hover:bg-[#792990]/40 hover:border-[#792990]/60 hover:text-white
                     `}
@@ -825,7 +779,7 @@ export default function Calendar() {
         {/* Calendar Selector */}
         <div className="px-3 py-2 border-t" style={{ backgroundColor: '#350545', borderColor: '#792990' }}>
           <div className="flex items-center justify-center gap-3 flex-wrap">
-            {calendars.map((calendar) => (
+            {calendars.map(calendar => (
               <button
                 key={calendar.id}
                 onClick={() => toggleCalendar(calendar.id)}
@@ -835,10 +789,7 @@ export default function Calendar() {
                     : 'bg-white/5 text-white/50 hover:bg-white/10'
                 }`}
               >
-                <div
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: calendar.color }}
-                />
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: calendar.color }} />
                 <span>{calendar.name}</span>
               </button>
             ))}
@@ -849,7 +800,10 @@ export default function Calendar() {
         <div className="px-3 py-2 border-t" style={{ backgroundColor: '#350545', borderColor: '#792990' }}>
           <div className="flex items-center justify-center gap-4 text-xs text-white flex-wrap">
             <div className="flex items-center gap-1">
-              <div className="w-3 h-3 rounded" style={{ background: 'linear-gradient(135deg, #792990 0%, #ffffff 100%)' }}></div>
+              <div
+                className="w-3 h-3 rounded"
+                style={{ background: 'linear-gradient(135deg, #792990 0%, #ffffff 100%)' }}
+              ></div>
               <span>Hoje</span>
             </div>
             <div className="h-3 w-px bg-white/20"></div>
