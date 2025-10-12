@@ -37,6 +37,17 @@ func RunMigrations(db *sql.DB) error {
 		// Create finance schema
 		`CREATE SCHEMA IF NOT EXISTS finance`,
 
+		// Create profiles table
+		`CREATE TABLE IF NOT EXISTS finance.profiles (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			calendar_id VARCHAR(255) NOT NULL UNIQUE,
+			name VARCHAR(255) NOT NULL,
+			type VARCHAR(50) NOT NULL CHECK (type IN ('PERSONAL', 'BUSINESS')),
+			is_active BOOLEAN NOT NULL DEFAULT true,
+			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+		)`,
+
 		// Create accounts table
 		`CREATE TABLE IF NOT EXISTS finance.accounts (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -83,6 +94,7 @@ func RunMigrations(db *sql.DB) error {
 		)`,
 
 		// Create indexes
+		`CREATE INDEX IF NOT EXISTS idx_profiles_calendar_id ON finance.profiles(calendar_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_accounts_user_id ON finance.accounts(user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_transactions_account_id ON finance.transactions(account_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_transactions_date ON finance.transactions(transaction_date)`,

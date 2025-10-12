@@ -6,8 +6,11 @@ import (
 	"os"
 	"time"
 
+	"github.com/brunovieira/calendar-finances/internal/application/usecases"
 	"github.com/brunovieira/calendar-finances/internal/database"
 	"github.com/brunovieira/calendar-finances/internal/handlers"
+	profileHandlers "github.com/brunovieira/calendar-finances/internal/infrastructure/http/handlers"
+	"github.com/brunovieira/calendar-finances/internal/infrastructure/persistence"
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
 	"github.com/rs/cors"
@@ -45,8 +48,32 @@ func main() {
 	router.HandleFunc("/health", handlers.HealthCheck).Methods("GET")
 	router.HandleFunc("/", handlers.RootHandler).Methods("GET")
 
+	// Initialize Profile repository and use cases
+	profileRepo := persistence.NewProfileRepository(db)
+	createProfileUC := usecases.NewCreateProfileUseCase(profileRepo)
+	listProfilesUC := usecases.NewListProfilesUseCase(profileRepo)
+	getProfileUC := usecases.NewGetProfileUseCase(profileRepo)
+	updateProfileUC := usecases.NewUpdateProfileUseCase(profileRepo)
+	deleteProfileUC := usecases.NewDeleteProfileUseCase(profileRepo)
+
+	// Initialize Profile handlers
+	profileHandler := profileHandlers.NewProfileHandlers(
+		createProfileUC,
+		listProfilesUC,
+		getProfileUC,
+		updateProfileUC,
+		deleteProfileUC,
+	)
+
 	// API v1 routes
 	apiRouter := router.PathPrefix("/api/v1").Subrouter()
+
+	// Profile routes
+	apiRouter.HandleFunc("/profiles", profileHandler.List).Methods("GET")
+	apiRouter.HandleFunc("/profiles", profileHandler.Create).Methods("POST")
+	apiRouter.HandleFunc("/profiles/{id}", profileHandler.Get).Methods("GET")
+	apiRouter.HandleFunc("/profiles/{id}", profileHandler.Update).Methods("PUT")
+	apiRouter.HandleFunc("/profiles/{id}", profileHandler.Delete).Methods("DELETE")
 
 	// Accounts routes (placeholder)
 	apiRouter.HandleFunc("/accounts", handlers.NotImplemented).Methods("GET", "POST")
