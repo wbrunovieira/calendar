@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
 import ProfileModal from '@/components/finances/ProfileModal';
+import BankAccountModal, { AccountType } from '@/components/finances/BankAccountModal';
 
 type TabType = 'dashboard' | 'settings';
 
@@ -22,19 +23,47 @@ interface Calendar {
   email: string | null;
 }
 
+interface BankAccount {
+  id: string;
+  profileId: string;
+  name: string;
+  type: AccountType;
+  initialBalance: number;
+  currentBalance: number;
+  currency: string;
+  isActive: boolean;
+  bankName?: string;
+  bankCode?: string;
+  agency?: string;
+  accountNumber?: string;
+  accountDigit?: string;
+  color?: string;
+  icon?: string;
+  description?: string;
+  creditLimit?: number;
+  dueDay?: number;
+  closingDay?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export default function FinancesPage() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [calendars, setCalendars] = useState<Calendar[]>([]);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isBankAccountModalOpen, setIsBankAccountModalOpen] = useState(false);
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
+  const [editingBankAccount, setEditingBankAccount] = useState<BankAccount | null>(null);
 
-  // Fetch profiles
+  // Fetch profiles and bank accounts
   useEffect(() => {
     if (activeTab === 'settings') {
       fetchProfiles();
       fetchCalendars();
+      fetchBankAccounts();
     }
   }, [activeTab]);
 
@@ -138,6 +167,98 @@ export default function FinancesPage() {
       handleUpdateProfile(profileData);
     } else {
       handleCreateProfile(profileData);
+    }
+  };
+
+  // Bank Accounts Functions
+  const fetchBankAccounts = async () => {
+    try {
+      const response = await fetch('http://localhost:3335/api/v1/bank-accounts');
+      const data = await response.json();
+      setBankAccounts(data.data || []);
+    } catch (error) {
+      console.error('Error fetching bank accounts:', error);
+    }
+  };
+
+  const handleCreateBankAccount = async (accountData: Omit<BankAccount, 'id' | 'currentBalance' | 'isActive' | 'createdAt' | 'updatedAt'>) => {
+    try {
+      const response = await fetch('http://localhost:3335/api/v1/bank-accounts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(accountData),
+      });
+
+      if (response.ok) {
+        await fetchBankAccounts();
+      } else {
+        const error = await response.text();
+        alert(`Erro ao criar conta: ${error}`);
+      }
+    } catch (error) {
+      console.error('Error creating bank account:', error);
+      alert('Erro ao criar conta bancária');
+    }
+  };
+
+  const handleUpdateBankAccount = async (accountData: Omit<BankAccount, 'id' | 'currentBalance' | 'isActive' | 'createdAt' | 'updatedAt'>) => {
+    if (!editingBankAccount) return;
+
+    try {
+      const response = await fetch(
+        `http://localhost:3335/api/v1/bank-accounts/${editingBankAccount.id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(accountData),
+        }
+      );
+
+      if (response.ok) {
+        await fetchBankAccounts();
+        setEditingBankAccount(null);
+      } else {
+        const error = await response.text();
+        alert(`Erro ao atualizar conta: ${error}`);
+      }
+    } catch (error) {
+      console.error('Error updating bank account:', error);
+      alert('Erro ao atualizar conta bancária');
+    }
+  };
+
+  const handleDeleteBankAccount = async (id: string) => {
+    if (!confirm('Tem certeza que deseja excluir esta conta bancária?')) return;
+
+    try {
+      const response = await fetch(
+        `http://localhost:3335/api/v1/bank-accounts/${id}`,
+        {
+          method: 'DELETE',
+        }
+      );
+
+      if (response.ok) {
+        await fetchBankAccounts();
+      } else {
+        const error = await response.text();
+        alert(`Erro ao excluir conta: ${error}`);
+      }
+    } catch (error) {
+      console.error('Error deleting bank account:', error);
+      alert('Erro ao excluir conta bancária');
+    }
+  };
+
+  const handleSaveBankAccount = (accountData: Omit<BankAccount, 'id' | 'currentBalance' | 'isActive' | 'createdAt' | 'updatedAt'>) => {
+    if (editingBankAccount) {
+      handleUpdateBankAccount(accountData);
+    } else {
+      handleCreateBankAccount(accountData);
     }
   };
 
@@ -362,7 +483,7 @@ export default function FinancesPage() {
               </div>
 
               {/* Info Box */}
-              <div className="p-6 bg-blue-500/10 rounded-xl border border-blue-500/20">
+              <div className="p-6 bg-blue-500/10 rounded-xl border border-blue-500/20 mb-8">
                 <div className="flex items-start gap-3">
                   <svg className="w-6 h-6 text-blue-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -375,6 +496,117 @@ export default function FinancesPage() {
                     </p>
                   </div>
                 </div>
+              </div>
+
+              {/* Bank Accounts Section */}
+              <div className="mb-8">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-2xl font-bold text-white">Contas Bancárias</h3>
+                  <button
+                    onClick={() => {
+                      setEditingBankAccount(null);
+                      setIsBankAccountModalOpen(true);
+                    }}
+                    className="flex items-center gap-2 px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl font-semibold transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 border border-white/20"
+                    disabled={profiles.length === 0}
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    <span>Nova Conta</span>
+                  </button>
+                </div>
+
+                {profiles.length === 0 ? (
+                  <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/10">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-gradient-to-br from-yellow-500 to-orange-600 rounded-full flex items-center justify-center text-2xl">
+                        ⚠️
+                      </div>
+                      <div>
+                        <h4 className="text-xl font-bold text-white">Crie um perfil primeiro</h4>
+                        <p className="text-white/60 text-sm">Você precisa criar um perfil financeiro antes de adicionar contas bancárias</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : bankAccounts.length === 0 ? (
+                  <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/10">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-full flex items-center justify-center text-2xl">
+                        🏦
+                      </div>
+                      <div>
+                        <h4 className="text-xl font-bold text-white">Nenhuma conta cadastrada</h4>
+                        <p className="text-white/60 text-sm">Adicione suas contas bancárias, cartões e investimentos</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid gap-4">
+                    {bankAccounts.map((account) => {
+                      const profile = profiles.find((p) => p.id === account.profileId);
+                      const formatCurrency = (value: number) => {
+                        return new Intl.NumberFormat('pt-BR', {
+                          style: 'currency',
+                          currency: account.currency || 'BRL',
+                        }).format(value);
+                      };
+
+                      return (
+                        <div
+                          key={account.id}
+                          className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/10 hover:bg-white/15 transition-all"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                              <div
+                                className="w-12 h-12 rounded-full flex items-center justify-center text-2xl"
+                                style={{ backgroundColor: account.color || '#10b981' }}
+                              >
+                                {account.icon || '🏦'}
+                              </div>
+                              <div>
+                                <h4 className="text-xl font-bold text-white">{account.name}</h4>
+                                <p className="text-white/60 text-sm">
+                                  {account.bankName && `${account.bankName}`}
+                                  {account.accountNumber && ` • ${account.accountNumber}${account.accountDigit ? `-${account.accountDigit}` : ''}`}
+                                  {profile && ` • ${profile.name}`}
+                                </p>
+                                <div className="flex items-center gap-3 mt-2">
+                                  <p className="text-emerald-400 font-bold">
+                                    {formatCurrency(account.currentBalance)}
+                                  </p>
+                                  {account.type === 'CREDIT_CARD' && account.creditLimit && (
+                                    <p className="text-white/50 text-sm">
+                                      Limite: {formatCurrency(account.creditLimit)}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => {
+                                  setEditingBankAccount(account);
+                                  setIsBankAccountModalOpen(true);
+                                }}
+                                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg font-semibold transition-all duration-300 border border-white/20"
+                              >
+                                Editar
+                              </button>
+                              <button
+                                onClick={() => handleDeleteBankAccount(account.id)}
+                                className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-200 rounded-lg font-semibold transition-all duration-300 border border-red-500/30"
+                              >
+                                Excluir
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -390,6 +622,18 @@ export default function FinancesPage() {
           onSave={handleSaveProfile}
           profile={editingProfile}
           calendars={calendars}
+        />
+
+        {/* Bank Account Modal */}
+        <BankAccountModal
+          isOpen={isBankAccountModalOpen}
+          onClose={() => {
+            setIsBankAccountModalOpen(false);
+            setEditingBankAccount(null);
+          }}
+          onSave={handleSaveBankAccount}
+          account={editingBankAccount}
+          profiles={profiles.map((p) => ({ id: p.id, name: p.name }))}
         />
       </div>
     </AppLayout>
