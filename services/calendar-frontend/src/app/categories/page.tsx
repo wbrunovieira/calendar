@@ -54,6 +54,29 @@ export default function CategoriesPage() {
     });
   };
 
+  const handleDeleteCategory = async (categoryId: string, calendarId: string) => {
+    if (!confirm('Tem certeza que deseja deletar esta categoria?')) {
+      return;
+    }
+
+    try {
+      // Delete category via API
+      await api.categories.delete(categoryId);
+
+      // Update local state
+      setCategoriesByCalendar((prev) => {
+        const calendarCategories = prev[calendarId] || [];
+        return {
+          ...prev,
+          [calendarId]: calendarCategories.filter((cat) => cat.id !== categoryId),
+        };
+      });
+    } catch (error) {
+      console.error('Error deleting category:', error);
+      alert('Erro ao deletar categoria. Tente novamente.');
+    }
+  };
+
   return (
     <AppLayout>
       <div className="flex-1 w-full py-8 relative">
@@ -122,8 +145,19 @@ export default function CategoriesPage() {
                       {categories.map((category) => (
                         <div
                           key={category.id}
-                          className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/10 hover:bg-white/15 transition-all duration-300 hover:scale-105 hover:shadow-lg group"
+                          className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/10 hover:bg-white/15 transition-all duration-300 hover:scale-105 hover:shadow-lg group relative"
                         >
+                          {/* Delete Button */}
+                          <button
+                            onClick={() => handleDeleteCategory(category.id, calendar.id)}
+                            className="absolute top-2 right-2 p-1.5 bg-red-500/80 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-300 hover:scale-110"
+                            title="Deletar categoria"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+
                           <div className="flex items-center gap-3">
                             {/* Category Icon */}
                             {category.icon && (
