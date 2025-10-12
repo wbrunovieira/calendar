@@ -24,14 +24,16 @@ const VIEW_MODES: ViewModeOption[] = [
 
 export default function ViewModeSelector({ currentMode, onModeChange }: ViewModeSelectorProps) {
   return (
-    <div className="flex gap-1 justify-center">
+    <div className="flex gap-2 justify-center">
       {VIEW_MODES.map(mode => (
         <button
           key={mode.value}
           onClick={() => onModeChange(mode.value)}
-          className={`px-2 py-1 rounded text-xs font-medium transition-all ${
-            currentMode === mode.value ? 'bg-white/30' : 'bg-white/10 hover:bg-white/20'
-          }`}
+          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-300 ${
+            currentMode === mode.value
+              ? 'bg-white/30 shadow-lg border border-white/20 scale-105'
+              : 'bg-white/10 hover:bg-white/20 border border-white/5 hover:scale-105 hover:shadow-md'
+          } backdrop-blur-sm`}
         >
           {mode.label}
         </button>

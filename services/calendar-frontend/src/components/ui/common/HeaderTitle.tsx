@@ -25,35 +25,35 @@ export default function HeaderTitle({ currentDate, viewMode, onGoToToday }: Head
 
   if (viewMode === 'week' && weekDays) {
     return (
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-2">
         <div className="flex items-center justify-center gap-3">
-          <h2 className="text-lg md:text-xl font-bold">{titleText}</h2>
-          <span className="text-sm md:text-base opacity-90">{currentDate.getFullYear()}</span>
+          <h2 className="text-2xl md:text-3xl font-extrabold drop-shadow-lg">{titleText}</h2>
+          <span className="text-base md:text-lg opacity-90 font-semibold">{currentDate.getFullYear()}</span>
           <button
             onClick={onGoToToday}
-            className="px-2 py-1 bg-white/20 hover:bg-white/30 rounded text-xs font-medium transition-all"
+            className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg backdrop-blur-sm border border-white/10 hover:scale-105"
           >
             Hoje
           </button>
         </div>
-        <div className="flex items-center justify-center gap-2 text-xs md:text-sm opacity-80">
-          <span className="bg-white/10 px-2 py-0.5 rounded">Semana iniciando dia {weekDays[0].getDate()}</span>
-          <span className="text-white/40">•</span>
-          <span className="bg-white/10 px-2 py-0.5 rounded">{getWeekOfMonth(weekDays[0])}ª semana do mês</span>
-          <span className="text-white/40">•</span>
-          <span className="bg-white/10 px-2 py-0.5 rounded">Semana {getWeekNumber(weekDays[0])} do ano</span>
+        <div className="flex items-center justify-center gap-2 text-xs md:text-sm opacity-90">
+          <span className="bg-white/15 px-3 py-1 rounded-lg font-medium backdrop-blur-sm">Semana iniciando dia {weekDays[0].getDate()}</span>
+          <span className="text-white/50">•</span>
+          <span className="bg-white/15 px-3 py-1 rounded-lg font-medium backdrop-blur-sm">{getWeekOfMonth(weekDays[0])}ª semana do mês</span>
+          <span className="text-white/50">•</span>
+          <span className="bg-white/15 px-3 py-1 rounded-lg font-medium backdrop-blur-sm">Semana {getWeekNumber(weekDays[0])} do ano</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <h2 className="text-lg md:text-xl font-bold">{titleText}</h2>
-      <span className="text-sm md:text-base opacity-90">{currentDate.getFullYear()}</span>
+    <div className="flex items-center gap-3">
+      <h2 className="text-2xl md:text-3xl font-extrabold drop-shadow-lg">{titleText}</h2>
+      <span className="text-base md:text-lg opacity-90 font-semibold">{currentDate.getFullYear()}</span>
       <button
         onClick={onGoToToday}
-        className="ml-2 px-2 py-1 bg-white/20 hover:bg-white/30 rounded text-xs font-medium transition-all"
+        className="ml-2 px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg backdrop-blur-sm border border-white/10 hover:scale-105"
       >
         Hoje
       </button>

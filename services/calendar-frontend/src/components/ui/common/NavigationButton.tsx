@@ -15,14 +15,13 @@ export default function NavigationButton({ direction, onClick, label }: Navigati
   return (
     <button
       onClick={onClick}
-      className="p-1 hover:bg-white/20 rounded transition-all duration-200"
+      className="p-2 hover:bg-white/20 rounded-lg transition-all duration-300 hover:scale-110 hover:shadow-md bg-white/10 border border-white/5 backdrop-blur-sm"
       aria-label={label}
     >
-      <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
         <path
           strokeLinecap="round"
           strokeLinejoin="round"
-          strokeWidth={2}
           d={isPrevious ? 'M15 19l-7-7 7-7' : 'M9 5l7 7-7 7'}
         />
       </svg>
