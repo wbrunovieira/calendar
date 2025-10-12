@@ -8,7 +8,7 @@ import { calendars } from '@/data/calendars';
 import { Category, CategoryType } from '@/types/calendar';
 import { api } from '@/lib/api';
 
-type TabType = 'categories' | 'types';
+type TabType = 'categories' | 'types' | 'calendars';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<TabType>('categories');
@@ -191,6 +191,16 @@ export default function SettingsPage() {
             }`}
           >
             Tipos
+          </button>
+          <button
+            onClick={() => setActiveTab('calendars')}
+            className={`px-6 py-3 rounded-xl font-semibold transition-all duration-300 ${
+              activeTab === 'calendars'
+                ? 'bg-white/20 text-white shadow-lg'
+                : 'bg-white/5 text-white/70 hover:bg-white/10'
+            }`}
+          >
+            Calendários
           </button>
         </div>
 
@@ -415,6 +425,76 @@ export default function SettingsPage() {
               })}
             </div>
           </>
+        )}
+
+        {/* Calendars Tab */}
+        {!loading && activeTab === 'calendars' && (
+          <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10 shadow-2xl">
+            <div className="max-w-4xl mx-auto">
+              <div className="mb-8">
+                <h2 className="text-3xl font-bold text-white mb-2">Gerenciar Calendários</h2>
+                <p className="text-white/70">
+                  Visualize e gerencie os calendários do sistema
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                {calendars.map((calendar) => (
+                  <div
+                    key={calendar.id}
+                    className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/10 hover:bg-white/15 transition-all duration-300"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4 flex-1">
+                        <div
+                          className="w-12 h-12 rounded-full shadow-lg flex items-center justify-center text-2xl"
+                          style={{ backgroundColor: calendar.color }}
+                        >
+                          📅
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="text-xl font-bold text-white mb-1">
+                            {calendar.name}
+                          </h3>
+                          <p className="text-white/60 text-sm">{calendar.email}</p>
+                          <div className="flex items-center gap-4 mt-2">
+                            <span className="text-xs text-white/50">
+                              Tipo: <span className="capitalize">{calendar.type}</span>
+                            </span>
+                            <span className="text-xs text-white/50">
+                              ID: <span className="font-mono">{calendar.id}</span>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-4 h-4 rounded-full shadow-lg"
+                          style={{ backgroundColor: calendar.color }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-8 p-6 bg-blue-500/10 rounded-xl border border-blue-500/20">
+                <div className="flex items-start gap-3">
+                  <svg className="w-6 h-6 text-blue-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div>
+                    <h4 className="text-white font-semibold mb-1">Sobre os Calendários</h4>
+                    <p className="text-white/70 text-sm">
+                      Os calendários são configurados estaticamente no sistema.
+                      Cada calendário pode ser vinculado a um perfil financeiro através do campo financeProfileId.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Modals */}
