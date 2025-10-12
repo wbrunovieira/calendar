@@ -17,10 +17,10 @@ export const metadata: Metadata = {
   description: "Gestão financeira completa: contas, transações, investimentos e relatórios",
   icons: {
     icon: [
-      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/favicon.svg', type: 'image/svg+xml' },
     ],
     apple: [
-      { url: '/apple-icon.svg', type: 'image/svg+xml' },
+      { url: '/favicon.svg', type: 'image/svg+xml' },
     ],
   },
 };
