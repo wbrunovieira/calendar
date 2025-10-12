@@ -48,6 +48,31 @@ func RunMigrations(db *sql.DB) error {
 			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 		)`,
 
+		// Create bank_accounts table
+		`CREATE TABLE IF NOT EXISTS finance.bank_accounts (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			profile_id UUID NOT NULL REFERENCES finance.profiles(id) ON DELETE CASCADE,
+			name VARCHAR(255) NOT NULL,
+			type VARCHAR(50) NOT NULL CHECK (type IN ('CHECKING', 'SAVINGS', 'INVESTMENT', 'CREDIT_CARD', 'CASH', 'OTHER')),
+			initial_balance DECIMAL(15, 2) NOT NULL DEFAULT 0,
+			current_balance DECIMAL(15, 2) NOT NULL DEFAULT 0,
+			currency VARCHAR(3) NOT NULL DEFAULT 'BRL',
+			is_active BOOLEAN NOT NULL DEFAULT true,
+			bank_name VARCHAR(255),
+			bank_code VARCHAR(10),
+			agency VARCHAR(20),
+			account_number VARCHAR(50),
+			account_digit VARCHAR(5),
+			color VARCHAR(7),
+			icon VARCHAR(50),
+			description TEXT,
+			credit_limit DECIMAL(15, 2),
+			due_day INTEGER CHECK (due_day >= 1 AND due_day <= 31),
+			closing_day INTEGER CHECK (closing_day >= 1 AND closing_day <= 31),
+			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+		)`,
+
 		// Create accounts table
 		`CREATE TABLE IF NOT EXISTS finance.accounts (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -95,6 +120,7 @@ func RunMigrations(db *sql.DB) error {
 
 		// Create indexes
 		`CREATE INDEX IF NOT EXISTS idx_profiles_calendar_id ON finance.profiles(calendar_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_bank_accounts_profile_id ON finance.bank_accounts(profile_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_accounts_user_id ON finance.accounts(user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_transactions_account_id ON finance.transactions(account_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_transactions_date ON finance.transactions(transaction_date)`,

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import AppLayout from '@/components/navigation/AppLayout';
+import AppLayout from '@/components/layout/AppLayout';
 import ProfileModal from '@/components/finances/ProfileModal';
 
 type TabType = 'dashboard' | 'settings';
@@ -133,7 +133,7 @@ export default function FinancesPage() {
     }
   };
 
-  const handleSaveProfile = (profileData: any) => {
+  const handleSaveProfile = (profileData: Omit<Profile, 'id' | 'isActive' | 'createdAt' | 'updatedAt'>) => {
     if (editingProfile) {
       handleUpdateProfile(profileData);
     } else {

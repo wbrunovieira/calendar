@@ -65,6 +65,23 @@ func main() {
 		deleteProfileUC,
 	)
 
+	// Initialize Bank Account repository and use cases
+	bankAccountRepo := persistence.NewBankAccountRepository(db)
+	createBankAccountUC := usecases.NewCreateBankAccountUseCase(bankAccountRepo)
+	listBankAccountsUC := usecases.NewListBankAccountsUseCase(bankAccountRepo)
+	getBankAccountUC := usecases.NewGetBankAccountUseCase(bankAccountRepo)
+	updateBankAccountUC := usecases.NewUpdateBankAccountUseCase(bankAccountRepo)
+	deleteBankAccountUC := usecases.NewDeleteBankAccountUseCase(bankAccountRepo)
+
+	// Initialize Bank Account handlers
+	bankAccountHandler := profileHandlers.NewBankAccountHandlers(
+		createBankAccountUC,
+		listBankAccountsUC,
+		getBankAccountUC,
+		updateBankAccountUC,
+		deleteBankAccountUC,
+	)
+
 	// API v1 routes
 	apiRouter := router.PathPrefix("/api/v1").Subrouter()
 
@@ -75,6 +92,13 @@ func main() {
 	apiRouter.HandleFunc("/profiles/{id}", profileHandler.Update).Methods("PUT")
 	apiRouter.HandleFunc("/profiles/{id}", profileHandler.Delete).Methods("DELETE")
 
+	// Bank Account routes
+	apiRouter.HandleFunc("/bank-accounts", bankAccountHandler.List).Methods("GET")
+	apiRouter.HandleFunc("/bank-accounts", bankAccountHandler.Create).Methods("POST")
+	apiRouter.HandleFunc("/bank-accounts/{id}", bankAccountHandler.Get).Methods("GET")
+	apiRouter.HandleFunc("/bank-accounts/{id}", bankAccountHandler.Update).Methods("PUT")
+	apiRouter.HandleFunc("/bank-accounts/{id}", bankAccountHandler.Delete).Methods("DELETE")
+
 	// Accounts routes (placeholder)
 	apiRouter.HandleFunc("/accounts", handlers.NotImplemented).Methods("GET", "POST")
 
@@ -83,7 +107,7 @@ func main() {
 
 	// CORS configuration
 	corsHandler := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:3000", "http://localhost:3002"},
+		AllowedOrigins:   []string{"http://localhost:3000", "http://localhost:3002", "http://localhost:3003"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Content-Type", "Authorization"},
 		AllowCredentials: true,

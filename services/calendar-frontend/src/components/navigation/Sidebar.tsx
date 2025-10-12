@@ -109,19 +109,13 @@ export default function Sidebar({ className = '', onToggle }: SidebarProps) {
             </Link>
           </li>
 
-          {/* Finances Button */}
+          {/* Finances Button - External App */}
           <li>
-            <Link
-              href="/finances"
-              className={`flex items-center gap-3 px-3 py-3 rounded-lg text-white hover:bg-white/30 transition-all duration-300 shadow-md hover:shadow-lg border group relative ${
-                pathname === '/finances'
-                  ? 'bg-white/30 border-white/30 shadow-lg'
-                  : 'bg-white/10 border-white/10'
-              }`}
+            <a
+              href="http://localhost:3003"
+              target="_self"
+              className="flex items-center gap-3 px-3 py-3 rounded-lg text-white hover:bg-white/30 transition-all duration-300 shadow-md hover:shadow-lg border bg-white/10 border-white/10 group relative"
             >
-              {pathname === '/finances' && (
-                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-white rounded-r-full"></div>
-              )}
               <div className="w-6 h-6 flex items-center justify-center flex-shrink-0">
                 <svg
                   className="w-6 h-6 transition-transform duration-300 group-hover:scale-110"
@@ -142,7 +136,12 @@ export default function Sidebar({ className = '', onToggle }: SidebarProps) {
                   Finanças
                 </span>
               )}
-            </Link>
+              {!isCollapsed && (
+                <svg className="w-3 h-3 ml-auto opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+              )}
+            </a>
           </li>
 
           {/* Settings Button */}
