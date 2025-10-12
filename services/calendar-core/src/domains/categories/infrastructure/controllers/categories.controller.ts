@@ -1,8 +1,10 @@
-import { Controller, Post, Get, Delete, Body, Query, Param, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Get, Delete, Put, Body, Query, Param, HttpCode, HttpStatus } from '@nestjs/common';
 import { CreateCategoryUseCase } from '../../application/use-cases/create-category.use-case';
 import { ListCategoriesByCalendarUseCase } from '../../application/use-cases/list-categories-by-calendar.use-case';
 import { DeleteCategoryUseCase } from '../../application/use-cases/delete-category.use-case';
+import { UpdateCategoryUseCase } from '../../application/use-cases/update-category.use-case';
 import { CreateCategoryDto } from '../dtos/create-category.dto';
+import { UpdateCategoryDto } from '../dtos/update-category.dto';
 
 @Controller('categories')
 export class CategoriesController {
@@ -10,6 +12,7 @@ export class CategoriesController {
     private readonly createCategoryUseCase: CreateCategoryUseCase,
     private readonly listCategoriesByCalendarUseCase: ListCategoriesByCalendarUseCase,
     private readonly deleteCategoryUseCase: DeleteCategoryUseCase,
+    private readonly updateCategoryUseCase: UpdateCategoryUseCase,
   ) {}
 
   @Post()
@@ -46,6 +49,24 @@ export class CategoriesController {
       createdAt: category.createdAt,
       updatedAt: category.updatedAt,
     }));
+  }
+
+  @Put(':id')
+  @HttpCode(HttpStatus.OK)
+  async update(@Param('id') id: string, @Body() updateCategoryDto: UpdateCategoryDto) {
+    const category = await this.updateCategoryUseCase.execute(id, updateCategoryDto);
+
+    return {
+      id: category.id,
+      calendarId: category.calendarId,
+      name: category.name,
+      icon: category.icon,
+      color: category.color,
+      type: category.type,
+      isActive: category.isActive,
+      createdAt: category.createdAt,
+      updatedAt: category.updatedAt,
+    };
   }
 
   @Delete(':id')
