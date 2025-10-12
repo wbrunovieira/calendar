@@ -1,21 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { calendars } from '@/data/calendars';
-import { api } from '@/lib/api';
-import { Category, CategoryType } from '@/types/calendar';
+import { useState } from 'react';
 
-interface CreateCategoryModalProps {
+interface CreateCategoryTypeModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (category: {
+  onSave: (type: {
     calendarId: string;
     name: string;
-    icon: string;
+    value: string;
     color: string;
-    type: string;
+    icon?: string;
   }) => Promise<void>;
-  initialData?: Category;
+  calendars: { id: string; name: string; email: string; color: string }[];
 }
 
 const EMOJI_LIST = [
@@ -38,75 +35,48 @@ const COLORS = [
   '#2ECC71', '#F39C12', '#9B59B6', '#1ABC9C', '#E67E22',
 ];
 
-export default function CreateCategoryModal({ isOpen, onClose, onSave, initialData }: CreateCategoryModalProps) {
+export default function CreateCategoryTypeModal({ isOpen, onClose, onSave, calendars }: CreateCategoryTypeModalProps) {
   const [calendarId, setCalendarId] = useState(calendars[0]?.id || '');
   const [name, setName] = useState('');
+  const [value, setValue] = useState('');
   const [icon, setIcon] = useState('💼');
   const [color, setColor] = useState(COLORS[0]);
-  const [type, setType] = useState('');
   const [saving, setSaving] = useState(false);
-  const [categoryTypes, setCategoryTypes] = useState<CategoryType[]>([]);
-  const [loadingTypes, setLoadingTypes] = useState(true);
 
-  // Populate form with initialData when editing
-  useEffect(() => {
-    if (initialData) {
-      setCalendarId(initialData.calendarId);
-      setName(initialData.name);
-      setIcon(initialData.icon || '💼');
-      setColor(initialData.color);
-      setType(initialData.type || '');
-    } else {
-      // Reset form when not editing
-      setCalendarId(calendars[0]?.id || '');
-      setName('');
-      setIcon('💼');
-      setColor(COLORS[0]);
-      setType('');
-    }
-  }, [initialData]);
-
-  // Fetch category types when modal opens or calendar changes
-  useEffect(() => {
-    if (isOpen) {
-      const fetchTypes = async () => {
-        setLoadingTypes(true);
-        try {
-          const types = await api.categoryTypes.list(calendarId);
-          setCategoryTypes(types);
-          if (types.length > 0 && !type && !initialData) {
-            setType(types[0].value);
-          }
-        } catch (error) {
-          console.error('Error fetching category types:', error);
-        } finally {
-          setLoadingTypes(false);
-        }
-      };
-
-      fetchTypes();
-    }
-  }, [isOpen, calendarId, initialData, type]);
+  // Auto-generate value from name
+  const handleNameChange = (newName: string) => {
+    setName(newName);
+    // Generate slug: lowercase, replace spaces with hyphens, remove special chars
+    const slug = newName
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Remove accents
+      .replace(/[^a-z0-9\s-]/g, '') // Keep only letters, numbers, spaces, hyphens
+      .trim()
+      .replace(/\s+/g, '-'); // Replace spaces with hyphens
+    setValue(slug);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!name.trim()) return;
+    if (!name.trim() || !value.trim()) return;
 
     setSaving(true);
     try {
-      await onSave({ calendarId, name: name.trim(), icon, color, type });
+      await onSave({ calendarId, name: name.trim(), value: value.trim(), color, icon });
 
       // Reset form
+      setCalendarId(calendars[0]?.id || '');
       setName('');
+      setValue('');
       setIcon('💼');
       setColor(COLORS[0]);
-      setType(categoryTypes[0]?.value || '');
 
       onClose();
     } catch (error) {
-      console.error('Error creating category:', error);
-      alert('Erro ao criar categoria. Tente novamente.');
+      console.error('Error creating category type:', error);
+      alert('Erro ao criar tipo. Tente novamente.');
     } finally {
       setSaving(false);
     }
@@ -120,9 +90,7 @@ export default function CreateCategoryModal({ isOpen, onClose, onSave, initialDa
         {/* Header */}
         <div className="sticky top-0 bg-gradient-to-r from-[#350545] to-[#792990] px-6 py-4 border-b border-white/10">
           <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-white">
-              {initialData ? 'Editar Categoria' : 'Nova Categoria'}
-            </h2>
+            <h2 className="text-2xl font-bold text-white">Novo Tipo</h2>
             <button
               onClick={onClose}
               className="text-white/70 hover:text-white transition-colors"
@@ -152,17 +120,38 @@ export default function CreateCategoryModal({ isOpen, onClose, onSave, initialDa
             </select>
           </div>
 
-          {/* Category Name */}
+          {/* Type Name */}
           <div>
-            <label className="block text-white font-semibold mb-2">Nome da Categoria</label>
+            <label className="block text-white font-semibold mb-2">Nome do Tipo</label>
             <input
               type="text"
               value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Ex: Programação, Academia, Leitura..."
+              onChange={(e) => handleNameChange(e.target.value)}
+              placeholder="Ex: Trabalho, Saúde, Lazer..."
               className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500"
               required
             />
+          </div>
+
+          {/* Type Value (Slug) */}
+          <div>
+            <label className="block text-white font-semibold mb-2">
+              Valor (slug)
+              <span className="text-white/60 text-sm font-normal ml-2">
+                - usado internamente
+              </span>
+            </label>
+            <input
+              type="text"
+              value={value}
+              onChange={(e) => setValue(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+              placeholder="Ex: trabalho, saude, lazer"
+              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono"
+              required
+            />
+            <p className="text-white/50 text-xs mt-1">
+              Apenas letras minúsculas, números e hífens
+            </p>
           </div>
 
           {/* Icon Selection */}
@@ -223,32 +212,6 @@ export default function CreateCategoryModal({ isOpen, onClose, onSave, initialDa
             </div>
           </div>
 
-          {/* Type Selection */}
-          <div>
-            <label className="block text-white font-semibold mb-2">Tipo</label>
-            {loadingTypes ? (
-              <div className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white/50">
-                Carregando tipos...
-              </div>
-            ) : categoryTypes.length === 0 ? (
-              <div className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white/50">
-                Nenhum tipo encontrado. Crie tipos na aba Configurações.
-              </div>
-            ) : (
-              <select
-                value={type}
-                onChange={(e) => setType(e.target.value)}
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-              >
-                {categoryTypes.map((typeOption) => (
-                  <option key={typeOption.value} value={typeOption.value} className="bg-[#350545]">
-                    {typeOption.icon && `${typeOption.icon} `}{typeOption.name}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-
           {/* Actions */}
           <div className="flex gap-3 pt-4">
             <button
@@ -262,9 +225,9 @@ export default function CreateCategoryModal({ isOpen, onClose, onSave, initialDa
             <button
               type="submit"
               className="flex-1 px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-lg font-semibold transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={saving || !name.trim()}
+              disabled={saving || !name.trim() || !value.trim()}
             >
-              {saving ? 'Salvando...' : (initialData ? 'Salvar Alterações' : 'Criar Categoria')}
+              {saving ? 'Salvando...' : 'Criar Tipo'}
             </button>
           </div>
         </form>

@@ -39,13 +39,33 @@ model Calendar {
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
-  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  categories Category[]
-  events     Event[]
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categories    Category[]
+  categoryTypes CategoryType[]
+  events        Event[]
 
   @@index([userId])
   @@index([googleCalendarId])
   @@map("calendars")
+}
+
+model CategoryType {
+  id         String   @id @default(uuid())
+  calendarId String   @map("calendar_id")
+  name       String // "Trabalho", "Saúde", etc
+  value      String // "work", "health", etc (slug/key)
+  icon       String? // Emoji opcional
+  color      String // HEX color
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  calendar Calendar @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+
+  @@unique([calendarId, value])
+  @@index([calendarId])
+  @@index([value])
+  @@map("category_types")
 }
 
 model Category {

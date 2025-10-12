@@ -9,6 +9,18 @@ export interface Calendar {
   isActive: boolean;
 }
 
+export interface CategoryType {
+  id: string;
+  calendarId: string;
+  name: string;
+  value: string;
+  icon?: string;
+  color: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Category {
   id: string;
   calendarId: string;
