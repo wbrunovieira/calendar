@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import AppLayout from '@/components/navigation/AppLayout';
+import CreateCategoryModal from '@/components/modals/CreateCategoryModal';
 import { calendars } from '@/data/calendars';
 import { Category } from '@/types/calendar';
 import { api } from '@/lib/api';
@@ -9,6 +10,7 @@ import { api } from '@/lib/api';
 export default function CategoriesPage() {
   const [categoriesByCalendar, setCategoriesByCalendar] = useState<Record<string, Category[]>>({});
   const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
     const fetchCategories = async () => {
@@ -32,17 +34,50 @@ export default function CategoriesPage() {
     fetchCategories();
   }, []);
 
+  const handleCreateCategory = async (categoryData: {
+    calendarId: string;
+    name: string;
+    icon: string;
+    color: string;
+    type: string;
+  }) => {
+    // Create category via API
+    const newCategory = await api.categories.create(categoryData);
+
+    // Update local state
+    setCategoriesByCalendar((prev) => {
+      const calendarCategories = prev[categoryData.calendarId] || [];
+      return {
+        ...prev,
+        [categoryData.calendarId]: [...calendarCategories, newCategory],
+      };
+    });
+  };
+
   return (
     <AppLayout>
-      <div className="flex-1 w-full py-8">
+      <div className="flex-1 w-full py-8 relative">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-extrabold text-white drop-shadow-lg mb-2">
-            Categorias
-          </h1>
-          <p className="text-white/70 text-lg">
-            Gerencie as categorias dos seus calendários
-          </p>
+        <div className="mb-8 flex items-start justify-between">
+          <div>
+            <h1 className="text-4xl font-extrabold text-white drop-shadow-lg mb-2">
+              Categorias
+            </h1>
+            <p className="text-white/70 text-lg">
+              Gerencie as categorias dos seus calendários
+            </p>
+          </div>
+
+          {/* Add Category Button */}
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center gap-2 px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl font-semibold transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 border border-white/20"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            <span>Nova Categoria</span>
+          </button>
         </div>
 
         {/* Loading State */}
@@ -126,6 +161,13 @@ export default function CategoriesPage() {
             })}
           </div>
         )}
+
+        {/* Create Category Modal */}
+        <CreateCategoryModal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          onSave={handleCreateCategory}
+        />
       </div>
     </AppLayout>
   );
