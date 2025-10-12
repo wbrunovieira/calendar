@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import CalendarIcon from '../ui/common/CalendarIcon';
 
 interface SidebarProps {
   className?: string;
@@ -29,9 +30,7 @@ export default function Sidebar({ className = '', onToggle }: SidebarProps) {
       <div className="flex items-center justify-between px-4 py-6 border-b border-white/10">
         {!isCollapsed && (
           <div className="flex items-center gap-3 overflow-hidden">
-            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm border border-white/10 shadow-lg">
-              <span className="text-2xl">📅</span>
-            </div>
+            <CalendarIcon size="md" />
             <div className="overflow-hidden">
               <h1 className="text-white font-bold text-lg whitespace-nowrap">Calendar</h1>
               <p className="text-white/60 text-xs whitespace-nowrap">Organize sua vida</p>
@@ -40,8 +39,8 @@ export default function Sidebar({ className = '', onToggle }: SidebarProps) {
         )}
 
         {isCollapsed && (
-          <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm border border-white/10 shadow-lg mx-auto">
-            <span className="text-2xl">📅</span>
+          <div className="mx-auto">
+            <CalendarIcon size="md" />
           </div>
         )}
       </div>
