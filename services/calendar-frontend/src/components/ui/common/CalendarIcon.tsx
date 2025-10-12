@@ -8,10 +8,14 @@ interface CalendarIconProps {
 }
 
 export default function CalendarIcon({ size = 'md', className = '' }: CalendarIconProps) {
+  const [mounted, setMounted] = useState(false);
   const [currentDay, setCurrentDay] = useState<number>(1);
   const [dayOfWeek, setDayOfWeek] = useState<string>('');
 
   useEffect(() => {
+    // Mark as mounted to prevent hydration mismatch
+    setMounted(true);
+
     const updateDate = () => {
       const now = new Date();
       setCurrentDay(now.getDate());
@@ -60,6 +64,21 @@ export default function CalendarIcon({ size = 'md', className = '' }: CalendarIc
     md: 'text-[9px]',
     lg: 'text-[10px]',
   };
+
+  // Prevent hydration mismatch by rendering placeholder until mounted
+  if (!mounted) {
+    return (
+      <div
+        className={`${sizeClasses[size]} bg-white/20 rounded-xl flex flex-col items-center justify-center backdrop-blur-sm border border-white/10 shadow-lg overflow-hidden ${className}`}
+      >
+        {/* Calendar header (purple bar at top) */}
+        <div className="w-full h-2 bg-gradient-to-r from-purple-500 to-purple-700" />
+
+        {/* Placeholder */}
+        <div className="flex-1" />
+      </div>
+    );
+  }
 
   return (
     <div
