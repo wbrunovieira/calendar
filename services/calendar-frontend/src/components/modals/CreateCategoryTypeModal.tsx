@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { CategoryType } from '@/types/calendar';
 
 interface CreateCategoryTypeModalProps {
   isOpen: boolean;
@@ -13,6 +14,7 @@ interface CreateCategoryTypeModalProps {
     icon?: string;
   }) => Promise<void>;
   calendars: { id: string; name: string; email: string; color: string }[];
+  initialData?: CategoryType;
 }
 
 const EMOJI_LIST = [
@@ -35,13 +37,31 @@ const COLORS = [
   '#2ECC71', '#F39C12', '#9B59B6', '#1ABC9C', '#E67E22',
 ];
 
-export default function CreateCategoryTypeModal({ isOpen, onClose, onSave, calendars }: CreateCategoryTypeModalProps) {
+export default function CreateCategoryTypeModal({ isOpen, onClose, onSave, calendars, initialData }: CreateCategoryTypeModalProps) {
   const [calendarId, setCalendarId] = useState(calendars[0]?.id || '');
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
   const [icon, setIcon] = useState('💼');
   const [color, setColor] = useState(COLORS[0]);
   const [saving, setSaving] = useState(false);
+
+  // Populate form with initialData when editing
+  useEffect(() => {
+    if (initialData) {
+      setCalendarId(initialData.calendarId);
+      setName(initialData.name);
+      setValue(initialData.value);
+      setIcon(initialData.icon || '💼');
+      setColor(initialData.color);
+    } else {
+      // Reset form when not editing
+      setCalendarId(calendars[0]?.id || '');
+      setName('');
+      setValue('');
+      setIcon('💼');
+      setColor(COLORS[0]);
+    }
+  }, [initialData, calendars]);
 
   // Auto-generate value from name
   const handleNameChange = (newName: string) => {
@@ -90,7 +110,9 @@ export default function CreateCategoryTypeModal({ isOpen, onClose, onSave, calen
         {/* Header */}
         <div className="sticky top-0 bg-gradient-to-r from-[#350545] to-[#792990] px-6 py-4 border-b border-white/10">
           <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-white">Novo Tipo</h2>
+            <h2 className="text-2xl font-bold text-white">
+              {initialData ? 'Editar Tipo' : 'Novo Tipo'}
+            </h2>
             <button
               onClick={onClose}
               className="text-white/70 hover:text-white transition-colors"
@@ -227,7 +249,7 @@ export default function CreateCategoryTypeModal({ isOpen, onClose, onSave, calen
               className="flex-1 px-6 py-3 bg-white/20 hover:bg-white/30 text-white rounded-lg font-semibold transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={saving || !name.trim() || !value.trim()}
             >
-              {saving ? 'Salvando...' : 'Criar Tipo'}
+              {saving ? 'Salvando...' : (initialData ? 'Salvar Alterações' : 'Criar Tipo')}
             </button>
           </div>
         </form>

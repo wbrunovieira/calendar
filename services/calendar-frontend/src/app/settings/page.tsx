@@ -18,6 +18,7 @@ export default function SettingsPage() {
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [isTypeModalOpen, setIsTypeModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [editingType, setEditingType] = useState<CategoryType | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -117,6 +118,29 @@ export default function SettingsPage() {
   }) => {
     const newType = await api.categoryTypes.create(typeData);
     setCategoryTypes((prev) => [...prev, newType]);
+  };
+
+  const handleEditType = async (typeData: {
+    calendarId: string;
+    name: string;
+    value: string;
+    color: string;
+    icon?: string;
+  }) => {
+    if (!editingType) return;
+
+    const updatedType = await api.categoryTypes.update(editingType.id, {
+      name: typeData.name,
+      value: typeData.value,
+      color: typeData.color,
+      icon: typeData.icon,
+    });
+
+    setCategoryTypes((prev) =>
+      prev.map((type) => (type.id === editingType.id ? updatedType : type))
+    );
+
+    setEditingType(null);
   };
 
   const handleDeleteType = async (typeId: string) => {
@@ -336,16 +360,30 @@ export default function SettingsPage() {
                             key={type.id}
                             className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/10 hover:bg-white/15 transition-all duration-300 hover:scale-105 hover:shadow-lg group relative"
                           >
-                            {/* Delete Button */}
-                            <button
-                              onClick={() => handleDeleteType(type.id)}
-                              className="absolute top-2 right-2 p-1.5 bg-red-500/80 hover:bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-300 hover:scale-110"
-                              title="Deletar tipo"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
-                            </button>
+                            {/* Action Buttons */}
+                            <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all duration-300">
+                              {/* Edit Button */}
+                              <button
+                                onClick={() => setEditingType(type)}
+                                className="p-1.5 bg-blue-500/80 hover:bg-blue-600 text-white rounded-lg transition-all hover:scale-110"
+                                title="Editar tipo"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                              </button>
+
+                              {/* Delete Button */}
+                              <button
+                                onClick={() => handleDeleteType(type.id)}
+                                className="p-1.5 bg-red-500/80 hover:bg-red-600 text-white rounded-lg transition-all hover:scale-110"
+                                title="Deletar tipo"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            </div>
 
                             <div className="flex items-center gap-3">
                               {type.icon && (
@@ -398,6 +436,14 @@ export default function SettingsPage() {
           onClose={() => setIsTypeModalOpen(false)}
           onSave={handleCreateType}
           calendars={calendars}
+        />
+
+        <CreateCategoryTypeModal
+          isOpen={!!editingType}
+          onClose={() => setEditingType(null)}
+          onSave={handleEditType}
+          calendars={calendars}
+          initialData={editingType || undefined}
         />
       </div>
     </AppLayout>
