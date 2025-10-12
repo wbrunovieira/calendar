@@ -35,6 +35,7 @@ model Calendar {
   color            String // HEX color (#350545)
   type             String // 'professional' | 'personal'
   googleCalendarId String?  @map("google_calendar_id")
+  financeProfileId String?  @map("finance_profile_id")
   isActive         Boolean  @default(true) @map("is_active")
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
@@ -46,6 +47,7 @@ model Calendar {
 
   @@index([userId])
   @@index([googleCalendarId])
+  @@index([financeProfileId])
   @@map("calendars")
 }
 
