@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import CalendarIcon from '../ui/common/CalendarIcon';
 
 interface SidebarProps {
@@ -11,6 +12,7 @@ interface SidebarProps {
 
 export default function Sidebar({ className = '', onToggle }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const pathname = usePathname();
 
   const toggleSidebar = () => {
     const newState = !isCollapsed;
@@ -75,8 +77,15 @@ export default function Sidebar({ className = '', onToggle }: SidebarProps) {
           <li>
             <Link
               href="/"
-              className="flex items-center gap-3 px-3 py-3 rounded-lg bg-white/20 text-white hover:bg-white/30 transition-all duration-300 shadow-md hover:shadow-lg border border-white/10 group"
+              className={`flex items-center gap-3 px-3 py-3 rounded-lg text-white hover:bg-white/30 transition-all duration-300 shadow-md hover:shadow-lg border group relative ${
+                pathname === '/'
+                  ? 'bg-white/30 border-white/30 shadow-lg'
+                  : 'bg-white/10 border-white/10'
+              }`}
             >
+              {pathname === '/' && (
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-white rounded-r-full"></div>
+              )}
               <div className="w-6 h-6 flex items-center justify-center flex-shrink-0">
                 <svg
                   className="w-6 h-6 transition-transform duration-300 group-hover:scale-110"
@@ -104,8 +113,15 @@ export default function Sidebar({ className = '', onToggle }: SidebarProps) {
           <li>
             <Link
               href="/finances"
-              className="flex items-center gap-3 px-3 py-3 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-all duration-300 shadow-md hover:shadow-lg border border-white/10 group"
+              className={`flex items-center gap-3 px-3 py-3 rounded-lg text-white hover:bg-white/30 transition-all duration-300 shadow-md hover:shadow-lg border group relative ${
+                pathname === '/finances'
+                  ? 'bg-white/30 border-white/30 shadow-lg'
+                  : 'bg-white/10 border-white/10'
+              }`}
             >
+              {pathname === '/finances' && (
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-white rounded-r-full"></div>
+              )}
               <div className="w-6 h-6 flex items-center justify-center flex-shrink-0">
                 <svg
                   className="w-6 h-6 transition-transform duration-300 group-hover:scale-110"
@@ -133,8 +149,15 @@ export default function Sidebar({ className = '', onToggle }: SidebarProps) {
           <li>
             <Link
               href="/settings"
-              className="flex items-center gap-3 px-3 py-3 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-all duration-300 shadow-md hover:shadow-lg border border-white/10 group"
+              className={`flex items-center gap-3 px-3 py-3 rounded-lg text-white hover:bg-white/30 transition-all duration-300 shadow-md hover:shadow-lg border group relative ${
+                pathname === '/settings'
+                  ? 'bg-white/30 border-white/30 shadow-lg'
+                  : 'bg-white/10 border-white/10'
+              }`}
             >
+              {pathname === '/settings' && (
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-white rounded-r-full"></div>
+              )}
               <div className="w-6 h-6 flex items-center justify-center flex-shrink-0">
                 <svg
                   className="w-6 h-6 transition-transform duration-300 group-hover:scale-110"
