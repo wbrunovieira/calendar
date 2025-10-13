@@ -95,6 +95,18 @@ export default function TimeSlotEventCard({
     ? hexToRgba(category?.color, 0.38)  // 60 in hex = 0.38 opacity
     : hexToRgba(category?.color, 0.56); // 90 in hex = 0.56 opacity
 
+  // Calculate minimum height based on actual event duration
+  // For events longer than 1 hour, use calculated height
+  // For short events (< 1 hour), use a smaller minHeight to avoid stretching
+  const getMinHeight = () => {
+    if (eventHeight >= PIXELS_PER_HOUR) {
+      // Events 1 hour or longer: no minHeight needed
+      return undefined;
+    }
+    // For short events, use a minimal height based on view density
+    return daysCount === 7 ? '40px' : daysCount <= 3 ? '48px' : '52px';
+  };
+
   return (
     <div
       key={event.id}
@@ -102,7 +114,7 @@ export default function TimeSlotEventCard({
       draggable
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      className={`absolute rounded-lg text-white flex flex-col overflow-visible group ${
+      className={`absolute rounded-lg text-white flex flex-col group ${
         isCompleted
           ? 'ring-2 ring-green-500 shadow-lg shadow-green-500/50'
           : ''
@@ -111,38 +123,81 @@ export default function TimeSlotEventCard({
         backgroundColor: bgColor,
         top: `${topPosition}px`,
         height: `${eventHeight}px`,
-        minHeight: daysCount === 7 ? '96px' : daysCount <= 3 ? '110px' : '120px',
+        minHeight: getMinHeight(),
         left: `${leftPercentage}%`,
         width: `${widthPercentage}%`,
         zIndex: 10 + positionInfo.column,
         cursor: resizingEventId === event.id ? 'ns-resize' : 'move',
+        overflow: 'visible',
       }}
     >
-      {/* Calendar icon badge - positioned at top left */}
+      {/* Calendar icon badge - positioned at top left, smaller for short events */}
       <div
         className="absolute -top-2 -left-2 rounded-full flex items-center justify-center shadow-lg z-30"
         style={{
           backgroundColor: calendar?.color,
-          width: daysCount === 7 ? '24px' : daysCount <= 3 ? '28px' : '32px',
-          height: daysCount === 7 ? '24px' : daysCount <= 3 ? '28px' : '32px',
-          fontSize: daysCount === 7 ? '12px' : daysCount <= 3 ? '14px' : '16px'
+          width: eventHeight < PIXELS_PER_HOUR ? '20px' : daysCount === 7 ? '24px' : daysCount <= 3 ? '28px' : '32px',
+          height: eventHeight < PIXELS_PER_HOUR ? '20px' : daysCount === 7 ? '24px' : daysCount <= 3 ? '28px' : '32px',
+          fontSize: eventHeight < PIXELS_PER_HOUR ? '10px' : daysCount === 7 ? '12px' : daysCount <= 3 ? '14px' : '16px'
         }}
       >
         {calendarIcon}
       </div>
 
-      {/* Top resize handle */}
-      <div
-        className="absolute top-0 left-0 right-0 h-3 cursor-ns-resize group/handle z-20"
-        onMouseDown={(e) => onResizeStart('top', e, eventHeight, topPosition)}
-        title="Arrastar para ajustar início"
-      >
-        <div className="h-1 bg-white/0 group-hover/handle:bg-white/40 transition-all rounded-t-lg" />
-      </div>
+      {/* Top resize handle - only for events >= 1 hour */}
+      {eventHeight >= PIXELS_PER_HOUR && (
+        <div
+          className="absolute top-0 left-0 right-0 h-3 cursor-ns-resize group/handle z-20"
+          onMouseDown={(e) => onResizeStart('top', e, eventHeight, topPosition)}
+          title="Arrastar para ajustar início"
+        >
+          <div className="h-1 bg-white/0 group-hover/handle:bg-white/40 transition-all rounded-t-lg" />
+        </div>
+      )}
 
       {/* Event content */}
-      <div className="flex flex-1 overflow-visible cursor-move relative bg-transparent">
-        {daysCount === 1 ? (
+      <div className="flex flex-1 cursor-move relative bg-transparent" style={{ overflow: eventHeight < PIXELS_PER_HOUR ? 'hidden' : 'visible' }}>
+        {eventHeight < PIXELS_PER_HOUR ? (
+          /* Layout compacto para eventos curtos (< 1 hora) */
+          <div className="flex-1 px-1.5 py-0.5 flex items-center gap-1.5 min-h-0">
+            <span className="text-base flex-shrink-0 leading-none">
+              {category?.icon || '📅'}
+            </span>
+            <div className="flex-1 min-w-0 flex flex-col justify-center">
+              <div className="flex items-center gap-1.5">
+                <div className={`text-xs font-bold truncate ${isCompleted ? 'line-through opacity-70' : ''}`}>
+                  {event.title}
+                </div>
+                <div className={`text-xs opacity-60 whitespace-nowrap flex-shrink-0 ${isCompleted ? 'line-through opacity-40' : ''}`}>
+                  {event.startTime}
+                </div>
+              </div>
+              {category?.name && (
+                <div className="flex items-center gap-1 mt-0.5">
+                  <div
+                    className="w-2 h-2 rounded-sm flex-shrink-0"
+                    style={{ backgroundColor: category.color }}
+                  />
+                  <span className={`text-xs opacity-70 truncate ${isCompleted ? 'line-through opacity-50' : ''}`}>
+                    {category.name}
+                  </span>
+                  {categoryType?.icon && (
+                    <span className="text-xs leading-none opacity-70">
+                      {categoryType.icon.trim()}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+            {isCompleted && (
+              <div className="flex-shrink-0">
+                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                </svg>
+              </div>
+            )}
+          </div>
+        ) : daysCount === 1 ? (
           /* Layout para visualização de 1 dia - Duas colunas */
           <>
             {/* Coluna Esquerda - Informações Principais */}
@@ -356,14 +411,16 @@ export default function TimeSlotEventCard({
         </div>
       </div>
 
-      {/* Bottom resize handle */}
-      <div
-        className="absolute bottom-0 left-0 right-0 h-3 cursor-ns-resize group/handle z-20"
-        onMouseDown={(e) => onResizeStart('bottom', e, eventHeight, topPosition)}
-        title="Arrastar para ajustar fim"
-      >
-        <div className="h-1 bg-white/0 group-hover/handle:bg-white/40 transition-all rounded-b-lg mt-2" />
-      </div>
+      {/* Bottom resize handle - only for events >= 1 hour */}
+      {eventHeight >= PIXELS_PER_HOUR && (
+        <div
+          className="absolute bottom-0 left-0 right-0 h-3 cursor-ns-resize group/handle z-20"
+          onMouseDown={(e) => onResizeStart('bottom', e, eventHeight, topPosition)}
+          title="Arrastar para ajustar fim"
+        >
+          <div className="h-1 bg-white/0 group-hover/handle:bg-white/40 transition-all rounded-b-lg mt-2" />
+        </div>
+      )}
     </div>
   );
 }
