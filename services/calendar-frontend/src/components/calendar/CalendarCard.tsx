@@ -3,7 +3,7 @@
  * Groups the calendar header, grid, and footer into a single card
  */
 
-import { Event, Category } from '@/types/calendar';
+import { Event, Category, CategoryType } from '@/types/calendar';
 import CalendarHeader from '../calendar/CalendarHeader';
 import CalendarGrid from '../calendar/CalendarGrid';
 import CalendarFooter from '../calendar/CalendarFooter';
@@ -22,6 +22,7 @@ interface CalendarCardProps {
   // Data props
   events: Event[];
   categories: Category[];
+  categoryTypes: CategoryType[];
   selectedCalendars: string[];
 
   // Event handlers
@@ -41,6 +42,7 @@ export default function CalendarCard({
   onViewModeChange,
   events,
   categories,
+  categoryTypes,
   selectedCalendars,
   onTimeSlotClick,
   onEditClick,
@@ -66,6 +68,7 @@ export default function CalendarCard({
         currentDate={currentDate}
         events={events}
         categories={categories}
+        categoryTypes={categoryTypes}
         selectedCalendars={selectedCalendars}
         onTimeSlotClick={onTimeSlotClick}
         onEditClick={onEditClick}

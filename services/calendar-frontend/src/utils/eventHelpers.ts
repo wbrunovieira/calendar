@@ -6,6 +6,7 @@
 interface EventFormData {
   calendarId: string;
   categoryId: string;
+  categoryTypeId: string;
   title: string;
   description: string;
   startTime: string;
@@ -34,6 +35,7 @@ export function buildEventPayload(formData: EventFormData): Record<string, unkno
 
   // Only add optional fields if they have values
   if (formData.categoryId) payload.categoryId = formData.categoryId;
+  if (formData.categoryTypeId) payload.categoryTypeId = formData.categoryTypeId;
   if (formData.description) payload.description = formData.description;
   if (formData.endTime) payload.endTime = formData.endTime;
   if (formData.endDate) payload.endDate = formData.endDate;

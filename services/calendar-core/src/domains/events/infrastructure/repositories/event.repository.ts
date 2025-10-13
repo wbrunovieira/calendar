@@ -21,6 +21,7 @@ export class EventRepository {
       data: {
         calendarId: event.calendarId,
         categoryId: event.categoryId,
+        categoryTypeId: event.categoryTypeId,
         title: event.title,
         description: event.description,
         startTime: event.startTime,
@@ -67,6 +68,8 @@ export class EventRepository {
       where,
       orderBy: [{ startDate: 'asc' }, { startTime: 'asc' }],
       include: {
+        category: true,
+        categoryType: true,
         exceptions: true,
         overrides: {
           include: {
@@ -79,9 +82,17 @@ export class EventRepository {
 
     return events.map((event) => ({
       ...new Event(event),
+      category: event.category,
+      categoryType: event.categoryType,
       exceptions: event.exceptions,
       overrides: event.overrides,
-      completions: event.completions,
+      executions: event.completions.map((completion) => ({
+        id: completion.id,
+        eventId: completion.eventId,
+        executionDate: completion.occurrenceDate,
+        completed: completion.completed,
+        notes: completion.notes,
+      })),
     }));
   }
 
@@ -105,6 +116,7 @@ export class EventRepository {
         startDate: event.startDate,
         endDate: event.endDate,
         categoryId: event.categoryId,
+        categoryTypeId: event.categoryTypeId,
         recurrenceRule: event.recurrenceRule,
         status: event.status,
         isActive: event.isActive,

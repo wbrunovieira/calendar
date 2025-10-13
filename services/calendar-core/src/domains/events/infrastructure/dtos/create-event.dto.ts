@@ -8,6 +8,10 @@ export class CreateEventDto {
   @IsString()
   categoryId?: string;
 
+  @IsOptional()
+  @IsString()
+  categoryTypeId?: string;
+
   @IsString()
   title: string;
 

@@ -27,7 +27,8 @@ export interface Category {
   name: string;
   icon: string;
   color: string;
-  type: string;
+  type?: string; // Legacy field, now optional
+  categoryTypes?: CategoryType[]; // New many-to-many relationship
   isActive: boolean;
 }
 
@@ -42,7 +43,10 @@ export interface EventExecution {
 export interface Event {
   id: string;
   calendarId: string;
-  categoryId: string;
+  categoryId?: string;
+  categoryTypeId?: string;
+  category?: Category; // Category object from API (includes icon, color, name, type)
+  categoryType?: CategoryType; // CategoryType object from API
   title: string;
   description?: string;
   startTime: string;

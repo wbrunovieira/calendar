@@ -18,7 +18,7 @@ export class CategoriesController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() createCategoryDto: CreateCategoryDto) {
-    const category = await this.createCategoryUseCase.execute(createCategoryDto);
+    const category: any = await this.createCategoryUseCase.execute(createCategoryDto);
 
     return {
       id: category.id,
@@ -27,6 +27,7 @@ export class CategoriesController {
       icon: category.icon,
       color: category.color,
       type: category.type,
+      categoryTypes: category.categoryTypes || [],
       isActive: category.isActive,
       createdAt: category.createdAt,
       updatedAt: category.updatedAt,
@@ -36,7 +37,7 @@ export class CategoriesController {
   @Get()
   @HttpCode(HttpStatus.OK)
   async listByCalendar(@Query('calendarId') calendarId: string) {
-    const categories = await this.listCategoriesByCalendarUseCase.execute(calendarId);
+    const categories: any[] = await this.listCategoriesByCalendarUseCase.execute(calendarId);
 
     return categories.map((category) => ({
       id: category.id,
@@ -45,6 +46,7 @@ export class CategoriesController {
       icon: category.icon,
       color: category.color,
       type: category.type,
+      categoryTypes: category.categoryTypes || [],
       isActive: category.isActive,
       createdAt: category.createdAt,
       updatedAt: category.updatedAt,
@@ -54,7 +56,7 @@ export class CategoriesController {
   @Put(':id')
   @HttpCode(HttpStatus.OK)
   async update(@Param('id') id: string, @Body() updateCategoryDto: UpdateCategoryDto) {
-    const category = await this.updateCategoryUseCase.execute(id, updateCategoryDto);
+    const category: any = await this.updateCategoryUseCase.execute(id, updateCategoryDto);
 
     return {
       id: category.id,
@@ -63,6 +65,7 @@ export class CategoriesController {
       icon: category.icon,
       color: category.color,
       type: category.type,
+      categoryTypes: category.categoryTypes || [],
       isActive: category.isActive,
       createdAt: category.createdAt,
       updatedAt: category.updatedAt,

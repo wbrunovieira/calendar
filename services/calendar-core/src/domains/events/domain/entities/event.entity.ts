@@ -2,6 +2,7 @@ export class Event {
   id: string;
   calendarId: string;
   categoryId?: string | null;
+  categoryTypeId?: string | null;
   title: string;
   description?: string | null;
   startTime: string; // HH:mm format
@@ -31,6 +32,7 @@ export class Event {
   static create(data: {
     calendarId: string;
     categoryId?: string;
+    categoryTypeId?: string;
     title: string;
     description?: string;
     startTime: string;
@@ -45,6 +47,7 @@ export class Event {
       id: '',
       calendarId: data.calendarId,
       categoryId: data.categoryId,
+      categoryTypeId: data.categoryTypeId,
       title: data.title,
       description: data.description,
       startTime: data.startTime,

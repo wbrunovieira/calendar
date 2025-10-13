@@ -1,6 +1,6 @@
 'use client';
 
-import { Event, Category } from '@/types/calendar';
+import { Event, Category, CategoryType } from '@/types/calendar';
 import { useEditEventForm } from '@/hooks/useEditEventForm';
 import ModalContainer from '../ui/modal/ModalContainer';
 import ModalHeader from '../ui/modal/ModalHeader';
@@ -17,6 +17,7 @@ interface EditEventModalProps {
   event: Event | null;
   calendars: Array<{ id: string; name: string; color: string; type: string }>;
   categories: Category[];
+  categoryTypes: CategoryType[];
 }
 
 export default function EditEventModal({
@@ -26,6 +27,7 @@ export default function EditEventModal({
   event,
   calendars,
   categories,
+  categoryTypes,
 }: EditEventModalProps) {
   const {
     formData,
@@ -35,7 +37,11 @@ export default function EditEventModal({
     showRecurringActionModal,
     calendarOptions,
     categoryOptions,
+    categoryTypeOptions,
+    availableTypes,
     handleCalendarChange,
+    handleCategoryChange,
+    handleCategoryTypeChange,
     handleStartTimeChange,
     toggleDayOfWeek,
     handleSubmit,
@@ -46,6 +52,7 @@ export default function EditEventModal({
     event,
     calendars,
     categories,
+    categoryTypes,
     onEventUpdated,
     onClose,
   });
@@ -81,8 +88,11 @@ export default function EditEventModal({
           formData={formData}
           calendarOptions={calendarOptions}
           categoryOptions={categoryOptions}
+          categoryTypeOptions={categoryTypeOptions}
+          availableTypes={availableTypes}
           onCalendarChange={handleCalendarChange}
-          onCategoryChange={value => setFormData({ ...formData, categoryId: value })}
+          onCategoryChange={handleCategoryChange}
+          onCategoryTypeChange={handleCategoryTypeChange}
           onTitleChange={value => setFormData({ ...formData, title: value })}
           onDescriptionChange={value => setFormData({ ...formData, description: value })}
           onStartDateChange={value => setFormData({ ...formData, startDate: value })}

@@ -68,6 +68,9 @@ export function useTimeSlotEventUpdate({ events, onEventUpdate }: UseTimeSlotEve
 
         const updatePayload: Record<string, unknown> = {
           startDate: newDate,
+          // Preserve category and type information
+          categoryId: event.categoryId,
+          categoryTypeId: event.categoryTypeId,
         };
 
         if (newTime) updatePayload.startTime = newTime;

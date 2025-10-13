@@ -3,7 +3,8 @@
  * Displays an event card in the TimeSlotView with drag, resize, and action buttons
  */
 
-import { Event, Category } from '@/types/calendar';
+import React from 'react';
+import { Event, Category, CategoryType } from '@/types/calendar';
 import { PIXELS_PER_HOUR } from '@/constants/timeSlotView';
 import { timeToPixels, calculateEventHeight } from '@/utils/timeCalculations';
 
@@ -18,6 +19,7 @@ interface TimeSlotEventCardProps {
   event: Event;
   date: Date;
   category?: Category;
+  categoryType?: CategoryType;
   calendar?: Calendar;
   daysCount: number;
   positionInfo: { column: number; totalColumns: number };
@@ -34,6 +36,7 @@ export default function TimeSlotEventCard({
   event,
   date,
   category,
+  categoryType,
   calendar,
   daysCount,
   positionInfo,
@@ -48,7 +51,7 @@ export default function TimeSlotEventCard({
   // Check execution status from event executions
   const executionDate = date.toISOString().split('T')[0];
   const execution = event.executions?.find(exec =>
-    exec.executionDate.split('T')[0] === executionDate
+    exec.executionDate?.split('T')[0] === executionDate
   );
   const isCompleted = execution?.completed || false;
 
@@ -66,13 +69,31 @@ export default function TimeSlotEventCard({
     // Error parsing time for event
   }
 
-  const textSize = daysCount === 7 ? 'text-sm' : daysCount <= 3 ? 'text-base' : 'text-lg';
   const padding = daysCount === 7 ? 'px-2 py-2' : daysCount <= 3 ? 'px-3 py-2' : 'px-4 py-3';
 
   const widthPercentage = 100 / positionInfo.totalColumns;
   const leftPercentage = positionInfo.column * widthPercentage;
 
   const calendarIcon = calendar?.type === 'professional' ? '💼' : '👤';
+
+  // Convert hex color to rgba for better browser compatibility
+  const hexToRgba = (hex: string | undefined, opacity: number): string => {
+    if (!hex) return `rgba(128, 128, 128, ${opacity})`;
+
+    // Remove # if present
+    const cleanHex = hex.replace('#', '');
+
+    // Parse hex values
+    const r = parseInt(cleanHex.substring(0, 2), 16);
+    const g = parseInt(cleanHex.substring(2, 4), 16);
+    const b = parseInt(cleanHex.substring(4, 6), 16);
+
+    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+  };
+
+  const bgColor = isCompleted
+    ? hexToRgba(category?.color, 0.38)  // 60 in hex = 0.38 opacity
+    : hexToRgba(category?.color, 0.56); // 90 in hex = 0.56 opacity
 
   return (
     <div
@@ -87,9 +108,7 @@ export default function TimeSlotEventCard({
           : ''
       } transition-all duration-300`}
       style={{
-        backgroundColor: isCompleted
-          ? category?.color + '60'
-          : category?.color + '90',
+        backgroundColor: bgColor,
         top: `${topPosition}px`,
         height: `${eventHeight}px`,
         minHeight: daysCount === 7 ? '96px' : daysCount <= 3 ? '110px' : '120px',
@@ -122,38 +141,181 @@ export default function TimeSlotEventCard({
       </div>
 
       {/* Event content */}
-      <div className="flex flex-1 overflow-visible cursor-move relative">
-        <div className={`flex-1 ${padding} flex flex-col ${isCompleted ? 'relative' : ''}`}>
-          {/* Category Icon - centered, prominent */}
-          <div className="text-center pb-1">
-            <span className={`${daysCount === 7 ? 'text-2xl' : daysCount <= 3 ? 'text-3xl' : 'text-4xl'}`}>
-              {category?.icon}
-            </span>
-          </div>
-
-          {/* Time - single line, bold */}
-          <div className={`font-bold ${daysCount === 7 ? 'text-xs' : textSize} text-center leading-none whitespace-nowrap pb-2 ${isCompleted ? 'line-through opacity-70' : ''}`}>
-            {event.startTime}{event.endTime && ` - ${event.endTime}`}
-          </div>
-
-          {/* Subtle divider */}
-          <div className="w-full h-px bg-white/20 mb-2"></div>
-
-          {/* Event Title - more space */}
-          <div className={`${textSize} leading-relaxed ${isCompleted ? 'line-through opacity-70' : ''}`}>
-            {event.title}
-          </div>
-
-          {isCompleted && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="bg-green-500 rounded-full p-2 shadow-lg animate-pulse">
-                <svg className={daysCount === 7 ? "w-6 h-6" : "w-8 h-8"} fill="white" viewBox="0 0 24 24">
-                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-                </svg>
+      <div className="flex flex-1 overflow-visible cursor-move relative bg-transparent">
+        {daysCount === 1 ? (
+          /* Layout para visualização de 1 dia - Duas colunas */
+          <>
+            {/* Coluna Esquerda - Informações Principais */}
+            <div className={`flex-1 ${padding} flex flex-col justify-center ${isCompleted ? 'relative' : ''}`}>
+              {/* Category Icon - Grande e proeminente */}
+              <div className="flex items-center gap-3 pb-3">
+                <span className="text-5xl">
+                  {category?.icon || '📅'}
+                </span>
+                <div className="flex-1">
+                  {/* Event Title - Bold */}
+                  <div className={`font-bold text-xl leading-tight ${isCompleted ? 'line-through opacity-70' : ''}`}>
+                    {event.title}
+                  </div>
+                  {/* Time */}
+                  <div className={`text-base mt-1 opacity-90 ${isCompleted ? 'line-through opacity-70' : ''}`}>
+                    ⏰ {event.startTime}{event.endTime && ` - ${event.endTime}`}
+                  </div>
+                </div>
               </div>
+
+              {isCompleted && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="bg-green-500 rounded-full p-3 shadow-lg animate-pulse">
+                    <svg className="w-12 h-12" fill="white" viewBox="0 0 24 24">
+                      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                    </svg>
+                  </div>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+
+            {/* Coluna Direita - Hierarquia Visual */}
+            <div className="flex flex-col gap-2 px-4 py-4 justify-center border-l border-white/20 min-w-[200px]">
+              {/* Category (Nível Superior) - Maior, mais proeminente */}
+              {category?.name && (
+                <div className="flex items-center gap-2.5">
+                  <div
+                    className="w-5 h-5 rounded-lg flex-shrink-0 shadow-md border-2 border-white/30"
+                    style={{ backgroundColor: category.color }}
+                  />
+                  <div className={`text-base font-bold leading-tight ${isCompleted ? 'line-through opacity-70' : ''}`}>
+                    {category.name}
+                  </div>
+                </div>
+              )}
+
+              {/* Type (Sub-nível) - Menor, indentado com conector */}
+              {(category?.type || categoryType) && (
+                <div className="flex items-start gap-2 ml-1">
+                  {/* Conector visual em L */}
+                  <div className="flex flex-col items-center pt-0.5">
+                    <div className="w-0.5 h-2 bg-white/20" />
+                    <div className="w-3 h-0.5 bg-white/20" />
+                  </div>
+                  {/* Ícone do CategoryType se disponível, senão badge colorido */}
+                  {categoryType?.icon ? (
+                    <span className="text-lg leading-none pt-0.5">{categoryType.icon.trim()}</span>
+                  ) : (
+                    <div
+                      className="w-3 h-3 rounded flex-shrink-0 mt-0.5 shadow-sm border border-white/20"
+                      style={{ backgroundColor: categoryType?.color || category?.color, opacity: 0.8 }}
+                    />
+                  )}
+                  <div className={`text-sm capitalize opacity-80 leading-tight pt-0.5 ${isCompleted ? 'line-through opacity-50' : ''}`}>
+                    {categoryType?.name || category?.type}
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        ) : daysCount === 3 ? (
+          /* Layout para visualização de 3 dias - Híbrido com hierarquia visual */
+          <>
+            <div className={`flex-1 ${padding} flex flex-col justify-center ${isCompleted ? 'relative' : ''}`}>
+              {/* Icon e Title lado a lado */}
+              <div className="flex items-center gap-2 pb-2">
+                <span className="text-3xl flex-shrink-0">
+                  {category?.icon || '📅'}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className={`font-bold text-sm leading-tight truncate ${isCompleted ? 'line-through opacity-70' : ''}`}>
+                    {event.title}
+                  </div>
+                  <div className={`text-xs mt-0.5 opacity-90 ${isCompleted ? 'line-through opacity-60' : ''}`}>
+                    ⏰ {event.startTime}{event.endTime && `-${event.endTime}`}
+                  </div>
+                </div>
+              </div>
+
+              {isCompleted && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="bg-green-500 rounded-full p-2.5 shadow-lg animate-pulse">
+                    <svg className="w-8 h-8" fill="white" viewBox="0 0 24 24">
+                      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                    </svg>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Coluna direita compacta - Hierarquia visual */}
+            <div className="flex flex-col gap-1.5 px-2 py-3 justify-center border-l border-white/20 min-w-[140px]">
+              {/* Category */}
+              {category?.name && (
+                <div className="flex items-center gap-1.5">
+                  <div
+                    className="w-3.5 h-3.5 rounded-md flex-shrink-0 shadow-sm border border-white/30"
+                    style={{ backgroundColor: category.color }}
+                  />
+                  <div className={`text-xs font-bold leading-tight truncate ${isCompleted ? 'line-through opacity-70' : ''}`}>
+                    {category.name}
+                  </div>
+                </div>
+              )}
+
+              {/* Type com conector */}
+              {(category?.type || categoryType) && (
+                <div className="flex items-start gap-1 ml-0.5">
+                  <div className="flex flex-col items-center pt-0.5">
+                    <div className="w-0.5 h-1.5 bg-white/20" />
+                    <div className="w-2 h-0.5 bg-white/20" />
+                  </div>
+                  {/* Ícone do CategoryType se disponível, senão badge colorido */}
+                  {categoryType?.icon ? (
+                    <span className="text-sm leading-none pt-0.5">{categoryType.icon.trim()}</span>
+                  ) : (
+                    <div
+                      className="w-2 h-2 rounded-sm flex-shrink-0 mt-0.5 shadow-sm border border-white/15"
+                      style={{ backgroundColor: categoryType?.color || category?.color, opacity: 0.75 }}
+                    />
+                  )}
+                  <div className={`text-xs capitalize opacity-75 leading-tight pt-0.5 truncate ${isCompleted ? 'line-through opacity-50' : ''}`}>
+                    {categoryType?.name || category?.type}
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          /* Layout para visualização de 7 dias - Compacto centralizado */
+          <div className={`flex-1 ${padding} flex flex-col ${isCompleted ? 'relative' : ''}`}>
+            {/* Category Icon - centered, prominent */}
+            <div className="text-center pb-1">
+              <span className="text-2xl">
+                {category?.icon || '📅'}
+              </span>
+            </div>
+
+            {/* Time - single line, bold */}
+            <div className={`font-bold text-xs text-center leading-none whitespace-nowrap pb-2 ${isCompleted ? 'line-through opacity-70' : ''}`}>
+              {event.startTime}{event.endTime && ` - ${event.endTime}`}
+            </div>
+
+            {/* Subtle divider */}
+            <div className="w-full h-px bg-white/20 mb-2"></div>
+
+            {/* Event Title - more space */}
+            <div className={`text-sm leading-relaxed ${isCompleted ? 'line-through opacity-70' : ''}`}>
+              {event.title}
+            </div>
+
+            {isCompleted && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="bg-green-500 rounded-full p-2 shadow-lg animate-pulse">
+                  <svg className="w-6 h-6" fill="white" viewBox="0 0 24 24">
+                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                  </svg>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex flex-col gap-1 pr-1 pt-1">
           <button

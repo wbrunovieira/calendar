@@ -22,8 +22,9 @@ export function useEventExecution({ onEventUpdate }: UseEventExecutionProps) {
         if (onEventUpdate) {
           onEventUpdate();
         }
-      } catch {
-        // Error handling for execution toggle
+      } catch (error) {
+        console.error('Error toggling execution:', error);
+        alert('Erro ao marcar evento como concluído. Verifique o console para mais detalhes.');
       }
     },
     [onEventUpdate]

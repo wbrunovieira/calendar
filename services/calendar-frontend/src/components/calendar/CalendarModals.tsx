@@ -4,7 +4,7 @@
  */
 
 import { calendars } from '@/data/calendars';
-import { Event, Category } from '@/types/calendar';
+import { Event, Category, CategoryType } from '@/types/calendar';
 import CreateEventModal from '../modals/CreateEventModal';
 import EditEventModal from '../modals/EditEventModal';
 import ConfirmDeleteModal from '../modals/ConfirmDeleteModal';
@@ -16,6 +16,7 @@ interface CalendarModalsProps {
   onCloseCreateModal: () => void;
   onEventCreated: (preservedData?: Record<string, unknown>) => void;
   categories: Category[];
+  categoryTypes: CategoryType[];
   modalInitialDate: string;
   modalInitialTime: string;
   preservedFormData?: Record<string, unknown>;
@@ -43,6 +44,7 @@ export default function CalendarModals({
   onCloseCreateModal,
   onEventCreated,
   categories,
+  categoryTypes,
   modalInitialDate,
   modalInitialTime,
   preservedFormData,
@@ -67,6 +69,7 @@ export default function CalendarModals({
         onEventCreated={onEventCreated}
         calendars={calendars}
         categories={categories}
+        categoryTypes={categoryTypes}
         initialDate={modalInitialDate}
         initialTime={modalInitialTime}
         preservedFormData={preservedFormData}
@@ -80,6 +83,7 @@ export default function CalendarModals({
         event={eventToEdit}
         calendars={calendars}
         categories={categories}
+        categoryTypes={categoryTypes}
       />
 
       {/* Modal de Confirmação de Exclusão */}

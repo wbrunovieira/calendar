@@ -29,6 +29,7 @@ export class UpdateEventUseCase {
 
     if (dto.calendarId !== undefined) updateData.calendarId = dto.calendarId;
     if (dto.categoryId !== undefined) updateData.categoryId = dto.categoryId;
+    if (dto.categoryTypeId !== undefined) updateData.categoryTypeId = dto.categoryTypeId;
     if (dto.title !== undefined) updateData.title = dto.title;
     if (dto.description !== undefined) updateData.description = dto.description;
     if (dto.startTime !== undefined) updateData.startTime = dto.startTime;
@@ -77,6 +78,7 @@ export class UpdateEventUseCase {
         data: {
           calendarId: dto.calendarId ?? existingEvent.calendarId,
           categoryId: dto.categoryId ?? existingEvent.categoryId,
+          categoryTypeId: dto.categoryTypeId ?? existingEvent.categoryTypeId,
           title: dto.title ?? existingEvent.title,
           description: dto.description ?? existingEvent.description,
           startTime: dto.startTime ?? existingEvent.startTime,
@@ -156,6 +158,7 @@ export class UpdateEventUseCase {
         data: {
           calendarId: dto.calendarId ?? existingEvent.calendarId,
           categoryId: dto.categoryId ?? existingEvent.categoryId,
+          categoryTypeId: dto.categoryTypeId ?? existingEvent.categoryTypeId,
           title: dto.title ?? existingEvent.title,
           description: dto.description ?? existingEvent.description,
           startTime: dto.startTime ?? existingEvent.startTime,
@@ -179,6 +182,7 @@ export class UpdateEventUseCase {
 
       if (dto.calendarId !== undefined) updateData.calendarId = dto.calendarId;
       if (dto.categoryId !== undefined) updateData.categoryId = dto.categoryId;
+      if (dto.categoryTypeId !== undefined) updateData.categoryTypeId = dto.categoryTypeId;
       if (dto.title !== undefined) updateData.title = dto.title;
       if (dto.description !== undefined) updateData.description = dto.description;
       if (dto.startTime !== undefined) updateData.startTime = dto.startTime;

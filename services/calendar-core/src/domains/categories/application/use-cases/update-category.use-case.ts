@@ -7,7 +7,7 @@ import { UpdateCategoryDto } from '../../infrastructure/dtos/update-category.dto
 export class UpdateCategoryUseCase {
   constructor(private readonly categoryRepository: CategoryRepository) {}
 
-  async execute(id: string, dto: UpdateCategoryDto): Promise<Category> {
+  async execute(id: string, dto: UpdateCategoryDto): Promise<any> {
     // Buscar categoria existente
     const category = await this.categoryRepository.findById(id);
 
@@ -20,10 +20,10 @@ export class UpdateCategoryUseCase {
       name: dto.name,
       icon: dto.icon,
       color: dto.color,
-      type: dto.type,
+      type: dto.type, // mantido para backward compatibility
     });
 
-    // Persistir no banco
-    return await this.categoryRepository.update(id, category);
+    // Persistir no banco com tipos (se fornecidos)
+    return await this.categoryRepository.update(id, category, dto.typeIds);
   }
 }

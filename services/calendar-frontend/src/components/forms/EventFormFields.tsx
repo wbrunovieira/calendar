@@ -3,6 +3,7 @@
  * All basic fields for event creation/editing
  */
 
+import { CategoryType } from '@/types/calendar';
 import FormSelect from '../forms/FormSelect';
 import FormInput from '../forms/FormInput';
 import FormTextarea from '../forms/FormTextarea';
@@ -11,6 +12,7 @@ interface EventFormFieldsProps {
   formData: {
     calendarId: string;
     categoryId: string;
+    categoryTypeId: string;
     title: string;
     description: string;
     startDate: string;
@@ -20,8 +22,11 @@ interface EventFormFieldsProps {
   };
   calendarOptions: Array<{ value: string; label: string }>;
   categoryOptions: Array<{ value: string; label: string }>;
+  categoryTypeOptions: Array<{ value: string; label: string }>;
+  availableTypes: CategoryType[]; // Tipos disponíveis para a categoria selecionada
   onCalendarChange: (value: string) => void;
   onCategoryChange: (value: string) => void;
+  onCategoryTypeChange: (value: string) => void;
   onTitleChange: (value: string) => void;
   onDescriptionChange: (value: string) => void;
   onStartDateChange: (value: string) => void;
@@ -34,8 +39,11 @@ export default function EventFormFields({
   formData,
   calendarOptions,
   categoryOptions,
+  categoryTypeOptions,
+  availableTypes,
   onCalendarChange,
   onCategoryChange,
+  onCategoryTypeChange,
   onTitleChange,
   onDescriptionChange,
   onStartDateChange,
@@ -55,15 +63,55 @@ export default function EventFormFields({
         required
       />
 
+      {/* Tipo (Opcional) */}
+      <FormSelect
+        label="Tipo (opcional)"
+        value={formData.categoryTypeId}
+        onChange={onCategoryTypeChange}
+        options={categoryTypeOptions}
+        placeholder="Selecione o tipo (a categoria será selecionada automaticamente)"
+        disabled={!formData.calendarId}
+      />
+
       {/* Categoria */}
       <FormSelect
-        label="Categoria"
+        label="Categoria (opcional)"
         value={formData.categoryId}
         onChange={onCategoryChange}
         options={categoryOptions}
-        placeholder="Sem categoria"
-        disabled={!formData.calendarId}
+        placeholder="Selecione a categoria"
+        disabled={!formData.calendarId || !!formData.categoryTypeId}
       />
+
+      {/* Se categoria foi escolhida e tem múltiplos tipos, mostrar seleção de tipo */}
+      {formData.categoryId && !formData.categoryTypeId && availableTypes.length > 0 && (
+        <div className="p-4 bg-white/5 rounded-lg border border-white/10">
+          <label className="block text-white font-semibold mb-3">
+            Selecione o tipo desta atividade:
+          </label>
+          <div className="grid grid-cols-1 gap-2">
+            {availableTypes.map((type) => (
+              <button
+                key={type.id}
+                type="button"
+                onClick={() => onCategoryTypeChange(type.id)}
+                className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${
+                  formData.categoryTypeId === type.id
+                    ? 'bg-white/20 border-white/30'
+                    : 'bg-white/10 border-white/10 hover:bg-white/15'
+                }`}
+              >
+                {type.icon && <span className="text-xl">{type.icon}</span>}
+                <span className="text-white font-medium flex-1 text-left">{type.name}</span>
+                <div
+                  className="w-4 h-4 rounded flex-shrink-0"
+                  style={{ backgroundColor: type.color }}
+                />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Título */}
       <FormInput

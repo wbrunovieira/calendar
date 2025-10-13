@@ -3,7 +3,16 @@
 import { useState, useEffect } from 'react';
 import { calendars } from '@/data/calendars';
 import { api } from '@/lib/api';
-import { Category, CategoryType } from '@/types/calendar';
+import { CategoryType } from '@/types/calendar';
+
+interface InitialData {
+  calendarId: string;
+  name: string;
+  icon: string;
+  color: string;
+  type?: string;
+  categoryTypes?: CategoryType[];
+}
 
 interface CreateCategoryModalProps {
   isOpen: boolean;
@@ -13,9 +22,10 @@ interface CreateCategoryModalProps {
     name: string;
     icon: string;
     color: string;
-    type: string;
+    type?: string; // DEPRECATED - mantido para backward compatibility
+    typeIds?: string[]; // Novo campo para múltiplos tipos
   }) => Promise<void>;
-  initialData?: Category;
+  initialData?: InitialData;
 }
 
 const EMOJI_LIST = [
@@ -43,7 +53,8 @@ export default function CreateCategoryModal({ isOpen, onClose, onSave, initialDa
   const [name, setName] = useState('');
   const [icon, setIcon] = useState('💼');
   const [color, setColor] = useState(COLORS[0]);
-  const [type, setType] = useState('');
+  const [type, setType] = useState(''); // DEPRECATED - mantido para backward compatibility
+  const [selectedTypeIds, setSelectedTypeIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [categoryTypes, setCategoryTypes] = useState<CategoryType[]>([]);
   const [loadingTypes, setLoadingTypes] = useState(true);
@@ -55,7 +66,14 @@ export default function CreateCategoryModal({ isOpen, onClose, onSave, initialDa
       setName(initialData.name);
       setIcon(initialData.icon || '💼');
       setColor(initialData.color);
-      setType(initialData.type || '');
+      setType(initialData.type || ''); // backward compatibility
+
+      // Se tem categoryTypes, usar esses IDs
+      if (initialData.categoryTypes && Array.isArray(initialData.categoryTypes)) {
+        setSelectedTypeIds(initialData.categoryTypes.map((t: CategoryType) => t.id));
+      } else {
+        setSelectedTypeIds([]);
+      }
     } else {
       // Reset form when not editing
       setCalendarId(calendars[0]?.id || '');
@@ -63,6 +81,7 @@ export default function CreateCategoryModal({ isOpen, onClose, onSave, initialDa
       setIcon('💼');
       setColor(COLORS[0]);
       setType('');
+      setSelectedTypeIds([]);
     }
   }, [initialData]);
 
@@ -95,13 +114,21 @@ export default function CreateCategoryModal({ isOpen, onClose, onSave, initialDa
 
     setSaving(true);
     try {
-      await onSave({ calendarId, name: name.trim(), icon, color, type });
+      await onSave({
+        calendarId,
+        name: name.trim(),
+        icon,
+        color,
+        type, // backward compatibility
+        typeIds: selectedTypeIds.length > 0 ? selectedTypeIds : undefined
+      });
 
       // Reset form
       setName('');
       setIcon('💼');
       setColor(COLORS[0]);
-      setType(categoryTypes[0]?.value || '');
+      setType('');
+      setSelectedTypeIds([]);
 
       onClose();
     } catch (error) {
@@ -110,6 +137,14 @@ export default function CreateCategoryModal({ isOpen, onClose, onSave, initialDa
     } finally {
       setSaving(false);
     }
+  };
+
+  const toggleTypeSelection = (typeId: string) => {
+    setSelectedTypeIds(prev =>
+      prev.includes(typeId)
+        ? prev.filter(id => id !== typeId)
+        : [...prev, typeId]
+    );
   };
 
   if (!isOpen) return null;
@@ -223,9 +258,11 @@ export default function CreateCategoryModal({ isOpen, onClose, onSave, initialDa
             </div>
           </div>
 
-          {/* Type Selection */}
+          {/* Type Selection (Multiple) */}
           <div>
-            <label className="block text-white font-semibold mb-2">Tipo</label>
+            <label className="block text-white font-semibold mb-2">
+              Tipos (selecione um ou mais)
+            </label>
             {loadingTypes ? (
               <div className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white/50">
                 Carregando tipos...
@@ -235,17 +272,40 @@ export default function CreateCategoryModal({ isOpen, onClose, onSave, initialDa
                 Nenhum tipo encontrado. Crie tipos na aba Configurações.
               </div>
             ) : (
-              <select
-                value={type}
-                onChange={(e) => setType(e.target.value)}
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-              >
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-4 bg-white/5 rounded-lg border border-white/10 max-h-64 overflow-y-auto">
                 {categoryTypes.map((typeOption) => (
-                  <option key={typeOption.value} value={typeOption.value} className="bg-[#350545]">
-                    {typeOption.icon && `${typeOption.icon} `}{typeOption.name}
-                  </option>
+                  <label
+                    key={typeOption.id}
+                    className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                      selectedTypeIds.includes(typeOption.id)
+                        ? 'bg-white/20 border-white/30'
+                        : 'bg-white/10 border-white/10 hover:bg-white/15'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedTypeIds.includes(typeOption.id)}
+                      onChange={() => toggleTypeSelection(typeOption.id)}
+                      className="w-5 h-5 rounded border-white/30 text-purple-600 focus:ring-purple-500 focus:ring-offset-0 bg-white/10"
+                    />
+                    <div className="flex items-center gap-2 flex-1">
+                      {typeOption.icon && (
+                        <span className="text-xl">{typeOption.icon}</span>
+                      )}
+                      <span className="text-white font-medium">{typeOption.name}</span>
+                    </div>
+                    <div
+                      className="w-4 h-4 rounded flex-shrink-0"
+                      style={{ backgroundColor: typeOption.color }}
+                    />
+                  </label>
                 ))}
-              </select>
+              </div>
+            )}
+            {selectedTypeIds.length > 0 && (
+              <p className="text-white/60 text-sm mt-2">
+                {selectedTypeIds.length} tipo(s) selecionado(s)
+              </p>
             )}
           </div>
 

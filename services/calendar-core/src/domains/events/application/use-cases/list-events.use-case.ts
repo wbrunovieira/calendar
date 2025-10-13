@@ -20,7 +20,10 @@ export class ListEventsUseCase {
 
     // Se não tem date range, retorna eventos como estão (backward compatibility)
     if (!filters?.startDate || !filters?.endDate) {
-      return events;
+      return events.map(event => ({
+        ...event,
+        executions: event.executions || [],
+      }));
     }
 
     const rangeStart = new Date(filters.startDate);
@@ -112,6 +115,9 @@ export class ListEventsUseCase {
         id: `${event.id}-${dateStr}`, // ID único para esta ocorrência
         calendarId: event.calendarId,
         categoryId: event.categoryId,
+        categoryTypeId: event.categoryTypeId,
+        category: event.category, // Incluir categoria completa
+        categoryType: event.categoryType, // Incluir tipo de categoria completa
         title: event.title,
         description: event.description,
         startTime: event.startTime,
@@ -125,14 +131,19 @@ export class ListEventsUseCase {
         updatedAt: event.updatedAt,
         originalEventId: event.id, // Referência ao evento master
         occurrenceDate: dateStr,   // Data específica desta ocorrência
-        completions: event.completions?.filter(c => {
-          const compDate = new Date(c.occurrenceDate);
-          return compDate.toISOString().split('T')[0] === dateStr;
-        }) || [],
         executions: event.completions?.filter(c => {
           const compDate = new Date(c.occurrenceDate);
           return compDate.toISOString().split('T')[0] === dateStr;
-        }) || [], // Compatibilidade com nome antigo
+        }).map(c => ({
+          id: c.id,
+          eventId: c.eventId,
+          executionDate: c.occurrenceDate,
+          completed: c.completed,
+          completedAt: c.completedAt,
+          notes: c.notes,
+          createdAt: c.createdAt,
+          updatedAt: c.updatedAt,
+        })) || []
       });
     }
 

@@ -3,7 +3,7 @@
  * Renders a single day column with event positioning logic and event cards
  */
 
-import { Event, Category } from '@/types/calendar';
+import { Event, Category, CategoryType } from '@/types/calendar';
 import { calendars } from '@/data/calendars';
 import { calculateTimeFromOffset } from '@/utils/timeCalculations';
 import TimeSlotDayHeader from '../timeslot/TimeSlotDayHeader';
@@ -17,6 +17,7 @@ interface TimeSlotDayColumnProps {
   isToday: boolean;
   dayEvents: Event[];
   categories: Category[];
+  categoryTypes: CategoryType[];
   hours: number[];
   daysCount: number;
   daysOfWeek?: string[];
@@ -42,6 +43,7 @@ export default function TimeSlotDayColumn({
   isToday,
   dayEvents,
   categories,
+  categoryTypes,
   hours,
   daysCount,
   daysOfWeek,
@@ -96,7 +98,9 @@ export default function TimeSlotDayColumn({
 
   eventsWithTimes.forEach(eventTime => {
     const overlappingEvents = eventsWithTimes.filter(other => !(eventTime.end <= other.start || eventTime.start >= other.end));
-    const maxColumn = Math.max(...overlappingEvents.map(e => e.column));
+    const maxColumn = overlappingEvents.length > 0
+      ? Math.max(...overlappingEvents.map(e => e.column))
+      : 0;
     eventTime.totalColumns = maxColumn + 1;
   });
 
@@ -164,12 +168,20 @@ export default function TimeSlotDayColumn({
 
         {/* Events positioned absolutely */}
         {dayEvents.map((event) => {
-          const category = categories.find(c => c.id === event.categoryId);
+          // Use category from API if available, otherwise fallback to local categories array
+          const category = event.category || categories.find(c => c.id === event.categoryId);
+          // Use categoryType from event if available, otherwise try to find by categoryTypeId or legacy category.type
+          const categoryType = event.categoryType ||
+            (event.categoryTypeId ? categoryTypes.find(ct => ct.id === event.categoryTypeId) : undefined) ||
+            (category?.type ? categoryTypes.find(ct => ct.value === category.type) : undefined);
+
           const calendar = calendars.find(c => c.id === event.calendarId);
           const executionDate = date.toISOString().split('T')[0];
           const positionInfo = eventPositions.get(event.id) || { column: 0, totalColumns: 1 };
-          const execution = event.executions?.find(exec => exec.executionDate.split('T')[0] === executionDate);
+          const execution = event.executions?.find(exec => exec.executionDate?.split('T')[0] === executionDate);
           const isCompleted = execution?.completed || false;
+          // Use originalEventId for recurring events, otherwise use the regular id
+          const eventIdForApi = event.originalEventId || event.id;
 
           return (
             <TimeSlotEventCard
@@ -177,6 +189,7 @@ export default function TimeSlotDayColumn({
               event={event}
               date={date}
               category={category}
+              categoryType={categoryType}
               calendar={calendar}
               daysCount={daysCount}
               positionInfo={positionInfo}
@@ -184,7 +197,7 @@ export default function TimeSlotDayColumn({
               onDragStart={(e) => onEventDragStart(event, executionDate, e)}
               onDragEnd={onEventDragEnd}
               onResizeStart={(edge, e, height, top) => onEventResizeStart(event.id, edge, e, height, top)}
-              onToggleExecution={(e) => onEventToggleExecution(event.id, date, isCompleted, e)}
+              onToggleExecution={(e) => onEventToggleExecution(eventIdForApi, date, isCompleted, e)}
               onEditClick={onEventEdit ? (e) => onEventEdit(event, e) : undefined}
               onDeleteClick={(e) => onEventDelete(event, e)}
             />

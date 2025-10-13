@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { api } from '@/lib/api';
-import { Category } from '@/types/calendar';
+import { Category, CategoryType } from '@/types/calendar';
 import { calculateEndTime, incrementTime } from '@/utils/calendar';
 import { buildEventPayload, validateEventForm } from '@/utils/eventHelpers';
 
@@ -16,6 +16,7 @@ interface UseEventFormProps {
   preservedFormData?: Record<string, unknown>;
   calendars: Array<{ id: string; name: string; color: string; type: string }>;
   categories: Category[];
+  categoryTypes: CategoryType[];
   onEventCreated: (preservedData?: Record<string, unknown>) => void;
   onClose: () => void;
 }
@@ -27,12 +28,14 @@ export function useEventForm({
   preservedFormData,
   calendars,
   categories,
+  categoryTypes,
   onEventCreated,
   onClose,
 }: UseEventFormProps) {
   const [formData, setFormData] = useState({
     calendarId: '',
     categoryId: '',
+    categoryTypeId: '',
     title: '',
     description: '',
     startTime: initialTime || '',
@@ -72,6 +75,24 @@ export function useEventForm({
     [formData.calendarId, categories]
   );
 
+  // Filtered category types based on selected calendar
+  const filteredCategoryTypes = useMemo(
+    () => (formData.calendarId ? categoryTypes.filter(ct => ct.calendarId === formData.calendarId) : []),
+    [formData.calendarId, categoryTypes]
+  );
+
+  // Get available types for the selected category
+  const availableTypes = useMemo(() => {
+    if (!formData.categoryId) return [];
+
+    const selectedCategory = categories.find(c => c.id === formData.categoryId);
+    if (!selectedCategory || !selectedCategory.categoryTypes || selectedCategory.categoryTypes.length === 0) {
+      return [];
+    }
+
+    return selectedCategory.categoryTypes;
+  }, [formData.categoryId, categories]);
+
   // Memoized options for selects
   const calendarOptions = useMemo(() => calendars.map(cal => ({ value: cal.id, label: cal.name })), [calendars]);
 
@@ -80,9 +101,39 @@ export function useEventForm({
     [filteredCategories]
   );
 
+  const categoryTypeOptions = useMemo(
+    () => filteredCategoryTypes.map(type => ({
+      value: type.id,
+      label: `${type.icon ? type.icon + ' ' : ''}${type.name}`
+    })),
+    [filteredCategoryTypes]
+  );
+
   // Form field handlers
   const handleCalendarChange = (value: string) => {
-    setFormData({ ...formData, calendarId: value, categoryId: '' });
+    setFormData({ ...formData, calendarId: value, categoryId: '', categoryTypeId: '' });
+  };
+
+  const handleCategoryTypeChange = (typeId: string) => {
+    // Se um tipo foi selecionado, buscar a categoria que possui esse tipo
+    const categoryWithType = filteredCategories.find(cat =>
+      cat.categoryTypes && cat.categoryTypes.some((ct: CategoryType) => ct.id === typeId)
+    );
+
+    setFormData({
+      ...formData,
+      categoryTypeId: typeId,
+      categoryId: categoryWithType ? categoryWithType.id : ''
+    });
+  };
+
+  const handleCategoryChange = (categoryId: string) => {
+    // Se uma categoria foi selecionada, limpar o tipo (será escolhido depois)
+    setFormData({
+      ...formData,
+      categoryId,
+      categoryTypeId: ''
+    });
   };
 
   const handleStartTimeChange = (time: string) => {
@@ -147,7 +198,11 @@ export function useEventForm({
     setCreateAnother,
     calendarOptions,
     categoryOptions,
+    categoryTypeOptions,
+    availableTypes,
     handleCalendarChange,
+    handleCategoryChange,
+    handleCategoryTypeChange,
     handleStartTimeChange,
     toggleDayOfWeek,
     handleSubmit,

@@ -1,6 +1,6 @@
 'use client';
 
-import { Category } from '@/types/calendar';
+import { Category, CategoryType } from '@/types/calendar';
 import { useEventForm } from '@/hooks/useEventForm';
 import ModalContainer from '../ui/modal/ModalContainer';
 import ModalHeader from '../ui/modal/ModalHeader';
@@ -15,6 +15,7 @@ interface CreateEventModalProps {
   onEventCreated: (preservedData?: Record<string, unknown>) => void;
   calendars: Array<{ id: string; name: string; color: string; type: string }>;
   categories: Category[];
+  categoryTypes: CategoryType[];
   initialDate?: string;
   initialTime?: string;
   preservedFormData?: Record<string, unknown>;
@@ -26,6 +27,7 @@ export default function CreateEventModal({
   onEventCreated,
   calendars,
   categories,
+  categoryTypes,
   initialDate,
   initialTime,
   preservedFormData,
@@ -39,7 +41,11 @@ export default function CreateEventModal({
     setCreateAnother,
     calendarOptions,
     categoryOptions,
+    categoryTypeOptions,
+    availableTypes,
     handleCalendarChange,
+    handleCategoryChange,
+    handleCategoryTypeChange,
     handleStartTimeChange,
     toggleDayOfWeek,
     handleSubmit,
@@ -50,6 +56,7 @@ export default function CreateEventModal({
     preservedFormData,
     calendars,
     categories,
+    categoryTypes,
     onEventCreated,
     onClose,
   });
@@ -69,8 +76,11 @@ export default function CreateEventModal({
           formData={formData}
           calendarOptions={calendarOptions}
           categoryOptions={categoryOptions}
+          categoryTypeOptions={categoryTypeOptions}
+          availableTypes={availableTypes}
           onCalendarChange={handleCalendarChange}
-          onCategoryChange={value => setFormData({ ...formData, categoryId: value })}
+          onCategoryChange={handleCategoryChange}
+          onCategoryTypeChange={handleCategoryTypeChange}
           onTitleChange={value => setFormData({ ...formData, title: value })}
           onDescriptionChange={value => setFormData({ ...formData, description: value })}
           onStartDateChange={value => setFormData({ ...formData, startDate: value })}

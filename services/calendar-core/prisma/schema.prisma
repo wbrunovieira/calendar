@@ -62,7 +62,9 @@ model CategoryType {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  calendar Calendar @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  calendar   Calendar         @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  categories CategoryToType[]
+  events     Event[]
 
   @@unique([calendarId, value])
   @@index([calendarId])
@@ -76,23 +78,41 @@ model Category {
   name       String
   icon       String? // Emoji (🏃, 💼)
   color      String // HEX color
-  type       String? // 'health', 'work', 'leisure', etc
+  type       String? // 'health', 'work', 'leisure', etc (DEPRECATED - usar categoryTypes relation)
   isActive   Boolean  @default(true) @map("is_active")
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  calendar     Calendar      @relation(fields: [calendarId], references: [id], onDelete: Cascade)
-  events       Event[]
-  monthlyGoals MonthlyGoal[]
+  calendar      Calendar         @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  events        Event[]
+  monthlyGoals  MonthlyGoal[]
+  categoryTypes CategoryToType[]
 
   @@index([calendarId])
   @@map("categories")
+}
+
+// Many-to-many relationship between Category and CategoryType
+model CategoryToType {
+  id             String   @id @default(uuid())
+  categoryId     String   @map("category_id")
+  categoryTypeId String   @map("category_type_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  category     Category     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  categoryType CategoryType @relation(fields: [categoryTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, categoryTypeId])
+  @@index([categoryId])
+  @@index([categoryTypeId])
+  @@map("category_to_types")
 }
 
 model Event {
   id                    String    @id @default(uuid())
   calendarId            String    @map("calendar_id")
   categoryId            String?   @map("category_id")
+  categoryTypeId        String?   @map("category_type_id")
   title                 String
   description           String?
   startTime             String    @map("start_time") // TIME stored as string (HH:mm)
@@ -120,6 +140,7 @@ model Event {
   // Relations
   calendar              Calendar              @relation(fields: [calendarId], references: [id], onDelete: Cascade)
   category              Category?             @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categoryType          CategoryType?         @relation(fields: [categoryTypeId], references: [id], onDelete: SetNull)
   recurrenceMaster      Event?                @relation("RecurrenceHierarchy", fields: [recurrenceMasterId], references: [id], onDelete: Cascade)
   derivedEvents         Event[]               @relation("RecurrenceHierarchy")
 
@@ -132,6 +153,7 @@ model Event {
 
   @@index([calendarId])
   @@index([categoryId])
+  @@index([categoryTypeId])
   @@index([startDate])
   @@index([recurrenceMasterId])
   @@index([googleEventId])

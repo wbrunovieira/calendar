@@ -14,7 +14,7 @@ import { useCalendarSelection } from '@/hooks/useCalendarSelection';
 
 export default function Calendar() {
   // Custom hooks
-  const { events, categories, loading, refetch } = useCalendarData();
+  const { events, categories, categoryTypes, loading, refetch } = useCalendarData();
   const { currentDate, viewMode, setViewMode, previousPeriod, nextPeriod, goToToday, navigateToDate } =
     useCalendarNavigation();
   const { selectedCalendars, toggleCalendar } = useCalendarSelection();
@@ -53,6 +53,7 @@ export default function Calendar() {
         onViewModeChange={setViewMode}
         events={events}
         categories={categories}
+        categoryTypes={categoryTypes}
         selectedCalendars={selectedCalendars}
         onTimeSlotClick={modals.handleTimeSlotClick}
         onEditClick={modals.handleEditClick}
@@ -67,6 +68,7 @@ export default function Calendar() {
         onCloseCreateModal={modals.closeCreateModal}
         onEventCreated={modals.handleEventCreated}
         categories={categories}
+        categoryTypes={categoryTypes}
         modalInitialDate={modals.modalInitialDate}
         modalInitialTime={modals.modalInitialTime}
         preservedFormData={modals.preservedFormData || undefined}

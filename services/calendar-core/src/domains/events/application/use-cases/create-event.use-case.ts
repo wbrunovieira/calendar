@@ -25,6 +25,7 @@ export class CreateEventUseCase {
     const event = Event.create({
       calendarId: dto.calendarId,
       categoryId: dto.categoryId,
+      categoryTypeId: dto.categoryTypeId,
       title: dto.title,
       description: dto.description,
       startTime: dto.startTime,

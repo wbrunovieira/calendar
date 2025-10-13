@@ -3,7 +3,7 @@
  * Renders the appropriate calendar view based on view mode
  */
 
-import { Event, Category } from '@/types/calendar';
+import { Event, Category, CategoryType } from '@/types/calendar';
 import { TimeSlotView } from '../views/TimeSlotView';
 import MonthView from '../views/MonthView';
 import { MONTH_NAMES, DAYS_OF_WEEK_SHORT, DAYS_OF_WEEK_FULL } from '@/constants/calendar';
@@ -16,6 +16,7 @@ interface CalendarGridProps {
   currentDate: Date;
   events: Event[];
   categories: Category[];
+  categoryTypes: CategoryType[];
   selectedCalendars: string[];
   onTimeSlotClick: (date: string, time: string) => void;
   onEditClick: (event: Event, e: React.MouseEvent) => void;
@@ -28,6 +29,7 @@ export default function CalendarGrid({
   currentDate,
   events,
   categories,
+  categoryTypes,
   selectedCalendars,
   onTimeSlotClick,
   onEditClick,
@@ -51,6 +53,7 @@ export default function CalendarGrid({
           days={getDaysForView(viewMode, currentDate)}
           events={events}
           categories={categories}
+          categoryTypes={categoryTypes}
           selectedCalendars={selectedCalendars}
           onEditClick={onEditClick}
           onDeleteClick={onDeleteClick}

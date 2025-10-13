@@ -3,5 +3,6 @@ export class CreateCategoryDto {
   name: string;
   icon?: string;
   color: string;
-  type?: string;
+  type?: string; // DEPRECATED - usar typeIds
+  typeIds?: string[]; // Array de IDs de CategoryType
 }

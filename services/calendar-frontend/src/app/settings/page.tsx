@@ -51,7 +51,8 @@ export default function SettingsPage() {
     name: string;
     icon: string;
     color: string;
-    type: string;
+    type?: string;
+    typeIds?: string[];
   }) => {
     const newCategory = await api.categories.create(categoryData);
 
@@ -69,7 +70,8 @@ export default function SettingsPage() {
     name: string;
     icon: string;
     color: string;
-    type: string;
+    type?: string;
+    typeIds?: string[];
   }) => {
     if (!editingCategory) return;
 
@@ -286,28 +288,70 @@ export default function SettingsPage() {
                               </button>
                             </div>
 
-                            <div className="flex items-center gap-3">
-                              {category.icon && (
-                                <div className="text-2xl flex-shrink-0 transition-transform duration-300 group-hover:scale-110">
-                                  {category.icon}
-                                </div>
-                              )}
-
-                              <div className="flex-1 overflow-hidden">
-                                <h3 className="text-white font-semibold text-lg truncate">
-                                  {category.name}
-                                </h3>
-                                {category.type && (
-                                  <p className="text-white/60 text-sm capitalize">
-                                    {category.type}
-                                  </p>
+                            <div className="flex flex-col gap-2">
+                              <div className="flex items-center gap-3">
+                                {category.icon && (
+                                  <div className="text-2xl flex-shrink-0 transition-transform duration-300 group-hover:scale-110">
+                                    {category.icon}
+                                  </div>
                                 )}
+
+                                <div className="flex-1 overflow-hidden">
+                                  <h3 className="text-white font-semibold text-lg truncate">
+                                    {category.name}
+                                  </h3>
+                                </div>
+
+                                <div
+                                  className="w-8 h-8 rounded-lg shadow-md flex-shrink-0 border-2 border-white/20"
+                                  style={{ backgroundColor: category.color }}
+                                />
                               </div>
 
-                              <div
-                                className="w-8 h-8 rounded-lg shadow-md flex-shrink-0 border-2 border-white/20"
-                                style={{ backgroundColor: category.color }}
-                              />
+                              {/* Category Types (Multiple) */}
+                              {((category.categoryTypes && category.categoryTypes.length > 0) || category.type) && (
+                                <div className="flex flex-col gap-1.5 pl-1 pt-2 border-t border-white/10">
+                                  <span className="text-white/50 text-xs">Tipos:</span>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {/* Mostrar categoryTypes (nova implementação) */}
+                                    {category.categoryTypes && category.categoryTypes.length > 0 ? (
+                                      category.categoryTypes.map((ct: CategoryType) => (
+                                        <div
+                                          key={ct.id}
+                                          className="flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-lg"
+                                        >
+                                          {ct.icon && (
+                                            <span className="text-sm">{ct.icon}</span>
+                                          )}
+                                          <span className="text-white/80 text-xs font-medium">
+                                            {ct.name}
+                                          </span>
+                                        </div>
+                                      ))
+                                    ) : (
+                                      /* Fallback para campo type antigo */
+                                      category.type && (() => {
+                                        const categoryType = categoryTypes.find(ct => ct.value === category.type);
+                                        if (categoryType) {
+                                          return (
+                                            <div className="flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-lg">
+                                              {categoryType.icon && (
+                                                <span className="text-sm">{categoryType.icon}</span>
+                                              )}
+                                              <span className="text-white/80 text-xs font-medium">
+                                                {categoryType.name}
+                                              </span>
+                                            </div>
+                                          );
+                                        }
+                                        return (
+                                          <span className="text-white/60 text-xs capitalize">{category.type}</span>
+                                        );
+                                      })()
+                                    )}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -395,26 +439,52 @@ export default function SettingsPage() {
                               </button>
                             </div>
 
-                            <div className="flex items-center gap-3">
-                              {type.icon && (
-                                <div className="text-2xl flex-shrink-0 transition-transform duration-300 group-hover:scale-110">
-                                  {type.icon}
-                                </div>
-                              )}
+                            <div className="flex flex-col gap-3">
+                              <div className="flex items-center gap-3">
+                                {type.icon && (
+                                  <div className="text-2xl flex-shrink-0 transition-transform duration-300 group-hover:scale-110">
+                                    {type.icon}
+                                  </div>
+                                )}
 
-                              <div className="flex-1 overflow-hidden">
-                                <h3 className="text-white font-semibold text-lg truncate">
-                                  {type.name}
-                                </h3>
-                                <p className="text-white/60 text-sm font-mono">
-                                  {type.value}
-                                </p>
+                                <div className="flex-1 overflow-hidden">
+                                  <h3 className="text-white font-semibold text-lg truncate">
+                                    {type.name}
+                                  </h3>
+                                </div>
+
+                                <div
+                                  className="w-8 h-8 rounded-lg shadow-md flex-shrink-0 border-2 border-white/20"
+                                  style={{ backgroundColor: type.color }}
+                                />
                               </div>
 
-                              <div
-                                className="w-8 h-8 rounded-lg shadow-md flex-shrink-0 border-2 border-white/20"
-                                style={{ backgroundColor: type.color }}
-                              />
+                              {/* Categories using this type */}
+                              {(() => {
+                                const categoriesUsingType = Object.values(categoriesByCalendar)
+                                  .flat()
+                                  .filter(cat => cat.type === type.value && cat.calendarId === calendar.id);
+
+                                if (categoriesUsingType.length > 0) {
+                                  return (
+                                    <div className="pt-2 border-t border-white/10">
+                                      <p className="text-white/50 text-xs mb-2">Categorias:</p>
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {categoriesUsingType.map(cat => (
+                                          <div
+                                            key={cat.id}
+                                            className="flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-lg text-xs"
+                                          >
+                                            <span>{cat.icon}</span>
+                                            <span className="text-white/80">{cat.name}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })()}
                             </div>
                           </div>
                         ))}

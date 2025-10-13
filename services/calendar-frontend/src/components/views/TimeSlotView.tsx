@@ -1,6 +1,6 @@
 'use client';
 
-import { Event, Category } from '@/types/calendar';
+import { Event, Category, CategoryType } from '@/types/calendar';
 import { useDragAndDrop } from '@/hooks/useDragAndDrop';
 import { useTimeSlotEventUpdate } from '@/hooks/useTimeSlotEventUpdate';
 import { useEventResize } from '@/hooks/useEventResize';
@@ -15,6 +15,7 @@ interface TimeSlotViewProps {
   days: Date[];
   events: Event[];
   categories: Category[];
+  categoryTypes: CategoryType[];
   selectedCalendars: string[];
   onEditClick?: (event: Event, e: React.MouseEvent) => void;
   onDeleteClick: (event: Event, e: React.MouseEvent) => void;
@@ -29,6 +30,7 @@ export function TimeSlotView({
   days,
   events,
   categories,
+  categoryTypes,
   selectedCalendars,
   onEditClick,
   onDeleteClick,
@@ -102,6 +104,7 @@ export function TimeSlotView({
                 isToday={isToday}
                 dayEvents={dayEvents}
                 categories={categories}
+                categoryTypes={categoryTypes}
                 hours={hours}
                 daysCount={days.length}
                 daysOfWeek={daysOfWeek}

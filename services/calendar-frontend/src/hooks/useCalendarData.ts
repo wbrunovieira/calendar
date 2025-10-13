@@ -4,12 +4,13 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
-import { Event, Category } from '@/types/calendar';
+import { Event, Category, CategoryType } from '@/types/calendar';
 import { getDefaultDateRange } from '@/utils/calendar/dateRanges';
 
 export function useCalendarData() {
   const [events, setEvents] = useState<Event[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [categoryTypes, setCategoryTypes] = useState<CategoryType[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchData = async () => {
@@ -18,9 +19,14 @@ export function useCalendarData() {
 
       const dateRange = getDefaultDateRange();
 
-      const [fetchedEvents, fetchedCategories] = await Promise.all([api.events.list(dateRange), api.categories.list()]);
+      const [fetchedEvents, fetchedCategories, fetchedCategoryTypes] = await Promise.all([
+        api.events.list(dateRange),
+        api.categories.list(),
+        api.categoryTypes.list(),
+      ]);
       setEvents(fetchedEvents);
       setCategories(fetchedCategories);
+      setCategoryTypes(fetchedCategoryTypes);
     } catch {
       // Error fetching data
     } finally {
@@ -35,6 +41,7 @@ export function useCalendarData() {
   return {
     events,
     categories,
+    categoryTypes,
     loading,
     refetch: fetchData,
   };
