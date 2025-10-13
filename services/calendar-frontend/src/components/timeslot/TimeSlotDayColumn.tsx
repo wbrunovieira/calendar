@@ -62,6 +62,11 @@ export default function TimeSlotDayColumn({
   onEventEdit,
   onEventDelete,
 }: TimeSlotDayColumnProps) {
+  // Debug: log total events received
+  if (daysCount === 1 && dayEvents.length > 1) {
+    console.log(`[TimeSlotDayColumn] Received ${dayEvents.length} events:`, dayEvents.map(e => `"${e.title}" (${e.id})`));
+  }
+
   // Calculate event positions for this day
   const eventsWithTimes = dayEvents.map(event => {
     const startTotalMinutes = event.startTime.split(':').map(Number).reduce((h, m) => h * 60 + m);
@@ -82,7 +87,10 @@ export default function TimeSlotDayColumn({
     let placedInColumn = false;
     for (let i = 0; i < columns.length; i++) {
       const column = columns[i];
-      const hasOverlap = column.some(existing => !(eventTime.end <= existing.start || eventTime.start >= existing.end));
+      const hasOverlap = column.some(existing => {
+        const overlap = !(eventTime.end <= existing.start || eventTime.start >= existing.end);
+        return overlap;
+      });
       if (!hasOverlap) {
         column.push(eventTime);
         eventTime.column = i;
@@ -97,11 +105,15 @@ export default function TimeSlotDayColumn({
   });
 
   eventsWithTimes.forEach(eventTime => {
-    const overlappingEvents = eventsWithTimes.filter(other => !(eventTime.end <= other.start || eventTime.start >= other.end));
+    const overlappingEvents = eventsWithTimes.filter(other => {
+      const overlaps = !(eventTime.end <= other.start || eventTime.start >= other.end);
+      return overlaps && other !== eventTime; // Don't include itself
+    });
     const maxColumn = overlappingEvents.length > 0
       ? Math.max(...overlappingEvents.map(e => e.column))
       : 0;
-    eventTime.totalColumns = maxColumn + 1;
+    // totalColumns deve considerar a própria coluna do evento também
+    eventTime.totalColumns = Math.max(eventTime.column, maxColumn) + 1;
   });
 
   const eventPositions = new Map();
@@ -110,6 +122,10 @@ export default function TimeSlotDayColumn({
       column: eventTime.column,
       totalColumns: eventTime.totalColumns,
     });
+    // Debug log - show ALL events
+    if (daysCount === 1) {
+      console.log(`[TimeSlotDayColumn] Event "${eventTime.event.title}": column=${eventTime.column}, totalColumns=${eventTime.totalColumns}, start=${eventTime.start}, end=${eventTime.end}`);
+    }
   });
 
   const handleTimeSlotClick = (e: React.MouseEvent) => {

@@ -74,6 +74,17 @@ export default function TimeSlotEventCard({
   const widthPercentage = 100 / positionInfo.totalColumns;
   const leftPercentage = positionInfo.column * widthPercentage;
 
+  // Add gap between overlapping events
+  const gap = positionInfo.totalColumns >= 2 ? 4 : 0; // 4px gap
+  const widthWithGap = positionInfo.totalColumns >= 2
+    ? `calc(${widthPercentage}% - ${gap}px)`
+    : `${widthPercentage}%`;
+
+  // Debug positioning for overlapping events
+  if (positionInfo.totalColumns >= 2 && daysCount === 1) {
+    console.log(`Event "${event.title}": column=${positionInfo.column}, totalColumns=${positionInfo.totalColumns}, width=${widthPercentage}%, left=${leftPercentage}%`);
+  }
+
   const calendarIcon = calendar?.type === 'professional' ? '💼' : '👤';
 
   // Convert hex color to rgba for better browser compatibility
@@ -95,16 +106,13 @@ export default function TimeSlotEventCard({
     ? hexToRgba(category?.color, 0.38)  // 60 in hex = 0.38 opacity
     : hexToRgba(category?.color, 0.56); // 90 in hex = 0.56 opacity
 
+  // Define threshold for "very short" events (< 30 minutes)
+  const VERY_SHORT_EVENT_THRESHOLD = PIXELS_PER_HOUR / 2; // 48px = 30 minutes
+
   // Calculate minimum height based on actual event duration
-  // For events longer than 1 hour, use calculated height
-  // For short events (< 1 hour), use a smaller minHeight to avoid stretching
   const getMinHeight = () => {
-    if (eventHeight >= PIXELS_PER_HOUR) {
-      // Events 1 hour or longer: no minHeight needed
-      return undefined;
-    }
-    // For short events, use a minimal height based on view density
-    return daysCount === 7 ? '40px' : daysCount <= 3 ? '48px' : '52px';
+    // No minHeight for any event to prevent visual overlap
+    return undefined;
   };
 
   return (
@@ -125,27 +133,27 @@ export default function TimeSlotEventCard({
         height: `${eventHeight}px`,
         minHeight: getMinHeight(),
         left: `${leftPercentage}%`,
-        width: `${widthPercentage}%`,
+        width: widthWithGap,
         zIndex: 10 + positionInfo.column,
         cursor: resizingEventId === event.id ? 'ns-resize' : 'move',
         overflow: 'visible',
       }}
     >
-      {/* Calendar icon badge - positioned at top left, smaller for short events */}
+      {/* Calendar icon badge - positioned at top left, size based on event duration */}
       <div
         className="absolute -top-2 -left-2 rounded-full flex items-center justify-center shadow-lg z-30"
         style={{
           backgroundColor: calendar?.color,
-          width: eventHeight < PIXELS_PER_HOUR ? '20px' : daysCount === 7 ? '24px' : daysCount <= 3 ? '28px' : '32px',
-          height: eventHeight < PIXELS_PER_HOUR ? '20px' : daysCount === 7 ? '24px' : daysCount <= 3 ? '28px' : '32px',
-          fontSize: eventHeight < PIXELS_PER_HOUR ? '10px' : daysCount === 7 ? '12px' : daysCount <= 3 ? '14px' : '16px'
+          width: eventHeight < VERY_SHORT_EVENT_THRESHOLD ? '20px' : eventHeight < PIXELS_PER_HOUR ? '24px' : daysCount === 7 ? '24px' : daysCount <= 3 ? '28px' : '32px',
+          height: eventHeight < VERY_SHORT_EVENT_THRESHOLD ? '20px' : eventHeight < PIXELS_PER_HOUR ? '24px' : daysCount === 7 ? '24px' : daysCount <= 3 ? '28px' : '32px',
+          fontSize: eventHeight < VERY_SHORT_EVENT_THRESHOLD ? '10px' : eventHeight < PIXELS_PER_HOUR ? '12px' : daysCount === 7 ? '12px' : daysCount <= 3 ? '14px' : '16px'
         }}
       >
         {calendarIcon}
       </div>
 
-      {/* Top resize handle - only for events >= 1 hour */}
-      {eventHeight >= PIXELS_PER_HOUR && (
+      {/* Top resize handle - only for events >= 30 minutes */}
+      {eventHeight >= VERY_SHORT_EVENT_THRESHOLD && (
         <div
           className="absolute top-0 left-0 right-0 h-3 cursor-ns-resize group/handle z-20"
           onMouseDown={(e) => onResizeStart('top', e, eventHeight, topPosition)}
@@ -156,38 +164,86 @@ export default function TimeSlotEventCard({
       )}
 
       {/* Event content */}
-      <div className="flex flex-1 cursor-move relative bg-transparent" style={{ overflow: eventHeight < PIXELS_PER_HOUR ? 'hidden' : 'visible' }}>
-        {eventHeight < PIXELS_PER_HOUR ? (
-          /* Layout compacto para eventos curtos (< 1 hora) */
-          <div className="flex-1 px-1.5 py-0.5 flex items-center gap-1.5 min-h-0">
-            <span className="text-base flex-shrink-0 leading-none">
-              {category?.icon || '📅'}
-            </span>
-            <div className="flex-1 min-w-0 flex flex-col justify-center">
-              <div className="flex items-center gap-1.5">
+      <div className="flex flex-1 cursor-move relative bg-transparent" style={{ overflow: eventHeight < VERY_SHORT_EVENT_THRESHOLD ? 'hidden' : 'visible', alignItems: eventHeight < PIXELS_PER_HOUR ? 'center' : 'flex-start' }}>
+        {eventHeight < PIXELS_PER_HOUR && positionInfo.totalColumns >= 2 && daysCount === 1 ? (
+          /* Layout ultra-compacto para eventos curtos sobrepostos (15m, 20m, 30m) - Duas colunas */
+          <>
+            {/* Coluna Esquerda - Ícone, Título e Horário */}
+            <div className={`flex-1 px-1.5 py-1 flex flex-col justify-center gap-0.5 ${isCompleted ? 'relative' : ''}`}>
+              <div className="flex items-center gap-1">
+                <span className="text-lg flex-shrink-0 leading-none">
+                  {category?.icon || '📅'}
+                </span>
                 <div className={`text-xs font-bold truncate ${isCompleted ? 'line-through opacity-70' : ''}`}>
                   {event.title}
                 </div>
-                <div className={`text-xs opacity-60 whitespace-nowrap flex-shrink-0 ${isCompleted ? 'line-through opacity-40' : ''}`}>
-                  {event.startTime}
-                </div>
               </div>
-              {category?.name && (
-                <div className="flex items-center gap-1 mt-0.5">
+              <div className={`text-xs opacity-60 ml-5 ${isCompleted ? 'line-through opacity-40' : ''}`}>
+                ⏰ {event.startTime}{event.endTime && `-${event.endTime}`}
+              </div>
+
+              {isCompleted && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="bg-green-500 rounded-full p-1 shadow-lg animate-pulse">
+                    <svg className="w-4 h-4" fill="white" viewBox="0 0 24 24">
+                      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                    </svg>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Coluna Direita - Categoria e Tipo */}
+            {category?.name && (
+              <div className="flex flex-col gap-0.5 px-1.5 py-1 justify-center border-l border-white/20 min-w-[80px]">
+                <div className="flex items-center gap-1">
                   <div
                     className="w-2 h-2 rounded-sm flex-shrink-0"
                     style={{ backgroundColor: category.color }}
                   />
-                  <span className={`text-xs opacity-70 truncate ${isCompleted ? 'line-through opacity-50' : ''}`}>
+                  <span className={`text-xs font-semibold truncate ${isCompleted ? 'line-through opacity-70' : ''}`}>
                     {category.name}
                   </span>
-                  {categoryType?.icon && (
-                    <span className="text-xs leading-none opacity-70">
-                      {categoryType.icon.trim()}
-                    </span>
-                  )}
                 </div>
-              )}
+                {categoryType && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs opacity-70 capitalize truncate">
+                      {categoryType.icon && categoryType.icon.trim()} {categoryType.name}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        ) : eventHeight < VERY_SHORT_EVENT_THRESHOLD ? (
+          /* Layout compacto para eventos muito curtos (< 30 minutos) - Tudo em linha */
+          <div className="flex-1 px-1.5 flex items-center gap-1.5">
+            <span className="text-base flex-shrink-0 leading-none">
+              {category?.icon || '📅'}
+            </span>
+            <div className={`text-xs font-bold truncate ${isCompleted ? 'line-through opacity-70' : ''}`}>
+              {event.title}
+            </div>
+            {category?.name && (
+              <>
+                <div className="w-px h-3 bg-white/20 mx-2" />
+                <div
+                  className="w-2 h-2 rounded-sm flex-shrink-0"
+                  style={{ backgroundColor: category.color }}
+                />
+                <span className={`text-xs opacity-70 truncate ${isCompleted ? 'line-through opacity-50' : ''}`}>
+                  {category.name}
+                </span>
+              </>
+            )}
+            {categoryType && (
+              <span className="text-xs leading-none opacity-70 flex items-center gap-1">
+                {categoryType.icon && categoryType.icon.trim()}
+                {categoryType.name && <span className="capitalize">{categoryType.name}</span>}
+              </span>
+            )}
+            <div className={`text-xs opacity-60 whitespace-nowrap flex-shrink-0 ml-auto ${isCompleted ? 'line-through opacity-40' : ''}`}>
+              {event.startTime}{event.endTime && ` - ${event.endTime}`}
             </div>
             {isCompleted && (
               <div className="flex-shrink-0">
@@ -197,6 +253,96 @@ export default function TimeSlotEventCard({
               </div>
             )}
           </div>
+        ) : eventHeight < PIXELS_PER_HOUR && daysCount === 1 ? (
+          /* Layout para eventos de 30-60 minutos - Tudo em linha */
+          <div className="flex-1 px-2 flex items-center gap-2">
+            <span className="text-lg flex-shrink-0 leading-none">
+              {category?.icon || '📅'}
+            </span>
+            <div className={`text-sm font-bold truncate ${isCompleted ? 'line-through opacity-70' : ''}`}>
+              {event.title}
+            </div>
+            {category?.name && (
+              <>
+                <div className="w-px h-3 bg-white/20 mx-2" />
+                <div
+                  className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
+                  style={{ backgroundColor: category.color }}
+                />
+                <span className={`text-sm opacity-70 truncate ${isCompleted ? 'line-through opacity-50' : ''}`}>
+                  {category.name}
+                </span>
+              </>
+            )}
+            {categoryType && (
+              <span className="text-sm leading-none opacity-70 flex items-center gap-1">
+                {categoryType.icon && categoryType.icon.trim()}
+                {categoryType.name && <span className="capitalize">{categoryType.name}</span>}
+              </span>
+            )}
+            <div className={`text-sm opacity-60 whitespace-nowrap flex-shrink-0 ml-auto ${isCompleted ? 'line-through opacity-40' : ''}`}>
+              {event.startTime}{event.endTime && ` - ${event.endTime}`}
+            </div>
+            {isCompleted && (
+              <div className="flex-shrink-0">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                </svg>
+              </div>
+            )}
+          </div>
+        ) : eventHeight >= PIXELS_PER_HOUR && positionInfo.totalColumns >= 2 && daysCount === 1 ? (
+          /* Layout para eventos de 1 hora+ sobrepostos (2 ou mais colunas) - Layout compacto */
+          <>
+            {/* Coluna única compacta */}
+            <div className={`flex-1 px-2 py-2 flex flex-col justify-center gap-1 ${isCompleted ? 'relative' : ''}`}>
+              {/* Linha 1: Ícone + Título */}
+              <div className="flex items-center gap-2">
+                <span className="text-2xl flex-shrink-0">
+                  {category?.icon || '📅'}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className={`font-bold text-sm leading-tight truncate ${isCompleted ? 'line-through opacity-70' : ''}`}>
+                    {event.title}
+                  </div>
+                  <div className={`text-xs mt-0.5 opacity-90 ${isCompleted ? 'line-through opacity-60' : ''}`}>
+                    ⏰ {event.startTime}{event.endTime && ` - ${event.endTime}`}
+                  </div>
+                </div>
+              </div>
+
+              {/* Linha 2: Categoria + Tipo */}
+              {category?.name && (
+                <div className="flex items-center gap-1.5 ml-8">
+                  <div
+                    className="w-3 h-3 rounded-md flex-shrink-0"
+                    style={{ backgroundColor: category.color }}
+                  />
+                  <span className={`text-xs font-semibold truncate ${isCompleted ? 'line-through opacity-70' : ''}`}>
+                    {category.name}
+                  </span>
+                  {categoryType && (
+                    <>
+                      <span className="text-xs opacity-50">•</span>
+                      <span className="text-xs opacity-70 capitalize truncate">
+                        {categoryType.icon && categoryType.icon.trim()} {categoryType.name}
+                      </span>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {isCompleted && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="bg-green-500 rounded-full p-2 shadow-lg animate-pulse">
+                    <svg className="w-8 h-8" fill="white" viewBox="0 0 24 24">
+                      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                    </svg>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
         ) : daysCount === 1 ? (
           /* Layout para visualização de 1 dia - Duas colunas */
           <>
@@ -372,18 +518,19 @@ export default function TimeSlotEventCard({
           </div>
         )}
 
-        <div className="flex flex-col gap-1 pr-1 pt-1">
+        {/* Action buttons - horizontal for events < 1 hour, vertical for 1 hour+ */}
+        <div className={`${eventHeight < PIXELS_PER_HOUR ? 'flex-row gap-0.5 pr-0.5 pt-0.5' : 'flex-col gap-1 pr-1 pt-1'} flex`}>
           <button
             onClick={onToggleExecution}
             className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-green-600 rounded"
             title={isCompleted ? "Marcar como não realizado" : "Marcar como realizado"}
           >
             {isCompleted ? (
-              <svg className={daysCount === 7 ? "w-4 h-4" : "w-5 h-5"} fill="currentColor" viewBox="0 0 24 24">
+              <svg className={eventHeight < PIXELS_PER_HOUR ? "w-3 h-3" : daysCount === 7 ? "w-4 h-4" : "w-5 h-5"} fill="currentColor" viewBox="0 0 24 24">
                 <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
               </svg>
             ) : (
-              <svg className={daysCount === 7 ? "w-4 h-4" : "w-5 h-5"} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className={eventHeight < PIXELS_PER_HOUR ? "w-3 h-3" : daysCount === 7 ? "w-4 h-4" : "w-5 h-5"} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <rect x="3" y="3" width="18" height="18" rx="2" strokeWidth={2} />
               </svg>
             )}
@@ -394,7 +541,7 @@ export default function TimeSlotEventCard({
               className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-blue-600 rounded"
               title="Editar"
             >
-              <svg className={daysCount === 7 ? "w-4 h-4" : "w-5 h-5"} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className={eventHeight < PIXELS_PER_HOUR ? "w-3 h-3" : daysCount === 7 ? "w-4 h-4" : "w-5 h-5"} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
             </button>
@@ -404,15 +551,15 @@ export default function TimeSlotEventCard({
             className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-600 rounded"
             title="Deletar"
           >
-            <svg className={daysCount === 7 ? "w-4 h-4" : "w-5 h-5"} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className={eventHeight < PIXELS_PER_HOUR ? "w-3 h-3" : daysCount === 7 ? "w-4 h-4" : "w-5 h-5"} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
             </svg>
           </button>
         </div>
       </div>
 
-      {/* Bottom resize handle - only for events >= 1 hour */}
-      {eventHeight >= PIXELS_PER_HOUR && (
+      {/* Bottom resize handle - only for events >= 30 minutes */}
+      {eventHeight >= VERY_SHORT_EVENT_THRESHOLD && (
         <div
           className="absolute bottom-0 left-0 right-0 h-3 cursor-ns-resize group/handle z-20"
           onMouseDown={(e) => onResizeStart('bottom', e, eventHeight, topPosition)}
