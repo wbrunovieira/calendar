@@ -6,6 +6,7 @@ import { ListEventsUseCase } from './application/use-cases/list-events.use-case'
 import { UpdateEventUseCase } from './application/use-cases/update-event.use-case';
 import { ToggleEventExecutionUseCase } from './application/use-cases/toggle-event-execution.use-case';
 import { GetEventExecutionsUseCase } from './application/use-cases/get-event-executions.use-case';
+import { GetEventsStatsUseCase } from './application/use-cases/get-events-stats.use-case';
 import { EventRepository } from './infrastructure/repositories/event.repository';
 import { EventExecutionRepository } from './infrastructure/repositories/event-execution.repository';
 
@@ -18,6 +19,7 @@ import { EventExecutionRepository } from './infrastructure/repositories/event-ex
     UpdateEventUseCase,
     ToggleEventExecutionUseCase,
     GetEventExecutionsUseCase,
+    GetEventsStatsUseCase,
     EventRepository,
     EventExecutionRepository,
   ],

@@ -5,6 +5,7 @@ import { ListEventsUseCase } from '../../application/use-cases/list-events.use-c
 import { UpdateEventUseCase } from '../../application/use-cases/update-event.use-case';
 import { ToggleEventExecutionUseCase } from '../../application/use-cases/toggle-event-execution.use-case';
 import { GetEventExecutionsUseCase } from '../../application/use-cases/get-event-executions.use-case';
+import { GetEventsStatsUseCase } from '../../application/use-cases/get-events-stats.use-case';
 import { CreateEventDto } from '../dtos/create-event.dto';
 import { UpdateEventDto } from '../dtos/update-event.dto';
 import { ToggleEventExecutionDto } from '../dtos/toggle-event-execution.dto';
@@ -19,6 +20,7 @@ export class EventsController {
     private readonly updateEventUseCase: UpdateEventUseCase,
     private readonly toggleEventExecutionUseCase: ToggleEventExecutionUseCase,
     private readonly getEventExecutionsUseCase: GetEventExecutionsUseCase,
+    private readonly getEventsStatsUseCase: GetEventsStatsUseCase,
   ) {}
 
   // Helper: converter RRULE para formato antigo (compatibilidade frontend)
@@ -167,6 +169,28 @@ export class EventsController {
       createdAt: execution.createdAt,
       updatedAt: execution.updatedAt,
     };
+  }
+
+  @Get('stats')
+  @HttpCode(HttpStatus.OK)
+  async getStats(
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Query('calendarId') calendarId?: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('categoryTypeId') categoryTypeId?: string,
+    @Query('groupBy') groupBy?: 'day' | 'week' | 'month' | 'category' | 'categoryType' | 'total',
+    @Query('includeBreakdown') includeBreakdown?: string,
+  ) {
+    return await this.getEventsStatsUseCase.execute({
+      startDate,
+      endDate,
+      calendarId,
+      categoryId,
+      categoryTypeId,
+      groupBy,
+      includeBreakdown: includeBreakdown === 'true',
+    });
   }
 
   @Get(':id/executions')
