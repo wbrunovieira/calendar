@@ -108,6 +108,7 @@ export default function TimeSlotEventCard({
 
   // Define threshold for "very short" events (< 30 minutes)
   const VERY_SHORT_EVENT_THRESHOLD = PIXELS_PER_HOUR / 2; // 48px = 30 minutes
+  const FIFTEEN_MINUTE_THRESHOLD = PIXELS_PER_HOUR / 4; // 24px = 15 minutes
 
   // Calculate minimum height based on actual event duration
   const getMinHeight = () => {
@@ -215,8 +216,8 @@ export default function TimeSlotEventCard({
               </div>
             )}
           </>
-        ) : eventHeight < VERY_SHORT_EVENT_THRESHOLD ? (
-          /* Layout compacto para eventos muito curtos (< 30 minutos) - Tudo em linha */
+        ) : eventHeight < VERY_SHORT_EVENT_THRESHOLD && eventHeight > FIFTEEN_MINUTE_THRESHOLD && daysCount !== 3 ? (
+          /* Layout compacto para eventos curtos (16-29 minutos) - Tudo em linha (exceto 3 dias) */
           <div className="flex-1 px-1.5 flex items-center gap-1.5">
             <span className="text-base flex-shrink-0 leading-none">
               {category?.icon || '📅'}
@@ -415,6 +416,125 @@ export default function TimeSlotEventCard({
               )}
             </div>
           </>
+        ) : eventHeight <= FIFTEEN_MINUTE_THRESHOLD && daysCount === 3 ? (
+          /* Layout ultra-compacto para eventos de 15 minutos na visualização de 3 dias - Tudo em linha */
+          <div className="flex-1 px-1 flex items-center gap-1">
+            <span className="text-sm flex-shrink-0 leading-none">
+              {categoryType?.icon ? categoryType.icon.trim() : (category?.icon || '📅')}
+            </span>
+            <div className={`text-xs font-bold truncate flex-1 min-w-0 ${isCompleted ? 'line-through opacity-70' : ''}`}>
+              {event.title}
+            </div>
+            <div className={`text-xs opacity-60 flex-shrink-0 whitespace-nowrap ${isCompleted ? 'line-through opacity-40' : ''}`}>
+              {event.startTime}{event.endTime && `-${event.endTime}`}
+            </div>
+          </div>
+        ) : eventHeight < PIXELS_PER_HOUR && daysCount === 3 ? (
+          /* Layout compacto para eventos de 16-60 minutos na visualização de 3 dias */
+          <div className="flex-1 px-1.5 py-1 flex items-center gap-1.5">
+            <span className="text-xl flex-shrink-0 leading-none">
+              {category?.icon || '📅'}
+            </span>
+            <div className="flex-1 min-w-0">
+              <div className={`text-xs font-bold truncate leading-tight ${isCompleted ? 'line-through opacity-70' : ''}`}>
+                {event.title}
+              </div>
+              <div className={`text-xs opacity-60 leading-tight ${isCompleted ? 'line-through opacity-40' : ''}`}>
+                {event.startTime}{event.endTime && `-${event.endTime}`}
+              </div>
+            </div>
+            {categoryType?.icon && (
+              <span className="text-sm opacity-70 flex-shrink-0 leading-none">
+                {categoryType.icon.trim()}
+              </span>
+            )}
+          </div>
+        ) : eventHeight >= PIXELS_PER_HOUR && positionInfo.totalColumns >= 2 && daysCount === 3 ? (
+          /* Layout ultra-compacto para eventos de 1 hora+ sobrepostos na visualização de 3 dias */
+          <div className={`flex-1 px-1.5 py-1.5 flex flex-col justify-center gap-0.5 ${isCompleted ? 'relative' : ''}`}>
+            {/* Linha 1: Ícone + Título */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-xl flex-shrink-0 leading-none">
+                {category?.icon || '📅'}
+              </span>
+              <div className={`text-xs font-bold truncate flex-1 min-w-0 ${isCompleted ? 'line-through opacity-70' : ''}`}>
+                {event.title}
+              </div>
+            </div>
+
+            {/* Linha 2: Horário */}
+            <div className={`text-xs opacity-80 ml-6 ${isCompleted ? 'line-through opacity-60' : ''}`}>
+              ⏰ {event.startTime}{event.endTime && ` - ${event.endTime}`}
+            </div>
+
+            {/* Linha 3: Apenas ícone do tipo (sem nome da categoria) */}
+            {categoryType?.icon && (
+              <div className="flex items-center gap-1 ml-6">
+                <span className="text-sm opacity-70 leading-none">
+                  {categoryType.icon.trim()}
+                </span>
+              </div>
+            )}
+
+            {isCompleted && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="bg-green-500 rounded-full p-1.5 shadow-lg animate-pulse">
+                  <svg className="w-5 h-5" fill="white" viewBox="0 0 24 24">
+                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                  </svg>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : eventHeight >= PIXELS_PER_HOUR && daysCount === 3 ? (
+          /* Layout compacto para eventos de 1 hora+ na visualização de 3 dias */
+          <div className={`flex-1 px-2 py-2 flex flex-col justify-center gap-1 ${isCompleted ? 'relative' : ''}`}>
+            {/* Linha 1: Ícone + Título */}
+            <div className="flex items-center gap-2">
+              <span className="text-2xl flex-shrink-0 leading-none">
+                {category?.icon || '📅'}
+              </span>
+              <div className={`text-sm font-bold truncate flex-1 min-w-0 ${isCompleted ? 'line-through opacity-70' : ''}`}>
+                {event.title}
+              </div>
+            </div>
+
+            {/* Linha 2: Horário */}
+            <div className={`text-xs opacity-80 ml-8 ${isCompleted ? 'line-through opacity-60' : ''}`}>
+              ⏰ {event.startTime}{event.endTime && ` - ${event.endTime}`}
+            </div>
+
+            {/* Linha 3: Categoria + Tipo */}
+            {category?.name && (
+              <div className="flex items-center gap-1.5 ml-8">
+                <div
+                  className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
+                  style={{ backgroundColor: category.color }}
+                />
+                <span className={`text-xs font-semibold truncate ${isCompleted ? 'line-through opacity-70' : ''}`}>
+                  {category.name}
+                </span>
+                {categoryType?.icon && (
+                  <>
+                    <span className="text-xs opacity-50">•</span>
+                    <span className="text-xs opacity-70">
+                      {categoryType.icon.trim()}
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
+
+            {isCompleted && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="bg-green-500 rounded-full p-2 shadow-lg animate-pulse">
+                  <svg className="w-6 h-6" fill="white" viewBox="0 0 24 24">
+                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                  </svg>
+                </div>
+              </div>
+            )}
+          </div>
         ) : daysCount === 3 ? (
           /* Layout para visualização de 3 dias - Híbrido com hierarquia visual */
           <>
