@@ -79,15 +79,34 @@ export function TimeSlotView({
   // Create a map of stats by date for quick lookup
   const statsMap = new Map(stats.map(stat => [stat.key, stat]));
 
-  // Calculate summary stats for visible days
+  // Calculate stats directly from visible events (more reliable)
+  const visibleDatesSet = new Set(days.map(day => formatDateToString(day)));
+  const visibleEvents = events.filter(event => {
+    if (!selectedCalendars.includes(event.calendarId)) return false;
+    const eventDate = event.startDate.split('T')[0];
+    return visibleDatesSet.has(eventDate);
+  });
+
+  // Count completed events
+  const completedCount = visibleEvents.filter(event => {
+    const eventDate = event.startDate.split('T')[0];
+    const execution = event.executions?.find(exec => exec.executionDate?.split('T')[0] === eventDate);
+    return execution?.completed || false;
+  }).length;
+
+  // Calculate summary stats from visible events
   const summaryStats = {
-    totalEvents: stats.reduce((sum, stat) => sum + stat.total, 0),
-    completedEvents: stats.reduce((sum, stat) => sum + stat.completed, 0),
-    percentage: stats.length > 0
-      ? Math.round((stats.reduce((sum, stat) => sum + stat.completed, 0) / stats.reduce((sum, stat) => sum + stat.total, 0)) * 100) || 0
+    totalEvents: visibleEvents.length,
+    completedEvents: completedCount,
+    percentage: visibleEvents.length > 0
+      ? Math.round((completedCount / visibleEvents.length) * 100)
       : 0,
     daysCount: days.length,
-    perfectDays: stats.filter(stat => stat.percentage === 100 && stat.total > 0).length,
+    perfectDays: days.filter(day => {
+      const dateStr = formatDateToString(day);
+      const dayStat = statsMap.get(dateStr);
+      return dayStat && dayStat.percentage === 100 && dayStat.total > 0;
+    }).length,
   };
 
   const getEventsForDate = (date: Date): Event[] => {
@@ -117,8 +136,8 @@ export function TimeSlotView({
         eventTitle={pendingUpdate?.eventTitle || ''}
       />
       <div className={`p-4 w-full ${isSingleDay ? 'max-w-5xl mx-auto' : ''}`}>
-        {/* Summary Stats - only show for multiple days */}
-        {days.length > 1 && summaryStats.totalEvents > 0 && (
+        {/* Summary Stats */}
+        {summaryStats.totalEvents > 0 && (
           <TimeSlotSummaryStats stats={summaryStats} />
         )}
 

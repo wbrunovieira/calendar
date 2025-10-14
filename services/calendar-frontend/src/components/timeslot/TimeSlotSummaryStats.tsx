@@ -21,7 +21,7 @@ export default function TimeSlotSummaryStats({ stats }: TimeSlotSummaryStatsProp
   }
 
   return (
-    <div className="mb-4 px-4">
+    <div className="mb-4 px-4 relative z-10">
       <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm rounded-xl p-4 border border-white/20 shadow-lg">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           {/* Title */}

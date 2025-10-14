@@ -7,6 +7,7 @@ import React from 'react';
 import { Event, Category, CategoryType } from '@/types/calendar';
 import { PIXELS_PER_HOUR } from '@/constants/timeSlotView';
 import { timeToPixels, calculateEventHeight } from '@/utils/timeCalculations';
+import { formatDateToString } from '@/utils/calendar/dateHelpers';
 
 interface Calendar {
   id: string;
@@ -49,7 +50,7 @@ export default function TimeSlotEventCard({
   onDeleteClick,
 }: TimeSlotEventCardProps) {
   // Check execution status from event executions
-  const executionDate = date.toISOString().split('T')[0];
+  const executionDate = formatDateToString(date);
   const execution = event.executions?.find(exec =>
     exec.executionDate?.split('T')[0] === executionDate
   );

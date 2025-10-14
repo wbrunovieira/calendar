@@ -5,6 +5,7 @@
 
 import { useCallback } from 'react';
 import { api } from '@/lib/api';
+import { formatDateToString } from '@/utils/calendar/dateHelpers';
 
 interface UseEventExecutionProps {
   onEventUpdate?: () => void;
@@ -13,7 +14,7 @@ interface UseEventExecutionProps {
 export function useEventExecution({ onEventUpdate }: UseEventExecutionProps) {
   const handleToggleExecution = useCallback(
     async (eventId: string, date: Date, currentlyCompleted: boolean) => {
-      const executionDate = date.toISOString().split('T')[0];
+      const executionDate = formatDateToString(date);
 
       try {
         await api.events.toggleExecution(eventId, executionDate, !currentlyCompleted);

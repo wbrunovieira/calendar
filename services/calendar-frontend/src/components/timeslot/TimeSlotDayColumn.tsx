@@ -6,6 +6,7 @@
 import { Event, Category, CategoryType } from '@/types/calendar';
 import { calendars } from '@/data/calendars';
 import { calculateTimeFromOffset } from '@/utils/timeCalculations';
+import { formatDateToString } from '@/utils/calendar/dateHelpers';
 import TimeSlotDayHeader from '../timeslot/TimeSlotDayHeader';
 import TimeSlotGrid from '../timeslot/TimeSlotGrid';
 import TimeSlotEventCard from '../timeslot/TimeSlotEventCard';
@@ -70,11 +71,6 @@ export default function TimeSlotDayColumn({
   onEventEdit,
   onEventDelete,
 }: TimeSlotDayColumnProps) {
-  // Debug: log total events received
-  if (daysCount === 1 && dayEvents.length > 1) {
-    console.log(`[TimeSlotDayColumn] Received ${dayEvents.length} events:`, dayEvents.map(e => `"${e.title}" (${e.id})`));
-  }
-
   // Calculate event positions for this day
   const eventsWithTimes = dayEvents.map(event => {
     const startTotalMinutes = event.startTime.split(':').map(Number).reduce((h, m) => h * 60 + m);
@@ -130,10 +126,6 @@ export default function TimeSlotDayColumn({
       column: eventTime.column,
       totalColumns: eventTime.totalColumns,
     });
-    // Debug log - show ALL events
-    if (daysCount === 1) {
-      console.log(`[TimeSlotDayColumn] Event "${eventTime.event.title}": column=${eventTime.column}, totalColumns=${eventTime.totalColumns}, start=${eventTime.start}, end=${eventTime.end}`);
-    }
   });
 
   const handleTimeSlotClick = (e: React.MouseEvent) => {
@@ -154,7 +146,7 @@ export default function TimeSlotDayColumn({
       const offsetY = e.clientY - rect.top;
 
       const time = calculateTimeFromOffset(offsetY);
-      const dateString = date.toISOString().split('T')[0];
+      const dateString = formatDateToString(date);
 
       if (onTimeSlotClick) {
         onTimeSlotClick(dateString, time);
@@ -201,7 +193,7 @@ export default function TimeSlotDayColumn({
             (category?.type ? categoryTypes.find(ct => ct.value === category.type) : undefined);
 
           const calendar = calendars.find(c => c.id === event.calendarId);
-          const executionDate = date.toISOString().split('T')[0];
+          const executionDate = formatDateToString(date);
           const positionInfo = eventPositions.get(event.id) || { column: 0, totalColumns: 1 };
           const execution = event.executions?.find(exec => exec.executionDate?.split('T')[0] === executionDate);
           const isCompleted = execution?.completed || false;

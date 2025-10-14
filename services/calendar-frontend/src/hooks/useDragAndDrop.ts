@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Event } from '@/types/calendar';
+import { formatDateToString } from '@/utils/calendar/dateHelpers';
 
 export function useDragAndDrop() {
   const [draggedEvent, setDraggedEvent] = useState<Event | null>(null);
@@ -35,7 +36,7 @@ export function useDragAndDrop() {
 
     if (!draggedEvent) return;
 
-    const dateString = newDate.toISOString().split('T')[0];
+    const dateString = formatDateToString(newDate);
 
     try {
       await onUpdate(draggedEvent.id, dateString, newTime);
