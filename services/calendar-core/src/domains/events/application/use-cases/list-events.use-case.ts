@@ -26,8 +26,13 @@ export class ListEventsUseCase {
       }));
     }
 
-    const rangeStart = new Date(filters.startDate);
-    const rangeEnd = new Date(filters.endDate);
+    // Garantir que datas sejam interpretadas no timezone local, não UTC
+    // Parse date string as local date components
+    const [startYear, startMonth, startDay] = filters.startDate.split('-').map(Number);
+    const rangeStart = new Date(startYear, startMonth - 1, startDay, 0, 0, 0, 0);
+
+    const [endYear, endMonth, endDay] = filters.endDate.split('-').map(Number);
+    const rangeEnd = new Date(endYear, endMonth - 1, endDay, 23, 59, 59, 999);
 
     const occurrences: any[] = [];
 
@@ -35,6 +40,7 @@ export class ListEventsUseCase {
       // Evento one-time normal
       if (!event.recurrenceRule) {
         const eventDate = new Date(event.startDate);
+        eventDate.setHours(0, 0, 0, 0); // Force local timezone
         if (eventDate >= rangeStart && eventDate <= rangeEnd) {
           occurrences.push(event);
         }
@@ -122,7 +128,7 @@ export class ListEventsUseCase {
         description: event.description,
         startTime: event.startTime,
         endTime: event.endTime,
-        startDate: date,
+        startDate: dateStr, // Retornar como string YYYY-MM-DD, não Date object
         endDate: event.endDate,
         ...legacy, // Campos do formato legado (isRecurring, recurrenceFrequency, etc.)
         googleEventId: event.googleEventId,

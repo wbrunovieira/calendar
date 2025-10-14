@@ -87,7 +87,15 @@ export class RRuleHelper {
     if (!options) return [];
 
     const occurrences: Date[] = [];
-    const seriesStart = new Date(startDate);
+
+    // Garantir que a data seja interpretada no timezone local, não UTC
+    // O startDate vem do banco como Date object em UTC
+    // Precisamos extrair a data UTC e recriá-la como data local
+    const tempDate = new Date(startDate);
+    const year = tempDate.getUTCFullYear();
+    const month = tempDate.getUTCMonth();
+    const day = tempDate.getUTCDate();
+    const seriesStart = new Date(year, month, day, 0, 0, 0, 0);
 
     // Determinar data de término da série
     let seriesEnd: Date;

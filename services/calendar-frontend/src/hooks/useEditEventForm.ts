@@ -54,6 +54,12 @@ export function useEditEventForm({
   // Load event data when modal opens
   useEffect(() => {
     if (isOpen && event) {
+      // For recurring events, use the occurrenceDate as the reference date
+      // but keep the original event start date in a separate field for the master event
+      const displayStartDate = event.isRecurring && event.occurrenceDate
+        ? event.occurrenceDate
+        : event.startDate?.split('T')[0] || '';
+
       setFormData({
         calendarId: event.calendarId || '',
         categoryId: event.categoryId || '',
@@ -62,7 +68,7 @@ export function useEditEventForm({
         description: event.description || '',
         startTime: event.startTime || '',
         endTime: event.endTime || '',
-        startDate: event.startDate?.split('T')[0] || '',
+        startDate: displayStartDate,
         endDate: event.endDate?.split('T')[0] || '',
         isRecurring: event.isRecurring || false,
         recurrenceFrequency: event.recurrenceFrequency || 'weekly',
@@ -189,7 +195,20 @@ export function useEditEventForm({
     e.preventDefault();
     setError('');
 
+    console.log('[useEditEventForm] handleSubmit called', {
+      hasEvent: !!event,
+      isRecurring: event?.isRecurring,
+      recurringAction
+    });
+
     if (!event) return;
+
+    // Check if recurring action was selected for recurring events
+    if (event.isRecurring && !recurringAction) {
+      console.log('[useEditEventForm] Recurring event but no action selected');
+      setError('Por favor, selecione como deseja editar o evento recorrente.');
+      return;
+    }
 
     const validationError = validateEventForm(formData);
     if (validationError) {
@@ -202,15 +221,25 @@ export function useEditEventForm({
     // Add recurring action scope if this is a recurring event
     if (event.isRecurring && recurringAction) {
       payload.recurringEditScope = recurringAction;
+      // Add occurrence date for backend to know which occurrence is being edited
+      if (event.occurrenceDate) {
+        payload.occurrenceDate = event.occurrenceDate;
+      } else if (event.startDate) {
+        payload.occurrenceDate = event.startDate.split('T')[0];
+      }
     }
+
+    console.log('[useEditEventForm] Sending update', { eventId: event.id, payload });
 
     try {
       setLoading(true);
       const eventId = extractEventId(event.id);
+      console.log('[useEditEventForm] Extracted eventId:', eventId);
       await api.events.update(eventId, payload);
       onEventUpdated();
       onClose();
-    } catch {
+    } catch (error) {
+      console.error('[useEditEventForm] Error updating event:', error);
       setError('Erro ao atualizar evento. Tente novamente.');
     } finally {
       setLoading(false);

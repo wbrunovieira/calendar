@@ -97,10 +97,26 @@ export function isTomorrow(date: Date): boolean {
 }
 
 /**
- * Format date to YYYY-MM-DD
+ * Format date to YYYY-MM-DD using local timezone
  */
 export function formatDateToString(date: Date): string {
-  return date.toISOString().split('T')[0];
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Extract YYYY-MM-DD from ISO string or Date without timezone conversion
+ * Handles both Date objects and ISO strings like "2025-10-12T00:00:00.000Z"
+ */
+export function extractDateString(dateInput: Date | string): string {
+  if (typeof dateInput === 'string') {
+    // If it's an ISO string, just extract the date part before 'T'
+    return dateInput.split('T')[0];
+  }
+  // If it's a Date object, use local timezone
+  return formatDateToString(dateInput);
 }
 
 /**

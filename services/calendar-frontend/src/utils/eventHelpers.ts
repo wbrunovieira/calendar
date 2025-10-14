@@ -45,8 +45,16 @@ export function buildEventPayload(formData: EventFormData): Record<string, unkno
     payload.recurrenceFrequency = formData.recurrenceFrequency;
     payload.recurrenceInterval = formData.recurrenceInterval;
 
-    if (formData.recurrenceFrequency === 'weekly' && formData.recurrenceDaysOfWeek.length > 0) {
-      payload.recurrenceDaysOfWeek = formData.recurrenceDaysOfWeek;
+    if (formData.recurrenceFrequency === 'weekly') {
+      // If no days selected, use the day of week from start date
+      if (formData.recurrenceDaysOfWeek.length > 0) {
+        payload.recurrenceDaysOfWeek = formData.recurrenceDaysOfWeek;
+      } else if (formData.startDate) {
+        // Get day of week from start date (0 = Sunday, 6 = Saturday)
+        const startDate = new Date(formData.startDate);
+        const dayOfWeek = startDate.getDay();
+        payload.recurrenceDaysOfWeek = [dayOfWeek];
+      }
     }
 
     if (formData.recurrenceEndDate) {

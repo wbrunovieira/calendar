@@ -24,11 +24,12 @@ export function useCalendarData() {
         api.categories.list(),
         api.categoryTypes.list(),
       ]);
+
       setEvents(fetchedEvents);
       setCategories(fetchedCategories);
       setCategoryTypes(fetchedCategoryTypes);
-    } catch {
-      // Error fetching data
+    } catch (error) {
+      console.error('[useCalendarData] Error fetching data', error);
     } finally {
       setLoading(false);
     }

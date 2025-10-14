@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { Event, Category, CategoryType } from '@/types/calendar';
 import { useDragAndDrop } from '@/hooks/useDragAndDrop';
 import { useTimeSlotEventUpdate } from '@/hooks/useTimeSlotEventUpdate';
@@ -8,6 +9,7 @@ import { useEventExecution } from '@/hooks/useEventExecution';
 import { useEventsStats } from '@/hooks/useEventsStats';
 import { HOURS_ARRAY } from '@/constants/timeSlotView';
 import { calculateTimeFromOffset } from '@/utils/timeCalculations';
+import { formatDateToString } from '@/utils/calendar/dateHelpers';
 import RecurringEventActionModal from '../modals/RecurringEventActionModal';
 import TimeColumn from '../timeslot/TimeColumn';
 import TimeSlotDayColumn from '../timeslot/TimeSlotDayColumn';
@@ -64,8 +66,8 @@ export function TimeSlotView({
   const { handleToggleExecution } = useEventExecution({ onEventUpdate });
 
   // Fetch stats for the visible days
-  const startDate = days[0]?.toISOString().split('T')[0];
-  const endDate = days[days.length - 1]?.toISOString().split('T')[0];
+  const startDate = days[0] ? formatDateToString(days[0]) : '';
+  const endDate = days[days.length - 1] ? formatDateToString(days[days.length - 1]) : '';
 
   const { stats } = useEventsStats({
     startDate: startDate || '',
@@ -89,7 +91,8 @@ export function TimeSlotView({
   };
 
   const getEventsForDate = (date: Date): Event[] => {
-    const dateString = date.toISOString().split('T')[0];
+    // Use formatDateToString to avoid UTC conversion issues
+    const dateString = formatDateToString(date);
 
     return events.filter(event => {
       if (!selectedCalendars.includes(event.calendarId)) {
@@ -127,7 +130,7 @@ export function TimeSlotView({
           {days.map((date, dayIndex) => {
             const isToday = date.toDateString() === today.toDateString();
             const dayEvents = getEventsForDate(date);
-            const dateString = date.toISOString().split('T')[0];
+            const dateString = formatDateToString(date);
             const dayStat = statsMap.get(dateString);
 
             return (

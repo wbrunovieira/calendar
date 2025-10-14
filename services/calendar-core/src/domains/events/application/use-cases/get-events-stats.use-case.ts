@@ -56,8 +56,11 @@ export class GetEventsStatsUseCase {
       categoryId: filters.categoryId,
     });
 
+    // Garantir que datas sejam interpretadas no timezone local, não UTC
     const rangeStart = new Date(filters.startDate);
+    rangeStart.setHours(0, 0, 0, 0);
     const rangeEnd = new Date(filters.endDate);
+    rangeEnd.setHours(23, 59, 59, 999);
 
     // Coletar todas as ocorrências de eventos no período
     const occurrences = this.collectOccurrences(events, rangeStart, rangeEnd, filters.categoryTypeId);
@@ -104,6 +107,7 @@ export class GetEventsStatsUseCase {
       // Evento one-time
       if (!event.recurrenceRule) {
         const eventDate = new Date(event.startDate);
+        eventDate.setHours(0, 0, 0, 0); // Force local timezone
         const dateStr = eventDate.toISOString().split('T')[0];
 
         if (eventDate >= rangeStart && eventDate <= rangeEnd) {

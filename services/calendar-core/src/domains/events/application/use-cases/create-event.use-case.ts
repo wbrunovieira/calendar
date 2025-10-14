@@ -13,13 +13,39 @@ export class CreateEventUseCase {
     let recurrenceRule: string | null = null;
     if (dto.isRecurring && dto.recurrenceFrequency) {
       const freq = dto.recurrenceFrequency.toUpperCase() as 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
-      recurrenceRule = RRuleHelper.toString({
+
+      // Parse recurrence end date as local date
+      let untilDate: Date | undefined;
+      if (dto.recurrenceEndDate) {
+        const [y, m, d] = dto.recurrenceEndDate.split('-').map(Number);
+        untilDate = new Date(y, m - 1, d);
+      }
+
+      const rruleOptions = {
         freq,
         interval: dto.recurrenceInterval || 1,
         byweekday: dto.recurrenceDaysOfWeek,
         bymonthday: dto.recurrenceDayOfMonth,
-        until: dto.recurrenceEndDate ? new Date(dto.recurrenceEndDate) : undefined,
-      });
+        until: untilDate,
+      };
+
+      recurrenceRule = RRuleHelper.toString(rruleOptions);
+    }
+
+    // Parse dates as local dates, not UTC
+    let startDate: Date;
+    if (dto.startDate) {
+      const [y, m, d] = dto.startDate.split('-').map(Number);
+      startDate = new Date(y, m - 1, d);
+    } else {
+      startDate = new Date();
+      startDate.setHours(0, 0, 0, 0);
+    }
+
+    let endDate: Date | undefined;
+    if (dto.endDate) {
+      const [y, m, d] = dto.endDate.split('-').map(Number);
+      endDate = new Date(y, m - 1, d);
     }
 
     const event = Event.create({
@@ -30,8 +56,8 @@ export class CreateEventUseCase {
       description: dto.description,
       startTime: dto.startTime,
       endTime: dto.endTime,
-      startDate: dto.startDate ? new Date(dto.startDate) : new Date(),
-      endDate: dto.endDate ? new Date(dto.endDate) : undefined,
+      startDate,
+      endDate,
       recurrenceRule,
       recurrenceMasterId: null,
       status: 'CONFIRMED',
