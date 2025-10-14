@@ -55,6 +55,33 @@ export interface EventExecution {
   notes?: string;
 }
 
+export interface StatsData {
+  key: string;
+  label: string;
+  total: number;
+  completed: number;
+  pending: number;
+  percentage: number;
+  averageCompletionTime?: number;
+  streak?: number;
+  breakdown?: {
+    [key: string]: {
+      total: number;
+      completed: number;
+    }
+  };
+}
+
+interface GetStatsParams {
+  startDate: string;
+  endDate: string;
+  calendarId?: string;
+  categoryId?: string;
+  categoryTypeId?: string;
+  groupBy?: 'day' | 'week' | 'month' | 'category' | 'categoryType' | 'total';
+  includeBreakdown?: boolean;
+}
+
 /**
  * API methods
  */
@@ -97,6 +124,18 @@ export const api = {
       }),
     getExecutions: (eventId: string) =>
       fetchAPI<EventExecution[]>(`/events/${eventId}/executions`),
+    getStats: (params: GetStatsParams) => {
+      const queryParams = new URLSearchParams();
+      queryParams.append('startDate', params.startDate);
+      queryParams.append('endDate', params.endDate);
+      if (params.calendarId) queryParams.append('calendarId', params.calendarId);
+      if (params.categoryId) queryParams.append('categoryId', params.categoryId);
+      if (params.categoryTypeId) queryParams.append('categoryTypeId', params.categoryTypeId);
+      if (params.groupBy) queryParams.append('groupBy', params.groupBy);
+      if (params.includeBreakdown !== undefined) queryParams.append('includeBreakdown', String(params.includeBreakdown));
+
+      return fetchAPI<StatsData[]>(`/events/stats?${queryParams.toString()}`);
+    },
   },
 
   // Categories

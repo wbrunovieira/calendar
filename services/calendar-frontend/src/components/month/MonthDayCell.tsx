@@ -10,12 +10,19 @@ import { MAX_VISIBLE_EVENTS } from '@/constants/monthView';
 import TimeGridBackground from '../month/TimeGridBackground';
 import MonthEventCard from '../month/MonthEventCard';
 
+interface DayStats {
+  total: number;
+  completed: number;
+  percentage: number;
+}
+
 interface MonthDayCellProps {
   day: number;
   date: Date;
   isToday: boolean;
   events: Event[];
   categories: Category[];
+  stats?: DayStats;
   onTimeSlotClick: (date: string, time: string) => void;
   onEditClick: (event: Event, e: React.MouseEvent) => void;
   onDeleteClick: (event: Event, e: React.MouseEvent) => void;
@@ -27,6 +34,7 @@ export default function MonthDayCell({
   isToday,
   events,
   categories,
+  stats,
   onTimeSlotClick,
   onEditClick,
   onDeleteClick,
@@ -67,7 +75,25 @@ export default function MonthDayCell({
     >
       <TimeGridBackground />
 
-      <span className="text-xs md:text-sm mb-1 relative z-10">{day}</span>
+      <div className="flex items-center justify-between w-full mb-1 relative z-10">
+        <span className="text-xs md:text-sm">{day}</span>
+
+        {/* Stats Badge */}
+        {stats && stats.total > 0 && (
+          <div className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-white font-semibold shadow-sm text-[9px] transition-all duration-300 ${
+            stats.percentage === 100
+              ? 'bg-gradient-to-r from-green-500 to-emerald-600'
+              : stats.percentage >= 70
+              ? 'bg-gradient-to-r from-blue-500 to-cyan-600'
+              : stats.percentage >= 40
+              ? 'bg-gradient-to-r from-yellow-500 to-orange-500'
+              : 'bg-gradient-to-r from-red-500 to-pink-600'
+          }`}>
+            <span>{stats.completed}/{stats.total}</span>
+            {stats.percentage === 100 && <span>✓</span>}
+          </div>
+        )}
+      </div>
 
       <div className="flex flex-col gap-0.5 w-full">
         {visibleEvents.map(event => {

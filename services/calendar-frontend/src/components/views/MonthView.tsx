@@ -5,6 +5,7 @@
 
 import { Event, Category } from '@/types/calendar';
 import { useMonthCalendar } from '@/hooks/useMonthCalendar';
+import { useEventsStats } from '@/hooks/useEventsStats';
 import DaysOfWeekHeader from '../month/DaysOfWeekHeader';
 import MonthDayCell from '../month/MonthDayCell';
 
@@ -33,6 +34,22 @@ export default function MonthView({
     selectedCalendars,
   });
 
+  // Fetch stats for the entire month
+  const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+  const lastDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+  const startDate = firstDayOfMonth.toISOString().split('T')[0];
+  const endDate = lastDayOfMonth.toISOString().split('T')[0];
+
+  const { stats } = useEventsStats({
+    startDate,
+    endDate,
+    groupBy: 'day',
+    enabled: true,
+  });
+
+  // Create a map of stats by date for quick lookup
+  const statsMap = new Map(stats.map(stat => [stat.key, stat]));
+
   const renderMonthDays = () => {
     const days = [];
 
@@ -46,6 +63,8 @@ export default function MonthView({
       const isToday = isCurrentMonth && day === today.getDate();
       const dayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
       const dayEvents = getEventsForDate(dayDate);
+      const dateString = dayDate.toISOString().split('T')[0];
+      const dayStat = statsMap.get(dateString);
 
       days.push(
         <MonthDayCell
@@ -55,6 +74,11 @@ export default function MonthView({
           isToday={isToday}
           events={dayEvents}
           categories={categories}
+          stats={dayStat ? {
+            total: dayStat.total,
+            completed: dayStat.completed,
+            percentage: dayStat.percentage
+          } : undefined}
           onTimeSlotClick={onTimeSlotClick}
           onEditClick={onEditClick}
           onDeleteClick={onDeleteClick}

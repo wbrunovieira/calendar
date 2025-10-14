@@ -11,6 +11,12 @@ import TimeSlotGrid from '../timeslot/TimeSlotGrid';
 import TimeSlotEventCard from '../timeslot/TimeSlotEventCard';
 import EmptyDayMessage from '../ui/common/EmptyDayMessage';
 
+interface DayStats {
+  total: number;
+  completed: number;
+  percentage: number;
+}
+
 interface TimeSlotDayColumnProps {
   date: Date;
   dayIndex: number;
@@ -26,6 +32,7 @@ interface TimeSlotDayColumnProps {
   resizingEventId?: string;
   isResizing: boolean;
   justResized: boolean;
+  dayStats?: DayStats;
   onDragOver: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent) => void;
   onTimeSlotClick?: (dateString: string, time: string) => void;
@@ -52,6 +59,7 @@ export default function TimeSlotDayColumn({
   resizingEventId,
   isResizing,
   justResized,
+  dayStats,
   onDragOver,
   onDrop,
   onTimeSlotClick,
@@ -166,6 +174,7 @@ export default function TimeSlotDayColumn({
         daysOfWeekFull={daysOfWeekFull}
         monthNames={monthNames}
         daysCount={daysCount}
+        stats={dayStats}
       />
 
       {/* Time grid for this day */}

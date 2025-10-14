@@ -5,11 +5,13 @@ import { useDragAndDrop } from '@/hooks/useDragAndDrop';
 import { useTimeSlotEventUpdate } from '@/hooks/useTimeSlotEventUpdate';
 import { useEventResize } from '@/hooks/useEventResize';
 import { useEventExecution } from '@/hooks/useEventExecution';
+import { useEventsStats } from '@/hooks/useEventsStats';
 import { HOURS_ARRAY } from '@/constants/timeSlotView';
 import { calculateTimeFromOffset } from '@/utils/timeCalculations';
 import RecurringEventActionModal from '../modals/RecurringEventActionModal';
 import TimeColumn from '../timeslot/TimeColumn';
 import TimeSlotDayColumn from '../timeslot/TimeSlotDayColumn';
+import TimeSlotSummaryStats from '../timeslot/TimeSlotSummaryStats';
 
 interface TimeSlotViewProps {
   days: Date[];
@@ -61,6 +63,31 @@ export function TimeSlotView({
 
   const { handleToggleExecution } = useEventExecution({ onEventUpdate });
 
+  // Fetch stats for the visible days
+  const startDate = days[0]?.toISOString().split('T')[0];
+  const endDate = days[days.length - 1]?.toISOString().split('T')[0];
+
+  const { stats } = useEventsStats({
+    startDate: startDate || '',
+    endDate: endDate || '',
+    groupBy: 'day',
+    enabled: !!startDate && !!endDate,
+  });
+
+  // Create a map of stats by date for quick lookup
+  const statsMap = new Map(stats.map(stat => [stat.key, stat]));
+
+  // Calculate summary stats for visible days
+  const summaryStats = {
+    totalEvents: stats.reduce((sum, stat) => sum + stat.total, 0),
+    completedEvents: stats.reduce((sum, stat) => sum + stat.completed, 0),
+    percentage: stats.length > 0
+      ? Math.round((stats.reduce((sum, stat) => sum + stat.completed, 0) / stats.reduce((sum, stat) => sum + stat.total, 0)) * 100) || 0
+      : 0,
+    daysCount: days.length,
+    perfectDays: stats.filter(stat => stat.percentage === 100 && stat.total > 0).length,
+  };
+
   const getEventsForDate = (date: Date): Event[] => {
     const dateString = date.toISOString().split('T')[0];
 
@@ -87,6 +114,11 @@ export function TimeSlotView({
         eventTitle={pendingUpdate?.eventTitle || ''}
       />
       <div className={`p-4 w-full ${isSingleDay ? 'max-w-5xl mx-auto' : ''}`}>
+        {/* Summary Stats - only show for multiple days */}
+        {days.length > 1 && summaryStats.totalEvents > 0 && (
+          <TimeSlotSummaryStats stats={summaryStats} />
+        )}
+
         <div className={`flex ${isSingleDay ? 'gap-4' : 'gap-3'} max-h-[900px] overflow-y-auto w-full ${isSingleDay ? 'bg-gradient-to-br from-white/5 to-white/0 rounded-2xl p-4 backdrop-blur-sm shadow-2xl' : ''}`}>
           {/* Time column */}
           <TimeColumn hours={hours} days={days} daysOfWeek={daysOfWeek} />
@@ -95,6 +127,8 @@ export function TimeSlotView({
           {days.map((date, dayIndex) => {
             const isToday = date.toDateString() === today.toDateString();
             const dayEvents = getEventsForDate(date);
+            const dateString = date.toISOString().split('T')[0];
+            const dayStat = statsMap.get(dateString);
 
             return (
               <TimeSlotDayColumn
@@ -113,6 +147,11 @@ export function TimeSlotView({
                 resizingEventId={resizingEvent?.id}
                 isResizing={isResizing}
                 justResized={justResized}
+                dayStats={dayStat ? {
+                  total: dayStat.total,
+                  completed: dayStat.completed,
+                  percentage: dayStat.percentage
+                } : undefined}
                 onDragOver={handleDragOver}
                 onDrop={e => {
                   const container = e.currentTarget;

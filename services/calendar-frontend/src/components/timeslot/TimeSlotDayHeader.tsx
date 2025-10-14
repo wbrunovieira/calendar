@@ -3,6 +3,12 @@
  * Displays the header for a day column in TimeSlotView
  */
 
+interface DayStats {
+  total: number;
+  completed: number;
+  percentage: number;
+}
+
 interface TimeSlotDayHeaderProps {
   date: Date;
   isToday: boolean;
@@ -10,6 +16,7 @@ interface TimeSlotDayHeaderProps {
   daysOfWeekFull: string[];
   monthNames: string[];
   daysCount: number;
+  stats?: DayStats;
 }
 
 export default function TimeSlotDayHeader({
@@ -19,6 +26,7 @@ export default function TimeSlotDayHeader({
   daysOfWeekFull,
   monthNames,
   daysCount,
+  stats,
 }: TimeSlotDayHeaderProps) {
   // Para visualização de 1 dia, vamos criar um header mais rico
   const isSingleDay = daysCount === 1;
@@ -76,6 +84,30 @@ export default function TimeSlotDayHeader({
         <div className={`opacity-80 text-white ${isSingleDay ? 'text-base font-medium' : 'text-xs'}`}>
           {monthNames[date.getMonth()]}
           {isSingleDay && ` de ${date.getFullYear()}`}
+        </div>
+      )}
+
+      {/* Stats Badge */}
+      {stats && stats.total > 0 && (
+        <div className="mt-2">
+          <div
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-white font-semibold shadow-md transition-all duration-300 ${
+              stats.percentage === 100
+                ? 'bg-gradient-to-r from-green-500 to-emerald-600 shadow-green-500/30'
+                : stats.percentage >= 70
+                ? 'bg-gradient-to-r from-blue-500 to-cyan-600 shadow-blue-500/30'
+                : stats.percentage >= 40
+                ? 'bg-gradient-to-r from-yellow-500 to-orange-500 shadow-yellow-500/30'
+                : 'bg-gradient-to-r from-red-500 to-pink-600 shadow-red-500/30'
+            } ${
+              daysCount === 7 ? 'text-[10px]' : daysCount === 3 ? 'text-xs' : 'text-sm'
+            }`}
+          >
+            <span className="font-bold">{stats.completed}/{stats.total}</span>
+            <span className="opacity-75">·</span>
+            <span>{stats.percentage}%</span>
+            {stats.percentage === 100 && <span>✓</span>}
+          </div>
         </div>
       )}
     </div>
