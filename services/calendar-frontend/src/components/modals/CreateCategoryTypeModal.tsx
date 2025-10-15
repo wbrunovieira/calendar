@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { CategoryType } from '@/types/calendar';
+import { CategoryType, Category } from '@/types/calendar';
 
 interface CreateCategoryTypeModalProps {
   isOpen: boolean;
@@ -14,6 +14,7 @@ interface CreateCategoryTypeModalProps {
     icon?: string;
   }) => Promise<void>;
   calendars: { id: string; name: string; email: string; color: string }[];
+  categories?: Category[];
   initialData?: CategoryType;
 }
 
@@ -37,13 +38,17 @@ const COLORS = [
   '#2ECC71', '#F39C12', '#9B59B6', '#1ABC9C', '#E67E22',
 ];
 
-export default function CreateCategoryTypeModal({ isOpen, onClose, onSave, calendars, initialData }: CreateCategoryTypeModalProps) {
+export default function CreateCategoryTypeModal({ isOpen, onClose, onSave, calendars, categories = [], initialData }: CreateCategoryTypeModalProps) {
   const [calendarId, setCalendarId] = useState(calendars[0]?.id || '');
+  const [selectedCategoryId, setSelectedCategoryId] = useState('');
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
   const [icon, setIcon] = useState('💼');
   const [color, setColor] = useState(COLORS[0]);
   const [saving, setSaving] = useState(false);
+
+  // Filter categories by selected calendar
+  const filteredCategories = categories.filter(cat => cat.calendarId === calendarId);
 
   // Populate form with initialData when editing
   useEffect(() => {
@@ -56,12 +61,18 @@ export default function CreateCategoryTypeModal({ isOpen, onClose, onSave, calen
     } else {
       // Reset form when not editing
       setCalendarId(calendars[0]?.id || '');
+      setSelectedCategoryId('');
       setName('');
       setValue('');
       setIcon('💼');
       setColor(COLORS[0]);
     }
   }, [initialData, calendars]);
+
+  // Reset selected category when calendar changes
+  useEffect(() => {
+    setSelectedCategoryId('');
+  }, [calendarId]);
 
   // Auto-generate value from name
   const handleNameChange = (newName: string) => {
@@ -88,6 +99,7 @@ export default function CreateCategoryTypeModal({ isOpen, onClose, onSave, calen
 
       // Reset form
       setCalendarId(calendars[0]?.id || '');
+      setSelectedCategoryId('');
       setName('');
       setValue('');
       setIcon('💼');
@@ -141,6 +153,49 @@ export default function CreateCategoryTypeModal({ isOpen, onClose, onSave, calen
               ))}
             </select>
           </div>
+
+          {/* Category Selection (Optional) */}
+          {filteredCategories.length > 0 && (
+            <div>
+              <label className="block text-white font-semibold mb-2">
+                Categoria
+                <span className="text-white/60 text-sm font-normal ml-2">
+                  - opcional, para sugerir nome e ícone
+                </span>
+              </label>
+              <select
+                value={selectedCategoryId}
+                onChange={(e) => {
+                  const categoryId = e.target.value;
+                  setSelectedCategoryId(categoryId);
+
+                  // Auto-populate name and icon from selected category
+                  if (categoryId) {
+                    const category = filteredCategories.find(c => c.id === categoryId);
+                    if (category) {
+                      handleNameChange(category.name);
+                      if (category.icon) {
+                        setIcon(category.icon);
+                      }
+                      if (category.color) {
+                        setColor(category.color);
+                      }
+                    }
+                  }
+                }}
+                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+              >
+                <option value="" className="bg-[#350545]">
+                  Selecione uma categoria (ou deixe vazio)
+                </option>
+                {filteredCategories.map((category) => (
+                  <option key={category.id} value={category.id} className="bg-[#350545]">
+                    {category.icon} {category.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Type Name */}
           <div>

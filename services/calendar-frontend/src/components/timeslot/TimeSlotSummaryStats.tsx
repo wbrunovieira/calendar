@@ -3,12 +3,22 @@
  * Displays aggregated statistics for the visible days
  */
 
+import { calendars } from '@/data/calendars';
+
+interface CalendarStat {
+  calendarId: string;
+  total: number;
+  completed: number;
+  percentage: number;
+}
+
 interface SummaryStats {
   totalEvents: number;
   completedEvents: number;
   percentage: number;
   daysCount: number;
   perfectDays: number; // Days with 100% completion
+  byCalendar?: CalendarStat[];
 }
 
 interface TimeSlotSummaryStatsProps {
@@ -92,6 +102,48 @@ export default function TimeSlotSummaryStats({ stats }: TimeSlotSummaryStatsProp
             )}
           </div>
         </div>
+
+        {/* Stats by Calendar */}
+        {stats.byCalendar && stats.byCalendar.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-white/20">
+            <div className="flex items-center gap-6 flex-wrap justify-center">
+              {stats.byCalendar.map(calendarStat => {
+                const calendar = calendars.find(c => c.id === calendarStat.calendarId);
+                const calendarIcon = calendar?.type === 'professional' ? '💼' : '👤';
+                const calendarName = calendar?.name || 'Desconhecido';
+
+                return (
+                  <div key={calendarStat.calendarId} className="flex items-center gap-3 bg-white/5 rounded-lg px-4 py-2">
+                    {/* Calendar Icon */}
+                    <div
+                      className="w-10 h-10 rounded-full flex items-center justify-center text-xl"
+                      style={{ backgroundColor: calendar?.color }}
+                    >
+                      {calendarIcon}
+                    </div>
+
+                    {/* Calendar Stats */}
+                    <div className="flex flex-col">
+                      <span className="text-xs text-white/70 font-semibold">{calendarName}</span>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-sm text-white font-bold">{calendarStat.completed}/{calendarStat.total}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                          calendarStat.percentage === 100
+                            ? 'bg-green-500/20 text-green-300'
+                            : calendarStat.percentage >= 50
+                            ? 'bg-blue-500/20 text-blue-300'
+                            : 'bg-orange-500/20 text-orange-300'
+                        }`}>
+                          {calendarStat.percentage}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

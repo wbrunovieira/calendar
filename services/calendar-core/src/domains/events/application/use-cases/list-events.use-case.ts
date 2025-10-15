@@ -42,7 +42,11 @@ export class ListEventsUseCase {
         const eventDate = new Date(event.startDate);
         eventDate.setHours(0, 0, 0, 0); // Force local timezone
         if (eventDate >= rangeStart && eventDate <= rangeEnd) {
-          occurrences.push(event);
+          // Include executions for non-recurring events
+          occurrences.push({
+            ...event,
+            executions: event.executions || [],
+          });
         }
         continue;
       }
@@ -137,10 +141,40 @@ export class ListEventsUseCase {
         updatedAt: event.updatedAt,
         originalEventId: event.id, // Referência ao evento master
         occurrenceDate: dateStr,   // Data específica desta ocorrência
-        executions: event.completions?.filter(c => {
-          const compDate = new Date(c.occurrenceDate);
-          return compDate.toISOString().split('T')[0] === dateStr;
-        }).map(c => ({
+        executions: (() => {
+          // Debug ANTES do filtro para Rezar ao Acordar
+          if (event.title === 'Rezar ao Acordar') {
+            console.log(`[list-events] 🔍 ANTES DO FILTRO - Rezar ao Acordar (ocorrência: ${dateStr}):`, {
+              dateStr,
+              completionsTotal: event.completions?.length || 0,
+              allCompletions: event.completions?.map(c => ({
+                occurrenceDate: c.occurrenceDate,
+                completed: c.completed,
+              })),
+            });
+          }
+
+          return event.completions?.filter(c => {
+            const compDate = new Date(c.occurrenceDate);
+            const compDateStr = compDate.toISOString().split('T')[0];
+            const matches = compDateStr === dateStr;
+
+            // Debug específico para Rezar ao Acordar
+            if (event.title === 'Rezar ao Acordar' && dateStr === '2025-10-15') {
+              console.log(`[list-events] 🔍 Rezar ao Acordar (${dateStr}):`, {
+                completionsTotal: event.completions?.length || 0,
+                currentCompletion: {
+                  occurrenceDate: c.occurrenceDate,
+                  parsed: compDateStr,
+                  completed: c.completed,
+                },
+                dateStr,
+                matches,
+              });
+            }
+
+            return matches;
+          }).map(c => ({
           id: c.id,
           eventId: c.eventId,
           executionDate: c.occurrenceDate,
@@ -149,7 +183,8 @@ export class ListEventsUseCase {
           notes: c.notes,
           createdAt: c.createdAt,
           updatedAt: c.updatedAt,
-        })) || []
+        })) || [];
+        })()
       });
     }
 

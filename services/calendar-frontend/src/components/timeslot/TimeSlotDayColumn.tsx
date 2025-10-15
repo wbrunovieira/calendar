@@ -195,7 +195,13 @@ export default function TimeSlotDayColumn({
           const calendar = calendars.find(c => c.id === event.calendarId);
           const executionDate = formatDateToString(date);
           const positionInfo = eventPositions.get(event.id) || { column: 0, totalColumns: 1 };
-          const execution = event.executions?.find(exec => exec.executionDate?.split('T')[0] === executionDate);
+          // executionDate é string, pega só a parte da data
+          const execution = event.executions?.find(exec => {
+            const execDate = exec.executionDate
+              ? (typeof exec.executionDate === 'string' ? exec.executionDate.split('T')[0] : formatDateToString(new Date(exec.executionDate)))
+              : '';
+            return execDate === executionDate;
+          });
           const isCompleted = execution?.completed || false;
           // Use originalEventId for recurring events, otherwise use the regular id
           const eventIdForApi = event.originalEventId || event.id;

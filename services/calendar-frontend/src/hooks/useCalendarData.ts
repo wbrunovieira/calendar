@@ -25,6 +25,13 @@ export function useCalendarData() {
         api.categoryTypes.list(),
       ]);
 
+      // Debug: verificar se os eventos têm executions
+      console.log('[useCalendarData] Events fetched:', {
+        totalEvents: fetchedEvents.length,
+        eventsWithExecutions: fetchedEvents.filter(e => e.executions && e.executions.length > 0).length,
+        sampleEvent: fetchedEvents.find(e => e.executions && e.executions.length > 0) || fetchedEvents[0]
+      });
+
       setEvents(fetchedEvents);
       setCategories(fetchedCategories);
       setCategoryTypes(fetchedCategoryTypes);

@@ -81,18 +81,106 @@ export function TimeSlotView({
 
   // Calculate stats directly from visible events (more reliable)
   const visibleDatesSet = new Set(days.map(day => formatDateToString(day)));
+
+  console.log('[TimeSlotView] Debug visible events:', {
+    visibleDates: Array.from(visibleDatesSet),
+    totalEvents: events.length,
+    eventsWithDates: events.slice(0, 5).map(e => ({
+      title: e.title,
+      calendarId: e.calendarId,
+      startDate: e.startDate,
+      extracted: e.startDate.split('T')[0]
+    }))
+  });
+
   const visibleEvents = events.filter(event => {
     if (!selectedCalendars.includes(event.calendarId)) return false;
-    const eventDate = event.startDate.split('T')[0];
+    // Backend retorna startDate como string. Se tem "T", pega só a parte da data
+    const eventDate = typeof event.startDate === 'string'
+      ? event.startDate.split('T')[0]
+      : formatDateToString(new Date(event.startDate));
     return visibleDatesSet.has(eventDate);
+  });
+
+  console.log('[TimeSlotView] Filtered visible events:', {
+    count: visibleEvents.length,
+    byCalendar: selectedCalendars.map(calId => ({
+      calendarId: calId,
+      count: visibleEvents.filter(e => e.calendarId === calId).length,
+      events: visibleEvents.filter(e => e.calendarId === calId).map(e => ({
+        title: e.title,
+        startTime: e.startTime,
+        endTime: e.endTime
+      }))
+    }))
+  });
+
+  // Log detalhado de cada calendário
+  selectedCalendars.forEach(calId => {
+    const calEvents = visibleEvents.filter(e => e.calendarId === calId);
+    console.log(`\n📅 Calendar ${calId} - Total: ${calEvents.length}`);
+    calEvents.forEach((evt, idx) => {
+      console.log(`  ${idx + 1}. "${evt.title}" (${evt.startTime} - ${evt.endTime})`);
+    });
   });
 
   // Count completed events
   const completedCount = visibleEvents.filter(event => {
-    const eventDate = event.startDate.split('T')[0];
-    const execution = event.executions?.find(exec => exec.executionDate?.split('T')[0] === eventDate);
+    // Backend retorna startDate como string. Se tem "T", pega só a parte da data
+    const eventDate = typeof event.startDate === 'string'
+      ? event.startDate.split('T')[0]
+      : formatDateToString(new Date(event.startDate));
+    const execution = event.executions?.find(exec => {
+      // executionDate também é string, trata da mesma forma
+      const execDate = exec.executionDate
+        ? (typeof exec.executionDate === 'string' ? exec.executionDate.split('T')[0] : formatDateToString(new Date(exec.executionDate)))
+        : '';
+
+      // Debug
+      if (event.executions && event.executions.length > 0) {
+        console.log(`[Completion Check] Event: "${event.title}"`, {
+          eventDate,
+          executions: event.executions.map(e => ({
+            executionDate: e.executionDate,
+            parsed: e.executionDate ? (typeof e.executionDate === 'string' ? e.executionDate.split('T')[0] : formatDateToString(new Date(e.executionDate))) : '',
+            completed: e.completed
+          })),
+          match: execDate === eventDate
+        });
+      }
+
+      return execDate === eventDate;
+    });
     return execution?.completed || false;
   }).length;
+
+  // Calculate stats by calendar
+  const calendarStats = selectedCalendars.map(calendarId => {
+    const calendarEvents = visibleEvents.filter(e => e.calendarId === calendarId);
+    const calendarCompleted = calendarEvents.filter(event => {
+      // Backend retorna startDate como string. Se tem "T", pega só a parte da data
+      const eventDate = typeof event.startDate === 'string'
+        ? event.startDate.split('T')[0]
+        : formatDateToString(new Date(event.startDate));
+      const execution = event.executions?.find(exec => {
+        // executionDate também é string, trata da mesma forma
+        const execDate = exec.executionDate
+          ? (typeof exec.executionDate === 'string' ? exec.executionDate.split('T')[0] : formatDateToString(new Date(exec.executionDate)))
+          : '';
+        return execDate === eventDate;
+      });
+      return execution?.completed || false;
+    }).length;
+
+    return {
+      calendarId,
+      total: calendarEvents.length,
+      completed: calendarCompleted,
+      percentage: calendarEvents.length > 0
+        ? Math.round((calendarCompleted / calendarEvents.length) * 100)
+        : 0
+    };
+  }).filter(stat => stat.total > 0); // Only include calendars with events
 
   // Calculate summary stats from visible events
   const summaryStats = {
@@ -107,6 +195,7 @@ export function TimeSlotView({
       const dayStat = statsMap.get(dateStr);
       return dayStat && dayStat.percentage === 100 && dayStat.total > 0;
     }).length,
+    byCalendar: calendarStats,
   };
 
   const getEventsForDate = (date: Date): Event[] => {
@@ -118,9 +207,10 @@ export function TimeSlotView({
         return false;
       }
 
-      // Backend já expande eventos recorrentes, então apenas comparamos a data
-      // Se o evento tem occurrenceDate, significa que já foi expandido pelo backend
-      const eventDate = event.startDate.split('T')[0];
+      // Backend retorna startDate como string. Se tem "T", pega só a parte da data
+      const eventDate = typeof event.startDate === 'string'
+        ? event.startDate.split('T')[0]
+        : formatDateToString(new Date(event.startDate));
       return eventDate === dateString;
     });
   };

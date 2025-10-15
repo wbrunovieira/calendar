@@ -51,10 +51,41 @@ export default function TimeSlotEventCard({
 }: TimeSlotEventCardProps) {
   // Check execution status from event executions
   const executionDate = formatDateToString(date);
-  const execution = event.executions?.find(exec =>
-    exec.executionDate?.split('T')[0] === executionDate
-  );
+
+  // Debug: log TODOS os eventos que têm executions
+  if (event.executions && event.executions.length > 0) {
+    console.log(`[TimeSlotEventCard] Event "${event.title}" (${event.id}) checking executions:`, {
+      executionDate,
+      executions: event.executions.map(e => ({
+        executionDate: e.executionDate,
+        parsed: e.executionDate ? (typeof e.executionDate === 'string' ? e.executionDate.split('T')[0] : formatDateToString(new Date(e.executionDate))) : '',
+        completed: e.completed,
+        match: (e.executionDate ? (typeof e.executionDate === 'string' ? e.executionDate.split('T')[0] : formatDateToString(new Date(e.executionDate))) : '') === executionDate
+      }))
+    });
+  }
+
+  const execution = event.executions?.find(exec => {
+    // executionDate é string, pega só a parte da data
+    const execDate = exec.executionDate
+      ? (typeof exec.executionDate === 'string' ? exec.executionDate.split('T')[0] : formatDateToString(new Date(exec.executionDate)))
+      : '';
+    return execDate === executionDate;
+  });
   const isCompleted = execution?.completed || false;
+
+  // Debug específico para "Rezar ao Acordar" no dia 15
+  if (event.title === "Rezar ao Acordar" && executionDate === "2025-10-15") {
+    console.log(`[TimeSlotEventCard] 🔍 FINAL REZAR AO ACORDAR (${executionDate}):`, {
+      eventId: event.id,
+      executionsCount: event.executions?.length || 0,
+      foundExecution: !!execution,
+      executionCompleted: execution?.completed,
+      isCompleted,
+      executionDate,
+      allExecutions: event.executions,
+    });
+  }
 
   // Calculate position and height based on time
   let topPosition = 0;

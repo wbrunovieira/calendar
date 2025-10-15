@@ -586,6 +586,7 @@ export default function SettingsPage() {
           onClose={() => setIsTypeModalOpen(false)}
           onSave={handleCreateType}
           calendars={calendars}
+          categories={Object.values(categoriesByCalendar).flat()}
         />
 
         <CreateCategoryTypeModal
@@ -593,6 +594,7 @@ export default function SettingsPage() {
           onClose={() => setEditingType(null)}
           onSave={handleEditType}
           calendars={calendars}
+          categories={Object.values(categoriesByCalendar).flat()}
           initialData={editingType || undefined}
         />
       </div>
