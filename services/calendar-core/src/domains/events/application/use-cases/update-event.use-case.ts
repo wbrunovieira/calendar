@@ -301,10 +301,19 @@ export class UpdateEventUseCase {
             });
             updateData.startDate = newStartDate;
           } else if (currentRule.freq === 'WEEKLY') {
-            // Para eventos WEEKLY, NÃO atualizar startDate (para preservar ocorrências anteriores)
-            // Apenas atualizar o dia da semana no RRULE
+            // Para eventos WEEKLY, atualizar o startDate E o dia da semana no RRULE se necessário
             const newDayOfWeek = newStartDate.getDay();
             const originalDayOfWeek = originalOccurrenceDate.getDay();
+
+            // Sempre atualizar startDate quando editando "all"
+            updateData.startDate = newStartDate;
+
+            console.log('[UpdateEventUseCase] WEEKLY event detected', {
+              newStartDate,
+              newDayOfWeek,
+              originalDayOfWeek,
+              currentByweekday: currentRule.byweekday,
+            });
 
             if (newDayOfWeek !== originalDayOfWeek && currentRule.byweekday) {
               // Substituir todos os dias antigos pelo novo dia
@@ -316,6 +325,12 @@ export class UpdateEventUseCase {
                   .sort(),
               };
               updateData.recurrenceRule = RRuleHelper.toString(newRule);
+
+              console.log('[UpdateEventUseCase] Updated RRULE for day change', {
+                oldByweekday: currentRule.byweekday,
+                newByweekday: newRule.byweekday,
+                newRRule: updateData.recurrenceRule,
+              });
             }
           } else {
             // Para MONTHLY e YEARLY, atualizar startDate também
