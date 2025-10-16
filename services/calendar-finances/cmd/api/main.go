@@ -9,7 +9,7 @@ import (
 	"github.com/brunovieira/calendar-finances/internal/application/usecases"
 	"github.com/brunovieira/calendar-finances/internal/database"
 	"github.com/brunovieira/calendar-finances/internal/handlers"
-	profileHandlers "github.com/brunovieira/calendar-finances/internal/infrastructure/http/handlers"
+	httpHandlers "github.com/brunovieira/calendar-finances/internal/infrastructure/http/handlers"
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/persistence"
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
@@ -57,7 +57,7 @@ func main() {
 	deleteProfileUC := usecases.NewDeleteProfileUseCase(profileRepo)
 
 	// Initialize Profile handlers
-	profileHandler := profileHandlers.NewProfileHandlers(
+	profileHandler := httpHandlers.NewProfileHandlers(
 		createProfileUC,
 		listProfilesUC,
 		getProfileUC,
@@ -74,12 +74,39 @@ func main() {
 	deleteBankAccountUC := usecases.NewDeleteBankAccountUseCase(bankAccountRepo)
 
 	// Initialize Bank Account handlers
-	bankAccountHandler := profileHandlers.NewBankAccountHandlers(
+	bankAccountHandler := httpHandlers.NewBankAccountHandlers(
 		createBankAccountUC,
 		listBankAccountsUC,
 		getBankAccountUC,
 		updateBankAccountUC,
 		deleteBankAccountUC,
+	)
+	// Initialize Category repository and use cases
+	categoryRepo := persistence.NewCategoryRepository(db)
+	createCategoryUC := usecases.NewCreateCategoryUseCase(profileRepo, categoryRepo)
+	listCategoriesUC := usecases.NewListCategoriesUseCase(categoryRepo)
+	updateCategoryUC := usecases.NewUpdateCategoryUseCase(categoryRepo)
+	deleteCategoryUC := usecases.NewDeleteCategoryUseCase(categoryRepo)
+	categoryHandler := httpHandlers.NewCategoryHandlers(
+		createCategoryUC,
+		listCategoriesUC,
+		updateCategoryUC,
+		deleteCategoryUC,
+	)
+
+	// Initialize Transaction repository and use cases
+	transactionRepo := persistence.NewTransactionRepository(db)
+	createTransactionUC := usecases.NewCreateTransactionUseCase(profileRepo, bankAccountRepo, categoryRepo, transactionRepo)
+	listTransactionsUC := usecases.NewListTransactionsUseCase(transactionRepo)
+	getTransactionUC := usecases.NewGetTransactionUseCase(transactionRepo)
+	updateTransactionStatusUC := usecases.NewUpdateTransactionStatusUseCase(transactionRepo)
+	deleteTransactionUC := usecases.NewDeleteTransactionUseCase(transactionRepo)
+	transactionHandler := httpHandlers.NewTransactionHandlers(
+		createTransactionUC,
+		listTransactionsUC,
+		getTransactionUC,
+		updateTransactionStatusUC,
+		deleteTransactionUC,
 	)
 
 	// API v1 routes
@@ -102,8 +129,18 @@ func main() {
 	// Accounts routes (placeholder)
 	apiRouter.HandleFunc("/accounts", handlers.NotImplemented).Methods("GET", "POST")
 
-	// Transactions routes (placeholder)
-	apiRouter.HandleFunc("/transactions", handlers.NotImplemented).Methods("GET", "POST")
+	// Category routes
+	apiRouter.HandleFunc("/categories", categoryHandler.List).Methods("GET")
+	apiRouter.HandleFunc("/categories", categoryHandler.Create).Methods("POST")
+	apiRouter.HandleFunc("/categories/{id}", categoryHandler.Update).Methods("PUT")
+	apiRouter.HandleFunc("/categories/{id}", categoryHandler.Delete).Methods("DELETE")
+
+	// Transaction routes
+	apiRouter.HandleFunc("/transactions", transactionHandler.List).Methods("GET")
+	apiRouter.HandleFunc("/transactions", transactionHandler.Create).Methods("POST")
+	apiRouter.HandleFunc("/transactions/{id}", transactionHandler.Get).Methods("GET")
+	apiRouter.HandleFunc("/transactions/{id}/status", transactionHandler.UpdateStatus).Methods("PUT")
+	apiRouter.HandleFunc("/transactions/{id}", transactionHandler.Delete).Methods("DELETE")
 
 	// CORS configuration
 	corsHandler := cors.New(cors.Options{

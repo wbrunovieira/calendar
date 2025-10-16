@@ -1,32 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { AccountType, BankAccount } from '@/types/finances';
 
-export type AccountType = 'CHECKING' | 'SAVINGS' | 'INVESTMENT' | 'CREDIT_CARD' | 'CASH' | 'OTHER';
-
-interface BankAccount {
-  id: string;
-  profileId: string;
-  name: string;
-  type: AccountType;
-  initialBalance: number;
-  currentBalance: number;
-  currency: string;
-  isActive: boolean;
-  bankName?: string;
-  bankCode?: string;
-  agency?: string;
-  accountNumber?: string;
-  accountDigit?: string;
-  color?: string;
-  icon?: string;
-  description?: string;
-  creditLimit?: number;
-  dueDay?: number;
-  closingDay?: number;
-  createdAt: string;
-  updatedAt: string;
-}
+export type { AccountType } from '@/types/finances';
 
 interface BankAccountModalProps {
   isOpen: boolean;
@@ -72,6 +49,10 @@ export default function BankAccountModal({
   });
 
   useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
     if (account) {
       setFormData({
         profileId: account.profileId,

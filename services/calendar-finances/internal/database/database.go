@@ -34,6 +34,9 @@ func RunMigrations(db *sql.DB) error {
 	log.Println("Running database migrations...")
 
 	migrations := []string{
+		// Ensure required extension
+		`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`,
+
 		// Create finance schema
 		`CREATE SCHEMA IF NOT EXISTS finance`,
 
@@ -54,8 +57,8 @@ func RunMigrations(db *sql.DB) error {
 			profile_id UUID NOT NULL REFERENCES finance.profiles(id) ON DELETE CASCADE,
 			name VARCHAR(255) NOT NULL,
 			type VARCHAR(50) NOT NULL CHECK (type IN ('CHECKING', 'SAVINGS', 'INVESTMENT', 'CREDIT_CARD', 'CASH', 'OTHER')),
-			initial_balance DECIMAL(15, 2) NOT NULL DEFAULT 0,
-			current_balance DECIMAL(15, 2) NOT NULL DEFAULT 0,
+			initial_balance NUMERIC(15, 2) NOT NULL DEFAULT 0,
+			current_balance NUMERIC(15, 2) NOT NULL DEFAULT 0,
 			currency VARCHAR(3) NOT NULL DEFAULT 'BRL',
 			is_active BOOLEAN NOT NULL DEFAULT true,
 			bank_name VARCHAR(255),
@@ -66,66 +69,84 @@ func RunMigrations(db *sql.DB) error {
 			color VARCHAR(7),
 			icon VARCHAR(50),
 			description TEXT,
-			credit_limit DECIMAL(15, 2),
+			credit_limit NUMERIC(15, 2),
 			due_day INTEGER CHECK (due_day >= 1 AND due_day <= 31),
 			closing_day INTEGER CHECK (closing_day >= 1 AND closing_day <= 31),
 			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 		)`,
 
-		// Create accounts table
-		`CREATE TABLE IF NOT EXISTS finance.accounts (
+		// Reset finance tables introduced in phase 1/2
+		`DROP TABLE IF EXISTS finance.transaction_tags`,
+		`DROP TABLE IF EXISTS finance.transaction_splits`,
+		`DROP TABLE IF EXISTS finance.transactions`,
+		`DROP TABLE IF EXISTS finance.categories`,
+
+		// Create categories table
+		`CREATE TABLE IF NOT EXISTS finance.categories (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			user_id UUID NOT NULL,
-			name VARCHAR(255) NOT NULL,
-			type VARCHAR(50) NOT NULL CHECK (type IN ('personal', 'business')),
-			bank_name VARCHAR(255),
-			account_number VARCHAR(100),
-			balance DECIMAL(15, 2) NOT NULL DEFAULT 0,
-			currency VARCHAR(3) NOT NULL DEFAULT 'BRL',
+			profile_id UUID NOT NULL REFERENCES finance.profiles(id) ON DELETE CASCADE,
+			name VARCHAR(120) NOT NULL,
+			type VARCHAR(20) NOT NULL CHECK (type IN ('INCOME', 'EXPENSE', 'TRANSFER')),
+			color VARCHAR(7),
+			icon VARCHAR(50),
+			parent_id UUID REFERENCES finance.categories(id) ON DELETE SET NULL,
 			is_active BOOLEAN NOT NULL DEFAULT true,
 			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+			updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			CONSTRAINT uq_categories_profile_name UNIQUE (profile_id, name)
 		)`,
 
 		// Create transactions table
 		`CREATE TABLE IF NOT EXISTS finance.transactions (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			account_id UUID NOT NULL REFERENCES finance.accounts(id) ON DELETE CASCADE,
-			type VARCHAR(50) NOT NULL CHECK (type IN ('income', 'expense', 'transfer')),
-			category VARCHAR(255),
-			amount DECIMAL(15, 2) NOT NULL,
+			profile_id UUID NOT NULL REFERENCES finance.profiles(id) ON DELETE CASCADE,
+			bank_account_id UUID NOT NULL REFERENCES finance.bank_accounts(id) ON DELETE CASCADE,
+			destination_account_id UUID REFERENCES finance.bank_accounts(id) ON DELETE SET NULL,
+			category_id UUID REFERENCES finance.categories(id) ON DELETE SET NULL,
+			type VARCHAR(20) NOT NULL CHECK (type IN ('INCOME', 'EXPENSE', 'TRANSFER')),
+			status VARCHAR(20) NOT NULL DEFAULT 'PLANNED' CHECK (status IN ('PLANNED', 'CONFIRMED', 'CANCELLED')),
+			amount NUMERIC(15, 2) NOT NULL CHECK (amount >= 0),
+			currency VARCHAR(3) NOT NULL DEFAULT 'BRL',
 			description TEXT,
-			transaction_date DATE NOT NULL,
-			is_recurring BOOLEAN NOT NULL DEFAULT false,
+			notes TEXT,
+			cost_center VARCHAR(120),
+			occurred_on DATE NOT NULL,
+			due_on DATE,
 			recurrence_rule TEXT,
-			tags TEXT[],
+			installment_number INTEGER,
+			installment_total INTEGER,
+			external_id VARCHAR(255),
 			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 		)`,
 
-		// Create investments table
-		`CREATE TABLE IF NOT EXISTS finance.investments (
+		// Create transaction_splits table
+		`CREATE TABLE IF NOT EXISTS finance.transaction_splits (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			account_id UUID NOT NULL REFERENCES finance.accounts(id) ON DELETE CASCADE,
-			type VARCHAR(50) NOT NULL CHECK (type IN ('stock', 'fii', 'treasury', 'cdb', 'lci', 'lca')),
-			ticker VARCHAR(20) NOT NULL,
-			quantity DECIMAL(15, 6) NOT NULL,
-			average_price DECIMAL(15, 2) NOT NULL,
-			current_price DECIMAL(15, 2),
-			purchase_date DATE NOT NULL,
-			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+			transaction_id UUID NOT NULL REFERENCES finance.transactions(id) ON DELETE CASCADE,
+			category_id UUID REFERENCES finance.categories(id) ON DELETE SET NULL,
+			amount NUMERIC(15, 2) NOT NULL CHECK (amount > 0),
+			memo TEXT,
+			created_at TIMESTAMP NOT NULL DEFAULT NOW()
 		)`,
 
-		// Create indexes
+		// Create transaction_tags table
+		`CREATE TABLE IF NOT EXISTS finance.transaction_tags (
+			transaction_id UUID NOT NULL REFERENCES finance.transactions(id) ON DELETE CASCADE,
+			tag VARCHAR(50) NOT NULL,
+			PRIMARY KEY (transaction_id, tag)
+		)`,
+
+		// Indexes
 		`CREATE INDEX IF NOT EXISTS idx_profiles_calendar_id ON finance.profiles(calendar_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_bank_accounts_profile_id ON finance.bank_accounts(profile_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_accounts_user_id ON finance.accounts(user_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_transactions_account_id ON finance.transactions(account_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_transactions_date ON finance.transactions(transaction_date)`,
-		`CREATE INDEX IF NOT EXISTS idx_investments_account_id ON finance.investments(account_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_investments_ticker ON finance.investments(ticker)`,
+		`CREATE INDEX IF NOT EXISTS idx_categories_profile_id ON finance.categories(profile_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_categories_parent_id ON finance.categories(parent_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_transactions_profile_occurred ON finance.transactions(profile_id, occurred_on)`,
+		`CREATE INDEX IF NOT EXISTS idx_transactions_bank_account ON finance.transactions(bank_account_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_transaction_splits_tx ON finance.transaction_splits(transaction_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_transaction_tags_tx ON finance.transaction_tags(transaction_id)`,
 	}
 
 	for i, migration := range migrations {
