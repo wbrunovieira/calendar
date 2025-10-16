@@ -21,7 +21,10 @@ export default function Calendar() {
   const modals = useEventModals({ onEventChange: refetch });
 
   const handleSearchResultNavigate = (event: Event) => {
-    const eventDate = new Date(event.startDate);
+    // Parse date string as local date to avoid timezone issues
+    // "2025-10-20" should be Oct 20, not Oct 19 (which happens with UTC interpretation)
+    const [year, month, day] = event.startDate.split('-').map(Number);
+    const eventDate = new Date(year, month - 1, day);
     navigateToDate(eventDate);
     setViewMode('day');
   };

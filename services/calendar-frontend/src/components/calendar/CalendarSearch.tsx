@@ -84,7 +84,11 @@ export default function CalendarSearch({ search, categories }: CalendarSearchPro
               {searchResults.map(event => {
                 const category = categories.find(c => c.id === event.categoryId);
                 const calendar = calendars.find(c => c.id === event.calendarId);
-                const eventDate = new Date(event.startDate);
+
+                // Parse date string as local date to avoid timezone issues
+                // "2025-10-20" should be Oct 20, not Oct 19 (which happens with UTC interpretation)
+                const [year, month, day] = event.startDate.split('-').map(Number);
+                const eventDate = new Date(year, month - 1, day);
                 const calendarIcon = calendar?.type === 'professional' ? '💼' : '👤';
 
                 // Format date to show day of week

@@ -10,10 +10,10 @@ Multi-container calendar application integrating Google Calendar accounts (profe
 
 ### Container Structure
 - **calendar-core** (NestJS): Main API, authentication, Google Calendar sync, Linear API integration - Runs in Docker on port 3334
-- **calendar-frontend** (Next.js 15.5): Web interface with separate calendar and financial dashboard pages - Runs locally on port 3000
-- **calendar-ai** (Python - planned): AI services using Llama, PyTorch, Langchain, CrewAI
-- **calendar-worker** (Go/Rust - planned): Heavy processing, batch jobs, ML data preparation
-- **postgres**: Primary database (PostgreSQL 15) - Port 5433
+- **calendar-frontend** (Next.js 15.5): Calendar web interface - Runs locally on port 3000
+- **calendar-finances** (Go 1.23): Financial service with Gorilla Mux - Runs in Docker on port 3335
+- **finances-frontend** (Next.js 15.5): Financial dashboard - Runs locally on port 3003
+- **postgres**: Primary database (PostgreSQL 15) - Port 5433 (host), 5432 (container)
 
 ### Architecture Decision: No Redis
 This is a personal project for a single user, so Redis was removed to reduce costs and complexity:
@@ -22,12 +22,28 @@ This is a personal project for a single user, so Redis was removed to reduce cos
 - **Sessions**: Using stateless JWT tokens or PostgreSQL session storage
 
 ### Domain-Driven Design Structure
-The calendar-core service follows DDD architecture:
-- `src/domains/[domain]/domain/entities/`: Domain entities (e.g., CalendarEvent)
-- `src/domains/[domain]/application/`: Use cases and application logic (planned)
-- `src/domains/[domain]/infrastructure/`: External integrations and repositories (planned)
+The calendar-core service follows DDD architecture with 5 implemented domains:
 
-Example domain: `src/domains/google-calendar/domain/entities/calendar-event.entity.ts`
+**Domains:**
+- `calendars/` - Calendar management (professional/personal separation)
+- `categories/` - Event categorization (legacy structure)
+- `category-types/` - Modern category type system (health, work, leisure, etc.)
+- `events/` - Main event management with recurrence support (most complex)
+- `google-calendar/` - Google Calendar API integration (partial)
+
+**Domain Structure:**
+- `src/domains/[domain]/domain/entities/` - Domain entities
+- `src/domains/[domain]/application/use-cases/` - Business logic (create, update, delete, list)
+- `src/domains/[domain]/application/dto/` - Data transfer objects
+- `src/domains/[domain]/infrastructure/controllers/` - HTTP endpoints
+- `src/domains/[domain]/infrastructure/repositories/` - Data persistence
+- `src/domains/[domain]/infrastructure/persistence/` - Prisma implementations
+
+**Events Domain Use Cases:**
+- create-event, update-event, delete-event, list-events
+- toggle-event-execution (mark as complete/incomplete)
+- get-event-executions (completion history)
+- get-events-stats (analytics by day/week/month/category)
 
 ### Key Integrations
 - Google Calendar API (OAuth2 for bruno@wbdigitalsolutions.com and wbrunovieira77@gmail.com)
@@ -37,26 +53,26 @@ Example domain: `src/domains/google-calendar/domain/entities/calendar-event.enti
 
 ### Frontend Development (Local)
 
-The frontend runs locally (not in Docker) for better performance:
+Both frontends run locally (not in Docker) for better performance:
 
+**calendar-frontend (port 3000):**
 ```bash
-# Navigate to frontend directory
 cd services/calendar-frontend
-
-# Install dependencies
 npm install
-
-# Run development server (http://localhost:3000)
-npm run dev
-
-# Build for production
-npm run build
-
-# Run linter
-npm run lint
+npm run dev        # Start dev server
+npm run build      # Build for production
+npm run lint       # Run linter
 ```
 
-**Note**: Frontend requires backend running on port 3334. Start backend with `docker-compose up -d` first.
+**finances-frontend (port 3003):**
+```bash
+cd services/finances-frontend
+npm install
+npm run dev        # Start dev server
+npm run build      # Build for production
+```
+
+**Note**: Frontends require backend services running. Start with `docker-compose up -d` first.
 
 ## Development Commands
 
@@ -115,6 +131,24 @@ docker-compose exec calendar-core npm run test:e2e
 
 **Note**: DO NOT run `npm run start:dev` manually - the container is already running with hot-reload via docker-compose.
 
+### calendar-finances (Go) Commands
+**IMPORTANT**: All Go backend commands MUST be run inside the Docker container:
+
+```bash
+# From project root, run commands in container
+docker-compose exec calendar-finances [command]
+
+# Examples:
+# Run tests
+docker-compose exec calendar-finances go test ./...
+
+# Build the application
+docker-compose exec calendar-finances go build -o bin/server cmd/server/main.go
+
+# View logs
+docker-compose logs -f calendar-finances
+```
+
 ### Database Access
 ```bash
 # Connect to PostgreSQL (from host)
@@ -122,6 +156,12 @@ psql -h localhost -p 5433 -U calendar -d calendar_db
 
 # Connect to PostgreSQL (from inside container)
 docker-compose exec postgres psql -U calendar -d calendar_db
+
+# Run Prisma commands (calendar-core)
+docker-compose exec calendar-core npx prisma migrate dev
+docker-compose exec calendar-core npx prisma generate
+docker-compose exec calendar-core npx prisma studio
+docker-compose exec calendar-core npm run prisma:seed
 ```
 
 ## Environment Configuration
@@ -140,19 +180,61 @@ Application self-manages development via Linear API:
 - Automatically updates status: pending → in_progress → done
 - Adds implementation details as comments
 
+## Database Schema (Prisma)
+
+Located at: `services/calendar-core/prisma/schema.prisma`
+
+**Core Tables:**
+- `users` - User accounts with timezone support (default: America/Sao_Paulo)
+- `calendars` - Professional/personal calendar separation
+- `events` - Main events with recurrence support (RRule format)
+- `category_types` - Modern categorization (health, work, leisure, finance, family, personal, education, social, other)
+- `categories` - Legacy category structure
+- `category_to_types` - M2M relationship between categories and types
+- `event_completions` - Event execution tracking (separate from modifications)
+- `recurrence_exceptions` - Removed dates from recurring events
+- `recurrence_overrides` - Modified instances of recurring events
+- `event_reminders` - Notification settings
+- `monthly_goals` - Target execution counts per category/month
+- `reports` - Monthly statistics and AI insights
+
+**Key Patterns:**
+- Recurrence hierarchy: Master events with derived instances using RRule
+- Separate completion tracking from event modifications
+- M2M support for flexible categorization
+- Timezone-aware date handling
+
+## API Endpoints (calendar-core)
+
+**Events API** (`/events`):
+```
+GET    /events                      # List events (filters: calendarId, categoryId, search, startDate, endDate)
+POST   /events                      # Create event
+PUT    /events/:id                  # Update event
+DELETE /events/:id                  # Delete single event
+DELETE /events/:id/recurring        # Delete recurring (scope: this/future/all)
+POST   /events/executions/toggle    # Toggle completion status
+GET    /events/:id/executions       # Get execution history
+GET    /events/stats                # Get stats (groupBy: day/week/month/category/categoryType/total)
+```
+
+**Other Domains:** Calendars, Categories, CategoryTypes have similar CRUD endpoints
+
 ## Financial Module Architecture
 
-Financial dashboard is a separate page from calendar:
-- Only recurring bills appear on calendar view
-- Dashboard handles: transaction analysis, categorization, spending insights via AI
-- Integrations: Mercado Pago API, Nubank CSV/OFX imports
+**Services:**
+- **calendar-finances** (Go): REST API with clean architecture
+  - `internal/application/usecases/` - Business logic
+  - `internal/domain/` - Domain entities (profile, bankaccount)
+  - `internal/infrastructure/http/` - HTTP handlers and routes
+  - `internal/infrastructure/persistence/` - Repository implementations
+  - `internal/database/` - PostgreSQL connection
 
-## Worker Service Responsibilities
+- **finances-frontend** (Next.js): Financial dashboard on port 3003
+  - Separate from calendar interface
+  - Transaction analysis and categorization
+  - Spending insights via AI
 
-The calendar-worker (planned) will handle:
-- Mass synchronization (Google Calendar history, CSV/ICS imports)
-- Pattern analysis and reporting
-- ML data preparation (embeddings, clustering)
-- Recurring operations (backups, nightly sync, cleanup)
-- Heavy integrations (bulk Linear exports, OCR, attachments)
-- Batch notifications (weekly summaries, daily digests, alerts)
+**Integrations:** Mercado Pago API, Nubank CSV/OFX imports
+
+**Design Decision:** Only recurring bills appear on calendar view; all financial analysis happens in dedicated dashboard
