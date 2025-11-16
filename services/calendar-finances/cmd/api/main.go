@@ -109,6 +109,14 @@ func main() {
 		deleteTransactionUC,
 	)
 
+	recurringRepo := persistence.NewRecurringTransactionRepository(db)
+	recurringService := usecases.NewRecurringTransactionsService(recurringRepo)
+	recurringHandler := httpHandlers.NewRecurringTransactionHandlers(recurringService)
+
+	budgetRepo := persistence.NewBudgetTargetRepository(db)
+	budgetService := usecases.NewBudgetTargetsService(budgetRepo, transactionRepo)
+	budgetHandler := httpHandlers.NewBudgetHandlers(budgetService)
+
 	// API v1 routes
 	apiRouter := router.PathPrefix("/api/v1").Subrouter()
 
@@ -140,6 +148,18 @@ func main() {
 	apiRouter.HandleFunc("/transactions", transactionHandler.Create).Methods("POST")
 	apiRouter.HandleFunc("/transactions/{id}", transactionHandler.Get).Methods("GET")
 	apiRouter.HandleFunc("/transactions/{id}/status", transactionHandler.UpdateStatus).Methods("PUT")
+	apiRouter.HandleFunc("/recurring-transactions", recurringHandler.List).Methods("GET")
+	apiRouter.HandleFunc("/recurring-transactions", recurringHandler.Create).Methods("POST")
+	apiRouter.HandleFunc("/recurring-transactions/{id}", recurringHandler.Update).Methods("PUT")
+	apiRouter.HandleFunc("/recurring-transactions/{id}/status", recurringHandler.UpdateStatus).Methods("PATCH")
+	apiRouter.HandleFunc("/recurring-transactions/{id}", recurringHandler.Delete).Methods("DELETE")
+
+	apiRouter.HandleFunc("/budgets/summary", budgetHandler.Summary).Methods("GET")
+	apiRouter.HandleFunc("/budgets", budgetHandler.List).Methods("GET")
+	apiRouter.HandleFunc("/budgets", budgetHandler.Create).Methods("POST")
+	apiRouter.HandleFunc("/budgets/{id}", budgetHandler.Update).Methods("PUT")
+	apiRouter.HandleFunc("/budgets/{id}", budgetHandler.Delete).Methods("DELETE")
+
 	apiRouter.HandleFunc("/transactions/{id}", transactionHandler.Delete).Methods("DELETE")
 
 	// CORS configuration

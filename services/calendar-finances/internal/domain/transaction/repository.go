@@ -19,4 +19,5 @@ type Repository interface {
 	List(filter ListFilter) ([]*Transaction, error)
 	UpdateStatus(id string, status Status, occurredOn time.Time, notes *string) error
 	Delete(id string) error
+	SumByCategories(profileID string, categoryIDs []string, from, to time.Time) (map[string]float64, error)
 }

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -371,6 +372,58 @@ func (r *TransactionRepository) Delete(id string) error {
 	return nil
 }
 
+func (r *TransactionRepository) SumByCategories(profileID string, categoryIDs []string, from, to time.Time) (map[string]float64, error) {
+	if strings.TrimSpace(profileID) == "" {
+		return nil, errors.New("profileID is required")
+	}
+
+	if from.After(to) {
+		return nil, errors.New("invalid period range")
+	}
+
+	query := `
+		SELECT category_id,
+			SUM(CASE WHEN type = 'EXPENSE' THEN amount ELSE 0 END) AS total
+		FROM finance.transactions
+		WHERE profile_id = $1
+			AND occurred_on BETWEEN $2 AND $3
+	`
+
+	args := []interface{}{profileID, from, to}
+
+	if len(categoryIDs) > 0 {
+		query += " AND category_id = ANY($4::uuid[])"
+		args = append(args, pq.Array(categoryIDs))
+	}
+
+	query += " GROUP BY category_id"
+
+	rows, err := r.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := make(map[string]float64)
+	for rows.Next() {
+		var categoryID sql.NullString
+		var total sql.NullFloat64
+
+		if err := rows.Scan(&categoryID, &total); err != nil {
+			return nil, err
+		}
+
+		key := ""
+		if categoryID.Valid {
+			key = categoryID.String
+		}
+
+		results[key] = round2(total.Float64)
+	}
+
+	return results, nil
+}
+
 func (r *TransactionRepository) attachSplitsAndTags(transactions []*transaction.Transaction) error {
 	if len(transactions) == 0 {
 		return nil
@@ -498,4 +551,8 @@ func nullableInt(value *int) interface{} {
 		return nil
 	}
 	return *value
+}
+
+func round2(value float64) float64 {
+	return math.Round(value*100) / 100
 }

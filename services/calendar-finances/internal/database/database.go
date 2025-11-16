@@ -76,10 +76,12 @@ func RunMigrations(db *sql.DB) error {
 			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 		)`,
 
-		// Reset finance tables introduced in phase 1/2
+		// Reset finance tables introduced across recent phases (dev convenience)
 		`DROP TABLE IF EXISTS finance.transaction_tags`,
 		`DROP TABLE IF EXISTS finance.transaction_splits`,
 		`DROP TABLE IF EXISTS finance.transactions`,
+		`DROP TABLE IF EXISTS finance.recurring_transactions`,
+		`DROP TABLE IF EXISTS finance.budget_targets`,
 		`DROP TABLE IF EXISTS finance.categories`,
 
 		// Create categories table
@@ -138,6 +140,39 @@ func RunMigrations(db *sql.DB) error {
 			PRIMARY KEY (transaction_id, tag)
 		)`,
 
+		// Create recurring transactions table
+		`CREATE TABLE IF NOT EXISTS finance.recurring_transactions (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			profile_id UUID NOT NULL REFERENCES finance.profiles(id) ON DELETE CASCADE,
+			bank_account_id UUID REFERENCES finance.bank_accounts(id) ON DELETE SET NULL,
+			category_id UUID REFERENCES finance.categories(id) ON DELETE SET NULL,
+			type VARCHAR(20) NOT NULL CHECK (type IN ('INCOME', 'EXPENSE', 'TRANSFER')),
+			amount NUMERIC(15, 2) NOT NULL CHECK (amount >= 0),
+			currency VARCHAR(3) NOT NULL DEFAULT 'BRL',
+			description TEXT,
+			recurrence_rule TEXT NOT NULL,
+			start_on DATE NOT NULL,
+			end_on DATE,
+			next_occurrence DATE NOT NULL,
+			status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'PAUSED', 'CANCELLED')),
+			notes TEXT,
+			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+		)`,
+
+		// Create budget targets table
+		`CREATE TABLE IF NOT EXISTS finance.budget_targets (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			profile_id UUID NOT NULL REFERENCES finance.profiles(id) ON DELETE CASCADE,
+			category_id UUID NOT NULL REFERENCES finance.categories(id) ON DELETE CASCADE,
+			period_start DATE NOT NULL,
+			amount NUMERIC(15, 2) NOT NULL CHECK (amount >= 0),
+			notes TEXT,
+			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			CONSTRAINT uq_budget_targets UNIQUE (profile_id, category_id, period_start)
+		)`,
+
 		// Indexes
 		`CREATE INDEX IF NOT EXISTS idx_profiles_calendar_id ON finance.profiles(calendar_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_bank_accounts_profile_id ON finance.bank_accounts(profile_id)`,
@@ -147,6 +182,9 @@ func RunMigrations(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_transactions_bank_account ON finance.transactions(bank_account_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_transaction_splits_tx ON finance.transaction_splits(transaction_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_transaction_tags_tx ON finance.transaction_tags(transaction_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_recurring_transactions_profile ON finance.recurring_transactions(profile_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_recurring_transactions_next ON finance.recurring_transactions(next_occurrence)`,
+		`CREATE INDEX IF NOT EXISTS idx_budget_targets_profile_period ON finance.budget_targets(profile_id, period_start)`,
 	}
 
 	for i, migration := range migrations {

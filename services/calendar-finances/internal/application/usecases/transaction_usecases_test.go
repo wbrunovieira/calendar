@@ -97,6 +97,23 @@ func (f *fakeTransactionRepo) UpdateStatus(string, transaction.Status, time.Time
 }
 func (f *fakeTransactionRepo) Delete(string) error { return nil }
 
+func (f *fakeTransactionRepo) SumByCategories(profileID string, categoryIDs []string, from, to time.Time) (map[string]float64, error) {
+	result := make(map[string]float64)
+	for _, tx := range f.created {
+		if tx.ProfileID != profileID {
+			continue
+		}
+		if tx.CategoryID == nil {
+			continue
+		}
+		if tx.Type != transaction.TypeExpense {
+			continue
+		}
+		result[*tx.CategoryID] += tx.Amount
+	}
+	return result, nil
+}
+
 func TestCreateTransactionUseCaseExpense(t *testing.T) {
 	profileID := "profile-1"
 	accountID := "account-1"

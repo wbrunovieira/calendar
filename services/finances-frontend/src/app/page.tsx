@@ -7,6 +7,8 @@ import BankAccountModal from '@/components/finances/BankAccountModal';
 import TransactionForm from '@/components/finances/TransactionForm';
 import TransactionsTable from '@/components/finances/TransactionsTable';
 import CashflowSummary from '@/components/finances/CashflowSummary';
+import QuickExpense from '@/components/finances/QuickExpense';
+import SafeToSpend from '@/components/finances/SafeToSpend';
 import type {
   Profile,
   BankAccount,
@@ -14,6 +16,7 @@ import type {
   Transaction,
   TransactionFilters,
   TransactionFormData,
+  BudgetSummaryItem,
 } from '@/types/finances';
 
 type TabType = 'dashboard' | 'settings';
@@ -27,7 +30,7 @@ interface Calendar {
 const API_BASE = 'http://localhost:3335/api/v1';
 const defaultFilters: TransactionFilters = {
   bankAccountId: null,
-  type: 'ALL',
+  type: 'EXPENSE',
   status: 'ALL',
   from: undefined,
   to: undefined,
@@ -40,6 +43,7 @@ export default function FinancesPage() {
   const [calendars, setCalendars] = useState<Calendar[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [budgetSummary, setBudgetSummary] = useState<BudgetSummaryItem[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [transactionsLoading, setTransactionsLoading] = useState(false);
   const [transactionsError, setTransactionsError] = useState<'NOT_IMPLEMENTED' | 'GENERIC' | null>(null);
@@ -125,6 +129,22 @@ export default function FinancesPage() {
     }
   }, []);
 
+  const fetchBudgetSummary = useCallback(async (profileId: string) => {
+    try {
+      const month = new Date().toISOString().slice(0, 7);
+      const response = await fetch(`${API_BASE}/budgets/summary?profileId=${profileId}&period=${month}`);
+      if (!response.ok) {
+        setBudgetSummary([]);
+        return;
+      }
+      const data = await response.json();
+      setBudgetSummary(data.data || []);
+    } catch (error) {
+      console.warn('Erro ao carregar summary de orçamentos:', error);
+      setBudgetSummary([]);
+    }
+  }, []);
+
   const fetchTransactions = useCallback(async (profileId: string, filters: TransactionFilters) => {
     try {
       setTransactionsLoading(true);
@@ -169,7 +189,8 @@ export default function FinancesPage() {
     setTransactionFilters(baseFilters);
     fetchCategories(selectedProfileId);
     fetchTransactions(selectedProfileId, baseFilters);
-  }, [selectedProfileId, fetchCategories, fetchTransactions]);
+    fetchBudgetSummary(selectedProfileId);
+  }, [selectedProfileId, fetchCategories, fetchTransactions, fetchBudgetSummary]);
 
   const handleCreateProfile = async (
     profileData: Omit<Profile, 'id' | 'isActive' | 'createdAt' | 'updatedAt'>,
@@ -451,10 +472,8 @@ export default function FinancesPage() {
       <div className="py-10 space-y-8">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-white">Gestão financeira</h1>
-            <p className="text-white/60 text-sm">
-              Controle centralizado de perfis, contas bancárias e lançamentos.
-            </p>
+            <h1 className="text-3xl font-bold text-white">Despesas e planejamento</h1>
+            <p className="text-white/60 text-sm">Registre gastos diários, semanais e mensais; programe fixas e controle orçamentos por categoria.</p>
           </div>
           <div className="flex flex-wrap gap-3">
             <button
@@ -541,10 +560,68 @@ export default function FinancesPage() {
 
             {selectedProfile && (
               <>
+                <SafeToSpend summary={budgetSummary} />
                 <CashflowSummary transactions={transactions} accounts={filteredAccounts} />
 
                 <div className="grid gap-6 lg:grid-cols-3">
                   <div className="lg:col-span-2 space-y-6">
+                    <QuickExpense
+                      accounts={bankAccounts}
+                      categories={categories}
+                      defaultProfileId={selectedProfileId ?? ''}
+                      profiles={profiles.map((p) => ({ id: p.id, name: p.name }))}
+                      onSave={handleCreateTransaction}
+                    />
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            const today = new Date();
+                            const iso = today.toISOString().slice(0, 10);
+                            const next = { ...transactionFilters, from: iso, to: iso, type: 'EXPENSE' };
+                            handleFilterChange(next);
+                          }}
+                          className="px-3 py-1.5 rounded-lg text-xs border border-white/20 text-white/80 hover:bg-white/10"
+                        >
+                          Hoje
+                        </button>
+                        <button
+                          onClick={() => {
+                            const now = new Date();
+                            const day = (now.getDay() + 6) % 7; // 0 = Monday
+                            const start = new Date(now);
+                            start.setDate(now.getDate() - day);
+                            const end = new Date(start);
+                            end.setDate(start.getDate() + 6);
+                            const from = start.toISOString().slice(0, 10);
+                            const to = end.toISOString().slice(0, 10);
+                            const next = { ...transactionFilters, from, to, type: 'EXPENSE' };
+                            handleFilterChange(next);
+                          }}
+                          className="px-3 py-1.5 rounded-lg text-xs border border-white/20 text-white/80 hover:bg-white/10"
+                        >
+                          Semana
+                        </button>
+                        <button
+                          onClick={() => {
+                            const now = new Date();
+                            const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+                            const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
+                            const from = start.toISOString().slice(0, 10);
+                            const to = end.toISOString().slice(0, 10);
+                            const next = { ...transactionFilters, from, to, type: 'EXPENSE' };
+                            handleFilterChange(next);
+                          }}
+                          className="px-3 py-1.5 rounded-lg text-xs border border-white/20 text-white/80 hover:bg-white/10"
+                        >
+                          Mês
+                        </button>
+                      </div>
+                      <div className="flex gap-2">
+                        <a href="/recurring" className="px-3 py-1.5 rounded-lg text-xs border border-white/20 text-white/80 hover:bg-white/10">Fixas</a>
+                        <a href="/budgets" className="px-3 py-1.5 rounded-lg text-xs border border-white/20 text-white/80 hover:bg-white/10">Orçamentos</a>
+                      </div>
+                    </div>
                     {transactionsError === 'NOT_IMPLEMENTED' && (
                       <div className="bg-amber-500/20 border border-amber-400/40 text-amber-100 rounded-2xl p-4">
                         O backend de lançamentos (GET /transactions) ainda não está disponível.
@@ -786,12 +863,12 @@ export default function FinancesPage() {
         isOpen={isTransactionModalOpen}
         onClose={() => setIsTransactionModalOpen(false)}
         onSave={handleCreateTransaction}
-        accounts={filteredAccounts}
+        accounts={bankAccounts}
         categories={categories}
         defaultProfileId={selectedProfileId ?? ''}
         loading={savingTransaction}
+        profiles={profiles.map((p) => ({ id: p.id, name: p.name }))}
       />
     </AppLayout>
   );
 }
-

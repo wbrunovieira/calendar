@@ -17,6 +17,7 @@ interface TransactionFormProps {
   categories: Category[];
   defaultProfileId: string;
   loading?: boolean;
+  profiles: { id: string; name: string }[];
 }
 
 const transactionTypes: { value: TransactionType; label: string; icon: string; description: string }[] = [
@@ -59,12 +60,18 @@ export default function TransactionForm({
   categories,
   defaultProfileId,
   loading = false,
+  profiles,
 }: TransactionFormProps) {
+  const API_BASE = 'http://localhost:3335/api/v1';
   const [formData, setFormData] = useState<TransactionFormData>(() => defaultForm(defaultProfileId));
   const [tagsInput, setTagsInput] = useState('');
+  const [selectedProfileId, setSelectedProfileId] = useState<string>(defaultProfileId);
+  const [localCategories, setLocalCategories] = useState<Category[]>(categories);
 
   useEffect(() => {
     if (isOpen) {
+      setSelectedProfileId(defaultProfileId);
+      setLocalCategories(categories);
       const initialAccount = accounts.find((account) => account.profileId === defaultProfileId)?.id || '';
       setFormData({
         ...defaultForm(defaultProfileId),
@@ -72,19 +79,48 @@ export default function TransactionForm({
       });
       setTagsInput('');
     }
-  }, [isOpen, defaultProfileId, accounts]);
+  }, [isOpen, defaultProfileId, accounts, categories]);
 
   const availableCategories = useMemo(() => {
     const expectedType = typeToCategory[formData.type];
-    return categories.filter((category) => category.type === expectedType);
-  }, [categories, formData.type]);
+    return localCategories.filter((category) => category.type === expectedType);
+  }, [localCategories, formData.type]);
 
   const destinationOptions = useMemo(() => {
     if (formData.type !== 'TRANSFER') return [];
     return accounts.filter(
-      (account) => account.profileId === defaultProfileId && account.id !== formData.bankAccountId,
+      (account) => account.profileId === selectedProfileId && account.id !== formData.bankAccountId,
     );
-  }, [accounts, defaultProfileId, formData.type, formData.bankAccountId]);
+  }, [accounts, selectedProfileId, formData.type, formData.bankAccountId]);
+
+  const accountsForProfile = useMemo(
+    () => accounts.filter((a) => a.profileId === selectedProfileId),
+    [accounts, selectedProfileId],
+  );
+
+  const onChangeProfile = async (profileId: string) => {
+    setSelectedProfileId(profileId);
+    const newInitialAccount = accounts.find((a) => a.profileId === profileId)?.id || '';
+    setFormData((prev) => ({
+      ...prev,
+      profileId,
+      bankAccountId: newInitialAccount,
+      destinationAccountId: undefined,
+      categoryId: undefined,
+    }));
+    // fetch categories for selected profile
+    try {
+      const res = await fetch(`${API_BASE}/categories?profileId=${profileId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setLocalCategories(data.data || []);
+      } else {
+        setLocalCategories([]);
+      }
+    } catch {
+      setLocalCategories([]);
+    }
+  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -133,6 +169,18 @@ export default function TransactionForm({
           <div className="grid gap-6 lg:grid-cols-2">
             <div className="space-y-4">
               <div>
+                <label className="block text-white/80 text-sm font-semibold mb-2">Perfil</label>
+                <select
+                  value={selectedProfileId}
+                  onChange={(e) => onChangeProfile(e.target.value)}
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  {profiles.map((p) => (
+                    <option key={p.id} value={p.id} className="bg-slate-900">{p.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
                 <label className="block text-white/80 text-sm font-semibold mb-2">Tipo de lançamento</label>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   {transactionTypes.map((option) => (
@@ -178,9 +226,7 @@ export default function TransactionForm({
                     className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   >
                     <option value="">Selecione uma conta</option>
-                    {accounts
-                      .filter((account) => account.profileId === defaultProfileId)
-                      .map((account) => (
+                    {accountsForProfile.map((account) => (
                         <option key={account.id} value={account.id} className="bg-slate-900">
                           {account.name}
                         </option>

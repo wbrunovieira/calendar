@@ -13,4 +13,6 @@ var (
 	ErrInvalidTransactionType = errors.New("invalid transaction type")
 	ErrInsufficientBalance    = errors.New("insufficient balance to complete transaction")
 	ErrCreditLimitExceeded    = errors.New("credit limit exceeded for this transaction")
+	ErrRecurringNotFound      = errors.New("recurring transaction not found")
+	ErrBudgetTargetNotFound   = errors.New("budget target not found")
 )

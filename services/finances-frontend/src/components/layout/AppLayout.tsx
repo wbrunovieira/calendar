@@ -14,10 +14,10 @@ export default function AppLayout({ children }: AppLayoutProps) {
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="text-3xl">💰</div>
+              <div className="text-3xl">💸</div>
               <div>
                 <h1 className="text-2xl font-bold text-white">Finanças</h1>
-                <p className="text-white/60 text-sm">Gestão Financeira Completa</p>
+                <p className="text-white/60 text-sm">Custos diários, semanais e mensais</p>
               </div>
             </div>
             <a
@@ -30,6 +30,12 @@ export default function AppLayout({ children }: AppLayoutProps) {
               <span className="text-sm font-semibold">Voltar ao Calendar</span>
             </a>
           </div>
+          <nav className="mt-4 flex flex-wrap gap-2">
+            <a href="/" className="px-3 py-1.5 text-sm rounded-lg border border-white/15 text-white/80 hover:bg-white/10">Lançamentos</a>
+            <a href="/recurring" className="px-3 py-1.5 text-sm rounded-lg border border-white/15 text-white/80 hover:bg-white/10">Fixas</a>
+            <a href="/budgets" className="px-3 py-1.5 text-sm rounded-lg border border-white/15 text-white/80 hover:bg-white/10">Orçamentos</a>
+            <a href="/plan" className="px-3 py-1.5 text-sm rounded-lg border border-white/15 text-white/80 hover:bg-white/10">Planejamento</a>
+          </nav>
         </div>
       </header>
 

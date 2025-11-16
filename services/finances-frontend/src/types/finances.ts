@@ -120,3 +120,64 @@ export interface TransactionFilters {
   from?: string;
   to?: string;
 }
+
+export type RecurringStatus = 'ACTIVE' | 'PAUSED' | 'CANCELLED';
+
+export interface RecurringTransaction {
+  id: string;
+  profileId: string;
+  bankAccountId?: string;
+  categoryId?: string;
+  type: TransactionType;
+  amount: number;
+  currency: string;
+  description: string;
+  recurrenceRule: string;
+  startOn: string;
+  endOn?: string;
+  nextOccurrence: string;
+  status: RecurringStatus;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RecurringTransactionForm {
+  profileId: string;
+  bankAccountId?: string;
+  categoryId?: string;
+  type: TransactionType;
+  amount: number;
+  currency: string;
+  description: string;
+  frequency: 'DAILY' | 'WEEKLY' | 'MONTHLY';
+  startOn: string;
+  endOn?: string;
+  nextOccurrence: string;
+  notes?: string;
+}
+
+export interface BudgetTarget {
+  id: string;
+  profileId: string;
+  categoryId: string;
+  periodStart: string;
+  amount: number;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BudgetTargetForm {
+  profileId: string;
+  categoryId: string;
+  period: string; // YYYY-MM
+  amount: number;
+  notes?: string;
+}
+
+export interface BudgetSummaryItem {
+  target: BudgetTarget;
+  spent: number;
+  remaining: number;
+}
