@@ -683,7 +683,7 @@ export default function FinancesPage() {
 
             {selectedProfile && (
               <>
-                <SafeToSpend summary={budgetSummary} />
+                <SafeToSpend accounts={filteredAccounts} transactions={transactions} />
                 <CashflowSummary transactions={transactions} accounts={filteredAccounts} currentInvoices={currentInvoices} />
 
                 <div className="grid gap-6 lg:grid-cols-3">
