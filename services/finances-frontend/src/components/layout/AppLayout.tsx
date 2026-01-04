@@ -2,12 +2,23 @@
 
 import { ReactNode } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 interface AppLayoutProps {
   children: ReactNode;
 }
 
+const navItems = [
+  { href: '/', label: 'Lancamentos' },
+  { href: '/categories', label: 'Categorias' },
+  { href: '/recurring', label: 'Fixas' },
+  { href: '/budgets', label: 'Orcamentos' },
+  { href: '/plan', label: 'Planejamento' },
+];
+
 export default function AppLayout({ children }: AppLayoutProps) {
+  const pathname = usePathname();
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-900 via-teal-900 to-cyan-900">
       {/* Header */}
@@ -32,11 +43,22 @@ export default function AppLayout({ children }: AppLayoutProps) {
             </a>
           </div>
           <nav className="mt-4 flex flex-wrap gap-2">
-            <Link href="/" className="px-3 py-1.5 text-sm rounded-lg border border-white/15 text-white/80 hover:bg-white/10">Lancamentos</Link>
-            <Link href="/categories" className="px-3 py-1.5 text-sm rounded-lg border border-white/15 text-white/80 hover:bg-white/10">Categorias</Link>
-            <Link href="/recurring" className="px-3 py-1.5 text-sm rounded-lg border border-white/15 text-white/80 hover:bg-white/10">Fixas</Link>
-            <Link href="/budgets" className="px-3 py-1.5 text-sm rounded-lg border border-white/15 text-white/80 hover:bg-white/10">Orcamentos</Link>
-            <Link href="/plan" className="px-3 py-1.5 text-sm rounded-lg border border-white/15 text-white/80 hover:bg-white/10">Planejamento</Link>
+            {navItems.map((item) => {
+              const isActive = pathname === item.href;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                    isActive
+                      ? 'bg-emerald-500/30 border-emerald-400/50 text-emerald-200 font-medium'
+                      : 'border-white/15 text-white/80 hover:bg-white/10'
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
           </nav>
         </div>
       </header>

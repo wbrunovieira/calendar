@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
-import type { Profile, BankAccount, RecurringTransaction, BudgetSummaryItem, Category } from '@/types/finances';
+import type { Profile, BankAccount, RecurringTransaction, BudgetSummaryItem, Category, Transaction } from '@/types/finances';
 
 const API_BASE = 'http://localhost:3335/api/v1';
 
@@ -26,6 +26,7 @@ export default function PlanPage() {
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [recurrings, setRecurrings] = useState<RecurringTransaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [summary, setSummary] = useState<BudgetSummaryItem[]>([]);
   const [range, setRange] = useState<Range>('month');
   const [loading, setLoading] = useState(false);
@@ -67,24 +68,30 @@ export default function PlanPage() {
       setLoading(true);
       setError(null);
       const month = new Date().toISOString().slice(0, 7);
-      const [accRes, recRes, sumRes, catRes] = await Promise.all([
+      const fromDate = startDate.toISOString().slice(0, 10);
+      const toDate = endDate.toISOString().slice(0, 10);
+      const [accRes, recRes, sumRes, catRes, txRes] = await Promise.all([
         fetch(`${API_BASE}/bank-accounts`),
         fetch(`${API_BASE}/recurring-transactions?profileId=${selectedProfileId}`),
         fetch(`${API_BASE}/budgets/summary?profileId=${selectedProfileId}&period=${month}`),
         fetch(`${API_BASE}/categories?profileId=${selectedProfileId}`),
+        fetch(`${API_BASE}/transactions?profileId=${selectedProfileId}&from=${fromDate}&to=${toDate}`),
       ]);
       if (!accRes.ok) throw new Error(`accounts ${accRes.status}`);
       if (!recRes.ok) throw new Error(`recurring ${recRes.status}`);
       if (!sumRes.ok) throw new Error(`summary ${sumRes.status}`);
       if (!catRes.ok) throw new Error(`categories ${catRes.status}`);
+      if (!txRes.ok) throw new Error(`transactions ${txRes.status}`);
       const accData = await accRes.json();
       const recData = await recRes.json();
       const sumData = await sumRes.json();
       const catData = await catRes.json();
+      const txData = await txRes.json();
       setAccounts(accData.data || []);
       setRecurrings(recData.data || []);
       setSummary(sumData.data || []);
       setCategories(catData.data || []);
+      setTransactions(txData.data || []);
     } catch (e) {
       console.warn('Erro ao carregar dados do planejamento', e);
       setError('Nao foi possivel carregar dados do planejamento.');
@@ -92,10 +99,11 @@ export default function PlanPage() {
       setRecurrings([]);
       setSummary([]);
       setCategories([]);
+      setTransactions([]);
     } finally {
       setLoading(false);
     }
-  }, [selectedProfileId]);
+  }, [selectedProfileId, startDate, endDate]);
 
   useEffect(() => {
     loadData();
@@ -247,6 +255,20 @@ export default function PlanPage() {
     return cat?.name || null;
   };
 
+  // Set of already confirmed items (description + date)
+  const confirmedSet = useMemo(() => {
+    const set = new Set<string>();
+    transactions.forEach((tx) => {
+      const date = tx.occurredOn.slice(0, 10);
+      set.add(`${tx.description}|${date}`);
+    });
+    return set;
+  }, [transactions]);
+
+  const isConfirmed = (item: ForecastItem) => {
+    return confirmedSet.has(`${item.description}|${item.date}`);
+  };
+
   return (
     <AppLayout>
       <div className="py-6 space-y-6">
@@ -338,18 +360,24 @@ export default function PlanPage() {
                         <div className={`text-sm font-semibold ${it.type === 'EXPENSE' ? 'text-rose-300' : 'text-emerald-300'}`}>
                           {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(it.amount * (it.type === 'EXPENSE' ? -1 : 1))}
                         </div>
-                        <button
-                          onClick={() => handleConfirm(it)}
-                          disabled={confirming === it.id}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                            confirming === it.id
-                              ? 'bg-white/10 text-white/40'
-                              : 'bg-emerald-500/80 hover:bg-emerald-500 text-white'
-                          }`}
-                          title="Confirmar e criar lancamento"
-                        >
-                          {confirming === it.id ? '...' : 'Confirmar'}
-                        </button>
+                        {isConfirmed(it) ? (
+                          <span className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/10 text-white/50">
+                            Confirmado
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => handleConfirm(it)}
+                            disabled={confirming === it.id}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                              confirming === it.id
+                                ? 'bg-white/10 text-white/40'
+                                : 'bg-emerald-500/80 hover:bg-emerald-500 text-white'
+                            }`}
+                            title="Confirmar e criar lancamento"
+                          >
+                            {confirming === it.id ? '...' : 'Confirmar'}
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
