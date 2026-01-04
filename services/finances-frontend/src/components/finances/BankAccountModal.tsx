@@ -8,7 +8,7 @@ export type { AccountType } from '@/types/finances';
 interface BankAccountModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (account: Omit<BankAccount, 'id' | 'currentBalance' | 'isActive' | 'createdAt' | 'updatedAt'>) => void;
+  onSave: (account: Omit<BankAccount, 'id' | 'isActive' | 'createdAt' | 'updatedAt'>) => void;
   account: BankAccount | null;
   profiles: Array<{ id: string; name: string }>;
 }
@@ -34,6 +34,7 @@ export default function BankAccountModal({
     name: '',
     type: 'CHECKING' as AccountType,
     initialBalance: 0,
+    currentBalance: 0,
     currency: 'BRL',
     bankName: '',
     bankCode: '',
@@ -59,6 +60,7 @@ export default function BankAccountModal({
         name: account.name,
         type: account.type,
         initialBalance: account.initialBalance,
+        currentBalance: account.currentBalance,
         currency: account.currency,
         bankName: account.bankName || '',
         bankCode: account.bankCode || '',
@@ -78,6 +80,7 @@ export default function BankAccountModal({
         name: '',
         type: 'CHECKING',
         initialBalance: 0,
+        currentBalance: 0,
         currency: 'BRL',
         bankName: '',
         bankCode: '',
@@ -174,18 +177,36 @@ export default function BankAccountModal({
             />
           </div>
 
-          {/* Initial Balance */}
-          <div>
-            <label className="block text-white/90 font-semibold mb-2">Saldo Inicial</label>
-            <input
-              type="number"
-              step="0.01"
-              value={formData.initialBalance}
-              onChange={(e) => setFormData({ ...formData, initialBalance: parseFloat(e.target.value) || 0 })}
-              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              required
-            />
-          </div>
+          {/* Balance Fields */}
+          {account ? (
+            <div>
+              <label className="block text-white/90 font-semibold mb-2">Saldo Atual</label>
+              <input
+                type="number"
+                step="0.01"
+                value={formData.currentBalance}
+                onChange={(e) => setFormData({ ...formData, currentBalance: parseFloat(e.target.value) || 0 })}
+                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                required
+              />
+              <p className="text-white/50 text-sm mt-1">Saldo inicial: R$ {formData.initialBalance.toFixed(2)}</p>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-white/90 font-semibold mb-2">Saldo Inicial</label>
+              <input
+                type="number"
+                step="0.01"
+                value={formData.initialBalance}
+                onChange={(e) => {
+                  const value = parseFloat(e.target.value) || 0;
+                  setFormData({ ...formData, initialBalance: value, currentBalance: value });
+                }}
+                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                required
+              />
+            </div>
+          )}
 
           {/* Bank Details */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

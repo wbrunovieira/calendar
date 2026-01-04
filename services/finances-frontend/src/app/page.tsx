@@ -277,7 +277,7 @@ export default function FinancesPage() {
   };
 
   const handleCreateBankAccount = async (
-    accountData: Omit<BankAccount, 'id' | 'currentBalance' | 'isActive' | 'createdAt' | 'updatedAt'>,
+    accountData: Omit<BankAccount, 'id' | 'isActive' | 'createdAt' | 'updatedAt'>,
   ) => {
     try {
       const response = await fetch(`${API_BASE}/bank-accounts`, {
@@ -301,7 +301,7 @@ export default function FinancesPage() {
   };
 
   const handleUpdateBankAccount = async (
-    accountData: Omit<BankAccount, 'id' | 'currentBalance' | 'isActive' | 'createdAt' | 'updatedAt'>,
+    accountData: Omit<BankAccount, 'id' | 'isActive' | 'createdAt' | 'updatedAt'>,
   ) => {
     if (!editingBankAccount) return;
 
@@ -351,7 +351,7 @@ export default function FinancesPage() {
   };
 
   const handleSaveBankAccount = (
-    accountData: Omit<BankAccount, 'id' | 'currentBalance' | 'isActive' | 'createdAt' | 'updatedAt'>,
+    accountData: Omit<BankAccount, 'id' | 'isActive' | 'createdAt' | 'updatedAt'>,
   ) => {
     if (editingBankAccount) {
       handleUpdateBankAccount(accountData);
