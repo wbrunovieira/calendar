@@ -211,35 +211,56 @@ export default function PlanPage() {
     if (!selectedProfileId) return;
     setConfirming(item.id);
     try {
-      const payload = {
-        profileId: selectedProfileId,
-        bankAccountId: item.bankAccountId,
-        categoryId: item.categoryId,
-        type: item.type,
-        amount: item.amount,
-        currency: 'BRL',
-        description: item.description,
-        occurredOn: item.date,
-        status: 'CONFIRMED',
-      };
-
-      const cleanPayload = Object.fromEntries(
-        Object.entries(payload).filter(([, v]) => v !== undefined && v !== null)
+      // Check if there's an existing PLANNED transaction for this item
+      const existingTx = transactions.find(
+        (tx) =>
+          tx.description === item.description &&
+          tx.occurredOn.slice(0, 10) === item.date &&
+          tx.status === 'PLANNED'
       );
 
-      const res = await fetch(`${API_BASE}/transactions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cleanPayload),
-      });
+      if (existingTx) {
+        // Update existing transaction status to CONFIRMED
+        const res = await fetch(`${API_BASE}/transactions/${existingTx.id}/status`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'CONFIRMED' }),
+        });
 
-      if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(errorText || `status ${res.status}`);
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(errorText || `status ${res.status}`);
+        }
+      } else {
+        // Create new confirmed transaction
+        const payload = {
+          profileId: selectedProfileId,
+          bankAccountId: item.bankAccountId,
+          categoryId: item.categoryId,
+          type: item.type,
+          amount: item.amount,
+          currency: 'BRL',
+          description: item.description,
+          occurredOn: item.date,
+          status: 'CONFIRMED',
+        };
+
+        const cleanPayload = Object.fromEntries(
+          Object.entries(payload).filter(([, v]) => v !== undefined && v !== null)
+        );
+
+        const res = await fetch(`${API_BASE}/transactions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cleanPayload),
+        });
+
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(errorText || `status ${res.status}`);
+        }
       }
 
-      alert('Lancamento confirmado com sucesso!');
-      // Optionally reload data
       await loadData();
     } catch (e) {
       console.warn('Erro ao confirmar', e);
@@ -255,13 +276,15 @@ export default function PlanPage() {
     return cat?.name || null;
   };
 
-  // Set of already confirmed items (description + date)
+  // Set of already confirmed items (description + date) - only CONFIRMED status
   const confirmedSet = useMemo(() => {
     const set = new Set<string>();
-    transactions.forEach((tx) => {
-      const date = tx.occurredOn.slice(0, 10);
-      set.add(`${tx.description}|${date}`);
-    });
+    transactions
+      .filter((tx) => tx.status === 'CONFIRMED')
+      .forEach((tx) => {
+        const date = tx.occurredOn.slice(0, 10);
+        set.add(`${tx.description}|${date}`);
+      });
     return set;
   }, [transactions]);
 
