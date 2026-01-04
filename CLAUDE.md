@@ -6,6 +6,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Multi-container calendar application integrating Google Calendar accounts (professional and personal), Linear task management, and financial tracking with AI-powered agents.
 
+## Quick Start
+
+```bash
+# 1. Start backend services
+docker-compose up -d
+
+# 2. Start calendar frontend (new terminal)
+cd services/calendar-frontend && npm install && npm run dev
+
+# 3. Start finances frontend (new terminal, optional)
+cd services/finances-frontend && npm install && npm run dev
+```
+
 ## Architecture
 
 ### Container Structure
@@ -595,3 +608,8 @@ Tests run automatically on:
 4. **Isolation:** Each test should be independent and not rely on others
 5. **Mock external APIs:** Google Calendar, Linear, Mercado Pago should be mocked in tests
 6. **Timezone aware:** Tests use `America/Sao_Paulo` timezone by default
+
+### Vitest Configuration
+
+- `vitest.config.ts` - Unit test configuration with path aliases
+- `vitest.config.e2e.ts` - E2E test configuration with setup file

@@ -18,6 +18,8 @@ async function bootstrap() {
       'http://localhost:3008',
       'http://localhost:3009',
       'http://localhost:3010',
+      'http://192.168.0.17:3000',
+      'http://192.168.0.17:3003',
     ],
     credentials: true,
   });

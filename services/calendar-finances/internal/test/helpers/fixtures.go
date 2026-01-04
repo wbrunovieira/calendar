@@ -18,65 +18,72 @@ func FixedTime() time.Time {
 // Profile Fixtures
 
 func CreateTestProfile(name string) *profile.Profile {
-	p, _ := profile.NewProfile(profile.CreateParams{
-		Name:         name,
-		Type:         profile.TypePersonal,
-		CalendarUser: stringPtr("test-calendar-user"),
-	})
+	p, _ := profile.NewProfile(
+		uuid.New().String(), // calendarID
+		name,
+		profile.ProfileTypePersonal,
+	)
 	return p
 }
 
 func CreateBusinessProfile(name string) *profile.Profile {
-	p, _ := profile.NewProfile(profile.CreateParams{
-		Name: name,
-		Type: profile.TypeBusiness,
-	})
+	p, _ := profile.NewProfile(
+		uuid.New().String(), // calendarID
+		name,
+		profile.ProfileTypeBusiness,
+	)
 	return p
 }
 
 // BankAccount Fixtures
 
 func CreateTestBankAccount(profileID string) *bankaccount.BankAccount {
-	acc, _ := bankaccount.NewBankAccount(bankaccount.CreateParams{
-		ProfileID:      profileID,
-		Name:           "Test Account",
-		Type:           bankaccount.TypeChecking,
-		InitialBalance: 1000.00,
-	})
+	acc, _ := bankaccount.NewBankAccount(
+		profileID,
+		"Test Account",
+		bankaccount.AccountTypeChecking,
+		1000.00,
+		"BRL",
+	)
 	return acc
 }
 
 func CreateCreditCardAccount(profileID string) *bankaccount.BankAccount {
+	acc, _ := bankaccount.NewBankAccount(
+		profileID,
+		"Credit Card",
+		bankaccount.AccountTypeCreditCard,
+		0,
+		"BRL",
+	)
+	// Set optional fields
 	limit := 5000.00
 	dueDay := 15
-	acc, _ := bankaccount.NewBankAccount(bankaccount.CreateParams{
-		ProfileID:     profileID,
-		Name:          "Credit Card",
-		Type:          bankaccount.TypeCreditCard,
-		CreditLimit:   &limit,
-		BillingDueDay: &dueDay,
-	})
+	acc.CreditLimit = &limit
+	acc.DueDay = &dueDay
 	return acc
 }
 
 func CreateSavingsAccount(profileID string, balance float64) *bankaccount.BankAccount {
-	acc, _ := bankaccount.NewBankAccount(bankaccount.CreateParams{
-		ProfileID:      profileID,
-		Name:           "Savings Account",
-		Type:           bankaccount.TypeSavings,
-		InitialBalance: balance,
-	})
+	acc, _ := bankaccount.NewBankAccount(
+		profileID,
+		"Savings Account",
+		bankaccount.AccountTypeSavings,
+		balance,
+		"BRL",
+	)
 	return acc
 }
 
 // Category Fixtures
 
 func CreateTestCategory(profileID string, name string, categoryType category.Type) *category.Category {
+	color := "#3B82F6"
 	cat, _ := category.NewCategory(category.CreateParams{
 		ProfileID: profileID,
 		Name:      name,
 		Type:      categoryType,
-		Color:     stringPtr("#3B82F6"),
+		Color:     &color,
 	})
 	return cat
 }
@@ -92,85 +99,92 @@ func CreateIncomeCategory(profileID string, name string) *category.Category {
 // Transaction Fixtures
 
 func CreateTestTransaction(profileID, accountID, categoryID string) *transaction.Transaction {
+	catID := categoryID
+	notes := "Test observation"
 	tx, _ := transaction.New(transaction.CreateParams{
-		ProfileID:    profileID,
-		AccountID:    accountID,
-		CategoryID:   categoryID,
-		Amount:       100.00,
-		Type:         transaction.TypeExpense,
-		Description:  "Test Transaction",
-		OccurredAt:   FixedTime(),
-		IsPending:    false,
-		Tags:         []string{"test"},
-		Observations: stringPtr("Test observation"),
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		CategoryID:    &catID,
+		Amount:        100.00,
+		Type:          transaction.TypeExpense,
+		Currency:      "BRL",
+		Description:   "Test Transaction",
+		OccurredOn:    FixedTime(),
+		Notes:         &notes,
+		Tags:          []string{"test"},
 	})
 	return tx
 }
 
 func CreateIncomeTransaction(profileID, accountID, categoryID string, amount float64) *transaction.Transaction {
+	catID := categoryID
 	tx, _ := transaction.New(transaction.CreateParams{
-		ProfileID:   profileID,
-		AccountID:   accountID,
-		CategoryID:  categoryID,
-		Amount:      amount,
-		Type:        transaction.TypeIncome,
-		Description: "Income Transaction",
-		OccurredAt:  FixedTime(),
-		IsPending:   false,
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		CategoryID:    &catID,
+		Amount:        amount,
+		Type:          transaction.TypeIncome,
+		Currency:      "BRL",
+		Description:   "Income Transaction",
+		OccurredOn:    FixedTime(),
 	})
 	return tx
 }
 
 func CreateExpenseTransaction(profileID, accountID, categoryID string, amount float64) *transaction.Transaction {
+	catID := categoryID
 	tx, _ := transaction.New(transaction.CreateParams{
-		ProfileID:   profileID,
-		AccountID:   accountID,
-		CategoryID:  categoryID,
-		Amount:      amount,
-		Type:        transaction.TypeExpense,
-		Description: "Expense Transaction",
-		OccurredAt:  FixedTime(),
-		IsPending:   false,
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		CategoryID:    &catID,
+		Amount:        amount,
+		Type:          transaction.TypeExpense,
+		Currency:      "BRL",
+		Description:   "Expense Transaction",
+		OccurredOn:    FixedTime(),
 	})
 	return tx
 }
 
 func CreateTransferTransaction(profileID, fromAccountID, toAccountID, categoryID string, amount float64) *transaction.Transaction {
+	catID := categoryID
+	destID := toAccountID
 	tx, _ := transaction.New(transaction.CreateParams{
 		ProfileID:            profileID,
-		AccountID:            fromAccountID,
-		DestinationAccountID: &toAccountID,
-		CategoryID:           categoryID,
+		BankAccountID:        fromAccountID,
+		DestinationAccountID: &destID,
+		CategoryID:           &catID,
 		Amount:               amount,
 		Type:                 transaction.TypeTransfer,
+		Currency:             "BRL",
 		Description:          "Transfer Transaction",
-		OccurredAt:           FixedTime(),
-		IsPending:            false,
+		OccurredOn:           FixedTime(),
 	})
 	return tx
 }
 
 func CreatePendingTransaction(profileID, accountID, categoryID string) *transaction.Transaction {
+	catID := categoryID
 	tx, _ := transaction.New(transaction.CreateParams{
-		ProfileID:   profileID,
-		AccountID:   accountID,
-		CategoryID:  categoryID,
-		Amount:      50.00,
-		Type:        transaction.TypeExpense,
-		Description: "Pending Transaction",
-		OccurredAt:  FixedTime(),
-		IsPending:   true,
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		CategoryID:    &catID,
+		Amount:        50.00,
+		Type:          transaction.TypeExpense,
+		Currency:      "BRL",
+		Description:   "Pending Transaction",
+		OccurredOn:    FixedTime(),
 	})
+	// Transaction starts as PLANNED (pending) by default
 	return tx
 }
 
 func CreateTransactionWithSplits(profileID, accountID string, categoryIDs []string, amounts []float64) *transaction.Transaction {
-	splits := make([]transaction.SplitParams, len(categoryIDs))
+	splits := make([]*transaction.Split, len(categoryIDs))
 	for i, catID := range categoryIDs {
-		splits[i] = transaction.SplitParams{
-			CategoryID: catID,
-			Amount:     amounts[i],
-		}
+		catIDPtr := catID
+		split, _ := transaction.NewSplit(&catIDPtr, amounts[i], nil)
+		splits[i] = split
 	}
 
 	totalAmount := 0.0
@@ -178,16 +192,17 @@ func CreateTransactionWithSplits(profileID, accountID string, categoryIDs []stri
 		totalAmount += amt
 	}
 
+	firstCatID := categoryIDs[0]
 	tx, _ := transaction.New(transaction.CreateParams{
-		ProfileID:   profileID,
-		AccountID:   accountID,
-		CategoryID:  categoryIDs[0], // Main category
-		Amount:      totalAmount,
-		Type:        transaction.TypeExpense,
-		Description: "Transaction with Splits",
-		OccurredAt:  FixedTime(),
-		IsPending:   false,
-		Splits:      splits,
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		CategoryID:    &firstCatID,
+		Amount:        totalAmount,
+		Type:          transaction.TypeExpense,
+		Currency:      "BRL",
+		Description:   "Transaction with Splits",
+		OccurredOn:    FixedTime(),
+		Splits:        splits,
 	})
 	return tx
 }
