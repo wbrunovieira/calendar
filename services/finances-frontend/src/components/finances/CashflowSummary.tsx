@@ -32,88 +32,102 @@ export default function CashflowSummary({ transactions, accounts, currentInvoice
     0,
   );
 
-  const plannedBalance = transactions
-    .filter((transaction) => transaction.status === 'PLANNED')
-    .reduce(
-      (total, transaction) =>
-        transaction.type === 'EXPENSE' ? total - transaction.amount : total + transaction.amount,
-      0,
-    );
+  // Separate accounts by type
+  const regularAccounts = accounts.filter(
+    (acc) => acc.type !== 'CREDIT_CARD' && acc.type !== 'INVESTMENT'
+  );
+  const creditCards = accounts.filter((acc) => acc.type === 'CREDIT_CARD');
+  const investments = accounts.filter((acc) => acc.type === 'INVESTMENT');
 
-  // For credit cards, use the invoice amount as negative (debt)
-  // For other accounts, use the current balance
-  const accountsBalance = accounts.reduce((total, account) => {
-    if (account.type === 'CREDIT_CARD') {
-      const invoice = currentInvoices[account.id];
-      // Credit card invoice is a debt, so subtract it
-      return total - (invoice?.amount || 0);
-    }
-    return total + account.currentBalance;
+  // Calculate balances
+  const availableBalance = regularAccounts.reduce(
+    (total, acc) => total + acc.currentBalance,
+    0
+  );
+
+  const creditCardDebt = creditCards.reduce((total, acc) => {
+    const invoice = currentInvoices[acc.id];
+    return total + (invoice?.amount || 0);
   }, 0);
 
-  // Count credit cards with open invoices
-  const creditCardsWithDebt = accounts.filter(
-    (acc) => acc.type === 'CREDIT_CARD' && currentInvoices[acc.id]?.amount > 0,
-  ).length;
-  const regularAccounts = accounts.filter((acc) => acc.type !== 'CREDIT_CARD').length;
-  const netCashflow = confirmedIncome - confirmedExpense;
+  const investmentTotal = investments.reduce(
+    (total, acc) => total + acc.currentBalance,
+    0
+  );
 
-  const cards = [
-    {
-      title: 'Entradas confirmadas',
-      value: formatCurrency(confirmedIncome),
-      highlight: 'from-emerald-500/80 to-emerald-600/80',
-      icon: '⬆️',
-      description: `${confirmedIncomeTransactions.length} lançamentos confirmados`,
-    },
-    {
-      title: 'Saídas confirmadas',
-      value: formatCurrency(confirmedExpense),
-      highlight: 'from-rose-500/80 to-rose-600/80',
-      icon: '⬇️',
-      description: `${confirmedExpenseTransactions.length} lançamentos confirmados`,
-    },
-    {
-      title: 'Fluxo líquido',
-      value: formatCurrency(netCashflow),
-      highlight:
-        netCashflow >= 0 ? 'from-sky-500/80 to-sky-600/80' : 'from-amber-500/80 to-amber-600/80',
-      icon: '⚖️',
-      description: `Previsto: ${formatCurrency(plannedBalance)}`,
-    },
-  ];
+  // Net worth = available + investments - credit card debt
+  const netWorth = availableBalance + investmentTotal - creditCardDebt;
 
   return (
-    <div className="grid gap-4 lg:grid-cols-4">
-      {cards.map((card) => (
-        <div
-          key={card.title}
-          className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm flex flex-col gap-4"
-        >
-          <div
-            className={`inline-flex items-center gap-3 px-3 py-1 rounded-full text-sm text-white bg-gradient-to-r ${card.highlight}`}
-          >
-            <span>{card.icon}</span>
-            <span>{card.title}</span>
-          </div>
-          <div className="text-3xl font-bold text-white">{card.value}</div>
-          <p className="text-white/60 text-sm">{card.description}</p>
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+      {/* Entradas */}
+      <div className="bg-white/5 border border-white/10 rounded-2xl p-5 backdrop-blur-sm">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-lg">⬆️</span>
+          <span className="text-white/70 text-sm">Entradas</span>
         </div>
-      ))}
+        <div className="text-2xl font-bold text-emerald-400">
+          {formatCurrency(confirmedIncome)}
+        </div>
+        <p className="text-white/50 text-xs mt-1">
+          {confirmedIncomeTransactions.length} confirmadas
+        </p>
+      </div>
 
-      <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm flex flex-col gap-4">
-        <div className="inline-flex items-center gap-3 px-3 py-1 rounded-full text-sm text-white bg-gradient-to-r from-purple-500/80 to-indigo-600/80">
-          <span>🏦</span>
-          <span>Saldo em contas</span>
+      {/* Saidas */}
+      <div className="bg-white/5 border border-white/10 rounded-2xl p-5 backdrop-blur-sm">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-lg">⬇️</span>
+          <span className="text-white/70 text-sm">Saidas</span>
         </div>
-        <div className={`text-3xl font-bold ${accountsBalance >= 0 ? 'text-white' : 'text-red-400'}`}>
-          {formatCurrency(accountsBalance)}
+        <div className="text-2xl font-bold text-rose-400">
+          {formatCurrency(confirmedExpense)}
         </div>
-        <p className="text-white/60 text-sm">
-          {regularAccounts > 0 && `${regularAccounts} ${regularAccounts === 1 ? 'conta' : 'contas'}`}
-          {regularAccounts > 0 && creditCardsWithDebt > 0 && ' • '}
-          {creditCardsWithDebt > 0 && `${creditCardsWithDebt} ${creditCardsWithDebt === 1 ? 'fatura' : 'faturas'} em aberto`}
-          {regularAccounts === 0 && creditCardsWithDebt === 0 && 'Nenhuma conta monitorada'}
+        <p className="text-white/50 text-xs mt-1">
+          {confirmedExpenseTransactions.length} confirmadas
+        </p>
+      </div>
+
+      {/* Saldo Disponivel (contas correntes, poupanca, dinheiro) */}
+      <div className="bg-white/5 border border-white/10 rounded-2xl p-5 backdrop-blur-sm">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-lg">🏦</span>
+          <span className="text-white/70 text-sm">Disponivel</span>
+        </div>
+        <div className={`text-2xl font-bold ${availableBalance >= 0 ? 'text-white' : 'text-rose-400'}`}>
+          {formatCurrency(availableBalance)}
+        </div>
+        <p className="text-white/50 text-xs mt-1">
+          {regularAccounts.length} {regularAccounts.length === 1 ? 'conta' : 'contas'}
+        </p>
+      </div>
+
+      {/* Cartoes de Credito */}
+      <div className="bg-white/5 border border-white/10 rounded-2xl p-5 backdrop-blur-sm">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-lg">💳</span>
+          <span className="text-white/70 text-sm">Faturas</span>
+        </div>
+        <div className={`text-2xl font-bold ${creditCardDebt > 0 ? 'text-amber-400' : 'text-white'}`}>
+          {formatCurrency(creditCardDebt)}
+        </div>
+        <p className="text-white/50 text-xs mt-1">
+          {creditCards.length} {creditCards.length === 1 ? 'cartao' : 'cartoes'}
+        </p>
+      </div>
+
+      {/* Patrimonio Liquido */}
+      <div className="bg-gradient-to-br from-purple-900/30 to-indigo-900/30 border border-purple-500/20 rounded-2xl p-5 backdrop-blur-sm">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-lg">💰</span>
+          <span className="text-white/70 text-sm">Patrimonio</span>
+        </div>
+        <div className={`text-2xl font-bold ${netWorth >= 0 ? 'text-purple-300' : 'text-rose-400'}`}>
+          {formatCurrency(netWorth)}
+        </div>
+        <p className="text-white/50 text-xs mt-1">
+          {investments.length > 0 && `+ ${formatCurrency(investmentTotal)} investidos`}
+          {investments.length === 0 && 'Disponivel - Faturas'}
         </p>
       </div>
     </div>
