@@ -1,13 +1,24 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
 import type { Profile, BankAccount, RecurringTransaction, BudgetSummaryItem, Category } from '@/types/finances';
 
 const API_BASE = 'http://localhost:3335/api/v1';
 
-type Range = '30' | '90';
+type Range = 'month' | '30' | '90';
+
+interface ForecastItem {
+  id: string;
+  recurringId: string;
+  date: string;
+  description: string;
+  amount: number;
+  type: 'INCOME' | 'EXPENSE';
+  categoryId?: string;
+  bankAccountId?: string;
+}
 
 export default function PlanPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -16,14 +27,24 @@ export default function PlanPage() {
   const [recurrings, setRecurrings] = useState<RecurringTransaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [summary, setSummary] = useState<BudgetSummaryItem[]>([]);
-  const [range, setRange] = useState<Range>('30');
+  const [range, setRange] = useState<Range>('month');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null);
 
-  const endDate = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + (range === '30' ? 30 : 90));
-    return d;
+  const { startDate, endDate } = useMemo(() => {
+    const now = new Date();
+    if (range === 'month') {
+      // Current month: 1st to last day
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+      return { startDate: start, endDate: end };
+    }
+    // 30 or 90 days from today
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const end = new Date(start);
+    end.setDate(end.getDate() + (range === '30' ? 30 : 90));
+    return { startDate: start, endDate: end };
   }, [range]);
 
   useEffect(() => {
@@ -40,63 +61,52 @@ export default function PlanPage() {
     })();
   }, []);
 
-  useEffect(() => {
+  const loadData = useCallback(async () => {
     if (!selectedProfileId) return;
-    (async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const month = new Date().toISOString().slice(0, 7);
-        const [accRes, recRes, sumRes, catRes] = await Promise.all([
-          fetch(`${API_BASE}/bank-accounts`),
-          fetch(`${API_BASE}/recurring-transactions?profileId=${selectedProfileId}`),
-          fetch(`${API_BASE}/budgets/summary?profileId=${selectedProfileId}&period=${month}`),
-          fetch(`${API_BASE}/categories?profileId=${selectedProfileId}`),
-        ]);
-        if (!accRes.ok) throw new Error(`accounts ${accRes.status}`);
-        if (!recRes.ok) throw new Error(`recurring ${recRes.status}`);
-        if (!sumRes.ok) throw new Error(`summary ${sumRes.status}`);
-        if (!catRes.ok) throw new Error(`categories ${catRes.status}`);
-        const accData = await accRes.json();
-        const recData = await recRes.json();
-        const sumData = await sumRes.json();
-        const catData = await catRes.json();
-        setAccounts(accData.data || []);
-        setRecurrings(recData.data || []);
-        setSummary(sumData.data || []);
-        setCategories(catData.data || []);
-      } catch (e) {
-        console.warn('Erro ao carregar dados do planejamento', e);
-        setError('Não foi possível carregar dados do planejamento.');
-        setAccounts([]);
-        setRecurrings([]);
-        setSummary([]);
-        setCategories([]);
-      } finally {
-        setLoading(false);
-      }
-    })();
+    try {
+      setLoading(true);
+      setError(null);
+      const month = new Date().toISOString().slice(0, 7);
+      const [accRes, recRes, sumRes, catRes] = await Promise.all([
+        fetch(`${API_BASE}/bank-accounts`),
+        fetch(`${API_BASE}/recurring-transactions?profileId=${selectedProfileId}`),
+        fetch(`${API_BASE}/budgets/summary?profileId=${selectedProfileId}&period=${month}`),
+        fetch(`${API_BASE}/categories?profileId=${selectedProfileId}`),
+      ]);
+      if (!accRes.ok) throw new Error(`accounts ${accRes.status}`);
+      if (!recRes.ok) throw new Error(`recurring ${recRes.status}`);
+      if (!sumRes.ok) throw new Error(`summary ${sumRes.status}`);
+      if (!catRes.ok) throw new Error(`categories ${catRes.status}`);
+      const accData = await accRes.json();
+      const recData = await recRes.json();
+      const sumData = await sumRes.json();
+      const catData = await catRes.json();
+      setAccounts(accData.data || []);
+      setRecurrings(recData.data || []);
+      setSummary(sumData.data || []);
+      setCategories(catData.data || []);
+    } catch (e) {
+      console.warn('Erro ao carregar dados do planejamento', e);
+      setError('Nao foi possivel carregar dados do planejamento.');
+      setAccounts([]);
+      setRecurrings([]);
+      setSummary([]);
+      setCategories([]);
+    } finally {
+      setLoading(false);
+    }
   }, [selectedProfileId]);
 
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
   const forecast = useMemo(() => {
-    const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const end = endDate;
-    type Item = { date: string; description: string; amount: number; type: 'INCOME' | 'EXPENSE' };
-    const items: Item[] = [];
-
-    const clamp = (d: Date, min: Date, max?: Date) => {
-      if (d < min) return new Date(min);
-      if (max && d > max) return new Date(max);
-      return d;
-    };
-
-    const pushIfInRange = (d: Date, desc: string, amount: number, type: 'INCOME' | 'EXPENSE', startOn?: Date, endOn?: Date) => {
-      const sd = startOn ? clamp(d, startOn, endOn) : d;
-      if (sd >= start && sd <= end) {
-        items.push({ date: sd.toISOString().slice(0, 10), description: desc, amount, type });
-      }
-    };
+    const start = new Date(startDate);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+    const items: ForecastItem[] = [];
 
     const parseRule = (rule: string) => {
       const map = new Map<string, string>();
@@ -111,9 +121,19 @@ export default function PlanPage() {
       const rule = parseRule(r.recurrenceRule || '');
       const freq = rule.get('FREQ') || 'MONTHLY';
       const byMonthDay = rule.get('BYMONTHDAY');
-      const startOn = new Date(r.startOn);
-      const endOn = r.endOn ? new Date(r.endOn) : undefined;
-      let cur = new Date(r.nextOccurrence);
+
+      // Parse dates - handle timezone by using local date parts
+      const parseLocalDate = (dateStr: string) => {
+        const [year, month, day] = dateStr.slice(0, 10).split('-').map(Number);
+        return new Date(year, month - 1, day, 0, 0, 0, 0);
+      };
+
+      const recStartOn = parseLocalDate(r.startOn);
+      const recEndOn = r.endOn ? parseLocalDate(r.endOn) : undefined;
+      if (recEndOn) recEndOn.setHours(23, 59, 59, 999);
+
+      // Start from nextOccurrence
+      let cur = parseLocalDate(r.nextOccurrence);
 
       const addDays = (d: Date, n: number) => {
         const c = new Date(d);
@@ -121,15 +141,31 @@ export default function PlanPage() {
         return c;
       };
       const addMonths = (d: Date, n: number) => {
-        const c = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + n, 1));
-        const day = byMonthDay ? Number(byMonthDay) : d.getUTCDate();
-        const target = new Date(Date.UTC(c.getUTCFullYear(), c.getUTCMonth(), day));
-        return target;
+        const c = new Date(d);
+        c.setMonth(c.getMonth() + n);
+        if (byMonthDay) {
+          c.setDate(Number(byMonthDay));
+        }
+        return c;
       };
 
-      // Generate occurrences up to end
-      while (cur <= end) {
-        pushIfInRange(cur, r.description, r.amount, r.type as 'INCOME' | 'EXPENSE', startOn, endOn);
+      let idx = 0;
+      while (cur <= end && idx < 100) {
+        idx++;
+        // Check if within range and recurring period
+        if (cur >= start && cur >= recStartOn && (!recEndOn || cur <= recEndOn)) {
+          items.push({
+            id: `${r.id}-${cur.toISOString().slice(0, 10)}`,
+            recurringId: r.id,
+            date: cur.toISOString().slice(0, 10),
+            description: r.description,
+            amount: r.amount,
+            type: r.type as 'INCOME' | 'EXPENSE',
+            categoryId: r.categoryId,
+            bankAccountId: r.bankAccountId,
+          });
+        }
+        // Advance to next occurrence
         if (freq === 'DAILY') {
           cur = addDays(cur, 1);
         } else if (freq === 'WEEKLY') {
@@ -137,7 +173,7 @@ export default function PlanPage() {
         } else {
           cur = addMonths(cur, 1);
         }
-        if (endOn && cur > endOn) break;
+        if (recEndOn && cur > recEndOn) break;
       }
     });
 
@@ -145,15 +181,71 @@ export default function PlanPage() {
     const totals = items.reduce(
       (acc, it) => {
         const sign = it.type === 'EXPENSE' ? -1 : 1;
-        return { ...acc, total: acc.total + sign * it.amount, out: acc.out + (it.type === 'EXPENSE' ? it.amount : 0), inc: acc.inc + (it.type === 'INCOME' ? it.amount : 0) };
+        return {
+          ...acc,
+          total: acc.total + sign * it.amount,
+          out: acc.out + (it.type === 'EXPENSE' ? it.amount : 0),
+          inc: acc.inc + (it.type === 'INCOME' ? it.amount : 0),
+        };
       },
       { total: 0, out: 0, inc: 0 },
     );
 
     return { items, totals };
-  }, [recurrings, endDate]);
+  }, [recurrings, startDate, endDate]);
 
-  const totalBalance = useMemo(() => accounts.filter((a) => a.profileId === selectedProfileId).reduce((sum, a) => sum + a.currentBalance, 0), [accounts, selectedProfileId]);
+  const totalBalance = useMemo(
+    () => accounts.filter((a) => a.profileId === selectedProfileId).reduce((sum, a) => sum + a.currentBalance, 0),
+    [accounts, selectedProfileId]
+  );
+
+  const handleConfirm = async (item: ForecastItem) => {
+    if (!selectedProfileId) return;
+    setConfirming(item.id);
+    try {
+      const payload = {
+        profileId: selectedProfileId,
+        bankAccountId: item.bankAccountId,
+        categoryId: item.categoryId,
+        type: item.type,
+        amount: item.amount,
+        currency: 'BRL',
+        description: item.description,
+        occurredOn: item.date,
+        status: 'CONFIRMED',
+      };
+
+      const cleanPayload = Object.fromEntries(
+        Object.entries(payload).filter(([, v]) => v !== undefined && v !== null)
+      );
+
+      const res = await fetch(`${API_BASE}/transactions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cleanPayload),
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(errorText || `status ${res.status}`);
+      }
+
+      alert('Lancamento confirmado com sucesso!');
+      // Optionally reload data
+      await loadData();
+    } catch (e) {
+      console.warn('Erro ao confirmar', e);
+      alert('Erro ao confirmar lancamento.');
+    } finally {
+      setConfirming(null);
+    }
+  };
+
+  const getCategoryName = (categoryId?: string) => {
+    if (!categoryId) return null;
+    const cat = categories.find((c) => c.id === categoryId);
+    return cat?.name || null;
+  };
 
   return (
     <AppLayout>
@@ -169,14 +261,36 @@ export default function PlanPage() {
               <span className="text-white/70 text-sm">Perfil:</span>
               <div className="flex flex-wrap gap-2">
                 {profiles.map((p) => (
-                  <button key={p.id} onClick={() => setSelectedProfileId(p.id)} className={`px-3 py-1.5 rounded-xl border ${selectedProfileId === p.id ? 'bg-white/20 text-white border-white/40' : 'bg-white/5 text-white/60 hover:bg-white/10 border-white/15'}`}>{p.name}</button>
+                  <button
+                    key={p.id}
+                    onClick={() => setSelectedProfileId(p.id)}
+                    className={`px-3 py-1.5 rounded-xl border ${selectedProfileId === p.id ? 'bg-white/20 text-white border-white/40' : 'bg-white/5 text-white/60 hover:bg-white/10 border-white/15'}`}
+                  >
+                    {p.name}
+                  </button>
                 ))}
               </div>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-white/70 text-sm">Horizonte:</span>
-              <button onClick={() => setRange('30')} className={`px-3 py-1.5 rounded-xl text-sm border ${range === '30' ? 'bg-white/20 text-white border-white/40' : 'bg-white/5 text-white/60 hover:bg-white/10 border-white/15'}`}>30 dias</button>
-              <button onClick={() => setRange('90')} className={`px-3 py-1.5 rounded-xl text-sm border ${range === '90' ? 'bg-white/20 text-white border-white/40' : 'bg-white/5 text-white/60 hover:bg-white/10 border-white/15'}`}>90 dias</button>
+              <button
+                onClick={() => setRange('month')}
+                className={`px-3 py-1.5 rounded-xl text-sm border ${range === 'month' ? 'bg-white/20 text-white border-white/40' : 'bg-white/5 text-white/60 hover:bg-white/10 border-white/15'}`}
+              >
+                Mes
+              </button>
+              <button
+                onClick={() => setRange('30')}
+                className={`px-3 py-1.5 rounded-xl text-sm border ${range === '30' ? 'bg-white/20 text-white border-white/40' : 'bg-white/5 text-white/60 hover:bg-white/10 border-white/15'}`}
+              >
+                30 dias
+              </button>
+              <button
+                onClick={() => setRange('90')}
+                className={`px-3 py-1.5 rounded-xl text-sm border ${range === '90' ? 'bg-white/20 text-white border-white/40' : 'bg-white/5 text-white/60 hover:bg-white/10 border-white/15'}`}
+              >
+                90 dias
+              </button>
             </div>
           </div>
         </div>
@@ -186,19 +300,56 @@ export default function PlanPage() {
             <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
               {loading && <p className="text-white/70">Carregando...</p>}
               {error && <div className="bg-rose-500/20 border border-rose-400/40 text-rose-100 rounded-xl p-3 mb-3">{error}</div>}
-              <h3 className="text-white font-semibold mb-3">Agenda de fixas</h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-white font-semibold">Agenda de Recorrentes</h3>
+                <span className="text-white/50 text-sm">{recurrings.length} regras cadastradas</span>
+              </div>
               {forecast.items.length === 0 ? (
-                <p className="text-white/70">Sem itens recorrentes no período.</p>
+                <div className="text-white/70 space-y-2">
+                  <p>Nenhum item no periodo {range === 'month' ? 'deste mes' : `de ${range} dias`}.</p>
+                  {recurrings.length === 0 && (
+                    <p className="text-sm">
+                      <Link href="/recurring" className="text-emerald-400 hover:underline">
+                        Cadastre transacoes recorrentes
+                      </Link>{' '}
+                      para ver a previsao aqui.
+                    </p>
+                  )}
+                </div>
               ) : (
                 <div className="space-y-2">
-                  {forecast.items.map((it, idx) => (
-                    <div key={`${it.date}-${idx}`} className="flex items-center justify-between border border-white/10 bg-white/5 rounded-xl px-3 py-2">
-                      <div className="text-white/80 text-sm flex items-center gap-3">
-                        <span className="text-white/60 w-24">{new Date(it.date).toLocaleDateString('pt-BR')}</span>
-                        <span className="font-medium">{it.description}</span>
+                  {forecast.items.map((it) => (
+                    <div
+                      key={it.id}
+                      className="flex items-center justify-between border border-white/10 bg-white/5 rounded-xl px-4 py-3"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="text-white/60 text-sm w-24">
+                          {new Date(it.date + 'T12:00:00').toLocaleDateString('pt-BR')}
+                        </div>
+                        <div>
+                          <p className="text-white font-medium">{it.description}</p>
+                          {getCategoryName(it.categoryId) && (
+                            <p className="text-white/50 text-xs">{getCategoryName(it.categoryId)}</p>
+                          )}
+                        </div>
                       </div>
-                      <div className={`text-sm font-semibold ${it.type === 'EXPENSE' ? 'text-rose-200' : 'text-emerald-200'}`}>
-                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(it.amount * (it.type === 'EXPENSE' ? -1 : 1))}
+                      <div className="flex items-center gap-3">
+                        <div className={`text-sm font-semibold ${it.type === 'EXPENSE' ? 'text-rose-300' : 'text-emerald-300'}`}>
+                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(it.amount * (it.type === 'EXPENSE' ? -1 : 1))}
+                        </div>
+                        <button
+                          onClick={() => handleConfirm(it)}
+                          disabled={confirming === it.id}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                            confirming === it.id
+                              ? 'bg-white/10 text-white/40'
+                              : 'bg-emerald-500/80 hover:bg-emerald-500 text-white'
+                          }`}
+                          title="Confirmar e criar lancamento"
+                        >
+                          {confirming === it.id ? '...' : 'Confirmar'}
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -206,18 +357,36 @@ export default function PlanPage() {
               )}
             </div>
           </div>
+
           <div className="space-y-6">
             <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-              <h3 className="text-white font-semibold mb-3">Resumo do período</h3>
+              <h3 className="text-white font-semibold mb-3">Resumo do periodo</h3>
               <div className="space-y-2 text-sm">
-                <div className="flex items-center justify-between text-white/80"><span>Saldo atual</span><span className="font-semibold">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalBalance)}</span></div>
-                <div className="flex items-center justify-between text-emerald-200"><span>Fixas (receitas)</span><span className="font-semibold">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(forecast.totals.inc)}</span></div>
-                <div className="flex items-center justify-between text-rose-200"><span>Fixas (despesas)</span><span className="font-semibold">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(forecast.totals.out)}</span></div>
-                <div className="flex items-center justify-between text-white"><span>Variação projetada</span><span className="font-semibold">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(forecast.totals.inc - forecast.totals.out)}</span></div>
+                <div className="flex items-center justify-between text-white/80">
+                  <span>Saldo atual</span>
+                  <span className="font-semibold">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalBalance)}</span>
+                </div>
+                <div className="flex items-center justify-between text-emerald-200">
+                  <span>Receitas previstas</span>
+                  <span className="font-semibold">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(forecast.totals.inc)}</span>
+                </div>
+                <div className="flex items-center justify-between text-rose-200">
+                  <span>Despesas previstas</span>
+                  <span className="font-semibold">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(forecast.totals.out)}</span>
+                </div>
+                <div className="border-t border-white/10 pt-2 mt-2">
+                  <div className="flex items-center justify-between text-white">
+                    <span>Saldo projetado</span>
+                    <span className={`font-semibold ${totalBalance + forecast.totals.total >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalBalance + forecast.totals.total)}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
+
             <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-              <h3 className="text-white font-semibold mb-3">Orçamentos do mês</h3>
+              <h3 className="text-white font-semibold mb-3">Orcamentos do mes</h3>
               {summary.length === 0 ? (
                 <p className="text-white/70 text-sm">Nenhuma meta cadastrada.</p>
               ) : (
@@ -228,7 +397,9 @@ export default function PlanPage() {
                     return (
                       <div key={s.target.id} className="flex items-center justify-between text-white/80">
                         <span>{name}</span>
-                        <span className="font-semibold">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(s.remaining)} restantes</span>
+                        <span className="font-semibold">
+                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(s.remaining)} restantes
+                        </span>
                       </div>
                     );
                   })}
@@ -241,4 +412,3 @@ export default function PlanPage() {
     </AppLayout>
   );
 }
-
