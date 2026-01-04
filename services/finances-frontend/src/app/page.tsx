@@ -466,12 +466,16 @@ export default function FinancesPage() {
 
     try {
       setSavingTransaction(true);
+      // Remove undefined/null values to avoid API validation issues
+      const cleanPayload = Object.fromEntries(
+        Object.entries(payload).filter(([, v]) => v !== undefined && v !== null)
+      );
       const response = await fetch(`${API_BASE}/transactions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(cleanPayload),
       });
 
       if (!response.ok) {
