@@ -33,7 +33,7 @@ interface Calendar {
 const API_BASE = 'http://localhost:3335/api/v1';
 const defaultFilters: TransactionFilters = {
   bankAccountId: null,
-  type: 'EXPENSE',
+  type: 'ALL',
   status: 'ALL',
   from: undefined,
   to: undefined,
