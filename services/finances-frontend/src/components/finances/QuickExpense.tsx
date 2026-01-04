@@ -49,7 +49,7 @@ export default function QuickExpense({ accounts, categories = [], defaultProfile
       } else {
         setLocalCategories([]);
       }
-    } catch (_) {
+    } catch {
       setLocalCategories([]);
     }
   };

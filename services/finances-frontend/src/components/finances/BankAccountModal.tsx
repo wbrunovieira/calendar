@@ -165,7 +165,6 @@ export default function BankAccountModal({
 
   const isCreditCard = formData.type === 'CREDIT_CARD';
   const isInvestment = formData.type === 'INVESTMENT';
-  const requiresLinking = isCreditCard || isInvestment;
 
   // Filter linkable accounts: same profile, valid link targets (CHECKING, SAVINGS, CASH), exclude self
   const linkableAccounts = existingAccounts.filter(

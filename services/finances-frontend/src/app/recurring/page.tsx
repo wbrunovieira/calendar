@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
 import type { Profile, RecurringTransaction } from '@/types/finances';
 
@@ -57,7 +58,7 @@ export default function RecurringPage() {
       <div className="py-6 space-y-6">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold text-white">Despesas Fixas (Recorrentes)</h2>
-          <a href="/" className="text-sm text-white/70 hover:text-white underline">← Voltar</a>
+          <Link href="/" className="text-sm text-white/70 hover:text-white underline">← Voltar</Link>
         </div>
 
         <div className="bg-white/5 border border-white/10 rounded-2xl p-4">

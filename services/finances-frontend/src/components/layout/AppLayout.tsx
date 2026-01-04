@@ -1,6 +1,7 @@
 'use client';
 
 import { ReactNode } from 'react';
+import Link from 'next/link';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -31,10 +32,10 @@ export default function AppLayout({ children }: AppLayoutProps) {
             </a>
           </div>
           <nav className="mt-4 flex flex-wrap gap-2">
-            <a href="/" className="px-3 py-1.5 text-sm rounded-lg border border-white/15 text-white/80 hover:bg-white/10">Lançamentos</a>
-            <a href="/recurring" className="px-3 py-1.5 text-sm rounded-lg border border-white/15 text-white/80 hover:bg-white/10">Fixas</a>
-            <a href="/budgets" className="px-3 py-1.5 text-sm rounded-lg border border-white/15 text-white/80 hover:bg-white/10">Orçamentos</a>
-            <a href="/plan" className="px-3 py-1.5 text-sm rounded-lg border border-white/15 text-white/80 hover:bg-white/10">Planejamento</a>
+            <Link href="/" className="px-3 py-1.5 text-sm rounded-lg border border-white/15 text-white/80 hover:bg-white/10">Lançamentos</Link>
+            <Link href="/recurring" className="px-3 py-1.5 text-sm rounded-lg border border-white/15 text-white/80 hover:bg-white/10">Fixas</Link>
+            <Link href="/budgets" className="px-3 py-1.5 text-sm rounded-lg border border-white/15 text-white/80 hover:bg-white/10">Orçamentos</Link>
+            <Link href="/plan" className="px-3 py-1.5 text-sm rounded-lg border border-white/15 text-white/80 hover:bg-white/10">Planejamento</Link>
           </nav>
         </div>
       </header>

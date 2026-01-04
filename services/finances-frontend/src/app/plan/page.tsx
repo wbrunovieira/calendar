@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
 import type { Profile, BankAccount, RecurringTransaction, BudgetSummaryItem, Category } from '@/types/finances';
 
@@ -19,7 +20,6 @@ export default function PlanPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const selectedProfile = useMemo(() => profiles.find((p) => p.id === selectedProfileId) || null, [profiles, selectedProfileId]);
   const endDate = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() + (range === '30' ? 30 : 90));
@@ -129,7 +129,7 @@ export default function PlanPage() {
 
       // Generate occurrences up to end
       while (cur <= end) {
-        pushIfInRange(cur, r.description, r.amount, r.type as any, startOn, endOn);
+        pushIfInRange(cur, r.description, r.amount, r.type as 'INCOME' | 'EXPENSE', startOn, endOn);
         if (freq === 'DAILY') {
           cur = addDays(cur, 1);
         } else if (freq === 'WEEKLY') {
@@ -160,7 +160,7 @@ export default function PlanPage() {
       <div className="py-6 space-y-6">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold text-white">Planejamento</h2>
-          <a href="/" className="text-sm text-white/70 hover:text-white underline">← Voltar</a>
+          <Link href="/" className="text-sm text-white/70 hover:text-white underline">← Voltar</Link>
         </div>
 
         <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
