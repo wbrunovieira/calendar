@@ -9,6 +9,7 @@ import TransactionsTable from '@/components/finances/TransactionsTable';
 import CashflowSummary from '@/components/finances/CashflowSummary';
 import QuickExpense from '@/components/finances/QuickExpense';
 import SafeToSpend from '@/components/finances/SafeToSpend';
+import CreditCardInfo from '@/components/finances/CreditCardInfo';
 import type {
   Profile,
   BankAccount,
@@ -17,6 +18,7 @@ import type {
   TransactionFilters,
   TransactionFormData,
   BudgetSummaryItem,
+  Invoice,
 } from '@/types/finances';
 
 type TabType = 'dashboard' | 'settings';
@@ -58,6 +60,10 @@ export default function FinancesPage() {
   const [editingBankAccount, setEditingBankAccount] = useState<BankAccount | null>(null);
 
   const [savingTransaction, setSavingTransaction] = useState(false);
+
+  // Invoice state for credit cards
+  const [invoicesByAccount, setInvoicesByAccount] = useState<Record<string, Invoice[]>>({});
+  const [currentInvoices, setCurrentInvoices] = useState<Record<string, Invoice>>({});
 
   const filteredAccounts = useMemo(
     () => bankAccounts.filter((account) => account.profileId === selectedProfileId),
@@ -108,6 +114,41 @@ export default function FinancesPage() {
       console.error('Erro ao carregar contas bancárias:', error);
     }
   };
+
+  const fetchInvoicesForCreditCards = useCallback(async (accounts: BankAccount[]) => {
+    const creditCards = accounts.filter((acc) => acc.type === 'CREDIT_CARD');
+    if (creditCards.length === 0) return;
+
+    const invoicesMap: Record<string, Invoice[]> = {};
+    const currentMap: Record<string, Invoice> = {};
+
+    await Promise.all(
+      creditCards.map(async (card) => {
+        try {
+          // Fetch all invoices for the card
+          const response = await fetch(`${API_BASE}/invoices?bankAccountId=${card.id}`);
+          if (response.ok) {
+            const data = await response.json();
+            invoicesMap[card.id] = data.data || [];
+          }
+
+          // Fetch current invoice
+          const currentResponse = await fetch(`${API_BASE}/invoices/current?bankAccountId=${card.id}`);
+          if (currentResponse.ok) {
+            const currentData = await currentResponse.json();
+            if (currentData.data) {
+              currentMap[card.id] = currentData.data;
+            }
+          }
+        } catch (error) {
+          console.warn(`Erro ao carregar faturas do cartão ${card.name}:`, error);
+        }
+      }),
+    );
+
+    setInvoicesByAccount(invoicesMap);
+    setCurrentInvoices(currentMap);
+  }, []);
 
   const fetchCategories = useCallback(async (profileId: string) => {
     try {
@@ -191,6 +232,13 @@ export default function FinancesPage() {
     fetchTransactions(selectedProfileId, baseFilters);
     fetchBudgetSummary(selectedProfileId);
   }, [selectedProfileId, fetchCategories, fetchTransactions, fetchBudgetSummary]);
+
+  // Fetch invoices when filtered accounts change
+  useEffect(() => {
+    if (filteredAccounts.length > 0) {
+      fetchInvoicesForCreditCards(filteredAccounts);
+    }
+  }, [filteredAccounts, fetchInvoicesForCreditCards]);
 
   const handleCreateProfile = async (
     profileData: Omit<Profile, 'id' | 'isActive' | 'createdAt' | 'updatedAt'>,
@@ -277,16 +325,19 @@ export default function FinancesPage() {
   };
 
   const handleCreateBankAccount = async (
-    accountData: Omit<BankAccount, 'id' | 'isActive' | 'createdAt' | 'updatedAt'>,
+    accountData: Omit<BankAccount, 'id' | 'isActive' | 'createdAt' | 'updatedAt'> & { initialInvoiceAmount?: number },
   ) => {
     try {
+      // Extract initialInvoiceAmount before sending to API (it's not a BankAccount field)
+      const { initialInvoiceAmount, ...bankAccountData } = accountData;
+
       const response = await fetch(`${API_BASE}/bank-accounts`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          ...accountData,
+          ...bankAccountData,
           isActive: true, // New accounts are active by default
         }),
       });
@@ -294,6 +345,46 @@ export default function FinancesPage() {
       if (!response.ok) {
         const errorMessage = await response.text();
         throw new Error(errorMessage || 'Erro ao criar conta bancária');
+      }
+
+      const createdAccount = await response.json();
+
+      // If it's a credit card with an initial invoice amount, create the invoice
+      if (
+        accountData.type === 'CREDIT_CARD' &&
+        initialInvoiceAmount &&
+        initialInvoiceAmount > 0 &&
+        createdAccount.data?.id
+      ) {
+        const currentDate = new Date();
+        const referenceDate = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+
+        try {
+          // Create the invoice
+          const invoiceResponse = await fetch(`${API_BASE}/invoices`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              bankAccountId: createdAccount.data.id,
+              referenceDate,
+            }),
+          });
+
+          if (invoiceResponse.ok) {
+            const invoiceData = await invoiceResponse.json();
+            // Add the initial amount to the invoice
+            if (invoiceData.data?.id) {
+              await fetch(`${API_BASE}/invoices/${invoiceData.data.id}/add-amount`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ amount: initialInvoiceAmount }),
+              });
+            }
+          }
+        } catch (invoiceError) {
+          console.warn('Erro ao criar fatura inicial:', invoiceError);
+          // Don't fail the whole operation if invoice creation fails
+        }
       }
 
       await fetchBankAccounts();
@@ -454,6 +545,27 @@ export default function FinancesPage() {
     }
   };
 
+  const handlePayInvoice = async (invoiceId: string, amount: number) => {
+    try {
+      const response = await fetch(`${API_BASE}/invoices/${invoiceId}/pay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount }),
+      });
+
+      if (!response.ok) {
+        const errorMessage = await response.text();
+        throw new Error(errorMessage || 'Erro ao pagar fatura');
+      }
+
+      // Refresh invoices after payment
+      await fetchInvoicesForCreditCards(filteredAccounts);
+    } catch (error) {
+      console.error('Erro ao pagar fatura:', error);
+      alert('Erro ao pagar fatura');
+    }
+  };
+
   const handleFilterChange = (filters: TransactionFilters) => {
     setTransactionFilters(filters);
     if (selectedProfileId) {
@@ -567,7 +679,7 @@ export default function FinancesPage() {
             {selectedProfile && (
               <>
                 <SafeToSpend summary={budgetSummary} />
-                <CashflowSummary transactions={transactions} accounts={filteredAccounts} />
+                <CashflowSummary transactions={transactions} accounts={filteredAccounts} currentInvoices={currentInvoices} />
 
                 <div className="grid gap-6 lg:grid-cols-3">
                   <div className="lg:col-span-2 space-y-6">
@@ -584,7 +696,7 @@ export default function FinancesPage() {
                           onClick={() => {
                             const today = new Date();
                             const iso = today.toISOString().slice(0, 10);
-                            const next = { ...transactionFilters, from: iso, to: iso, type: 'EXPENSE' };
+                            const next: TransactionFilters = { ...transactionFilters, from: iso, to: iso, type: 'EXPENSE' };
                             handleFilterChange(next);
                           }}
                           className="px-3 py-1.5 rounded-lg text-xs border border-white/20 text-white/80 hover:bg-white/10"
@@ -601,7 +713,7 @@ export default function FinancesPage() {
                             end.setDate(start.getDate() + 6);
                             const from = start.toISOString().slice(0, 10);
                             const to = end.toISOString().slice(0, 10);
-                            const next = { ...transactionFilters, from, to, type: 'EXPENSE' };
+                            const next: TransactionFilters = { ...transactionFilters, from, to, type: 'EXPENSE' };
                             handleFilterChange(next);
                           }}
                           className="px-3 py-1.5 rounded-lg text-xs border border-white/20 text-white/80 hover:bg-white/10"
@@ -615,7 +727,7 @@ export default function FinancesPage() {
                             const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
                             const from = start.toISOString().slice(0, 10);
                             const to = end.toISOString().slice(0, 10);
-                            const next = { ...transactionFilters, from, to, type: 'EXPENSE' };
+                            const next: TransactionFilters = { ...transactionFilters, from, to, type: 'EXPENSE' };
                             handleFilterChange(next);
                           }}
                           className="px-3 py-1.5 rounded-lg text-xs border border-white/20 text-white/80 hover:bg-white/10"
@@ -666,23 +778,47 @@ export default function FinancesPage() {
                             Nenhuma conta cadastrada para este perfil.
                           </p>
                         )}
-                        {filteredAccounts.map((account) => (
-                          <div
-                            key={account.id}
-                            className="border border-white/10 rounded-xl p-4 flex items-center justify-between bg-white/5"
-                          >
-                            <div>
-                              <p className="text-white font-semibold text-sm">{account.name}</p>
-                              <p className="text-white/50 text-xs">{account.type}</p>
+                        {filteredAccounts.map((account) =>
+                          account.type === 'CREDIT_CARD' ? (
+                            <CreditCardInfo
+                              key={account.id}
+                              account={account}
+                              currentInvoice={currentInvoices[account.id]}
+                              invoices={invoicesByAccount[account.id] || []}
+                              onPayInvoice={handlePayInvoice}
+                              onEdit={() => {
+                                setEditingBankAccount(account);
+                                setIsBankAccountModalOpen(true);
+                              }}
+                            />
+                          ) : (
+                            <div
+                              key={account.id}
+                              className="border border-white/10 rounded-xl p-4 flex items-center justify-between bg-white/5 cursor-pointer hover:bg-white/10 transition-colors"
+                              onClick={() => {
+                                setEditingBankAccount(account);
+                                setIsBankAccountModalOpen(true);
+                              }}
+                            >
+                              <div className="flex items-center gap-3">
+                                <span className="text-2xl">{account.icon || '🏦'}</span>
+                                <div>
+                                  <p className="text-white font-semibold text-sm">{account.name}</p>
+                                  <p className="text-white/50 text-xs">{account.bankName || account.type}</p>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-white/80 text-sm font-semibold">
+                                  {new Intl.NumberFormat('pt-BR', {
+                                    style: 'currency',
+                                    currency: account.currency,
+                                  }).format(account.currentBalance)}
+                                </p>
+                                <p className="text-white/50 text-xs">Saldo atual</p>
+                              </div>
                             </div>
-                            <div className="text-white/80 text-sm font-semibold">
-                              {new Intl.NumberFormat('pt-BR', {
-                                style: 'currency',
-                                currency: account.currency,
-                              }).format(account.currentBalance)}
-                            </div>
-                          </div>
-                        ))}
+                          ),
+                        )}
                       </div>
                     </div>
                     <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">

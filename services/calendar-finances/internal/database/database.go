@@ -200,6 +200,44 @@ func RunMigrations(db *sql.DB) error {
 			END IF;
 		END $$`,
 		`CREATE INDEX IF NOT EXISTS idx_bank_accounts_linked ON finance.bank_accounts(linked_account_id)`,
+
+		// Create credit_card_invoices table
+		`CREATE TABLE IF NOT EXISTS finance.credit_card_invoices (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			bank_account_id UUID NOT NULL REFERENCES finance.bank_accounts(id) ON DELETE CASCADE,
+			reference_date DATE NOT NULL,
+			opening_date DATE NOT NULL,
+			closing_date DATE NOT NULL,
+			due_date DATE NOT NULL,
+			amount NUMERIC(15, 2) NOT NULL DEFAULT 0,
+			status VARCHAR(20) NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'CLOSED', 'PAID')),
+			paid_at TIMESTAMP,
+			paid_amount NUMERIC(15, 2),
+			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			CONSTRAINT uq_invoice_account_reference UNIQUE (bank_account_id, reference_date)
+		)`,
+
+		// Indexes for credit_card_invoices
+		`CREATE INDEX IF NOT EXISTS idx_invoices_bank_account ON finance.credit_card_invoices(bank_account_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_invoices_status ON finance.credit_card_invoices(status)`,
+		`CREATE INDEX IF NOT EXISTS idx_invoices_closing_date ON finance.credit_card_invoices(closing_date)`,
+		`CREATE INDEX IF NOT EXISTS idx_invoices_due_date ON finance.credit_card_invoices(due_date)`,
+
+		// Migration: Add invoice_id to transactions (for linking credit card transactions to invoices)
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'finance'
+				AND table_name = 'transactions'
+				AND column_name = 'invoice_id'
+			) THEN
+				ALTER TABLE finance.transactions
+				ADD COLUMN invoice_id UUID REFERENCES finance.credit_card_invoices(id) ON DELETE SET NULL;
+			END IF;
+		END $$`,
+		`CREATE INDEX IF NOT EXISTS idx_transactions_invoice ON finance.transactions(invoice_id)`,
 	}
 
 	for i, migration := range migrations {

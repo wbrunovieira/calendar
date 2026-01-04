@@ -182,3 +182,20 @@ export interface BudgetSummaryItem {
   spent: number;
   remaining: number;
 }
+
+export type InvoiceStatus = 'OPEN' | 'CLOSED' | 'PAID';
+
+export interface Invoice {
+  id: string;
+  bankAccountId: string;
+  referenceDate: string;
+  openingDate: string;
+  closingDate: string;
+  dueDate: string;
+  amount: number;
+  status: InvoiceStatus;
+  paidAt?: string;
+  paidAmount?: number;
+  createdAt: string;
+  updatedAt: string;
+}

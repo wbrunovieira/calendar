@@ -35,6 +35,7 @@ type Transaction struct {
 	BankAccountID        string     `json:"bankAccountId"`
 	DestinationAccountID *string    `json:"destinationAccountId,omitempty"`
 	CategoryID           *string    `json:"categoryId,omitempty"`
+	InvoiceID            *string    `json:"invoiceId,omitempty"` // Credit card invoice this transaction belongs to
 	Type                 Type       `json:"type"`
 	Status               Status     `json:"status"`
 	Amount               float64    `json:"amount"`
@@ -60,6 +61,7 @@ type CreateParams struct {
 	BankAccountID        string
 	DestinationAccountID *string
 	CategoryID           *string
+	InvoiceID            *string // Credit card invoice this transaction belongs to
 	Type                 Type
 	Amount               float64
 	Currency             string
@@ -118,6 +120,7 @@ func New(params CreateParams) (*Transaction, error) {
 		BankAccountID:        strings.TrimSpace(params.BankAccountID),
 		DestinationAccountID: cloneString(params.DestinationAccountID),
 		CategoryID:           cloneString(params.CategoryID),
+		InvoiceID:            cloneString(params.InvoiceID),
 		Type:                 params.Type,
 		Status:               StatusPlanned,
 		Amount:               round2(params.Amount),

@@ -50,6 +50,7 @@ export default function BankAccountModal({
     dueDay: undefined as number | undefined,
     closingDay: undefined as number | undefined,
     linkedAccountId: undefined as string | undefined,
+    initialInvoiceAmount: undefined as number | undefined,
   });
 
   useEffect(() => {
@@ -77,6 +78,7 @@ export default function BankAccountModal({
         dueDay: account.dueDay,
         closingDay: account.closingDay,
         linkedAccountId: account.linkedAccountId,
+        initialInvoiceAmount: undefined,
       });
     } else {
       setFormData({
@@ -98,6 +100,7 @@ export default function BankAccountModal({
         dueDay: undefined,
         closingDay: undefined,
         linkedAccountId: undefined,
+        initialInvoiceAmount: undefined,
       });
     }
   }, [account, profiles, isOpen]);
@@ -125,7 +128,9 @@ export default function BankAccountModal({
       <div className="bg-gradient-to-br from-emerald-900/95 via-teal-900/95 to-cyan-900/95 rounded-2xl p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-white/20 shadow-2xl">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-bold text-white">
-            {account ? 'Editar Conta Bancária' : 'Nova Conta Bancária'}
+            {account
+              ? (isCreditCard ? 'Editar Cartão de Crédito' : 'Editar Conta Bancária')
+              : (isCreditCard ? 'Novo Cartão de Crédito' : 'Nova Conta Bancária')}
           </h2>
           <button
             onClick={onClose}
@@ -179,105 +184,114 @@ export default function BankAccountModal({
 
           {/* Account Name */}
           <div>
-            <label className="block text-white/90 font-semibold mb-2">Nome da Conta</label>
+            <label className="block text-white/90 font-semibold mb-2">
+              {isCreditCard ? 'Nome do Cartão' : 'Nome da Conta'}
+            </label>
             <input
               type="text"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              placeholder="Ex: Nubank, Conta Corrente BB, Investimentos XP"
+              placeholder={isCreditCard ? 'Ex: Nubank Ultravioleta, Cartão Mercado Pago' : 'Ex: Nubank, Conta Corrente BB'}
               className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               required
             />
           </div>
 
-          {/* Balance Fields */}
-          {account ? (
-            <div>
-              <label className="block text-white/90 font-semibold mb-2">Saldo Atual</label>
-              <input
-                type="number"
-                step="0.01"
-                value={formData.currentBalance}
-                onChange={(e) => setFormData({ ...formData, currentBalance: parseFloat(e.target.value) || 0 })}
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                required
-              />
-              <p className="text-white/50 text-sm mt-1">Saldo inicial: R$ {formData.initialBalance.toFixed(2)}</p>
-            </div>
-          ) : (
-            <div>
-              <label className="block text-white/90 font-semibold mb-2">Saldo Inicial</label>
-              <input
-                type="number"
-                step="0.01"
-                value={formData.initialBalance}
-                onChange={(e) => {
-                  const value = parseFloat(e.target.value) || 0;
-                  setFormData({ ...formData, initialBalance: value, currentBalance: value });
-                }}
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                required
-              />
-            </div>
+          {/* Balance Fields - Only for non-credit cards */}
+          {!isCreditCard && (
+            <>
+              {account ? (
+                <div>
+                  <label className="block text-white/90 font-semibold mb-2">Saldo Atual</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.currentBalance}
+                    onChange={(e) => setFormData({ ...formData, currentBalance: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    required
+                  />
+                  <p className="text-white/50 text-sm mt-1">Saldo inicial: R$ {formData.initialBalance.toFixed(2)}</p>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-white/90 font-semibold mb-2">Saldo Inicial</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.initialBalance}
+                    onChange={(e) => {
+                      const value = parseFloat(e.target.value) || 0;
+                      setFormData({ ...formData, initialBalance: value, currentBalance: value });
+                    }}
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    required
+                  />
+                </div>
+              )}
+            </>
           )}
 
-          {/* Bank Details */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-white/90 font-semibold mb-2">Banco</label>
-              <input
-                type="text"
-                value={formData.bankName}
-                onChange={(e) => setFormData({ ...formData, bankName: e.target.value })}
-                placeholder="Ex: Nubank, Banco do Brasil"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
-            <div>
-              <label className="block text-white/90 font-semibold mb-2">Código do Banco</label>
-              <input
-                type="text"
-                value={formData.bankCode}
-                onChange={(e) => setFormData({ ...formData, bankCode: e.target.value })}
-                placeholder="Ex: 260, 001"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
-          </div>
+          {/* Bank Details - Only for non-credit cards */}
+          {!isCreditCard && (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-white/90 font-semibold mb-2">Banco</label>
+                  <input
+                    type="text"
+                    value={formData.bankName}
+                    onChange={(e) => setFormData({ ...formData, bankName: e.target.value })}
+                    placeholder="Ex: Nubank, Banco do Brasil"
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-white/90 font-semibold mb-2">Código do Banco</label>
+                  <input
+                    type="text"
+                    value={formData.bankCode}
+                    onChange={(e) => setFormData({ ...formData, bankCode: e.target.value })}
+                    placeholder="Ex: 260, 001"
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
 
-          {/* Account Details */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-white/90 font-semibold mb-2">Agência</label>
-              <input
-                type="text"
-                value={formData.agency}
-                onChange={(e) => setFormData({ ...formData, agency: e.target.value })}
-                placeholder="0001"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
-            <div>
-              <label className="block text-white/90 font-semibold mb-2">Conta</label>
-              <input
-                type="text"
-                value={formData.accountNumber}
-                onChange={(e) => setFormData({ ...formData, accountNumber: e.target.value })}
-                placeholder="123456"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
-            <div>
-              <label className="block text-white/90 font-semibold mb-2">Dígito</label>
-              <input
-                type="text"
-                value={formData.accountDigit}
-                onChange={(e) => setFormData({ ...formData, accountDigit: e.target.value })}
-                placeholder="7"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
-          </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-white/90 font-semibold mb-2">Agência</label>
+                  <input
+                    type="text"
+                    value={formData.agency}
+                    onChange={(e) => setFormData({ ...formData, agency: e.target.value })}
+                    placeholder="0001"
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-white/90 font-semibold mb-2">Conta</label>
+                  <input
+                    type="text"
+                    value={formData.accountNumber}
+                    onChange={(e) => setFormData({ ...formData, accountNumber: e.target.value })}
+                    placeholder="123456"
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-white/90 font-semibold mb-2">Dígito</label>
+                  <input
+                    type="text"
+                    value={formData.accountDigit}
+                    onChange={(e) => setFormData({ ...formData, accountDigit: e.target.value })}
+                    placeholder="7"
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+            </>
+          )}
 
           {/* Credit Card Specific Fields */}
           {isCreditCard && (
@@ -302,7 +316,7 @@ export default function BankAccountModal({
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-white/90 font-semibold mb-2">Limite</label>
                   <input
@@ -310,6 +324,35 @@ export default function BankAccountModal({
                     step="0.01"
                     value={formData.creditLimit || ''}
                     onChange={(e) => setFormData({ ...formData, creditLimit: parseFloat(e.target.value) || undefined })}
+                    placeholder="Ex: 2600.00"
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                {!account && (
+                  <div>
+                    <label className="block text-white/90 font-semibold mb-2">Fatura Atual (opcional)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.initialInvoiceAmount || ''}
+                      onChange={(e) => setFormData({ ...formData, initialInvoiceAmount: parseFloat(e.target.value) || undefined })}
+                      placeholder="Ex: 760.09"
+                      className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <p className="text-white/50 text-sm mt-1">Valor da fatura atual para importar</p>
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-white/90 font-semibold mb-2">Dia Fechamento</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={formData.closingDay || ''}
+                    onChange={(e) => setFormData({ ...formData, closingDay: parseInt(e.target.value) || undefined })}
+                    placeholder="Ex: 9"
                     className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
@@ -321,17 +364,7 @@ export default function BankAccountModal({
                     max="31"
                     value={formData.dueDay || ''}
                     onChange={(e) => setFormData({ ...formData, dueDay: parseInt(e.target.value) || undefined })}
-                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-white/90 font-semibold mb-2">Dia Fechamento</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="31"
-                    value={formData.closingDay || ''}
-                    onChange={(e) => setFormData({ ...formData, closingDay: parseInt(e.target.value) || undefined })}
+                    placeholder="Ex: 14"
                     className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
@@ -375,7 +408,7 @@ export default function BankAccountModal({
               type="submit"
               className="flex-1 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold transition-all duration-300 shadow-lg hover:shadow-xl"
             >
-              {account ? 'Atualizar' : 'Criar'} Conta
+              {account ? 'Atualizar' : 'Criar'} {isCreditCard ? 'Cartão' : 'Conta'}
             </button>
           </div>
         </form>

@@ -7,6 +7,7 @@ import (
 
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
 	"github.com/brunovieira/calendar-finances/internal/domain/category"
+	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
 	"github.com/brunovieira/calendar-finances/internal/domain/profile"
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
 )
@@ -114,6 +115,66 @@ func (f *fakeTransactionRepo) SumByCategories(profileID string, categoryIDs []st
 	return result, nil
 }
 
+type fakeInvoiceRepo struct {
+	invoices map[string]*invoice.Invoice
+}
+
+func (f *fakeInvoiceRepo) Create(inv *invoice.Invoice) error {
+	if f.invoices == nil {
+		f.invoices = make(map[string]*invoice.Invoice)
+	}
+	f.invoices[inv.ID] = inv
+	return nil
+}
+
+func (f *fakeInvoiceRepo) FindByID(id string) (*invoice.Invoice, error) {
+	if inv, ok := f.invoices[id]; ok {
+		return inv, nil
+	}
+	return nil, errors.New("not found")
+}
+
+func (f *fakeInvoiceRepo) FindByBankAccountID(bankAccountID string) ([]*invoice.Invoice, error) {
+	var list []*invoice.Invoice
+	for _, inv := range f.invoices {
+		if inv.BankAccountID == bankAccountID {
+			list = append(list, inv)
+		}
+	}
+	return list, nil
+}
+
+func (f *fakeInvoiceRepo) FindOpenByBankAccountID(bankAccountID string) (*invoice.Invoice, error) {
+	for _, inv := range f.invoices {
+		if inv.BankAccountID == bankAccountID && inv.Status == invoice.StatusOpen {
+			return inv, nil
+		}
+	}
+	return nil, nil
+}
+
+func (f *fakeInvoiceRepo) FindByBankAccountAndDate(bankAccountID string, txDate time.Time) (*invoice.Invoice, error) {
+	for _, inv := range f.invoices {
+		if inv.BankAccountID == bankAccountID && inv.ContainsDate(txDate) {
+			return inv, nil
+		}
+	}
+	return nil, nil
+}
+
+func (f *fakeInvoiceRepo) Update(inv *invoice.Invoice) error {
+	if f.invoices == nil {
+		return errors.New("not found")
+	}
+	f.invoices[inv.ID] = inv
+	return nil
+}
+
+func (f *fakeInvoiceRepo) Delete(id string) error {
+	delete(f.invoices, id)
+	return nil
+}
+
 func TestCreateTransactionUseCaseExpense(t *testing.T) {
 	profileID := "profile-1"
 	accountID := "account-1"
@@ -160,8 +221,9 @@ func TestCreateTransactionUseCaseExpense(t *testing.T) {
 	}}
 
 	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
 	input := CreateTransactionInput{
 		ProfileID:     profileID,
 		BankAccountID: accountID,
@@ -223,8 +285,9 @@ func TestCreateTransactionUseCaseCreditLimitExceeded(t *testing.T) {
 
 	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
 	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
 	input := CreateTransactionInput{
 		ProfileID:     profileID,
 		BankAccountID: accountID,

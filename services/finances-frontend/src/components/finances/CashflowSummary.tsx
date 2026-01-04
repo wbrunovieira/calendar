@@ -1,10 +1,11 @@
 'use client';
 
-import type { BankAccount, Transaction } from '@/types/finances';
+import type { BankAccount, Transaction, Invoice } from '@/types/finances';
 
 interface CashflowSummaryProps {
   transactions: Transaction[];
   accounts: BankAccount[];
+  currentInvoices?: Record<string, Invoice>;
 }
 
 const formatCurrency = (value: number, currency = 'BRL') =>
@@ -14,7 +15,7 @@ const formatCurrency = (value: number, currency = 'BRL') =>
     minimumFractionDigits: 2,
   }).format(value);
 
-export default function CashflowSummary({ transactions, accounts }: CashflowSummaryProps) {
+export default function CashflowSummary({ transactions, accounts, currentInvoices = {} }: CashflowSummaryProps) {
   const confirmedIncomeTransactions = transactions.filter(
     (transaction) => transaction.status === 'CONFIRMED' && transaction.type === 'INCOME',
   );
@@ -39,7 +40,22 @@ export default function CashflowSummary({ transactions, accounts }: CashflowSumm
       0,
     );
 
-  const accountsBalance = accounts.reduce((total, account) => total + account.currentBalance, 0);
+  // For credit cards, use the invoice amount as negative (debt)
+  // For other accounts, use the current balance
+  const accountsBalance = accounts.reduce((total, account) => {
+    if (account.type === 'CREDIT_CARD') {
+      const invoice = currentInvoices[account.id];
+      // Credit card invoice is a debt, so subtract it
+      return total - (invoice?.amount || 0);
+    }
+    return total + account.currentBalance;
+  }, 0);
+
+  // Count credit cards with open invoices
+  const creditCardsWithDebt = accounts.filter(
+    (acc) => acc.type === 'CREDIT_CARD' && currentInvoices[acc.id]?.amount > 0,
+  ).length;
+  const regularAccounts = accounts.filter((acc) => acc.type !== 'CREDIT_CARD').length;
   const netCashflow = confirmedIncome - confirmedExpense;
 
   const cards = [
@@ -90,8 +106,15 @@ export default function CashflowSummary({ transactions, accounts }: CashflowSumm
           <span>🏦</span>
           <span>Saldo em contas</span>
         </div>
-        <div className="text-3xl font-bold text-white">{formatCurrency(accountsBalance)}</div>
-        <p className="text-white/60 text-sm">{accounts.length} contas monitoradas</p>
+        <div className={`text-3xl font-bold ${accountsBalance >= 0 ? 'text-white' : 'text-red-400'}`}>
+          {formatCurrency(accountsBalance)}
+        </div>
+        <p className="text-white/60 text-sm">
+          {regularAccounts > 0 && `${regularAccounts} ${regularAccounts === 1 ? 'conta' : 'contas'}`}
+          {regularAccounts > 0 && creditCardsWithDebt > 0 && ' • '}
+          {creditCardsWithDebt > 0 && `${creditCardsWithDebt} ${creditCardsWithDebt === 1 ? 'fatura' : 'faturas'} em aberto`}
+          {regularAccounts === 0 && creditCardsWithDebt === 0 && 'Nenhuma conta monitorada'}
+        </p>
       </div>
     </div>
   );

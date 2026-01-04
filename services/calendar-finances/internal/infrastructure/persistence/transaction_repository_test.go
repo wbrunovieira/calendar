@@ -47,21 +47,22 @@ func TestTransactionRepositoryCreate(t *testing.T) {
 			txn.ID,
 			txn.ProfileID,
 			txn.BankAccountID,
-			nil,
-			nil,
+			nil, // destination_account_id
+			nil, // category_id
+			nil, // invoice_id
 			txn.Type,
 			txn.Status,
 			txn.Amount,
 			txn.Currency,
 			txn.Description,
-			nil,
-			nil,
+			nil, // notes
+			nil, // cost_center
 			txn.OccurredOn,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
+			nil, // due_on
+			nil, // recurrence_rule
+			nil, // installment_number
+			nil, // installment_total
+			nil, // external_id
 			sqlmock.AnyArg(),
 			sqlmock.AnyArg(),
 		).
@@ -98,12 +99,12 @@ func TestTransactionRepositoryGetByID(t *testing.T) {
 	now := fixedTime()
 
 	txRows := sqlmock.NewRows([]string{
-		"id", "profile_id", "bank_account_id", "destination_account_id", "category_id",
+		"id", "profile_id", "bank_account_id", "destination_account_id", "category_id", "invoice_id",
 		"type", "status", "amount", "currency", "description", "notes", "cost_center",
 		"occurred_on", "due_on", "recurrence_rule", "installment_number", "installment_total",
 		"external_id", "created_at", "updated_at",
 	}).AddRow(
-		"tx-123", "profile-1", "account-1", nil, nil,
+		"tx-123", "profile-1", "account-1", nil, nil, nil,
 		"EXPENSE", "CONFIRMED", 120.0, "BRL", "Conta", nil, nil,
 		now, nil, nil, nil, nil,
 		nil, now, now,
@@ -115,7 +116,7 @@ func TestTransactionRepositoryGetByID(t *testing.T) {
 	tagRows := sqlmock.NewRows([]string{"transaction_id", "tag"}).
 		AddRow("tx-123", "fixo")
 
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, profile_id, bank_account_id, destination_account_id, category_id")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, profile_id, bank_account_id, destination_account_id, category_id, invoice_id")).
 		WithArgs("tx-123").
 		WillReturnRows(txRows)
 

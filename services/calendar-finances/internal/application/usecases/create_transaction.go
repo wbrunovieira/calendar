@@ -6,6 +6,7 @@ import (
 
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
 	"github.com/brunovieira/calendar-finances/internal/domain/category"
+	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
 	"github.com/brunovieira/calendar-finances/internal/domain/profile"
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
 )
@@ -42,6 +43,7 @@ type CreateTransactionUseCase struct {
 	accountRepo     bankaccount.Repository
 	categoryRepo    category.Repository
 	transactionRepo transaction.Repository
+	invoiceRepo     invoice.Repository
 }
 
 func NewCreateTransactionUseCase(
@@ -49,12 +51,14 @@ func NewCreateTransactionUseCase(
 	accountRepo bankaccount.Repository,
 	categoryRepo category.Repository,
 	transactionRepo transaction.Repository,
+	invoiceRepo invoice.Repository,
 ) *CreateTransactionUseCase {
 	return &CreateTransactionUseCase{
 		profileRepo:     profileRepo,
 		accountRepo:     accountRepo,
 		categoryRepo:    categoryRepo,
 		transactionRepo: transactionRepo,
+		invoiceRepo:     invoiceRepo,
 	}
 }
 
@@ -136,11 +140,27 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		return nil, err
 	}
 
+	// Handle credit card invoice assignment for expense transactions
+	var invoiceID *string
+	var inv *invoice.Invoice
+	if account.Type == bankaccount.AccountTypeCreditCard && typeValue == transaction.TypeExpense {
+		if account.ClosingDay != nil && account.DueDay != nil {
+			inv, err = uc.getOrCreateInvoiceForDate(account, occurredOn)
+			if err != nil {
+				return nil, err
+			}
+			if inv != nil {
+				invoiceID = &inv.ID
+			}
+		}
+	}
+
 	createParams := transaction.CreateParams{
 		ProfileID:            input.ProfileID,
 		BankAccountID:        input.BankAccountID,
 		DestinationAccountID: destinationAccountID,
 		CategoryID:           input.CategoryID,
+		InvoiceID:            invoiceID,
 		Type:                 typeValue,
 		Amount:               input.Amount,
 		Currency:             input.Currency,
@@ -166,7 +186,47 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		return nil, err
 	}
 
+	// Update invoice amount if this is a credit card expense
+	if inv != nil {
+		if err := inv.AddAmount(input.Amount); err == nil {
+			_ = uc.invoiceRepo.Update(inv)
+		}
+	}
+
 	return txn, nil
+}
+
+// getOrCreateInvoiceForDate gets or creates the appropriate invoice for a transaction date
+func (uc *CreateTransactionUseCase) getOrCreateInvoiceForDate(account *bankaccount.BankAccount, txDate time.Time) (*invoice.Invoice, error) {
+	// Try to find existing invoice for this date
+	inv, err := uc.invoiceRepo.FindByBankAccountAndDate(account.ID, txDate)
+	if err != nil {
+		return nil, err
+	}
+	if inv != nil {
+		return inv, nil
+	}
+
+	// No invoice exists, create one
+	refDate := calculateReferenceMonth(txDate, *account.ClosingDay)
+
+	params := invoice.CreateParams{
+		BankAccountID: account.ID,
+		ClosingDay:    *account.ClosingDay,
+		DueDay:        *account.DueDay,
+		ReferenceDate: refDate,
+	}
+
+	inv, err = invoice.New(params)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := uc.invoiceRepo.Create(inv); err != nil {
+		return nil, err
+	}
+
+	return inv, nil
 }
 
 func (uc *CreateTransactionUseCase) buildSplits(profileID string, inputs []CreateTransactionSplitInput) ([]*transaction.Split, error) {

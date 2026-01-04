@@ -1,0 +1,343 @@
+package usecases
+
+import (
+	"time"
+
+	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
+	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
+)
+
+// CreateInvoiceInput contains the parameters to create an invoice
+type CreateInvoiceInput struct {
+	BankAccountID string `json:"bankAccountId"`
+	ReferenceDate string `json:"referenceDate"` // Format: 2006-01
+}
+
+// CreateInvoiceUseCase creates a new credit card invoice
+type CreateInvoiceUseCase struct {
+	invoiceRepo invoice.Repository
+	accountRepo bankaccount.Repository
+}
+
+func NewCreateInvoiceUseCase(
+	invoiceRepo invoice.Repository,
+	accountRepo bankaccount.Repository,
+) *CreateInvoiceUseCase {
+	return &CreateInvoiceUseCase{
+		invoiceRepo: invoiceRepo,
+		accountRepo: accountRepo,
+	}
+}
+
+func (uc *CreateInvoiceUseCase) Execute(input CreateInvoiceInput) (*invoice.Invoice, error) {
+	account, err := uc.accountRepo.FindByID(input.BankAccountID)
+	if err != nil {
+		return nil, ErrBankAccountNotFound
+	}
+
+	if account.Type != bankaccount.AccountTypeCreditCard {
+		return nil, ErrNotCreditCard
+	}
+
+	if account.ClosingDay == nil || account.DueDay == nil {
+		return nil, ErrInvalidInput
+	}
+
+	refDate, err := parseYearMonth(input.ReferenceDate)
+	if err != nil {
+		return nil, ErrInvalidInput
+	}
+
+	params := invoice.CreateParams{
+		BankAccountID: input.BankAccountID,
+		ClosingDay:    *account.ClosingDay,
+		DueDay:        *account.DueDay,
+		ReferenceDate: refDate,
+	}
+
+	inv, err := invoice.New(params)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := uc.invoiceRepo.Create(inv); err != nil {
+		return nil, err
+	}
+
+	return inv, nil
+}
+
+// ListInvoicesInput contains the parameters to list invoices
+type ListInvoicesInput struct {
+	BankAccountID string `json:"bankAccountId"`
+}
+
+// ListInvoicesUseCase lists all invoices for a credit card
+type ListInvoicesUseCase struct {
+	invoiceRepo invoice.Repository
+	accountRepo bankaccount.Repository
+}
+
+func NewListInvoicesUseCase(
+	invoiceRepo invoice.Repository,
+	accountRepo bankaccount.Repository,
+) *ListInvoicesUseCase {
+	return &ListInvoicesUseCase{
+		invoiceRepo: invoiceRepo,
+		accountRepo: accountRepo,
+	}
+}
+
+func (uc *ListInvoicesUseCase) Execute(bankAccountID string) ([]*invoice.Invoice, error) {
+	account, err := uc.accountRepo.FindByID(bankAccountID)
+	if err != nil {
+		return nil, ErrBankAccountNotFound
+	}
+
+	if account.Type != bankaccount.AccountTypeCreditCard {
+		return nil, ErrNotCreditCard
+	}
+
+	return uc.invoiceRepo.FindByBankAccountID(bankAccountID)
+}
+
+// GetOrCreateInvoiceForDateUseCase gets or creates the appropriate invoice for a transaction date
+type GetOrCreateInvoiceForDateUseCase struct {
+	invoiceRepo invoice.Repository
+	accountRepo bankaccount.Repository
+}
+
+func NewGetOrCreateInvoiceForDateUseCase(
+	invoiceRepo invoice.Repository,
+	accountRepo bankaccount.Repository,
+) *GetOrCreateInvoiceForDateUseCase {
+	return &GetOrCreateInvoiceForDateUseCase{
+		invoiceRepo: invoiceRepo,
+		accountRepo: accountRepo,
+	}
+}
+
+func (uc *GetOrCreateInvoiceForDateUseCase) Execute(bankAccountID string, txDate time.Time) (*invoice.Invoice, error) {
+	account, err := uc.accountRepo.FindByID(bankAccountID)
+	if err != nil {
+		return nil, ErrBankAccountNotFound
+	}
+
+	if account.Type != bankaccount.AccountTypeCreditCard {
+		return nil, ErrNotCreditCard
+	}
+
+	if account.ClosingDay == nil || account.DueDay == nil {
+		return nil, ErrInvalidInput
+	}
+
+	// Try to find existing invoice for this date
+	inv, err := uc.invoiceRepo.FindByBankAccountAndDate(bankAccountID, txDate)
+	if err != nil {
+		return nil, err
+	}
+	if inv != nil {
+		return inv, nil
+	}
+
+	// No invoice exists, create one
+	// Determine which month this transaction belongs to
+	refDate := calculateReferenceMonth(txDate, *account.ClosingDay)
+
+	params := invoice.CreateParams{
+		BankAccountID: bankAccountID,
+		ClosingDay:    *account.ClosingDay,
+		DueDay:        *account.DueDay,
+		ReferenceDate: refDate,
+	}
+
+	inv, err = invoice.New(params)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := uc.invoiceRepo.Create(inv); err != nil {
+		return nil, err
+	}
+
+	return inv, nil
+}
+
+// calculateReferenceMonth determines which invoice month a transaction date belongs to
+func calculateReferenceMonth(txDate time.Time, closingDay int) time.Time {
+	year := txDate.Year()
+	month := txDate.Month()
+	day := txDate.Day()
+
+	// If transaction day is after closing day, it goes to next month's invoice
+	if day > closingDay {
+		month++
+		if month > 12 {
+			month = 1
+			year++
+		}
+	}
+
+	return time.Date(year, month, 1, 0, 0, 0, 0, time.UTC)
+}
+
+// CloseInvoiceInput contains the parameters to close an invoice
+type CloseInvoiceInput struct {
+	InvoiceID string `json:"invoiceId"`
+}
+
+// CloseInvoiceUseCase closes an invoice
+type CloseInvoiceUseCase struct {
+	invoiceRepo invoice.Repository
+}
+
+func NewCloseInvoiceUseCase(invoiceRepo invoice.Repository) *CloseInvoiceUseCase {
+	return &CloseInvoiceUseCase{invoiceRepo: invoiceRepo}
+}
+
+func (uc *CloseInvoiceUseCase) Execute(invoiceID string) (*invoice.Invoice, error) {
+	inv, err := uc.invoiceRepo.FindByID(invoiceID)
+	if err != nil {
+		return nil, ErrInvoiceNotFound
+	}
+
+	if err := inv.Close(); err != nil {
+		return nil, ErrInvoiceNotOpen
+	}
+
+	if err := uc.invoiceRepo.Update(inv); err != nil {
+		return nil, err
+	}
+
+	return inv, nil
+}
+
+// PayInvoiceInput contains the parameters to pay an invoice
+type PayInvoiceInput struct {
+	InvoiceID  string  `json:"invoiceId"`
+	PaidAmount float64 `json:"paidAmount"`
+	PaidAt     string  `json:"paidAt"` // Format: 2006-01-02 or RFC3339
+}
+
+// PayInvoiceUseCase marks an invoice as paid
+type PayInvoiceUseCase struct {
+	invoiceRepo invoice.Repository
+}
+
+func NewPayInvoiceUseCase(invoiceRepo invoice.Repository) *PayInvoiceUseCase {
+	return &PayInvoiceUseCase{invoiceRepo: invoiceRepo}
+}
+
+func (uc *PayInvoiceUseCase) Execute(input PayInvoiceInput) (*invoice.Invoice, error) {
+	inv, err := uc.invoiceRepo.FindByID(input.InvoiceID)
+	if err != nil {
+		return nil, ErrInvoiceNotFound
+	}
+
+	paidAt, err := parseDate(input.PaidAt)
+	if err != nil {
+		return nil, ErrInvalidInput
+	}
+
+	if err := inv.Pay(input.PaidAmount, paidAt); err != nil {
+		return nil, ErrInvoiceAlreadyPaid
+	}
+
+	if err := uc.invoiceRepo.Update(inv); err != nil {
+		return nil, err
+	}
+
+	return inv, nil
+}
+
+// GetInvoiceUseCase retrieves a specific invoice
+type GetInvoiceUseCase struct {
+	invoiceRepo invoice.Repository
+}
+
+func NewGetInvoiceUseCase(invoiceRepo invoice.Repository) *GetInvoiceUseCase {
+	return &GetInvoiceUseCase{invoiceRepo: invoiceRepo}
+}
+
+func (uc *GetInvoiceUseCase) Execute(invoiceID string) (*invoice.Invoice, error) {
+	inv, err := uc.invoiceRepo.FindByID(invoiceID)
+	if err != nil {
+		return nil, ErrInvoiceNotFound
+	}
+	return inv, nil
+}
+
+// GetCurrentInvoiceUseCase retrieves the current open invoice for a credit card
+type GetCurrentInvoiceUseCase struct {
+	invoiceRepo invoice.Repository
+	accountRepo bankaccount.Repository
+}
+
+func NewGetCurrentInvoiceUseCase(
+	invoiceRepo invoice.Repository,
+	accountRepo bankaccount.Repository,
+) *GetCurrentInvoiceUseCase {
+	return &GetCurrentInvoiceUseCase{
+		invoiceRepo: invoiceRepo,
+		accountRepo: accountRepo,
+	}
+}
+
+func (uc *GetCurrentInvoiceUseCase) Execute(bankAccountID string) (*invoice.Invoice, error) {
+	account, err := uc.accountRepo.FindByID(bankAccountID)
+	if err != nil {
+		return nil, ErrBankAccountNotFound
+	}
+
+	if account.Type != bankaccount.AccountTypeCreditCard {
+		return nil, ErrNotCreditCard
+	}
+
+	inv, err := uc.invoiceRepo.FindOpenByBankAccountID(bankAccountID)
+	if err != nil {
+		return nil, err
+	}
+
+	return inv, nil
+}
+
+// AddAmountToInvoiceInput contains the parameters to add an amount to an invoice
+type AddAmountToInvoiceInput struct {
+	InvoiceID string  `json:"invoiceId"`
+	Amount    float64 `json:"amount"`
+}
+
+// AddAmountToInvoiceUseCase adds an amount to an invoice
+type AddAmountToInvoiceUseCase struct {
+	invoiceRepo invoice.Repository
+}
+
+func NewAddAmountToInvoiceUseCase(invoiceRepo invoice.Repository) *AddAmountToInvoiceUseCase {
+	return &AddAmountToInvoiceUseCase{invoiceRepo: invoiceRepo}
+}
+
+func (uc *AddAmountToInvoiceUseCase) Execute(input AddAmountToInvoiceInput) (*invoice.Invoice, error) {
+	inv, err := uc.invoiceRepo.FindByID(input.InvoiceID)
+	if err != nil {
+		return nil, ErrInvoiceNotFound
+	}
+
+	if err := inv.AddAmount(input.Amount); err != nil {
+		return nil, ErrInvoiceNotOpen
+	}
+
+	if err := uc.invoiceRepo.Update(inv); err != nil {
+		return nil, err
+	}
+
+	return inv, nil
+}
+
+// parseYearMonth parses a date in format "2006-01"
+func parseYearMonth(value string) (time.Time, error) {
+	t, err := time.Parse("2006-01", value)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return t, nil
+}

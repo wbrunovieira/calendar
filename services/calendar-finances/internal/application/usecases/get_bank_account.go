@@ -1,12 +1,8 @@
 package usecases
 
 import (
-	"errors"
-
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
 )
-
-var ErrBankAccountNotFound = errors.New("bank account not found")
 
 type GetBankAccountUseCase struct {
 	repo bankaccount.Repository

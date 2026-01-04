@@ -94,9 +94,12 @@ func main() {
 		deleteCategoryUC,
 	)
 
+	// Initialize Invoice repository
+	invoiceRepo := persistence.NewInvoiceRepository(db)
+
 	// Initialize Transaction repository and use cases
 	transactionRepo := persistence.NewTransactionRepository(db)
-	createTransactionUC := usecases.NewCreateTransactionUseCase(profileRepo, bankAccountRepo, categoryRepo, transactionRepo)
+	createTransactionUC := usecases.NewCreateTransactionUseCase(profileRepo, bankAccountRepo, categoryRepo, transactionRepo, invoiceRepo)
 	listTransactionsUC := usecases.NewListTransactionsUseCase(transactionRepo)
 	getTransactionUC := usecases.NewGetTransactionUseCase(transactionRepo)
 	updateTransactionStatusUC := usecases.NewUpdateTransactionStatusUseCase(transactionRepo)
@@ -107,6 +110,24 @@ func main() {
 		getTransactionUC,
 		updateTransactionStatusUC,
 		deleteTransactionUC,
+	)
+
+	// Initialize Invoice use cases and handlers
+	createInvoiceUC := usecases.NewCreateInvoiceUseCase(invoiceRepo, bankAccountRepo)
+	listInvoicesUC := usecases.NewListInvoicesUseCase(invoiceRepo, bankAccountRepo)
+	getInvoiceUC := usecases.NewGetInvoiceUseCase(invoiceRepo)
+	getCurrentInvoiceUC := usecases.NewGetCurrentInvoiceUseCase(invoiceRepo, bankAccountRepo)
+	closeInvoiceUC := usecases.NewCloseInvoiceUseCase(invoiceRepo)
+	payInvoiceUC := usecases.NewPayInvoiceUseCase(invoiceRepo)
+	addAmountToInvoiceUC := usecases.NewAddAmountToInvoiceUseCase(invoiceRepo)
+	invoiceHandler := httpHandlers.NewInvoiceHandlers(
+		createInvoiceUC,
+		listInvoicesUC,
+		getInvoiceUC,
+		getCurrentInvoiceUC,
+		closeInvoiceUC,
+		payInvoiceUC,
+		addAmountToInvoiceUC,
 	)
 
 	recurringRepo := persistence.NewRecurringTransactionRepository(db)
@@ -161,6 +182,15 @@ func main() {
 	apiRouter.HandleFunc("/budgets/{id}", budgetHandler.Delete).Methods("DELETE")
 
 	apiRouter.HandleFunc("/transactions/{id}", transactionHandler.Delete).Methods("DELETE")
+
+	// Invoice routes
+	apiRouter.HandleFunc("/invoices", invoiceHandler.List).Methods("GET")
+	apiRouter.HandleFunc("/invoices", invoiceHandler.Create).Methods("POST")
+	apiRouter.HandleFunc("/invoices/current", invoiceHandler.GetCurrent).Methods("GET")
+	apiRouter.HandleFunc("/invoices/{id}", invoiceHandler.Get).Methods("GET")
+	apiRouter.HandleFunc("/invoices/{id}/close", invoiceHandler.Close).Methods("POST")
+	apiRouter.HandleFunc("/invoices/{id}/pay", invoiceHandler.Pay).Methods("POST")
+	apiRouter.HandleFunc("/invoices/{id}/add-amount", invoiceHandler.AddAmount).Methods("POST")
 
 	// CORS configuration
 	corsHandler := cors.New(cors.Options{

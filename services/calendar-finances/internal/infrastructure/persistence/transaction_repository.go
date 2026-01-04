@@ -55,15 +55,15 @@ func (r *TransactionRepository) Create(txn *transaction.Transaction) (err error)
 
 	insertQuery := `
 		INSERT INTO finance.transactions (
-			id, profile_id, bank_account_id, destination_account_id, category_id,
+			id, profile_id, bank_account_id, destination_account_id, category_id, invoice_id,
 			type, status, amount, currency, description, notes, cost_center,
 			occurred_on, due_on, recurrence_rule, installment_number, installment_total,
 			external_id, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5,
-			$6, $7, $8, $9, $10, $11, $12,
-			$13, $14, $15, $16, $17,
-			$18, $19, $20
+			$1, $2, $3, $4, $5, $6,
+			$7, $8, $9, $10, $11, $12, $13,
+			$14, $15, $16, $17, $18,
+			$19, $20, $21
 		)
 	`
 
@@ -78,6 +78,7 @@ func (r *TransactionRepository) Create(txn *transaction.Transaction) (err error)
 		txn.BankAccountID,
 		nullableString(txn.DestinationAccountID),
 		nullableString(txn.CategoryID),
+		nullableString(txn.InvoiceID),
 		txn.Type,
 		txn.Status,
 		txn.Amount,
@@ -141,7 +142,7 @@ func (r *TransactionRepository) Create(txn *transaction.Transaction) (err error)
 
 func (r *TransactionRepository) GetByID(id string) (*transaction.Transaction, error) {
 	query := `
-		SELECT id, profile_id, bank_account_id, destination_account_id, category_id,
+		SELECT id, profile_id, bank_account_id, destination_account_id, category_id, invoice_id,
 			type, status, amount, currency, description, notes, cost_center,
 			occurred_on, due_on, recurrence_rule, installment_number, installment_total,
 			external_id, created_at, updated_at
@@ -168,7 +169,7 @@ func (r *TransactionRepository) List(filter transaction.ListFilter) ([]*transact
 	}
 
 	baseQuery := `
-        SELECT id, profile_id, bank_account_id, destination_account_id, category_id,
+        SELECT id, profile_id, bank_account_id, destination_account_id, category_id, invoice_id,
                type, status, amount, currency, description, notes, cost_center,
                occurred_on, due_on, recurrence_rule, installment_number, installment_total,
                external_id, created_at, updated_at
@@ -244,6 +245,7 @@ func scanTransaction(scanner transactionScanner) (*transaction.Transaction, erro
 	var (
 		destination       sql.NullString
 		categoryID        sql.NullString
+		invoiceID         sql.NullString
 		description       sql.NullString
 		notes             sql.NullString
 		costCenter        sql.NullString
@@ -260,6 +262,7 @@ func scanTransaction(scanner transactionScanner) (*transaction.Transaction, erro
 		&tx.BankAccountID,
 		&destination,
 		&categoryID,
+		&invoiceID,
 		&tx.Type,
 		&tx.Status,
 		&tx.Amount,
@@ -290,6 +293,10 @@ func scanTransaction(scanner transactionScanner) (*transaction.Transaction, erro
 	if categoryID.Valid {
 		s := categoryID.String
 		tx.CategoryID = &s
+	}
+	if invoiceID.Valid {
+		s := invoiceID.String
+		tx.InvoiceID = &s
 	}
 	if description.Valid {
 		tx.Description = description.String
