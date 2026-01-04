@@ -151,7 +151,7 @@ export default function TransactionForm({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative w-full max-w-3xl bg-gradient-to-br from-emerald-900/95 via-teal-900/95 to-cyan-900/95 border border-white/10 rounded-2xl shadow-2xl p-8 max-h-[90vh] overflow-y-auto">
+      <div className="relative w-full max-w-5xl bg-gradient-to-br from-emerald-900/95 via-teal-900/95 to-cyan-900/95 border border-white/10 rounded-2xl shadow-2xl p-8 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="text-2xl font-bold text-white">Novo Lançamento</h2>
@@ -184,8 +184,8 @@ export default function TransactionForm({
                 </select>
               </div>
               <div>
-                <label className="block text-white/80 text-sm font-semibold mb-2">Tipo de lançamento</label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <label className="block text-white/80 text-sm font-semibold mb-2">Tipo de lancamento</label>
+                <div className="grid grid-cols-3 gap-3">
                   {transactionTypes.map((option) => (
                     <button
                       key={option.value}
@@ -293,11 +293,11 @@ export default function TransactionForm({
                     inputMode="decimal"
                     step="0.01"
                     min="0"
-                    value={formData.amount}
+                    value={formData.amount || ''}
                     onChange={(event) =>
                       setFormData((prev) => ({
                         ...prev,
-                        amount: Number(event.target.value),
+                        amount: Number(event.target.value) || 0,
                       }))
                     }
                     required

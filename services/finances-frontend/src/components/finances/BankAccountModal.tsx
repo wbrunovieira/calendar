@@ -257,10 +257,10 @@ export default function BankAccountModal({
                   <input
                     type="number"
                     step="0.01"
-                    value={formData.currentBalance}
+                    value={formData.currentBalance || ''}
                     onChange={(e) => setFormData({ ...formData, currentBalance: parseFloat(e.target.value) || 0 })}
                     className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    required
+                    placeholder="0,00"
                   />
                   <p className="text-white/50 text-sm mt-1">Saldo inicial: R$ {formData.initialBalance.toFixed(2)}</p>
                 </div>
@@ -270,13 +270,13 @@ export default function BankAccountModal({
                   <input
                     type="number"
                     step="0.01"
-                    value={formData.initialBalance}
+                    value={formData.initialBalance || ''}
                     onChange={(e) => {
                       const value = parseFloat(e.target.value) || 0;
                       setFormData({ ...formData, initialBalance: value, currentBalance: value });
                     }}
                     className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    required
+                    placeholder="0,00"
                   />
                 </div>
               )}
