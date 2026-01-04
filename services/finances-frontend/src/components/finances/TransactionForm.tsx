@@ -136,6 +136,9 @@ export default function TransactionForm({
         formData.type === 'TRANSFER' ? formData.destinationAccountId : undefined,
       categoryId:
         formData.type === 'TRANSFER' ? formData.categoryId ?? availableCategories[0]?.id : formData.categoryId,
+      // Only include installment fields if they have valid positive values
+      installmentNumber: formData.installmentNumber && formData.installmentNumber > 0 ? formData.installmentNumber : undefined,
+      installmentTotal: formData.installmentTotal && formData.installmentTotal > 0 ? formData.installmentTotal : undefined,
     };
 
     await Promise.resolve(onSave(payload));
