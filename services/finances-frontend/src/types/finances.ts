@@ -18,6 +18,24 @@ export type AccountType =
   | 'CASH'
   | 'OTHER';
 
+export type InvestmentType =
+  | 'SAVINGS_BOX'  // Caixinha (Nubank, etc.)
+  | 'CDB'          // Certificado de Depósito Bancário
+  | 'LCI'          // Letra de Crédito Imobiliário
+  | 'LCA'          // Letra de Crédito do Agronegócio
+  | 'STOCKS'       // Ações
+  | 'FUNDS'        // Fundos de investimento
+  | 'FII'          // Fundos Imobiliários
+  | 'CRYPTO'       // Criptomoedas
+  | 'TREASURY'     // Tesouro Direto
+  | 'OTHER';       // Outros
+
+export type YieldType =
+  | 'FIXED'          // Taxa fixa (ex: 12% a.a.)
+  | 'CDI_PERCENTAGE' // Percentual do CDI (ex: 100% CDI)
+  | 'IPCA_PLUS'      // IPCA + taxa (ex: IPCA + 5%)
+  | 'VARIABLE';      // Taxa variável (ações, fundos, crypto)
+
 export interface BankAccount {
   id: string;
   profileId: string;
@@ -39,6 +57,14 @@ export interface BankAccount {
   dueDay?: number;
   closingDay?: number;
   linkedAccountId?: string;
+  // Investment-specific fields
+  investmentType?: InvestmentType;
+  yieldType?: YieldType;
+  yieldRate?: number;
+  maturityDate?: string;
+  broker?: string;
+  numberOfQuotas?: number;
+  quotaPrice?: number;
   createdAt: string;
   updatedAt: string;
 }

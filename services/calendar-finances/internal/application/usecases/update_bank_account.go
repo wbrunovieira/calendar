@@ -25,6 +25,15 @@ type UpdateBankAccountInput struct {
 	DueDay          *int     `json:"dueDay,omitempty"`
 	ClosingDay      *int     `json:"closingDay,omitempty"`
 	LinkedAccountID *string  `json:"linkedAccountId,omitempty"`
+
+	// Investment-specific fields
+	InvestmentType *string    `json:"investmentType,omitempty"`
+	YieldType      *string    `json:"yieldType,omitempty"`
+	YieldRate      *float64   `json:"yieldRate,omitempty"`
+	MaturityDate   *time.Time `json:"maturityDate,omitempty"`
+	Broker         *string    `json:"broker,omitempty"`
+	NumberOfQuotas *float64   `json:"numberOfQuotas,omitempty"`
+	QuotaPrice     *float64   `json:"quotaPrice,omitempty"`
 }
 
 type UpdateBankAccountUseCase struct {
@@ -60,6 +69,26 @@ func (uc *UpdateBankAccountUseCase) Execute(id string, input UpdateBankAccountIn
 	account.DueDay = input.DueDay
 	account.ClosingDay = input.ClosingDay
 	account.LinkedAccountID = input.LinkedAccountID
+
+	// Update investment-specific fields
+	if input.InvestmentType != nil {
+		invType := bankaccount.InvestmentType(*input.InvestmentType)
+		account.InvestmentType = &invType
+	} else {
+		account.InvestmentType = nil
+	}
+	if input.YieldType != nil {
+		yieldType := bankaccount.YieldType(*input.YieldType)
+		account.YieldType = &yieldType
+	} else {
+		account.YieldType = nil
+	}
+	account.YieldRate = input.YieldRate
+	account.MaturityDate = input.MaturityDate
+	account.Broker = input.Broker
+	account.NumberOfQuotas = input.NumberOfQuotas
+	account.QuotaPrice = input.QuotaPrice
+
 	account.UpdatedAt = time.Now()
 
 	if err := uc.repo.Update(account); err != nil {

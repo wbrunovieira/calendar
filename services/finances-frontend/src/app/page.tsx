@@ -10,6 +10,7 @@ import CashflowSummary from '@/components/finances/CashflowSummary';
 import QuickExpense from '@/components/finances/QuickExpense';
 import SafeToSpend from '@/components/finances/SafeToSpend';
 import CreditCardInfo from '@/components/finances/CreditCardInfo';
+import InvestmentAccountInfo from '@/components/finances/InvestmentAccountInfo';
 import type {
   Profile,
   BankAccount,
@@ -765,62 +766,110 @@ export default function FinancesPage() {
                   </div>
 
                   <div className="space-y-4">
+                    {/* Contas bancárias (exceto investimentos) */}
                     <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
                       <div className="flex items-center justify-between mb-4">
                         <h3 className="text-lg font-semibold text-white">Contas do perfil</h3>
                         <span className="text-white/50 text-sm">
-                          {filteredAccounts.length} {filteredAccounts.length === 1 ? 'conta' : 'contas'}
+                          {filteredAccounts.filter(a => a.type !== 'INVESTMENT').length} {filteredAccounts.filter(a => a.type !== 'INVESTMENT').length === 1 ? 'conta' : 'contas'}
                         </span>
                       </div>
                       <div className="space-y-3">
-                        {filteredAccounts.length === 0 && (
+                        {filteredAccounts.filter(a => a.type !== 'INVESTMENT').length === 0 && (
                           <p className="text-white/60 text-sm">
                             Nenhuma conta cadastrada para este perfil.
                           </p>
                         )}
-                        {filteredAccounts.map((account) =>
-                          account.type === 'CREDIT_CARD' ? (
-                            <CreditCardInfo
-                              key={account.id}
-                              account={account}
-                              currentInvoice={currentInvoices[account.id]}
-                              invoices={invoicesByAccount[account.id] || []}
-                              onPayInvoice={handlePayInvoice}
-                              onEdit={() => {
-                                setEditingBankAccount(account);
-                                setIsBankAccountModalOpen(true);
-                              }}
-                            />
-                          ) : (
-                            <div
-                              key={account.id}
-                              className="border border-white/10 rounded-xl p-4 flex items-center justify-between bg-white/5 cursor-pointer hover:bg-white/10 transition-colors"
-                              onClick={() => {
-                                setEditingBankAccount(account);
-                                setIsBankAccountModalOpen(true);
-                              }}
-                            >
-                              <div className="flex items-center gap-3">
-                                <span className="text-2xl">{account.icon || '🏦'}</span>
-                                <div>
-                                  <p className="text-white font-semibold text-sm">{account.name}</p>
-                                  <p className="text-white/50 text-xs">{account.bankName || account.type}</p>
+                        {filteredAccounts
+                          .filter(account => account.type !== 'INVESTMENT')
+                          .map((account) =>
+                            account.type === 'CREDIT_CARD' ? (
+                              <CreditCardInfo
+                                key={account.id}
+                                account={account}
+                                currentInvoice={currentInvoices[account.id]}
+                                invoices={invoicesByAccount[account.id] || []}
+                                onPayInvoice={handlePayInvoice}
+                                onEdit={() => {
+                                  setEditingBankAccount(account);
+                                  setIsBankAccountModalOpen(true);
+                                }}
+                              />
+                            ) : (
+                              <div
+                                key={account.id}
+                                className="border border-white/10 rounded-xl p-4 flex items-center justify-between bg-white/5 cursor-pointer hover:bg-white/10 transition-colors"
+                                onClick={() => {
+                                  setEditingBankAccount(account);
+                                  setIsBankAccountModalOpen(true);
+                                }}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <span className="text-2xl">{account.icon || '🏦'}</span>
+                                  <div>
+                                    <p className="text-white font-semibold text-sm">{account.name}</p>
+                                    <p className="text-white/50 text-xs">{account.bankName || account.type}</p>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-white/80 text-sm font-semibold">
+                                    {new Intl.NumberFormat('pt-BR', {
+                                      style: 'currency',
+                                      currency: account.currency,
+                                    }).format(account.currentBalance)}
+                                  </p>
+                                  <p className="text-white/50 text-xs">Saldo atual</p>
                                 </div>
                               </div>
-                              <div className="text-right">
-                                <p className="text-white/80 text-sm font-semibold">
-                                  {new Intl.NumberFormat('pt-BR', {
-                                    style: 'currency',
-                                    currency: account.currency,
-                                  }).format(account.currentBalance)}
-                                </p>
-                                <p className="text-white/50 text-xs">Saldo atual</p>
-                              </div>
-                            </div>
-                          ),
-                        )}
+                            ),
+                          )}
                       </div>
                     </div>
+
+                    {/* Investimentos - card separado */}
+                    {filteredAccounts.filter(a => a.type === 'INVESTMENT').length > 0 && (
+                      <div className="bg-gradient-to-br from-purple-900/30 to-indigo-900/30 border border-purple-500/20 rounded-2xl p-6 backdrop-blur-sm">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">📈</span>
+                            <h3 className="text-lg font-semibold text-white">Investimentos</h3>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-purple-300 text-sm font-semibold">
+                              {new Intl.NumberFormat('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
+                              }).format(
+                                filteredAccounts
+                                  .filter(a => a.type === 'INVESTMENT')
+                                  .reduce((sum, a) => sum + a.currentBalance, 0)
+                              )}
+                            </p>
+                            <span className="text-white/50 text-xs">
+                              {filteredAccounts.filter(a => a.type === 'INVESTMENT').length} {filteredAccounts.filter(a => a.type === 'INVESTMENT').length === 1 ? 'investimento' : 'investimentos'}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          {filteredAccounts
+                            .filter(account => account.type === 'INVESTMENT')
+                            .map((account) => (
+                              <InvestmentAccountInfo
+                                key={account.id}
+                                account={account}
+                                linkedAccount={account.linkedAccountId
+                                  ? filteredAccounts.find((a) => a.id === account.linkedAccountId)
+                                  : undefined
+                                }
+                                onEdit={() => {
+                                  setEditingBankAccount(account);
+                                  setIsBankAccountModalOpen(true);
+                                }}
+                              />
+                            ))}
+                        </div>
+                      </div>
+                    )}
                     <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
                       <h3 className="text-lg font-semibold text-white mb-3">Categorias disponíveis</h3>
                       {categories.length === 0 ? (

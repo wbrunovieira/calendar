@@ -1,6 +1,8 @@
 package usecases
 
 import (
+	"time"
+
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
 )
 
@@ -22,6 +24,15 @@ type CreateBankAccountInput struct {
 	DueDay          *int     `json:"dueDay,omitempty"`
 	ClosingDay      *int     `json:"closingDay,omitempty"`
 	LinkedAccountID *string  `json:"linkedAccountId,omitempty"`
+
+	// Investment-specific fields
+	InvestmentType *string    `json:"investmentType,omitempty"` // SAVINGS_BOX, CDB, LCI, LCA, STOCKS, FUNDS, FII, CRYPTO, TREASURY, OTHER
+	YieldType      *string    `json:"yieldType,omitempty"`      // FIXED, CDI_PERCENTAGE, IPCA_PLUS, VARIABLE
+	YieldRate      *float64   `json:"yieldRate,omitempty"`      // Rate value (e.g., 100 for 100% CDI)
+	MaturityDate   *time.Time `json:"maturityDate,omitempty"`   // Investment end date (optional)
+	Broker         *string    `json:"broker,omitempty"`         // Broker/platform (e.g., "Nubank", "XP")
+	NumberOfQuotas *float64   `json:"numberOfQuotas,omitempty"` // Number of shares/quotas
+	QuotaPrice     *float64   `json:"quotaPrice,omitempty"`     // Price per share/quota
 }
 
 type CreateBankAccountUseCase struct {
@@ -57,6 +68,21 @@ func (uc *CreateBankAccountUseCase) Execute(input CreateBankAccountInput) (*bank
 	account.DueDay = input.DueDay
 	account.ClosingDay = input.ClosingDay
 	account.LinkedAccountID = input.LinkedAccountID
+
+	// Set investment-specific fields
+	if input.InvestmentType != nil {
+		invType := bankaccount.InvestmentType(*input.InvestmentType)
+		account.InvestmentType = &invType
+	}
+	if input.YieldType != nil {
+		yieldType := bankaccount.YieldType(*input.YieldType)
+		account.YieldType = &yieldType
+	}
+	account.YieldRate = input.YieldRate
+	account.MaturityDate = input.MaturityDate
+	account.Broker = input.Broker
+	account.NumberOfQuotas = input.NumberOfQuotas
+	account.QuotaPrice = input.QuotaPrice
 
 	if err := uc.repo.Create(account); err != nil {
 		return nil, err

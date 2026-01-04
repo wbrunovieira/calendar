@@ -20,9 +20,12 @@ func (r *BankAccountRepository) Create(account *bankaccount.BankAccount) error {
 		INSERT INTO finance.bank_accounts (
 			id, profile_id, name, type, initial_balance, current_balance, currency, is_active,
 			bank_name, bank_code, agency, account_number, account_digit, color, icon, description,
-			credit_limit, due_day, closing_day, linked_account_id, created_at, updated_at
+			credit_limit, due_day, closing_day, linked_account_id,
+			investment_type, yield_type, yield_rate, maturity_date, broker,
+			number_of_quotas, quota_price,
+			created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
 	`
 	_, err := r.db.Exec(query,
 		account.ID, account.ProfileID, account.Name, account.Type,
@@ -30,6 +33,8 @@ func (r *BankAccountRepository) Create(account *bankaccount.BankAccount) error {
 		account.BankName, account.BankCode, account.Agency, account.AccountNumber,
 		account.AccountDigit, account.Color, account.Icon, account.Description,
 		account.CreditLimit, account.DueDay, account.ClosingDay, account.LinkedAccountID,
+		account.InvestmentType, account.YieldType, account.YieldRate, account.MaturityDate, account.Broker,
+		account.NumberOfQuotas, account.QuotaPrice,
 		account.CreatedAt, account.UpdatedAt,
 	)
 	return err
@@ -39,7 +44,10 @@ func (r *BankAccountRepository) FindByID(id string) (*bankaccount.BankAccount, e
 	query := `
 		SELECT id, profile_id, name, type, initial_balance, current_balance, currency, is_active,
 			bank_name, bank_code, agency, account_number, account_digit, color, icon, description,
-			credit_limit, due_day, closing_day, linked_account_id, created_at, updated_at
+			credit_limit, due_day, closing_day, linked_account_id,
+			investment_type, yield_type, yield_rate, maturity_date, broker,
+			number_of_quotas, quota_price,
+			created_at, updated_at
 		FROM finance.bank_accounts
 		WHERE id = $1
 	`
@@ -50,6 +58,8 @@ func (r *BankAccountRepository) FindByID(id string) (*bankaccount.BankAccount, e
 		&account.BankName, &account.BankCode, &account.Agency, &account.AccountNumber,
 		&account.AccountDigit, &account.Color, &account.Icon, &account.Description,
 		&account.CreditLimit, &account.DueDay, &account.ClosingDay, &account.LinkedAccountID,
+		&account.InvestmentType, &account.YieldType, &account.YieldRate, &account.MaturityDate, &account.Broker,
+		&account.NumberOfQuotas, &account.QuotaPrice,
 		&account.CreatedAt, &account.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -65,7 +75,10 @@ func (r *BankAccountRepository) FindByProfileID(profileID string) ([]*bankaccoun
 	query := `
 		SELECT id, profile_id, name, type, initial_balance, current_balance, currency, is_active,
 			bank_name, bank_code, agency, account_number, account_digit, color, icon, description,
-			credit_limit, due_day, closing_day, linked_account_id, created_at, updated_at
+			credit_limit, due_day, closing_day, linked_account_id,
+			investment_type, yield_type, yield_rate, maturity_date, broker,
+			number_of_quotas, quota_price,
+			created_at, updated_at
 		FROM finance.bank_accounts
 		WHERE profile_id = $1
 		ORDER BY created_at DESC
@@ -85,6 +98,8 @@ func (r *BankAccountRepository) FindByProfileID(profileID string) ([]*bankaccoun
 			&account.BankName, &account.BankCode, &account.Agency, &account.AccountNumber,
 			&account.AccountDigit, &account.Color, &account.Icon, &account.Description,
 			&account.CreditLimit, &account.DueDay, &account.ClosingDay, &account.LinkedAccountID,
+			&account.InvestmentType, &account.YieldType, &account.YieldRate, &account.MaturityDate, &account.Broker,
+			&account.NumberOfQuotas, &account.QuotaPrice,
 			&account.CreatedAt, &account.UpdatedAt,
 		)
 		if err != nil {
@@ -99,7 +114,10 @@ func (r *BankAccountRepository) FindAll() ([]*bankaccount.BankAccount, error) {
 	query := `
 		SELECT id, profile_id, name, type, initial_balance, current_balance, currency, is_active,
 			bank_name, bank_code, agency, account_number, account_digit, color, icon, description,
-			credit_limit, due_day, closing_day, linked_account_id, created_at, updated_at
+			credit_limit, due_day, closing_day, linked_account_id,
+			investment_type, yield_type, yield_rate, maturity_date, broker,
+			number_of_quotas, quota_price,
+			created_at, updated_at
 		FROM finance.bank_accounts
 		ORDER BY created_at DESC
 	`
@@ -118,6 +136,8 @@ func (r *BankAccountRepository) FindAll() ([]*bankaccount.BankAccount, error) {
 			&account.BankName, &account.BankCode, &account.Agency, &account.AccountNumber,
 			&account.AccountDigit, &account.Color, &account.Icon, &account.Description,
 			&account.CreditLimit, &account.DueDay, &account.ClosingDay, &account.LinkedAccountID,
+			&account.InvestmentType, &account.YieldType, &account.YieldRate, &account.MaturityDate, &account.Broker,
+			&account.NumberOfQuotas, &account.QuotaPrice,
 			&account.CreatedAt, &account.UpdatedAt,
 		)
 		if err != nil {
@@ -134,14 +154,20 @@ func (r *BankAccountRepository) Update(account *bankaccount.BankAccount) error {
 		SET profile_id = $2, name = $3, type = $4, current_balance = $5, currency = $6, is_active = $7,
 			bank_name = $8, bank_code = $9, agency = $10, account_number = $11, account_digit = $12,
 			color = $13, icon = $14, description = $15, credit_limit = $16, due_day = $17,
-			closing_day = $18, linked_account_id = $19, updated_at = $20
+			closing_day = $18, linked_account_id = $19,
+			investment_type = $20, yield_type = $21, yield_rate = $22, maturity_date = $23, broker = $24,
+			number_of_quotas = $25, quota_price = $26,
+			updated_at = $27
 		WHERE id = $1
 	`
 	result, err := r.db.Exec(query,
 		account.ID, account.ProfileID, account.Name, account.Type, account.CurrentBalance, account.Currency, account.IsActive,
 		account.BankName, account.BankCode, account.Agency, account.AccountNumber, account.AccountDigit,
 		account.Color, account.Icon, account.Description, account.CreditLimit, account.DueDay,
-		account.ClosingDay, account.LinkedAccountID, account.UpdatedAt,
+		account.ClosingDay, account.LinkedAccountID,
+		account.InvestmentType, account.YieldType, account.YieldRate, account.MaturityDate, account.Broker,
+		account.NumberOfQuotas, account.QuotaPrice,
+		account.UpdatedAt,
 	)
 	if err != nil {
 		return err

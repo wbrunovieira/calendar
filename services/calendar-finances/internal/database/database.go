@@ -238,6 +238,106 @@ func RunMigrations(db *sql.DB) error {
 			END IF;
 		END $$`,
 		`CREATE INDEX IF NOT EXISTS idx_transactions_invoice ON finance.transactions(invoice_id)`,
+
+		// Migration: Add investment-specific columns to bank_accounts
+		`DO $$
+		BEGIN
+			-- Add investment_type column
+			IF NOT EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'finance'
+				AND table_name = 'bank_accounts'
+				AND column_name = 'investment_type'
+			) THEN
+				ALTER TABLE finance.bank_accounts
+				ADD COLUMN investment_type VARCHAR(50) CHECK (investment_type IN ('SAVINGS_BOX', 'CDB', 'LCI', 'LCA', 'STOCKS', 'FUNDS', 'CRYPTO', 'TREASURY', 'OTHER'));
+			END IF;
+
+			-- Add yield_type column
+			IF NOT EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'finance'
+				AND table_name = 'bank_accounts'
+				AND column_name = 'yield_type'
+			) THEN
+				ALTER TABLE finance.bank_accounts
+				ADD COLUMN yield_type VARCHAR(50) CHECK (yield_type IN ('FIXED', 'CDI_PERCENTAGE', 'IPCA_PLUS', 'VARIABLE'));
+			END IF;
+
+			-- Add yield_rate column
+			IF NOT EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'finance'
+				AND table_name = 'bank_accounts'
+				AND column_name = 'yield_rate'
+			) THEN
+				ALTER TABLE finance.bank_accounts
+				ADD COLUMN yield_rate NUMERIC(8, 4);
+			END IF;
+
+			-- Add maturity_date column
+			IF NOT EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'finance'
+				AND table_name = 'bank_accounts'
+				AND column_name = 'maturity_date'
+			) THEN
+				ALTER TABLE finance.bank_accounts
+				ADD COLUMN maturity_date DATE;
+			END IF;
+
+			-- Add broker column
+			IF NOT EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'finance'
+				AND table_name = 'bank_accounts'
+				AND column_name = 'broker'
+			) THEN
+				ALTER TABLE finance.bank_accounts
+				ADD COLUMN broker VARCHAR(100);
+			END IF;
+		END $$`,
+
+		// Index for investment accounts
+		`CREATE INDEX IF NOT EXISTS idx_bank_accounts_investment_type ON finance.bank_accounts(investment_type) WHERE type = 'INVESTMENT'`,
+
+		// Migration: Add FII to investment_type constraint and add quota columns
+		`DO $$
+		BEGIN
+			-- Update investment_type constraint to include FII
+			IF EXISTS (
+				SELECT 1 FROM information_schema.check_constraints
+				WHERE constraint_schema = 'finance'
+				AND constraint_name LIKE '%investment_type%'
+			) THEN
+				ALTER TABLE finance.bank_accounts DROP CONSTRAINT IF EXISTS bank_accounts_investment_type_check;
+				ALTER TABLE finance.bank_accounts
+				ADD CONSTRAINT bank_accounts_investment_type_check
+				CHECK (investment_type IN ('SAVINGS_BOX', 'CDB', 'LCI', 'LCA', 'STOCKS', 'FUNDS', 'FII', 'CRYPTO', 'TREASURY', 'OTHER'));
+			END IF;
+
+			-- Add number_of_quotas column
+			IF NOT EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'finance'
+				AND table_name = 'bank_accounts'
+				AND column_name = 'number_of_quotas'
+			) THEN
+				ALTER TABLE finance.bank_accounts
+				ADD COLUMN number_of_quotas NUMERIC(15, 6);
+			END IF;
+
+			-- Add quota_price column
+			IF NOT EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'finance'
+				AND table_name = 'bank_accounts'
+				AND column_name = 'quota_price'
+			) THEN
+				ALTER TABLE finance.bank_accounts
+				ADD COLUMN quota_price NUMERIC(15, 6);
+			END IF;
+		END $$`,
 	}
 
 	for i, migration := range migrations {
