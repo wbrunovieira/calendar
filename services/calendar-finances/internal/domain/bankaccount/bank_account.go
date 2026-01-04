@@ -29,17 +29,18 @@ type BankAccount struct {
 	IsActive       bool        `json:"isActive"`
 
 	// Optional fields
-	BankName      *string  `json:"bankName,omitempty"`
-	BankCode      *string  `json:"bankCode,omitempty"`
-	Agency        *string  `json:"agency,omitempty"`
-	AccountNumber *string  `json:"accountNumber,omitempty"`
-	AccountDigit  *string  `json:"accountDigit,omitempty"`
-	Color         *string  `json:"color,omitempty"`
-	Icon          *string  `json:"icon,omitempty"`
-	Description   *string  `json:"description,omitempty"`
-	CreditLimit   *float64 `json:"creditLimit,omitempty"`
-	DueDay        *int     `json:"dueDay,omitempty"`
-	ClosingDay    *int     `json:"closingDay,omitempty"`
+	BankName        *string  `json:"bankName,omitempty"`
+	BankCode        *string  `json:"bankCode,omitempty"`
+	Agency          *string  `json:"agency,omitempty"`
+	AccountNumber   *string  `json:"accountNumber,omitempty"`
+	AccountDigit    *string  `json:"accountDigit,omitempty"`
+	Color           *string  `json:"color,omitempty"`
+	Icon            *string  `json:"icon,omitempty"`
+	Description     *string  `json:"description,omitempty"`
+	CreditLimit     *float64 `json:"creditLimit,omitempty"`
+	DueDay          *int     `json:"dueDay,omitempty"`
+	ClosingDay      *int     `json:"closingDay,omitempty"`
+	LinkedAccountID *string  `json:"linkedAccountId,omitempty"`
 
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`

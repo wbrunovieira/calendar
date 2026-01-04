@@ -11,6 +11,7 @@ interface BankAccountModalProps {
   onSave: (account: Omit<BankAccount, 'id' | 'isActive' | 'createdAt' | 'updatedAt'>) => void;
   account: BankAccount | null;
   profiles: Array<{ id: string; name: string }>;
+  existingAccounts?: BankAccount[];
 }
 
 const accountTypes: { value: AccountType; label: string; icon: string }[] = [
@@ -28,6 +29,7 @@ export default function BankAccountModal({
   onSave,
   account,
   profiles,
+  existingAccounts = [],
 }: BankAccountModalProps) {
   const [formData, setFormData] = useState({
     profileId: '',
@@ -47,6 +49,7 @@ export default function BankAccountModal({
     creditLimit: undefined as number | undefined,
     dueDay: undefined as number | undefined,
     closingDay: undefined as number | undefined,
+    linkedAccountId: undefined as string | undefined,
   });
 
   useEffect(() => {
@@ -73,6 +76,7 @@ export default function BankAccountModal({
         creditLimit: account.creditLimit,
         dueDay: account.dueDay,
         closingDay: account.closingDay,
+        linkedAccountId: account.linkedAccountId,
       });
     } else {
       setFormData({
@@ -93,6 +97,7 @@ export default function BankAccountModal({
         creditLimit: undefined,
         dueDay: undefined,
         closingDay: undefined,
+        linkedAccountId: undefined,
       });
     }
   }, [account, profiles, isOpen]);
@@ -106,6 +111,14 @@ export default function BankAccountModal({
   if (!isOpen) return null;
 
   const isCreditCard = formData.type === 'CREDIT_CARD';
+
+  // Filter linkable accounts: same profile, non-credit-card types, exclude self
+  const linkableAccounts = existingAccounts.filter(
+    (acc) =>
+      acc.profileId === formData.profileId &&
+      acc.type !== 'CREDIT_CARD' &&
+      acc.id !== account?.id
+  );
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -268,40 +281,62 @@ export default function BankAccountModal({
 
           {/* Credit Card Specific Fields */}
           {isCreditCard && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-white/90 font-semibold mb-2">Limite</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={formData.creditLimit || ''}
-                  onChange={(e) => setFormData({ ...formData, creditLimit: parseFloat(e.target.value) || undefined })}
-                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
+            <>
+              {/* Linked Account Selector */}
+              {linkableAccounts.length > 0 && (
+                <div>
+                  <label className="block text-white/90 font-semibold mb-2">Conta Vinculada (opcional)</label>
+                  <select
+                    value={formData.linkedAccountId || ''}
+                    onChange={(e) => setFormData({ ...formData, linkedAccountId: e.target.value || undefined })}
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="" className="bg-gray-900">Nenhuma (cartão independente)</option>
+                    {linkableAccounts.map((acc) => (
+                      <option key={acc.id} value={acc.id} className="bg-gray-900">
+                        {acc.icon} {acc.name} {acc.bankName ? `(${acc.bankName})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-white/50 text-sm mt-1">Vincule este cartão a uma conta bancária para agrupá-los</p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-white/90 font-semibold mb-2">Limite</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.creditLimit || ''}
+                    onChange={(e) => setFormData({ ...formData, creditLimit: parseFloat(e.target.value) || undefined })}
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-white/90 font-semibold mb-2">Dia Vencimento</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={formData.dueDay || ''}
+                    onChange={(e) => setFormData({ ...formData, dueDay: parseInt(e.target.value) || undefined })}
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-white/90 font-semibold mb-2">Dia Fechamento</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={formData.closingDay || ''}
+                    onChange={(e) => setFormData({ ...formData, closingDay: parseInt(e.target.value) || undefined })}
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="block text-white/90 font-semibold mb-2">Dia Vencimento</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="31"
-                  value={formData.dueDay || ''}
-                  onChange={(e) => setFormData({ ...formData, dueDay: parseInt(e.target.value) || undefined })}
-                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
-              <div>
-                <label className="block text-white/90 font-semibold mb-2">Dia Fechamento</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="31"
-                  value={formData.closingDay || ''}
-                  onChange={(e) => setFormData({ ...formData, closingDay: parseInt(e.target.value) || undefined })}
-                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
-            </div>
+            </>
           )}
 
           {/* Color and Description */}

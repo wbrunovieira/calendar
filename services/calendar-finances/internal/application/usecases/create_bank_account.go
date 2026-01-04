@@ -5,22 +5,23 @@ import (
 )
 
 type CreateBankAccountInput struct {
-	ProfileID      string   `json:"profileId"`
-	Name           string   `json:"name"`
-	Type           string   `json:"type"`
-	InitialBalance float64  `json:"initialBalance"`
-	Currency       string   `json:"currency"`
-	BankName       *string  `json:"bankName,omitempty"`
-	BankCode       *string  `json:"bankCode,omitempty"`
-	Agency         *string  `json:"agency,omitempty"`
-	AccountNumber  *string  `json:"accountNumber,omitempty"`
-	AccountDigit   *string  `json:"accountDigit,omitempty"`
-	Color          *string  `json:"color,omitempty"`
-	Icon           *string  `json:"icon,omitempty"`
-	Description    *string  `json:"description,omitempty"`
-	CreditLimit    *float64 `json:"creditLimit,omitempty"`
-	DueDay         *int     `json:"dueDay,omitempty"`
-	ClosingDay     *int     `json:"closingDay,omitempty"`
+	ProfileID       string   `json:"profileId"`
+	Name            string   `json:"name"`
+	Type            string   `json:"type"`
+	InitialBalance  float64  `json:"initialBalance"`
+	Currency        string   `json:"currency"`
+	BankName        *string  `json:"bankName,omitempty"`
+	BankCode        *string  `json:"bankCode,omitempty"`
+	Agency          *string  `json:"agency,omitempty"`
+	AccountNumber   *string  `json:"accountNumber,omitempty"`
+	AccountDigit    *string  `json:"accountDigit,omitempty"`
+	Color           *string  `json:"color,omitempty"`
+	Icon            *string  `json:"icon,omitempty"`
+	Description     *string  `json:"description,omitempty"`
+	CreditLimit     *float64 `json:"creditLimit,omitempty"`
+	DueDay          *int     `json:"dueDay,omitempty"`
+	ClosingDay      *int     `json:"closingDay,omitempty"`
+	LinkedAccountID *string  `json:"linkedAccountId,omitempty"`
 }
 
 type CreateBankAccountUseCase struct {
@@ -55,6 +56,7 @@ func (uc *CreateBankAccountUseCase) Execute(input CreateBankAccountInput) (*bank
 	account.CreditLimit = input.CreditLimit
 	account.DueDay = input.DueDay
 	account.ClosingDay = input.ClosingDay
+	account.LinkedAccountID = input.LinkedAccountID
 
 	if err := uc.repo.Create(account); err != nil {
 		return nil, err

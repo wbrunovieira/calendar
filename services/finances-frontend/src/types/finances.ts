@@ -38,6 +38,7 @@ export interface BankAccount {
   creditLimit?: number;
   dueDay?: number;
   closingDay?: number;
+  linkedAccountId?: string;
   createdAt: string;
   updatedAt: string;
 }

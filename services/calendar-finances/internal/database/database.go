@@ -185,6 +185,21 @@ func RunMigrations(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_recurring_transactions_profile ON finance.recurring_transactions(profile_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_recurring_transactions_next ON finance.recurring_transactions(next_occurrence)`,
 		`CREATE INDEX IF NOT EXISTS idx_budget_targets_profile_period ON finance.budget_targets(profile_id, period_start)`,
+
+		// Migration: Add linked_account_id to bank_accounts (for linking credit cards to parent accounts)
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'finance'
+				AND table_name = 'bank_accounts'
+				AND column_name = 'linked_account_id'
+			) THEN
+				ALTER TABLE finance.bank_accounts
+				ADD COLUMN linked_account_id UUID REFERENCES finance.bank_accounts(id) ON DELETE SET NULL;
+			END IF;
+		END $$`,
+		`CREATE INDEX IF NOT EXISTS idx_bank_accounts_linked ON finance.bank_accounts(linked_account_id)`,
 	}
 
 	for i, migration := range migrations {

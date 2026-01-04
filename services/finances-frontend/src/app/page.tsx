@@ -285,7 +285,10 @@ export default function FinancesPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(accountData),
+        body: JSON.stringify({
+          ...accountData,
+          isActive: true, // New accounts are active by default
+        }),
       });
 
       if (!response.ok) {
@@ -311,7 +314,10 @@ export default function FinancesPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(accountData),
+        body: JSON.stringify({
+          ...accountData,
+          isActive: editingBankAccount.isActive, // Preserve isActive status
+        }),
       });
 
       if (!response.ok) {
@@ -857,6 +863,7 @@ export default function FinancesPage() {
         onSave={handleSaveBankAccount}
         account={editingBankAccount}
         profiles={profiles.map((profile) => ({ id: profile.id, name: profile.name }))}
+        existingAccounts={bankAccounts}
       />
 
       <TransactionForm
