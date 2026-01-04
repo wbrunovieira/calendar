@@ -10,6 +10,7 @@ interface AppLayoutProps {
 
 const navItems = [
   { href: '/', label: 'Lancamentos' },
+  { href: '/dashboard', label: 'Dashboard' },
   { href: '/categories', label: 'Categorias' },
   { href: '/recurring', label: 'Fixas' },
   { href: '/budgets', label: 'Orcamentos' },

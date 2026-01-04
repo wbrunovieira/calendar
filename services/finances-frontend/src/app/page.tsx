@@ -46,7 +46,7 @@ export default function FinancesPage() {
   const [calendars, setCalendars] = useState<Calendar[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [budgetSummary, setBudgetSummary] = useState<BudgetSummaryItem[]>([]);
+  const [_budgetSummary, setBudgetSummary] = useState<BudgetSummaryItem[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [transactionsLoading, setTransactionsLoading] = useState(false);
   const [transactionsError, setTransactionsError] = useState<'NOT_IMPLEMENTED' | 'GENERIC' | null>(null);
