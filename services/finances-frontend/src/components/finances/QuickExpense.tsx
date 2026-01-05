@@ -75,6 +75,7 @@ export default function QuickExpense({ accounts, categories = [], defaultProfile
         bankAccountId: accountId,
         categoryId,
         type: 'EXPENSE',
+        status: 'CONFIRMED', // Quick expenses are already confirmed (happened now)
         amount: Number(amount),
         currency: 'BRL',
         description: description || 'Despesa',

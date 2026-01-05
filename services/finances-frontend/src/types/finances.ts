@@ -126,6 +126,7 @@ export interface TransactionFormData {
   destinationAccountId?: string;
   categoryId?: string;
   type: TransactionType;
+  status?: TransactionStatus;
   amount: number;
   currency: string;
   description: string;

@@ -7,6 +7,7 @@ import type {
   CategoryType,
   Transaction,
   TransactionFormData,
+  TransactionStatus,
   TransactionType,
 } from '@/types/finances';
 
@@ -35,12 +36,13 @@ const typeToCategory: Record<TransactionType, CategoryType> = {
   TRANSFER: 'TRANSFER',
 };
 
-const defaultForm = (profileId: string): TransactionFormData => ({
+const defaultForm = (profileId: string, status: TransactionStatus = 'CONFIRMED'): TransactionFormData => ({
   profileId,
   bankAccountId: '',
   destinationAccountId: undefined,
   categoryId: undefined,
   type: 'EXPENSE',
+  status,
   amount: 0,
   currency: 'BRL',
   description: '',
@@ -88,6 +90,7 @@ export default function TransactionForm({
           destinationAccountId: editingTransaction.destinationAccountId,
           categoryId: editingTransaction.categoryId,
           type: editingTransaction.type,
+          status: editingTransaction.status,
           amount: editingTransaction.amount,
           currency: editingTransaction.currency,
           description: editingTransaction.description,
@@ -103,11 +106,11 @@ export default function TransactionForm({
         });
         setTagsInput((editingTransaction.tags || []).join(', '));
       } else {
-        // Create mode - use defaults
+        // Create mode - use defaults (CONFIRMED by default for quick daily transactions)
         setSelectedProfileId(defaultProfileId);
         const initialAccount = accounts.find((account) => account.profileId === defaultProfileId)?.id || '';
         setFormData({
-          ...defaultForm(defaultProfileId),
+          ...defaultForm(defaultProfileId, 'CONFIRMED'),
           bankAccountId: initialAccount,
         });
         setTagsInput('');
@@ -503,21 +506,46 @@ export default function TransactionForm({
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-3 justify-end pt-4 border-t border-white/10">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-6 py-3 rounded-lg border border-white/20 text-white/80 hover:text-white hover:bg-white/10 transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-6 py-3 rounded-lg bg-emerald-500/80 hover:bg-emerald-500 text-white font-semibold transition-colors disabled:opacity-50"
-            >
-              {loading ? 'Salvando...' : 'Salvar lançamento'}
-            </button>
+          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between pt-4 border-t border-white/10">
+            <label className="flex items-center gap-3 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={formData.status === 'CONFIRMED'}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    status: e.target.checked ? 'CONFIRMED' : 'PLANNED',
+                  }))
+                }
+                className="w-5 h-5 rounded border-2 border-white/30 bg-white/10 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-0 cursor-pointer"
+              />
+              <div>
+                <span className="text-white/90 text-sm font-medium group-hover:text-white transition-colors">
+                  {formData.status === 'CONFIRMED' ? '✅ Já confirmado' : '🗓️ Planejado (aguardando confirmação)'}
+                </span>
+                <p className="text-white/50 text-xs">
+                  {formData.status === 'CONFIRMED'
+                    ? 'O lançamento já ocorreu e será registrado como efetivado'
+                    : 'O lançamento será salvo como pendente para confirmar depois'}
+                </p>
+              </div>
+            </label>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-6 py-3 rounded-lg border border-white/20 text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-6 py-3 rounded-lg bg-emerald-500/80 hover:bg-emerald-500 text-white font-semibold transition-colors disabled:opacity-50"
+              >
+                {loading ? 'Salvando...' : 'Salvar lançamento'}
+              </button>
+            </div>
           </div>
         </form>
       </div>
