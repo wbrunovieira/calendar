@@ -336,6 +336,132 @@ func scanTransaction(scanner transactionScanner) (*transaction.Transaction, erro
 	return tx, nil
 }
 
+func (r *TransactionRepository) Update(txn *transaction.Transaction) (err error) {
+	if txn == nil {
+		return errors.New("transaction is nil")
+	}
+
+	sqlTx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if p := recover(); p != nil {
+			_ = sqlTx.Rollback()
+			panic(p)
+		}
+		if err != nil {
+			_ = sqlTx.Rollback()
+			return
+		}
+		err = sqlTx.Commit()
+	}()
+
+	updateQuery := `
+		UPDATE finance.transactions SET
+			bank_account_id = $2,
+			destination_account_id = $3,
+			category_id = $4,
+			type = $5,
+			status = $6,
+			amount = $7,
+			currency = $8,
+			description = $9,
+			notes = $10,
+			cost_center = $11,
+			occurred_on = $12,
+			due_on = $13,
+			recurrence_rule = $14,
+			installment_number = $15,
+			installment_total = $16,
+			external_id = $17,
+			updated_at = NOW()
+		WHERE id = $1
+	`
+
+	result, err := sqlTx.Exec(updateQuery,
+		txn.ID,
+		txn.BankAccountID,
+		nullableString(txn.DestinationAccountID),
+		nullableString(txn.CategoryID),
+		txn.Type,
+		txn.Status,
+		txn.Amount,
+		txn.Currency,
+		nullableStringFromValue(txn.Description),
+		nullableString(txn.Notes),
+		nullableString(txn.CostCenter),
+		txn.OccurredOn,
+		nullableTime(txn.DueOn),
+		nullableString(txn.RecurrenceRule),
+		nullableInt(txn.InstallmentNumber),
+		nullableInt(txn.InstallmentTotal),
+		nullableString(txn.ExternalID),
+	)
+	if err != nil {
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return errors.New("transaction not found")
+	}
+
+	// Delete existing tags and re-insert
+	if _, err = sqlTx.Exec(`DELETE FROM finance.transaction_tags WHERE transaction_id = $1`, txn.ID); err != nil {
+		return err
+	}
+
+	if len(txn.Tags) > 0 {
+		tagQuery := `INSERT INTO finance.transaction_tags (transaction_id, tag) VALUES ($1, $2)`
+		for _, tag := range txn.Tags {
+			tag = strings.TrimSpace(tag)
+			if tag == "" {
+				continue
+			}
+			if _, err = sqlTx.Exec(tagQuery, txn.ID, tag); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Delete existing splits and re-insert
+	if _, err = sqlTx.Exec(`DELETE FROM finance.transaction_splits WHERE transaction_id = $1`, txn.ID); err != nil {
+		return err
+	}
+
+	if len(txn.Splits) > 0 {
+		splitQuery := `
+			INSERT INTO finance.transaction_splits (id, transaction_id, category_id, amount, memo, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6)
+		`
+		for _, split := range txn.Splits {
+			if split.ID == "" {
+				split.ID = uuid.New().String()
+			}
+			if split.CreatedAt.IsZero() {
+				split.CreatedAt = time.Now()
+			}
+			if _, err = sqlTx.Exec(splitQuery,
+				split.ID,
+				txn.ID,
+				nullableString(split.CategoryID),
+				split.Amount,
+				nullableString(split.Memo),
+				split.CreatedAt,
+			); err != nil {
+				return err
+			}
+		}
+	}
+
+	return err
+}
+
 func (r *TransactionRepository) UpdateStatus(id string, status transaction.Status, occurredOn time.Time, notes *string) error {
 	query := `
         UPDATE finance.transactions

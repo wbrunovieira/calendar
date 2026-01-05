@@ -102,12 +102,14 @@ func main() {
 	createTransactionUC := usecases.NewCreateTransactionUseCase(profileRepo, bankAccountRepo, categoryRepo, transactionRepo, invoiceRepo)
 	listTransactionsUC := usecases.NewListTransactionsUseCase(transactionRepo)
 	getTransactionUC := usecases.NewGetTransactionUseCase(transactionRepo)
+	updateTransactionUC := usecases.NewUpdateTransactionUseCase(bankAccountRepo, categoryRepo, transactionRepo)
 	updateTransactionStatusUC := usecases.NewUpdateTransactionStatusUseCase(transactionRepo)
 	deleteTransactionUC := usecases.NewDeleteTransactionUseCase(transactionRepo)
 	transactionHandler := httpHandlers.NewTransactionHandlers(
 		createTransactionUC,
 		listTransactionsUC,
 		getTransactionUC,
+		updateTransactionUC,
 		updateTransactionStatusUC,
 		deleteTransactionUC,
 	)
@@ -168,6 +170,7 @@ func main() {
 	apiRouter.HandleFunc("/transactions", transactionHandler.List).Methods("GET")
 	apiRouter.HandleFunc("/transactions", transactionHandler.Create).Methods("POST")
 	apiRouter.HandleFunc("/transactions/{id}", transactionHandler.Get).Methods("GET")
+	apiRouter.HandleFunc("/transactions/{id}", transactionHandler.Update).Methods("PUT")
 	apiRouter.HandleFunc("/transactions/{id}/status", transactionHandler.UpdateStatus).Methods("PUT")
 	apiRouter.HandleFunc("/recurring-transactions", recurringHandler.List).Methods("GET")
 	apiRouter.HandleFunc("/recurring-transactions", recurringHandler.Create).Methods("POST")

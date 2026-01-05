@@ -93,6 +93,16 @@ func (f *fakeTransactionRepo) List(filter transaction.ListFilter) ([]*transactio
 	return f.created, nil
 }
 
+func (f *fakeTransactionRepo) Update(tx *transaction.Transaction) error {
+	for i, existing := range f.created {
+		if existing.ID == tx.ID {
+			f.created[i] = tx
+			return nil
+		}
+	}
+	return errors.New("not found")
+}
+
 func (f *fakeTransactionRepo) UpdateStatus(string, transaction.Status, time.Time, *string) error {
 	return nil
 }
@@ -305,5 +315,257 @@ func TestCreateTransactionUseCaseCreditLimitExceeded(t *testing.T) {
 
 	if !errors.Is(err, ErrCreditLimitExceeded) {
 		t.Fatalf("expected ErrCreditLimitExceeded, got %v", err)
+	}
+}
+
+func TestUpdateTransactionUseCaseSuccess(t *testing.T) {
+	profileID := "profile-1"
+	accountID := "account-1"
+	categoryID := "cat-1"
+	newCategoryID := "cat-2"
+	txID := "tx-1"
+
+	now := time.Now()
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Conta Corrente",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 1000,
+			CurrentBalance: 1000,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{
+		categoryID: {
+			ID:        categoryID,
+			ProfileID: profileID,
+			Name:      "Alimentação",
+			Type:      category.TypeExpense,
+			IsActive:  true,
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+		newCategoryID: {
+			ID:        newCategoryID,
+			ProfileID: profileID,
+			Name:      "iFood",
+			Type:      category.TypeExpense,
+			ParentID:  &categoryID,
+			IsActive:  true,
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+	}}
+
+	existingTx := &transaction.Transaction{
+		ID:            txID,
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		CategoryID:    &categoryID,
+		Type:          transaction.TypeExpense,
+		Status:        transaction.StatusPlanned,
+		Amount:        100,
+		Currency:      "BRL",
+		Description:   "Almoço",
+		OccurredOn:    now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
+
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo)
+	input := UpdateTransactionInput{
+		BankAccountID: accountID,
+		CategoryID:    &newCategoryID,
+		Type:          "EXPENSE",
+		Amount:        150,
+		Currency:      "BRL",
+		Description:   "iFood Delivery",
+		OccurredOn:    "2025-02-01",
+	}
+
+	tx, err := useCase.Execute(txID, input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if tx.Amount != 150 {
+		t.Fatalf("expected amount 150, got %v", tx.Amount)
+	}
+
+	if tx.Description != "iFood Delivery" {
+		t.Fatalf("expected description 'iFood Delivery', got %s", tx.Description)
+	}
+
+	if tx.CategoryID == nil || *tx.CategoryID != newCategoryID {
+		t.Fatalf("expected category to be updated to %s", newCategoryID)
+	}
+}
+
+func TestUpdateTransactionUseCaseNotFound(t *testing.T) {
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{}}
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{}}
+
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo)
+	input := UpdateTransactionInput{
+		BankAccountID: "account-1",
+		Type:          "EXPENSE",
+		Amount:        100,
+		Currency:      "BRL",
+		Description:   "Test",
+		OccurredOn:    "2025-02-01",
+	}
+
+	_, err := useCase.Execute("non-existent", input)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if !errors.Is(err, ErrTransactionNotFound) {
+		t.Fatalf("expected ErrTransactionNotFound, got %v", err)
+	}
+}
+
+func TestUpdateTransactionUseCaseWithStatusChange(t *testing.T) {
+	profileID := "profile-1"
+	accountID := "account-1"
+	txID := "tx-1"
+
+	now := time.Now()
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Conta Corrente",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 1000,
+			CurrentBalance: 1000,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+
+	existingTx := &transaction.Transaction{
+		ID:            txID,
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		Type:          transaction.TypeExpense,
+		Status:        transaction.StatusPlanned,
+		Amount:        100,
+		Currency:      "BRL",
+		Description:   "Compra",
+		OccurredOn:    now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
+
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo)
+	confirmedStatus := "CONFIRMED"
+	input := UpdateTransactionInput{
+		BankAccountID: accountID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        100,
+		Currency:      "BRL",
+		Description:   "Compra",
+		OccurredOn:    "2025-02-01",
+	}
+
+	tx, err := useCase.Execute(txID, input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if tx.Status != transaction.StatusConfirmed {
+		t.Fatalf("expected status CONFIRMED, got %s", tx.Status)
+	}
+}
+
+func TestUpdateTransactionUseCaseInvalidCategory(t *testing.T) {
+	profileID := "profile-1"
+	accountID := "account-1"
+	txID := "tx-1"
+	wrongCategoryID := "wrong-cat"
+
+	now := time.Now()
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Conta Corrente",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 1000,
+			CurrentBalance: 1000,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	// Category belongs to different profile
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{
+		wrongCategoryID: {
+			ID:        wrongCategoryID,
+			ProfileID: "other-profile",
+			Name:      "Other Category",
+			Type:      category.TypeExpense,
+			IsActive:  true,
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+	}}
+
+	existingTx := &transaction.Transaction{
+		ID:            txID,
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		Type:          transaction.TypeExpense,
+		Status:        transaction.StatusPlanned,
+		Amount:        100,
+		Currency:      "BRL",
+		Description:   "Test",
+		OccurredOn:    now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
+
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo)
+	input := UpdateTransactionInput{
+		BankAccountID: accountID,
+		CategoryID:    &wrongCategoryID,
+		Type:          "EXPENSE",
+		Amount:        100,
+		Currency:      "BRL",
+		Description:   "Test",
+		OccurredOn:    "2025-02-01",
+	}
+
+	_, err := useCase.Execute(txID, input)
+	if err == nil {
+		t.Fatal("expected error for category from different profile")
+	}
+
+	if !errors.Is(err, ErrCategoryNotFound) {
+		t.Fatalf("expected ErrCategoryNotFound, got %v", err)
 	}
 }

@@ -181,9 +181,28 @@ export default function TransactionsTable({
               const category = transaction.categoryId
                 ? categoryMap.get(transaction.categoryId)
                 : undefined;
+              const parentCategory = category?.parentId
+                ? categoryMap.get(category.parentId)
+                : undefined;
               const destination = transaction.destinationAccountId
                 ? accountMap.get(transaction.destinationAccountId)
                 : undefined;
+
+              // Build category display with hierarchy
+              const categoryDisplay = (() => {
+                if (!category) {
+                  return transaction.type === 'TRANSFER' ? 'Transferência' : '-';
+                }
+                if (parentCategory) {
+                  return (
+                    <span className="flex flex-col">
+                      <span className="text-white/50 text-xs">{parentCategory.name}</span>
+                      <span>↳ {category.name}</span>
+                    </span>
+                  );
+                }
+                return category.name;
+              })();
 
               return (
                 <tr key={transaction.id} className="hover:bg-white/5 transition-colors">
@@ -207,7 +226,7 @@ export default function TransactionsTable({
                     {account ? account.name : 'Conta removida'}
                   </td>
                   <td className="px-6 py-4 text-white/70 text-sm">
-                    {category ? category.name : transaction.type === 'TRANSFER' ? 'Transferência' : '-'}
+                    {categoryDisplay}
                   </td>
                   <td className="px-6 py-4">
                     <span

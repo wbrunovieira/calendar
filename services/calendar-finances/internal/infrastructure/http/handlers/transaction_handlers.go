@@ -12,6 +12,7 @@ type TransactionHandlers struct {
 	createUseCase       *usecases.CreateTransactionUseCase
 	listUseCase         *usecases.ListTransactionsUseCase
 	getUseCase          *usecases.GetTransactionUseCase
+	updateUseCase       *usecases.UpdateTransactionUseCase
 	updateStatusUseCase *usecases.UpdateTransactionStatusUseCase
 	deleteUseCase       *usecases.DeleteTransactionUseCase
 }
@@ -20,6 +21,7 @@ func NewTransactionHandlers(
 	createUC *usecases.CreateTransactionUseCase,
 	listUC *usecases.ListTransactionsUseCase,
 	getUC *usecases.GetTransactionUseCase,
+	updateUC *usecases.UpdateTransactionUseCase,
 	updateStatusUC *usecases.UpdateTransactionStatusUseCase,
 	deleteUC *usecases.DeleteTransactionUseCase,
 ) *TransactionHandlers {
@@ -27,6 +29,7 @@ func NewTransactionHandlers(
 		createUseCase:       createUC,
 		listUseCase:         listUC,
 		getUseCase:          getUC,
+		updateUseCase:       updateUC,
 		updateStatusUseCase: updateStatusUC,
 		deleteUseCase:       deleteUC,
 	}
@@ -106,6 +109,29 @@ func (h *TransactionHandlers) Get(w http.ResponseWriter, r *http.Request) {
 	tx, err := h.getUseCase.Execute(id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"data": tx,
+	})
+}
+
+// Update handles PUT /api/v1/transactions/{id}
+func (h *TransactionHandlers) Update(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+
+	var input usecases.UpdateTransactionInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	tx, err := h.updateUseCase.Execute(id, input)
+	if err != nil {
+		status := mapTransactionError(err)
+		http.Error(w, err.Error(), status)
 		return
 	}
 
