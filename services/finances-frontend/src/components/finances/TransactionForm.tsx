@@ -86,6 +86,15 @@ export default function TransactionForm({
     return localCategories.filter((category) => category.type === expectedType);
   }, [localCategories, formData.type]);
 
+  // Organize categories hierarchically
+  const hierarchicalCategories = useMemo(() => {
+    const parents = availableCategories.filter((c) => !c.parentId);
+    return parents.map((parent) => ({
+      ...parent,
+      children: availableCategories.filter((c) => c.parentId === parent.id),
+    }));
+  }, [availableCategories]);
+
   const destinationOptions = useMemo(() => {
     if (formData.type !== 'TRANSFER') return [];
     return accounts.filter(
@@ -276,10 +285,23 @@ export default function TransactionForm({
                     className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   >
                     <option value="">Selecione uma categoria</option>
-                    {availableCategories.map((category) => (
-                      <option key={category.id} value={category.id} className="bg-slate-900">
-                        {category.name}
-                      </option>
+                    {hierarchicalCategories.map((parent) => (
+                      parent.children.length > 0 ? (
+                        <optgroup key={parent.id} label={parent.name} className="bg-slate-900">
+                          <option value={parent.id} className="bg-slate-900">
+                            {parent.name} (geral)
+                          </option>
+                          {parent.children.map((sub) => (
+                            <option key={sub.id} value={sub.id} className="bg-slate-900">
+                              ↳ {sub.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ) : (
+                        <option key={parent.id} value={parent.id} className="bg-slate-900">
+                          {parent.name}
+                        </option>
+                      )
                     ))}
                   </select>
                 </div>

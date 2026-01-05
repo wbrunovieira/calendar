@@ -149,25 +149,45 @@ export default function DashboardPage() {
     return data;
   }, [transactions]);
 
-  // Category breakdown for pie chart
+  // Category breakdown for pie chart - grouped by parent
   const categoryData = useMemo(() => {
     const expenseTx = filteredTransactions.filter(
       (tx) => tx.type === 'EXPENSE' && tx.status === 'CONFIRMED'
     );
 
-    const byCategory: Record<string, number> = {};
+    // Group by parent category
+    const byParent: Record<string, { total: number; subcategories: Record<string, number> }> = {};
+
     expenseTx.forEach((tx) => {
-      const catId = tx.categoryId || 'sem-categoria';
-      byCategory[catId] = (byCategory[catId] || 0) + tx.amount;
+      const category = categories.find((c) => c.id === tx.categoryId);
+      const parentId = category?.parentId || category?.id || 'sem-categoria';
+      const parent = category?.parentId
+        ? categories.find((c) => c.id === category.parentId)
+        : category;
+
+      if (!byParent[parentId]) {
+        byParent[parentId] = { total: 0, subcategories: {} };
+      }
+      byParent[parentId].total += tx.amount;
+
+      // Track subcategory breakdown
+      if (category?.parentId) {
+        const subName = category.name;
+        byParent[parentId].subcategories[subName] = (byParent[parentId].subcategories[subName] || 0) + tx.amount;
+      }
     });
 
-    return Object.entries(byCategory)
-      .map(([categoryId, amount]) => {
+    return Object.entries(byParent)
+      .map(([categoryId, data]) => {
         const category = categories.find((c) => c.id === categoryId);
         return {
+          id: categoryId,
           name: category?.name || 'Sem categoria',
-          value: amount,
+          value: data.total,
           color: category?.color || '#64748b',
+          subcategories: Object.entries(data.subcategories)
+            .map(([name, value]) => ({ name, value }))
+            .sort((a, b) => b.value - a.value),
         };
       })
       .sort((a, b) => b.value - a.value);
@@ -473,17 +493,29 @@ export default function DashboardPage() {
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
-                    <div className="flex-1 space-y-2 max-h-64 overflow-y-auto">
+                    <div className="flex-1 space-y-1 max-h-64 overflow-y-auto">
                       {categoryData.map((cat, index) => (
-                        <div key={cat.name} className="flex items-center justify-between gap-2 text-sm">
-                          <div className="flex items-center gap-2">
-                            <div
-                              className="w-3 h-3 rounded-full"
-                              style={{ backgroundColor: COLORS[index % COLORS.length] }}
-                            />
-                            <span className="text-white/80">{cat.name}</span>
+                        <div key={cat.id}>
+                          <div className="flex items-center justify-between gap-2 text-sm py-1">
+                            <div className="flex items-center gap-2">
+                              <div
+                                className="w-3 h-3 rounded-full"
+                                style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                              />
+                              <span className="text-white/80 font-medium">{cat.name}</span>
+                            </div>
+                            <span className="text-white/60 font-medium">{formatCurrencyFull(cat.value)}</span>
                           </div>
-                          <span className="text-white/60 font-medium">{formatCurrencyFull(cat.value)}</span>
+                          {cat.subcategories && cat.subcategories.length > 0 && (
+                            <div className="ml-5 space-y-0.5 border-l border-white/10 pl-3 mb-1">
+                              {cat.subcategories.map((sub) => (
+                                <div key={sub.name} className="flex items-center justify-between gap-2 text-xs">
+                                  <span className="text-white/50">↳ {sub.name}</span>
+                                  <span className="text-white/40">{formatCurrencyFull(sub.value)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

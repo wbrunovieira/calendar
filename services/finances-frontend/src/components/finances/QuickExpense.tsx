@@ -16,6 +16,15 @@ export default function QuickExpense({ accounts, categories = [], defaultProfile
   const [selectedProfileId, setSelectedProfileId] = useState<string>(defaultProfileId);
   const [localCategories, setLocalCategories] = useState<Category[]>(categories);
   const expenseCategories = useMemo(() => localCategories.filter((c) => c.type === 'EXPENSE'), [localCategories]);
+
+  // Organize categories hierarchically
+  const hierarchicalCategories = useMemo(() => {
+    const parents = expenseCategories.filter((c) => !c.parentId);
+    return parents.map((parent) => ({
+      ...parent,
+      children: expenseCategories.filter((c) => c.parentId === parent.id),
+    }));
+  }, [expenseCategories]);
   const defaultAccountId = useMemo(() => accounts.find((a) => a.profileId === selectedProfileId)?.id ?? '', [accounts, selectedProfileId]);
 
   const [accountId, setAccountId] = useState<string>(defaultAccountId);
@@ -126,10 +135,23 @@ export default function QuickExpense({ accounts, categories = [], defaultProfile
             className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
           >
             <option value="">Selecione</option>
-            {expenseCategories.map((c) => (
-              <option key={c.id} value={c.id} className="bg-slate-900">
-                {c.name}
-              </option>
+            {hierarchicalCategories.map((parent) => (
+              parent.children.length > 0 ? (
+                <optgroup key={parent.id} label={parent.name} className="bg-slate-900">
+                  <option value={parent.id} className="bg-slate-900">
+                    {parent.name} (geral)
+                  </option>
+                  {parent.children.map((sub) => (
+                    <option key={sub.id} value={sub.id} className="bg-slate-900">
+                      ↳ {sub.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : (
+                <option key={parent.id} value={parent.id} className="bg-slate-900">
+                  {parent.name}
+                </option>
+              )
             ))}
           </select>
         </div>
