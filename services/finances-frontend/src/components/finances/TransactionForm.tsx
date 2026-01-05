@@ -5,6 +5,7 @@ import type {
   BankAccount,
   Category,
   CategoryType,
+  Transaction,
   TransactionFormData,
   TransactionType,
 } from '@/types/finances';
@@ -13,11 +14,13 @@ interface TransactionFormProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (payload: TransactionFormData) => Promise<void> | void;
+  onUpdate?: (id: string, payload: TransactionFormData) => Promise<void> | void;
   accounts: BankAccount[];
   categories: Category[];
   defaultProfileId: string;
   loading?: boolean;
   profiles: { id: string; name: string }[];
+  editingTransaction?: Transaction | null;
 }
 
 const transactionTypes: { value: TransactionType; label: string; icon: string; description: string }[] = [
@@ -56,11 +59,13 @@ export default function TransactionForm({
   isOpen,
   onClose,
   onSave,
+  onUpdate,
   accounts,
   categories,
   defaultProfileId,
   loading = false,
   profiles,
+  editingTransaction,
 }: TransactionFormProps) {
   const API_BASE = 'http://localhost:3335/api/v1';
   const [formData, setFormData] = useState<TransactionFormData>(() => defaultForm(defaultProfileId));
@@ -68,18 +73,47 @@ export default function TransactionForm({
   const [selectedProfileId, setSelectedProfileId] = useState<string>(defaultProfileId);
   const [localCategories, setLocalCategories] = useState<Category[]>(categories);
 
+  const isEditing = !!editingTransaction;
+
   useEffect(() => {
     if (isOpen) {
-      setSelectedProfileId(defaultProfileId);
       setLocalCategories(categories);
-      const initialAccount = accounts.find((account) => account.profileId === defaultProfileId)?.id || '';
-      setFormData({
-        ...defaultForm(defaultProfileId),
-        bankAccountId: initialAccount,
-      });
-      setTagsInput('');
+
+      if (editingTransaction) {
+        // Editing mode - populate form with transaction data
+        setSelectedProfileId(editingTransaction.profileId);
+        setFormData({
+          profileId: editingTransaction.profileId,
+          bankAccountId: editingTransaction.bankAccountId,
+          destinationAccountId: editingTransaction.destinationAccountId,
+          categoryId: editingTransaction.categoryId,
+          type: editingTransaction.type,
+          amount: editingTransaction.amount,
+          currency: editingTransaction.currency,
+          description: editingTransaction.description,
+          notes: editingTransaction.notes,
+          costCenter: editingTransaction.costCenter,
+          occurredOn: editingTransaction.occurredOn.slice(0, 10),
+          dueOn: editingTransaction.dueOn?.slice(0, 10),
+          recurrenceRule: editingTransaction.recurrenceRule,
+          installmentNumber: editingTransaction.installmentNumber,
+          installmentTotal: editingTransaction.installmentTotal,
+          externalId: editingTransaction.externalId,
+          tags: editingTransaction.tags || [],
+        });
+        setTagsInput((editingTransaction.tags || []).join(', '));
+      } else {
+        // Create mode - use defaults
+        setSelectedProfileId(defaultProfileId);
+        const initialAccount = accounts.find((account) => account.profileId === defaultProfileId)?.id || '';
+        setFormData({
+          ...defaultForm(defaultProfileId),
+          bankAccountId: initialAccount,
+        });
+        setTagsInput('');
+      }
     }
-  }, [isOpen, defaultProfileId, accounts, categories]);
+  }, [isOpen, defaultProfileId, accounts, categories, editingTransaction]);
 
   const availableCategories = useMemo(() => {
     const expectedType = typeToCategory[formData.type];
@@ -150,7 +184,11 @@ export default function TransactionForm({
       installmentTotal: formData.installmentTotal && formData.installmentTotal > 0 ? formData.installmentTotal : undefined,
     };
 
-    await Promise.resolve(onSave(payload));
+    if (isEditing && onUpdate && editingTransaction) {
+      await Promise.resolve(onUpdate(editingTransaction.id, payload));
+    } else {
+      await Promise.resolve(onSave(payload));
+    }
     onClose();
   };
 
@@ -163,8 +201,12 @@ export default function TransactionForm({
       <div className="relative w-full max-w-5xl bg-gradient-to-br from-emerald-900/95 via-teal-900/95 to-cyan-900/95 border border-white/10 rounded-2xl shadow-2xl p-8 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-2xl font-bold text-white">Novo Lançamento</h2>
-            <p className="text-white/60 text-sm">Registre entradas, despesas e transferências</p>
+            <h2 className="text-2xl font-bold text-white">
+              {isEditing ? 'Editar Lançamento' : 'Novo Lançamento'}
+            </h2>
+            <p className="text-white/60 text-sm">
+              {isEditing ? 'Altere os dados do lançamento' : 'Registre entradas, despesas e transferências'}
+            </p>
           </div>
           <button
             onClick={onClose}

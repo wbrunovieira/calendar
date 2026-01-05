@@ -19,6 +19,7 @@ interface TransactionsTableProps {
   onConfirm: (id: string) => Promise<void> | void;
   onCancel: (id: string) => Promise<void> | void;
   onDelete: (id: string) => Promise<void> | void;
+  onEdit: (transaction: Transaction) => void;
   loading?: boolean;
 }
 
@@ -53,6 +54,7 @@ export default function TransactionsTable({
   onConfirm,
   onCancel,
   onDelete,
+  onEdit,
   loading = false,
 }: TransactionsTableProps) {
   const categoryMap = useMemo(() => {
@@ -235,6 +237,13 @@ export default function TransactionsTable({
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex flex-wrap gap-2 text-xs">
+                      <button
+                        onClick={() => onEdit(transaction)}
+                        className="px-3 py-1 rounded-lg bg-white/10 text-white/80 border border-white/20 hover:bg-white/20"
+                        title="Editar"
+                      >
+                        Editar
+                      </button>
                       {transaction.status === 'PLANNED' && (
                         <button
                           onClick={() => onConfirm(transaction.id)}

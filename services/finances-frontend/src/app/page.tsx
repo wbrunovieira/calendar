@@ -59,6 +59,7 @@ export default function FinancesPage() {
 
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
   const [editingBankAccount, setEditingBankAccount] = useState<BankAccount | null>(null);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
 
   const [savingTransaction, setSavingTransaction] = useState(false);
 
@@ -484,12 +485,49 @@ export default function FinancesPage() {
       }
 
       await fetchTransactions(selectedProfileId, transactionFilters);
+      setEditingTransaction(null);
     } catch (error) {
       console.error('Erro ao criar lançamento:', error);
       alert('Erro ao salvar lançamento');
     } finally {
       setSavingTransaction(false);
     }
+  };
+
+  const handleUpdateTransaction = async (id: string, payload: TransactionFormData) => {
+    if (!selectedProfileId) return;
+
+    try {
+      setSavingTransaction(true);
+      const cleanPayload = Object.fromEntries(
+        Object.entries(payload).filter(([, v]) => v !== undefined && v !== null)
+      );
+      const response = await fetch(`${API_BASE}/transactions/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(cleanPayload),
+      });
+
+      if (!response.ok) {
+        const errorMessage = await response.text();
+        throw new Error(errorMessage || 'Erro ao atualizar lançamento');
+      }
+
+      await fetchTransactions(selectedProfileId, transactionFilters);
+      setEditingTransaction(null);
+    } catch (error) {
+      console.error('Erro ao atualizar lançamento:', error);
+      alert('Erro ao atualizar lançamento');
+    } finally {
+      setSavingTransaction(false);
+    }
+  };
+
+  const handleEditTransaction = (transaction: Transaction) => {
+    setEditingTransaction(transaction);
+    setIsTransactionModalOpen(true);
   };
 
   const updateTransactionStatus = async (
@@ -765,6 +803,7 @@ export default function FinancesPage() {
                       onConfirm={(id) => updateTransactionStatus(id, 'CONFIRMED')}
                       onCancel={(id) => updateTransactionStatus(id, 'CANCELLED')}
                       onDelete={handleDeleteTransaction}
+                      onEdit={handleEditTransaction}
                       loading={transactionsLoading}
                     />
                   </div>
@@ -1057,13 +1096,18 @@ export default function FinancesPage() {
 
       <TransactionForm
         isOpen={isTransactionModalOpen}
-        onClose={() => setIsTransactionModalOpen(false)}
+        onClose={() => {
+          setIsTransactionModalOpen(false);
+          setEditingTransaction(null);
+        }}
         onSave={handleCreateTransaction}
+        onUpdate={handleUpdateTransaction}
         accounts={bankAccounts}
         categories={categories}
         defaultProfileId={selectedProfileId ?? ''}
         loading={savingTransaction}
         profiles={profiles.map((p) => ({ id: p.id, name: p.name }))}
+        editingTransaction={editingTransaction}
       />
     </AppLayout>
   );
