@@ -76,14 +76,6 @@ func RunMigrations(db *sql.DB) error {
 			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 		)`,
 
-		// Reset finance tables introduced across recent phases (dev convenience)
-		`DROP TABLE IF EXISTS finance.transaction_tags`,
-		`DROP TABLE IF EXISTS finance.transaction_splits`,
-		`DROP TABLE IF EXISTS finance.transactions`,
-		`DROP TABLE IF EXISTS finance.recurring_transactions`,
-		`DROP TABLE IF EXISTS finance.budget_targets`,
-		`DROP TABLE IF EXISTS finance.categories`,
-
 		// Create categories table
 		`CREATE TABLE IF NOT EXISTS finance.categories (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
