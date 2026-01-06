@@ -22,18 +22,20 @@ func TestBudgetTargetRepositoryUpdate_PersistsProfileAndCategory(t *testing.T) {
 
     now := fixedTime2()
     entity := &budgettarget.BudgetTarget{
-        ID:          "bt-1",
-        ProfileID:   "profile-2",
-        CategoryID:  "category-2",
-        PeriodStart: time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC),
-        Amount:      123.45,
-        Notes:       nil,
-        CreatedAt:   now.Add(-time.Hour),
-        UpdatedAt:   now,
+        ID:             "bt-1",
+        ProfileID:      "profile-2",
+        CategoryID:     "category-2",
+        PeriodStart:    time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC),
+        Amount:         123.45,
+        Notes:          nil,
+        IsRecurring:    true,
+        EffectiveUntil: nil,
+        CreatedAt:      now.Add(-time.Hour),
+        UpdatedAt:      now,
     }
 
     mock.ExpectExec(regexp.QuoteMeta("UPDATE finance.budget_targets")).
-        WithArgs(entity.ID, entity.ProfileID, entity.CategoryID, entity.Amount, nil, entity.PeriodStart, entity.UpdatedAt).
+        WithArgs(entity.ID, entity.ProfileID, entity.CategoryID, entity.Amount, nil, entity.PeriodStart, entity.IsRecurring, nil, entity.UpdatedAt).
         WillReturnResult(sqlmock.NewResult(0, 1))
 
     if err := repo.Update(entity); err != nil {
@@ -56,18 +58,20 @@ func TestBudgetTargetRepositoryUpdate_NotFound(t *testing.T) {
 
     now := fixedTime2()
     entity := &budgettarget.BudgetTarget{
-        ID:          "bt-404",
-        ProfileID:   "profile-x",
-        CategoryID:  "category-x",
-        PeriodStart: time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC),
-        Amount:      50.0,
-        Notes:       nil,
-        CreatedAt:   now.Add(-time.Hour),
-        UpdatedAt:   now,
+        ID:             "bt-404",
+        ProfileID:      "profile-x",
+        CategoryID:     "category-x",
+        PeriodStart:    time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC),
+        Amount:         50.0,
+        Notes:          nil,
+        IsRecurring:    false,
+        EffectiveUntil: nil,
+        CreatedAt:      now.Add(-time.Hour),
+        UpdatedAt:      now,
     }
 
     mock.ExpectExec(regexp.QuoteMeta("UPDATE finance.budget_targets")).
-        WithArgs(entity.ID, entity.ProfileID, entity.CategoryID, entity.Amount, nil, entity.PeriodStart, entity.UpdatedAt).
+        WithArgs(entity.ID, entity.ProfileID, entity.CategoryID, entity.Amount, nil, entity.PeriodStart, entity.IsRecurring, nil, entity.UpdatedAt).
         WillReturnResult(sqlmock.NewResult(0, 0))
 
     if err := repo.Update(entity); err == nil {

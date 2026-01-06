@@ -309,6 +309,7 @@ func TestCreateTransactionUseCaseCreditLimitExceeded(t *testing.T) {
 	invoiceRepo := &fakeInvoiceRepo{}
 
 	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	confirmedStatus := "CONFIRMED"
 	input := CreateTransactionInput{
 		ProfileID:     profileID,
 		BankAccountID: accountID,
@@ -317,6 +318,7 @@ func TestCreateTransactionUseCaseCreditLimitExceeded(t *testing.T) {
 		Currency:      "BRL",
 		Description:   "Compra",
 		OccurredOn:    "2025-02-01",
+		Status:        &confirmedStatus, // Balance validation only runs for CONFIRMED transactions
 	}
 
 	_, err := useCase.Execute(input)
