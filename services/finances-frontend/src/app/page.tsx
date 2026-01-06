@@ -791,6 +791,7 @@ export default function FinancesPage() {
                         </button>
                       </div>
                       <div className="flex gap-2">
+                        <a href="/visao" className="px-3 py-1.5 rounded-lg text-xs border border-blue-500/40 text-blue-400 hover:bg-blue-500/10">Visao Mensal</a>
                         <a href="/recurring" className="px-3 py-1.5 rounded-lg text-xs border border-white/20 text-white/80 hover:bg-white/10">Fixas</a>
                         <a href="/budgets" className="px-3 py-1.5 rounded-lg text-xs border border-white/20 text-white/80 hover:bg-white/10">Orçamentos</a>
                       </div>

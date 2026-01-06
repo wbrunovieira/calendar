@@ -143,8 +143,8 @@ export default function MonthlyCostOverview({ profileId, categories, accounts }:
 
   // Calculate totals
   const totals = useMemo(() => {
-    // Budget totals (orçamento)
-    const budgetTotal = budgetSummary.reduce((sum, b) => sum + b.target.amount, 0);
+    // Budget totals: use higher of budget or spent (if exceeded)
+    const budgetTotal = budgetSummary.reduce((sum, b) => sum + Math.max(b.target.amount, b.spent), 0);
     const budgetSpent = budgetSummary.reduce((sum, b) => sum + b.spent, 0);
     const budgetRemaining = budgetSummary.reduce((sum, b) => sum + b.remaining, 0);
 
