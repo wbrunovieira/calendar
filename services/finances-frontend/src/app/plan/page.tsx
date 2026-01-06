@@ -292,6 +292,52 @@ export default function PlanPage() {
     return confirmedSet.has(`${item.description}|${item.date}`);
   };
 
+  // PLANNED transactions (not from recurring)
+  const plannedTransactions = useMemo(() => {
+    const start = startDate.toISOString().slice(0, 10);
+    const end = endDate.toISOString().slice(0, 10);
+    return transactions.filter((tx) => {
+      const date = tx.occurredOn.slice(0, 10);
+      return tx.status === 'PLANNED' && date >= start && date <= end;
+    }).sort((a, b) => a.occurredOn.localeCompare(b.occurredOn));
+  }, [transactions, startDate, endDate]);
+
+  const handleConfirmPlanned = async (tx: Transaction) => {
+    setConfirming(tx.id);
+    try {
+      const res = await fetch(`${API_BASE}/transactions/${tx.id}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'CONFIRMED' }),
+      });
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(errorText || `status ${res.status}`);
+      }
+      await loadData();
+    } catch (e) {
+      console.warn('Erro ao confirmar', e);
+      alert('Erro ao confirmar lancamento.');
+    } finally {
+      setConfirming(null);
+    }
+  };
+
+  // Combined totals for summary (recurring + planned)
+  const combinedTotals = useMemo(() => {
+    const plannedIncome = plannedTransactions
+      .filter((tx) => tx.type === 'INCOME')
+      .reduce((sum, tx) => sum + tx.amount, 0);
+    const plannedExpense = plannedTransactions
+      .filter((tx) => tx.type === 'EXPENSE')
+      .reduce((sum, tx) => sum + tx.amount, 0);
+    return {
+      inc: forecast.totals.inc + plannedIncome,
+      out: forecast.totals.out + plannedExpense,
+      total: forecast.totals.total + plannedIncome - plannedExpense,
+    };
+  }, [forecast.totals, plannedTransactions]);
+
   return (
     <AppLayout>
       <div className="py-6 space-y-6">
@@ -407,6 +453,57 @@ export default function PlanPage() {
                 </div>
               )}
             </div>
+
+            {/* Planned Transactions Section */}
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-white font-semibold">Transacoes Planejadas</h3>
+                <span className="text-white/50 text-sm">{plannedTransactions.length} lancamentos</span>
+              </div>
+              {plannedTransactions.length === 0 ? (
+                <p className="text-white/70 text-sm">
+                  Nenhuma transacao planejada no periodo.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {plannedTransactions.map((tx) => (
+                    <div
+                      key={tx.id}
+                      className="flex items-center justify-between border border-white/10 bg-white/5 rounded-xl px-4 py-3"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="text-white/60 text-sm w-24">
+                          {new Date(tx.occurredOn.slice(0, 10) + 'T12:00:00').toLocaleDateString('pt-BR')}
+                        </div>
+                        <div>
+                          <p className="text-white font-medium">{tx.description}</p>
+                          {getCategoryName(tx.categoryId) && (
+                            <p className="text-white/50 text-xs">{getCategoryName(tx.categoryId)}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className={`text-sm font-semibold ${tx.type === 'EXPENSE' ? 'text-rose-300' : 'text-emerald-300'}`}>
+                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(tx.amount * (tx.type === 'EXPENSE' ? -1 : 1))}
+                        </div>
+                        <button
+                          onClick={() => handleConfirmPlanned(tx)}
+                          disabled={confirming === tx.id}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                            confirming === tx.id
+                              ? 'bg-white/10 text-white/40'
+                              : 'bg-emerald-500/80 hover:bg-emerald-500 text-white'
+                          }`}
+                          title="Confirmar pagamento"
+                        >
+                          {confirming === tx.id ? '...' : 'Confirmar'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="space-y-6">
@@ -419,17 +516,17 @@ export default function PlanPage() {
                 </div>
                 <div className="flex items-center justify-between text-emerald-200">
                   <span>Receitas previstas</span>
-                  <span className="font-semibold">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(forecast.totals.inc)}</span>
+                  <span className="font-semibold">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(combinedTotals.inc)}</span>
                 </div>
                 <div className="flex items-center justify-between text-rose-200">
                   <span>Despesas previstas</span>
-                  <span className="font-semibold">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(forecast.totals.out)}</span>
+                  <span className="font-semibold">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(combinedTotals.out)}</span>
                 </div>
                 <div className="border-t border-white/10 pt-2 mt-2">
                   <div className="flex items-center justify-between text-white">
                     <span>Saldo projetado</span>
-                    <span className={`font-semibold ${totalBalance + forecast.totals.total >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalBalance + forecast.totals.total)}
+                    <span className={`font-semibold ${totalBalance + combinedTotals.total >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalBalance + combinedTotals.total)}
                     </span>
                   </div>
                 </div>
