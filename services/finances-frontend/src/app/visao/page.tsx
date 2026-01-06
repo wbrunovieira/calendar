@@ -18,6 +18,7 @@ export default function VisaoMensalPage() {
   const [budgetSummary, setBudgetSummary] = useState<BudgetSummaryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
+  const [expandedBudgets, setExpandedBudgets] = useState<Set<string>>(new Set());
 
   const selectedProfile = useMemo(
     () => profiles.find((p) => p.id === selectedProfileId) || null,
@@ -227,6 +228,72 @@ export default function VisaoMensalPage() {
     return cat?.name || categoryId;
   };
 
+  // Get category chain for hierarchy check
+  const getCategoryChain = (categoryId: string): string[] => {
+    const chain: string[] = [categoryId];
+    let current = categories.find((c) => c.id === categoryId);
+    while (current?.parentId) {
+      chain.push(current.parentId);
+      current = categories.find((c) => c.id === current?.parentId);
+    }
+    return chain;
+  };
+
+  // Calculate pending recurring for a specific budget category
+  const getPendingRecurringForCategory = (budgetCategoryId: string) => {
+    const [year, month] = period.split('-').map(Number);
+    const today = new Date();
+    const currentDay = today.getMonth() + 1 === month && today.getFullYear() === year
+      ? today.getDate()
+      : 0;
+
+    const pending: { description: string; amount: number; day: number }[] = [];
+
+    recurrings.forEach((r) => {
+      if (r.status !== 'ACTIVE' || r.type !== 'EXPENSE' || !r.categoryId) return;
+
+      const chain = getCategoryChain(r.categoryId);
+      if (!chain.includes(budgetCategoryId)) return;
+
+      const rule = new Map<string, string>();
+      (r.recurrenceRule || '').split(';').forEach((kv) => {
+        const [k, v] = kv.split('=');
+        if (k && v) rule.set(k.toUpperCase(), v.toUpperCase());
+      });
+
+      const byMonthDay = rule.get('BYMONTHDAY');
+      if (!byMonthDay) return;
+
+      const dayOfMonth = parseInt(byMonthDay, 10);
+      if (dayOfMonth > currentDay) {
+        pending.push({ description: r.description, amount: r.amount, day: dayOfMonth });
+      }
+    });
+
+    return pending;
+  };
+
+  // Get transactions for a specific budget category
+  const getTransactionsForCategory = (budgetCategoryId: string) => {
+    return transactions.filter((tx) => {
+      if (!tx.categoryId || tx.status !== 'CONFIRMED') return false;
+      const chain = getCategoryChain(tx.categoryId);
+      return chain.includes(budgetCategoryId);
+    });
+  };
+
+  const toggleBudgetExpanded = (budgetId: string) => {
+    setExpandedBudgets((prev) => {
+      const next = new Set(prev);
+      if (next.has(budgetId)) {
+        next.delete(budgetId);
+      } else {
+        next.add(budgetId);
+      }
+      return next;
+    });
+  };
+
   const monthName = selectedMonth.start.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 
   return (
@@ -288,6 +355,12 @@ export default function VisaoMensalPage() {
                     const catName = cat?.name || 'Categoria';
                     const percentSpent = budget.target.amount > 0 ? (budget.spent / budget.target.amount) * 100 : 0;
                     const isOverBudget = budget.spent > budget.target.amount;
+                    const pendingRecurrings = getPendingRecurringForCategory(budget.target.categoryId);
+                    const pendingAmount = pendingRecurrings.reduce((sum, r) => sum + r.amount, 0);
+                    const percentPending = budget.target.amount > 0 ? (pendingAmount / budget.target.amount) * 100 : 0;
+                    const completedTx = getTransactionsForCategory(budget.target.categoryId);
+                    const isExpanded = expandedBudgets.has(budget.target.id);
+                    const hasDetails = completedTx.length > 0 || pendingRecurrings.length > 0;
 
                     return (
                       <div key={budget.target.id} className="bg-white/5 border border-white/10 rounded-xl p-4">
@@ -317,14 +390,103 @@ export default function VisaoMensalPage() {
                           </div>
                         </div>
 
-                        {/* Progress bar */}
-                        <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                        {/* Progress bar with blue pending section */}
+                        <div className="h-2 bg-white/10 rounded-full overflow-hidden flex">
                           <div
                             className={`h-full transition-all ${isOverBudget ? 'bg-rose-500' : 'bg-emerald-500'}`}
                             style={{ width: `${Math.min(100, percentSpent)}%` }}
                           />
+                          {pendingAmount > 0 && (
+                            <div
+                              className="h-full bg-blue-500/70 transition-all"
+                              style={{ width: `${Math.min(100 - percentSpent, percentPending)}%` }}
+                            />
+                          )}
                         </div>
                         <p className="text-xs text-white/40 mt-1 text-right">{Math.round(percentSpent)}% utilizado</p>
+
+                        {/* Expandable details section */}
+                        {hasDetails && (
+                          <div className="mt-3 pt-3 border-t border-white/10">
+                            <button
+                              onClick={() => toggleBudgetExpanded(budget.target.id)}
+                              className="flex items-center gap-2 text-xs text-white/60 hover:text-white/80 transition-colors w-full"
+                            >
+                              <svg
+                                className={`w-3 h-3 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                              </svg>
+                              <span>Ver detalhes</span>
+                              <span className="text-white/40">
+                                ({completedTx.length} concluido{completedTx.length !== 1 ? 's' : ''}, {pendingRecurrings.length} pendente{pendingRecurrings.length !== 1 ? 's' : ''})
+                              </span>
+                            </button>
+
+                            <div
+                              className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                                isExpanded ? 'max-h-[500px] opacity-100 mt-3' : 'max-h-0 opacity-0'
+                              }`}
+                            >
+                              {/* Completed transactions */}
+                              {completedTx.length > 0 && (
+                                <div className="mb-3">
+                                  <p className="text-xs text-emerald-400 mb-1">Concluidos</p>
+                                  <div className="space-y-1">
+                                    {completedTx.map((tx) => (
+                                      <div key={tx.id} className="flex justify-between text-xs">
+                                        <span className="text-white/70 truncate flex-1">
+                                          {tx.description}
+                                          <span className="text-white/40 ml-1">
+                                            ({new Date(tx.occurredOn).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })})
+                                          </span>
+                                        </span>
+                                        <span className="text-emerald-400 ml-2">{fmt(tx.amount)}</span>
+                                      </div>
+                                    ))}
+                                    <div className="flex justify-between text-xs pt-1 border-t border-white/10 mt-1">
+                                      <span className="text-white/50 font-medium">Total concluidos</span>
+                                      <span className="text-emerald-400 font-medium">{fmt(completedTx.reduce((sum, tx) => sum + tx.amount, 0))}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Pending recurrings */}
+                              {pendingRecurrings.length > 0 && (
+                                <div className="mb-3">
+                                  <p className="text-xs text-blue-400 mb-1">Fixas pendentes</p>
+                                  <div className="space-y-1">
+                                    {pendingRecurrings.map((r, idx) => (
+                                      <div key={idx} className="flex justify-between text-xs">
+                                        <span className="text-white/70 truncate flex-1">
+                                          {r.description}
+                                          <span className="text-white/40 ml-1">(dia {r.day})</span>
+                                        </span>
+                                        <span className="text-blue-400 ml-2">{fmt(r.amount)}</span>
+                                      </div>
+                                    ))}
+                                    <div className="flex justify-between text-xs pt-1 border-t border-white/10 mt-1">
+                                      <span className="text-white/50 font-medium">Total pendentes</span>
+                                      <span className="text-blue-400 font-medium">{fmt(pendingAmount)}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Grand total */}
+                              <div className="flex justify-between text-xs pt-2 border-t border-white/20 mt-2">
+                                <span className="text-white font-semibold">Total geral</span>
+                                <span className="text-white font-semibold">
+                                  {fmt(completedTx.reduce((sum, tx) => sum + tx.amount, 0) + pendingAmount)}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
