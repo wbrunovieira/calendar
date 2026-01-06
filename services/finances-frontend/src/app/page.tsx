@@ -7,7 +7,6 @@ import BankAccountModal from '@/components/finances/BankAccountModal';
 import TransactionForm from '@/components/finances/TransactionForm';
 import TransactionsTable from '@/components/finances/TransactionsTable';
 import CashflowSummary from '@/components/finances/CashflowSummary';
-import MonthlyCostOverview from '@/components/finances/MonthlyCostOverview';
 import QuickExpense from '@/components/finances/QuickExpense';
 import SafeToSpend from '@/components/finances/SafeToSpend';
 import CreditCardInfo from '@/components/finances/CreditCardInfo';
@@ -735,7 +734,6 @@ export default function FinancesPage() {
               <>
                 <SafeToSpend accounts={filteredAccounts} transactions={transactions} />
                 <CashflowSummary transactions={transactions} accounts={filteredAccounts} currentInvoices={currentInvoices} />
-                <MonthlyCostOverview profileId={selectedProfileId ?? ''} categories={categories} accounts={filteredAccounts} />
 
                 <div className="grid gap-6 lg:grid-cols-3">
                   <div className="lg:col-span-2 space-y-6">
