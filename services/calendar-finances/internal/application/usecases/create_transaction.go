@@ -118,8 +118,12 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		destinationAccountID = &destination.ID
 	}
 
-	if err := validateBalances(account, typeValue, input.Amount); err != nil {
-		return nil, err
+	// Only validate balance for CONFIRMED transactions (not PLANNED)
+	isPlanned := input.Status == nil || strings.ToUpper(*input.Status) == string(transaction.StatusPlanned)
+	if !isPlanned {
+		if err := validateBalances(account, typeValue, input.Amount); err != nil {
+			return nil, err
+		}
 	}
 
 	occurredOn, err := parseDate(input.OccurredOn)

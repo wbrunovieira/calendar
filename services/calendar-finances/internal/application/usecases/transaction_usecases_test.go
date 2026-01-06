@@ -765,3 +765,203 @@ func TestCreateTransactionUseCaseInvalidStatus(t *testing.T) {
 		t.Fatalf("expected ErrInvalidInput, got %v", err)
 	}
 }
+
+func TestCreateTransactionPlannedSkipsBalanceValidation(t *testing.T) {
+	profileID := "profile-1"
+	accountID := "account-1"
+	categoryID := "cat-1"
+
+	now := time.Now()
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {
+			ID:         profileID,
+			CalendarID: "cal-1",
+			Name:       "Test",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	// Account with only R$100, but we'll try to create R$1000 PLANNED expense
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Conta",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 100,
+			CurrentBalance: 100,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{
+		categoryID: {
+			ID:        categoryID,
+			ProfileID: profileID,
+			Name:      "Equipamentos",
+			Type:      category.TypeExpense,
+			IsActive:  true,
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+	}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	// PLANNED status should skip balance validation
+	plannedStatus := "PLANNED"
+	input := CreateTransactionInput{
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		CategoryID:    &categoryID,
+		Type:          "EXPENSE",
+		Status:        &plannedStatus,
+		Amount:        1000, // More than current balance of 100
+		Currency:      "BRL",
+		Description:   "GPS de Voo - Flylimit (4/4)",
+		OccurredOn:    "2026-01-21",
+	}
+
+	tx, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("PLANNED transaction should skip balance validation, got error: %v", err)
+	}
+
+	if tx.Status != transaction.StatusPlanned {
+		t.Fatalf("expected status PLANNED, got %s", tx.Status)
+	}
+
+	if tx.Amount != 1000 {
+		t.Fatalf("expected amount 1000, got %f", tx.Amount)
+	}
+}
+
+func TestCreateTransactionConfirmedValidatesBalance(t *testing.T) {
+	profileID := "profile-1"
+	accountID := "account-1"
+
+	now := time.Now()
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {
+			ID:         profileID,
+			CalendarID: "cal-1",
+			Name:       "Test",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	// Account with only R$100
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Conta",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 100,
+			CurrentBalance: 100,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	// CONFIRMED status should validate balance
+	confirmedStatus := "CONFIRMED"
+	input := CreateTransactionInput{
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        1000, // More than current balance of 100
+		Currency:      "BRL",
+		Description:   "Compra grande",
+		OccurredOn:    "2026-01-06",
+	}
+
+	_, err := useCase.Execute(input)
+	if err == nil {
+		t.Fatal("CONFIRMED transaction should validate balance, expected error")
+	}
+
+	if !errors.Is(err, ErrInsufficientBalance) {
+		t.Fatalf("expected ErrInsufficientBalance, got %v", err)
+	}
+}
+
+func TestCreateTransactionDefaultStatusSkipsBalanceValidation(t *testing.T) {
+	profileID := "profile-1"
+	accountID := "account-1"
+
+	now := time.Now()
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {
+			ID:         profileID,
+			CalendarID: "cal-1",
+			Name:       "Test",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	// Account with only R$100
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Conta",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 100,
+			CurrentBalance: 100,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	// No status provided - defaults to PLANNED, should skip balance validation
+	input := CreateTransactionInput{
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		Type:          "EXPENSE",
+		Amount:        1000, // More than current balance of 100
+		Currency:      "BRL",
+		Description:   "Despesa futura",
+		OccurredOn:    "2026-01-21",
+	}
+
+	tx, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("Default PLANNED status should skip balance validation, got error: %v", err)
+	}
+
+	if tx.Status != transaction.StatusPlanned {
+		t.Fatalf("expected default status PLANNED, got %s", tx.Status)
+	}
+}
