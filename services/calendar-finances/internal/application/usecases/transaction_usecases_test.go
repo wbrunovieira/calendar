@@ -569,3 +569,199 @@ func TestUpdateTransactionUseCaseInvalidCategory(t *testing.T) {
 		t.Fatalf("expected ErrCategoryNotFound, got %v", err)
 	}
 }
+
+func TestCreateTransactionUseCaseWithStatusConfirmed(t *testing.T) {
+	profileID := "profile-1"
+	accountID := "account-1"
+	categoryID := "cat-1"
+
+	now := time.Now()
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {
+			ID:         profileID,
+			CalendarID: "cal-1",
+			Name:       "Bruno Pessoal",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Nubank",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 1000,
+			CurrentBalance: 1000,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{
+		categoryID: {
+			ID:        categoryID,
+			ProfileID: profileID,
+			Name:      "Alimentação",
+			Type:      category.TypeExpense,
+			IsActive:  true,
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+	}}
+
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	confirmedStatus := "CONFIRMED"
+	input := CreateTransactionInput{
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		CategoryID:    &categoryID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        26.42,
+		Currency:      "BRL",
+		Description:   "iFood",
+		OccurredOn:    "2026-01-06",
+	}
+
+	tx, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if tx.Status != transaction.StatusConfirmed {
+		t.Fatalf("expected status CONFIRMED, got %s", tx.Status)
+	}
+
+	if tx.Amount != 26.42 {
+		t.Fatalf("expected amount 26.42, got %v", tx.Amount)
+	}
+}
+
+func TestCreateTransactionUseCaseDefaultStatusPlanned(t *testing.T) {
+	profileID := "profile-1"
+	accountID := "account-1"
+
+	now := time.Now()
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {
+			ID:         profileID,
+			CalendarID: "cal-1",
+			Name:       "Bruno Pessoal",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Nubank",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 1000,
+			CurrentBalance: 1000,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	// No status provided - should default to PLANNED
+	input := CreateTransactionInput{
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		Type:          "EXPENSE",
+		Amount:        50.00,
+		Currency:      "BRL",
+		Description:   "Compra futura",
+		OccurredOn:    "2026-01-10",
+	}
+
+	tx, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if tx.Status != transaction.StatusPlanned {
+		t.Fatalf("expected default status PLANNED, got %s", tx.Status)
+	}
+}
+
+func TestCreateTransactionUseCaseInvalidStatus(t *testing.T) {
+	profileID := "profile-1"
+	accountID := "account-1"
+
+	now := time.Now()
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {
+			ID:         profileID,
+			CalendarID: "cal-1",
+			Name:       "Test",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Conta",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 1000,
+			CurrentBalance: 1000,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	invalidStatus := "INVALID_STATUS"
+	input := CreateTransactionInput{
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		Type:          "EXPENSE",
+		Status:        &invalidStatus,
+		Amount:        100,
+		Currency:      "BRL",
+		Description:   "Test",
+		OccurredOn:    "2026-01-06",
+	}
+
+	_, err := useCase.Execute(input)
+	if err == nil {
+		t.Fatal("expected error for invalid status, got nil")
+	}
+
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+}

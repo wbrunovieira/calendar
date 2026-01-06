@@ -23,6 +23,7 @@ type CreateTransactionInput struct {
 	DestinationAccountID *string                       `json:"destinationAccountId,omitempty"`
 	CategoryID           *string                       `json:"categoryId,omitempty"`
 	Type                 string                        `json:"type"`
+	Status               *string                       `json:"status,omitempty"`
 	Amount               float64                       `json:"amount"`
 	Currency             string                        `json:"currency"`
 	Description          string                        `json:"description"`
@@ -180,6 +181,15 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 	txn, err := transaction.New(createParams)
 	if err != nil {
 		return nil, err
+	}
+
+	// Set status if provided (defaults to PLANNED in transaction.New)
+	if input.Status != nil {
+		status, err := parseTransactionStatus(*input.Status)
+		if err != nil {
+			return nil, err
+		}
+		txn.Status = status
 	}
 
 	if err := uc.transactionRepo.Create(txn); err != nil {
