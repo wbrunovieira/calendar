@@ -472,10 +472,11 @@ export default function FinancesPage() {
 
   const handlePayInvoice = async (invoiceId: string, amount: number) => {
     try {
+      const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
       const response = await fetch(`${API_BASE}/invoices/${invoiceId}/pay`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount }),
+        body: JSON.stringify({ paidAmount: amount, paidAt: today }),
       });
 
       if (!response.ok) {
@@ -485,6 +486,8 @@ export default function FinancesPage() {
 
       // Refresh invoices after payment
       await fetchInvoicesForCreditCards(filteredAccounts);
+      // Also refresh bank accounts to update balances
+      await fetchBankAccounts();
     } catch (error) {
       console.error('Erro ao pagar fatura:', error);
       alert('Erro ao pagar fatura');

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { BankAccount, Invoice } from '@/types/finances';
 
 interface CreditCardInfoProps {
@@ -46,19 +46,38 @@ export default function CreditCardInfo({
 }: CreditCardInfoProps) {
   const [showHistory, setShowHistory] = useState(false);
   const [payingInvoice, setPayingInvoice] = useState<string | null>(null);
+  const [showPaymentOptions, setShowPaymentOptions] = useState(false);
 
   const limit = account.creditLimit || 0;
   const currentAmount = currentInvoice?.amount || 0;
   const available = limit - currentAmount;
   const usagePercent = limit > 0 ? (currentAmount / limit) * 100 : 0;
 
+  // Get all unpaid invoices (OPEN or CLOSED with amount > 0)
+  const unpaidInvoices = useMemo(() => {
+    return invoices.filter(
+      (inv) => inv.status !== 'PAID' && inv.amount > 0
+    ).sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+  }, [invoices]);
+
   const handlePayInvoice = async (invoice: Invoice) => {
     if (!onPayInvoice || payingInvoice) return;
     setPayingInvoice(invoice.id);
     try {
       await onPayInvoice(invoice.id, invoice.amount);
+      setShowPaymentOptions(false);
     } finally {
       setPayingInvoice(null);
+    }
+  };
+
+  const handlePayButtonClick = () => {
+    if (unpaidInvoices.length === 1) {
+      // Only one unpaid invoice, pay it directly
+      handlePayInvoice(unpaidInvoices[0]);
+    } else if (unpaidInvoices.length > 1) {
+      // Multiple unpaid invoices, show selection
+      setShowPaymentOptions(!showPaymentOptions);
     }
   };
 
@@ -126,24 +145,62 @@ export default function CreditCardInfo({
         </div>
 
         {/* Pay Button */}
-        {currentInvoice && currentInvoice.status !== 'PAID' && currentInvoice.amount > 0 && onPayInvoice && (
-          <button
-            onClick={() => handlePayInvoice(currentInvoice)}
-            disabled={payingInvoice === currentInvoice.id}
-            className="w-full py-2 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-600 text-white rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-2"
-          >
-            {payingInvoice === currentInvoice.id ? (
-              <>
-                <span className="animate-spin">⏳</span>
-                Pagando...
-              </>
-            ) : (
-              <>
-                <span>💳</span>
-                Pagar Fatura
-              </>
+        {unpaidInvoices.length > 0 && onPayInvoice && (
+          <div className="space-y-2">
+            <button
+              onClick={handlePayButtonClick}
+              disabled={!!payingInvoice}
+              className="w-full py-2 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-600 text-white rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-2"
+            >
+              {payingInvoice ? (
+                <>
+                  <span className="animate-spin">⏳</span>
+                  Pagando...
+                </>
+              ) : (
+                <>
+                  <span>💳</span>
+                  Pagar Fatura {unpaidInvoices.length > 1 && `(${unpaidInvoices.length})`}
+                </>
+              )}
+            </button>
+
+            {/* Payment Options - Multiple Invoices */}
+            {showPaymentOptions && unpaidInvoices.length > 1 && (
+              <div className="bg-white/5 rounded-lg p-3 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                <p className="text-white/60 text-xs mb-2">Selecione a fatura para pagar:</p>
+                {unpaidInvoices.map((invoice) => {
+                  const status = getStatusLabel(invoice.status);
+                  return (
+                    <button
+                      key={invoice.id}
+                      onClick={() => handlePayInvoice(invoice)}
+                      disabled={payingInvoice === invoice.id}
+                      className="w-full flex items-center justify-between p-3 bg-white/5 hover:bg-white/10 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      <div className="text-left">
+                        <p className="text-white text-sm capitalize">{getMonthName(invoice.referenceDate)}</p>
+                        <p className="text-white/50 text-xs">
+                          Vence {formatDate(invoice.dueDate)}
+                          <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] ${status.color}`}>
+                            {status.label}
+                          </span>
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-white font-semibold">{formatCurrency(invoice.amount)}</p>
+                        {payingInvoice === invoice.id ? (
+                          <span className="text-xs text-white/50">Pagando...</span>
+                        ) : (
+                          <span className="text-xs text-emerald-400">Pagar</span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             )}
-          </button>
+          </div>
         )}
 
         {/* Invoice History Toggle */}
@@ -152,7 +209,7 @@ export default function CreditCardInfo({
             onClick={() => setShowHistory(!showHistory)}
             className="w-full text-center text-white/50 text-xs hover:text-white/80 transition-colors py-1"
           >
-            {showHistory ? '▲ Ocultar histórico' : `▼ Ver histórico (${invoices.length} faturas)`}
+            {showHistory ? '▲ Ocultar historico' : `▼ Ver historico (${invoices.length} faturas)`}
           </button>
         )}
 
@@ -161,6 +218,7 @@ export default function CreditCardInfo({
           <div className="space-y-2 pt-2 border-t border-white/10">
             {invoices.map((invoice) => {
               const status = getStatusLabel(invoice.status);
+              const canPay = invoice.status !== 'PAID' && invoice.amount > 0;
               return (
                 <div
                   key={invoice.id}
@@ -170,11 +228,22 @@ export default function CreditCardInfo({
                     <p className="text-white text-sm capitalize">{getMonthName(invoice.referenceDate)}</p>
                     <p className="text-white/50 text-xs">Venceu {formatDate(invoice.dueDate)}</p>
                   </div>
-                  <div className="text-right">
-                    <p className="text-white font-semibold text-sm">{formatCurrency(invoice.amount)}</p>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${status.color}`}>
-                      {status.label}
-                    </span>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <p className="text-white font-semibold text-sm">{formatCurrency(invoice.amount)}</p>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${status.color}`}>
+                        {status.label}
+                      </span>
+                    </div>
+                    {canPay && onPayInvoice && (
+                      <button
+                        onClick={() => handlePayInvoice(invoice)}
+                        disabled={payingInvoice === invoice.id}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-600 text-white text-xs rounded-lg transition-colors"
+                      >
+                        {payingInvoice === invoice.id ? '...' : 'Pagar'}
+                      </button>
+                    )}
                   </div>
                 </div>
               );
