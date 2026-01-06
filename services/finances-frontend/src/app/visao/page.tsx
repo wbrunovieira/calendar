@@ -333,9 +333,13 @@ function MonthCard({
 
   const recurringOutsideBudget = useMemo(() => recurringForecast.filter((r) => !r.inBudget), [recurringForecast]);
 
-  const pendingTx = useMemo(() =>
-    transactions.filter((tx) => tx.status === 'PLANNED'),
-  [transactions]);
+  // Pending transactions outside of budgets (for separate section)
+  const pendingTxOutsideBudget = useMemo(() =>
+    transactions.filter((tx) => {
+      if (tx.status !== 'PLANNED') return false;
+      return !isCategoryInBudget(tx.categoryId);
+    }),
+  [transactions, isCategoryInBudget]);
 
   // Totals
   const totals = useMemo(() => {
@@ -344,10 +348,10 @@ function MonthCard({
     const budgetRemaining = budgetSummary.reduce((sum, b) => sum + b.remaining, 0);
     const recurringExpense = recurringOutsideBudget.filter((r) => r.type === 'EXPENSE').reduce((sum, r) => sum + r.amount, 0);
     const recurringIncome = recurringOutsideBudget.filter((r) => r.type === 'INCOME').reduce((sum, r) => sum + r.amount, 0);
-    const pendingExpense = pendingTx.filter((tx) => tx.type === 'EXPENSE').reduce((sum, tx) => sum + tx.amount, 0);
-    const pendingIncome = pendingTx.filter((tx) => tx.type === 'INCOME').reduce((sum, tx) => sum + tx.amount, 0);
+    const pendingExpense = pendingTxOutsideBudget.filter((tx) => tx.type === 'EXPENSE').reduce((sum, tx) => sum + tx.amount, 0);
+    const pendingIncome = pendingTxOutsideBudget.filter((tx) => tx.type === 'INCOME').reduce((sum, tx) => sum + tx.amount, 0);
     return { budgetTotal, budgetSpent, budgetRemaining, recurringExpense, recurringIncome, pendingExpense, pendingIncome };
-  }, [budgetSummary, recurringOutsideBudget, pendingTx]);
+  }, [budgetSummary, recurringOutsideBudget, pendingTxOutsideBudget]);
 
   const getPendingRecurringForCategory = useCallback((budgetCategoryId: string) => {
     const today = new Date();
@@ -372,9 +376,9 @@ function MonthCard({
     return pending;
   }, [recurrings, getCategoryChain, month, year]);
 
-  const getTransactionsForCategory = useCallback((budgetCategoryId: string) => {
+  const getTransactionsForCategory = useCallback((budgetCategoryId: string, status: 'CONFIRMED' | 'PLANNED') => {
     return transactions.filter((tx) => {
-      if (!tx.categoryId || tx.status !== 'CONFIRMED') return false;
+      if (!tx.categoryId || tx.status !== status) return false;
       const chain = getCategoryChain(tx.categoryId);
       return chain.includes(budgetCategoryId);
     });
@@ -401,12 +405,15 @@ function MonthCard({
               const percentSpent = budget.target.amount > 0 ? (budget.spent / budget.target.amount) * 100 : 0;
               const isOverBudget = budget.spent > budget.target.amount;
               const pendingRecurrings = getPendingRecurringForCategory(budget.target.categoryId);
-              const pendingAmount = pendingRecurrings.reduce((sum, r) => sum + r.amount, 0);
+              const completedTx = getTransactionsForCategory(budget.target.categoryId, 'CONFIRMED');
+              const plannedTx = getTransactionsForCategory(budget.target.categoryId, 'PLANNED');
+              const pendingRecurringAmount = pendingRecurrings.reduce((sum, r) => sum + r.amount, 0);
+              const plannedAmount = plannedTx.reduce((sum, tx) => sum + tx.amount, 0);
+              const pendingAmount = pendingRecurringAmount + plannedAmount;
               const percentPending = budget.target.amount > 0 ? (pendingAmount / budget.target.amount) * 100 : 0;
-              const completedTx = getTransactionsForCategory(budget.target.categoryId);
               const budgetKey = `${period}-${budget.target.id}`;
               const isExpanded = expandedBudgets.has(budgetKey);
-              const hasDetails = completedTx.length > 0 || pendingRecurrings.length > 0;
+              const hasDetails = completedTx.length > 0 || pendingRecurrings.length > 0 || plannedTx.length > 0;
 
               return (
                 <div key={budget.target.id} className="bg-white/5 border border-white/10 rounded-lg p-3">
@@ -462,7 +469,7 @@ function MonthCard({
                         >
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
-                        <span>Detalhes ({completedTx.length}+{pendingRecurrings.length})</span>
+                        <span>Detalhes ({completedTx.length}+{pendingRecurrings.length + plannedTx.length})</span>
                       </button>
 
                       <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-[400px] opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
@@ -483,14 +490,25 @@ function MonthCard({
                             </div>
                           </div>
                         )}
-                        {pendingRecurrings.length > 0 && (
+                        {(pendingRecurrings.length > 0 || plannedTx.length > 0) && (
                           <div className="mb-2">
                             <p className="text-[10px] text-blue-400 mb-1">Pendentes</p>
                             <div className="space-y-0.5">
                               {pendingRecurrings.map((r, idx) => (
                                 <div key={idx} className="flex justify-between text-[10px]">
-                                  <span className="text-white/60 truncate flex-1">{r.description} <span className="text-white/30">(d{r.day})</span></span>
+                                  <span className="text-white/60 truncate flex-1">{r.description} <span className="text-white/30">(fixa d{r.day})</span></span>
                                   <span className="text-blue-400 ml-1">{fmt(r.amount)}</span>
+                                </div>
+                              ))}
+                              {plannedTx.map((tx) => (
+                                <div key={tx.id} className="flex justify-between text-[10px]">
+                                  <span className="text-white/60 truncate flex-1">
+                                    {tx.description}
+                                    <span className="text-white/30 ml-1">
+                                      ({new Date(tx.occurredOn).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })})
+                                    </span>
+                                  </span>
+                                  <span className="text-blue-400 ml-1">{fmt(tx.amount)}</span>
                                 </div>
                               ))}
                               <div className="flex justify-between text-[10px] pt-0.5 border-t border-white/10">
@@ -574,7 +592,7 @@ function MonthCard({
       )}
 
       {/* Pending Transactions */}
-      {pendingTx.length > 0 && (
+      {pendingTxOutsideBudget.length > 0 && (
         <div
           className="bg-white/5 border border-white/10 rounded-lg p-2 cursor-pointer hover:bg-white/10 transition-colors"
           onClick={() => onToggleSection(`${period}-pending`)}
@@ -583,7 +601,7 @@ function MonthCard({
             <div className="flex items-center gap-1">
               <span className="text-purple-400 text-xs">⏳</span>
               <span className="text-white/80 text-xs">Pendentes</span>
-              <span className="text-[10px] text-white/40">({pendingTx.length})</span>
+              <span className="text-[10px] text-white/40">({pendingTxOutsideBudget.length})</span>
             </div>
             <div className="text-right">
               {totals.pendingExpense > 0 && <span className="text-rose-400/70 text-xs">{fmt(totals.pendingExpense)}</span>}
@@ -591,7 +609,7 @@ function MonthCard({
           </div>
           {expandedSections.has(`${period}-pending`) && (
             <div className="mt-2 space-y-0.5 border-t border-white/10 pt-2">
-              {pendingTx.map((tx) => (
+              {pendingTxOutsideBudget.map((tx) => (
                 <div key={tx.id} className="flex justify-between text-[10px]">
                   <span className="text-white/60 truncate">{tx.description}</span>
                   <span className={tx.type === 'EXPENSE' ? 'text-rose-400/70' : 'text-emerald-400/70'}>{fmt(tx.amount)}</span>
