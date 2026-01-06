@@ -89,7 +89,9 @@ export default function FinancesPage() {
 
   useEffect(() => {
     if (profiles.length > 0 && !selectedProfileId) {
-      setSelectedProfileId(profiles[0].id);
+      // Default to "Bruno Pessoal" profile, fallback to first
+      const defaultProfile = profiles.find((p) => p.name === 'Bruno Pessoal') || profiles[0];
+      setSelectedProfileId(defaultProfile.id);
     }
   }, [profiles, selectedProfileId]);
 

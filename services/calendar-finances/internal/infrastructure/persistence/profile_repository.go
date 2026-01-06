@@ -87,7 +87,7 @@ func (r *ProfileRepository) FindAll() ([]*profile.Profile, error) {
 	query := `
 		SELECT id, calendar_id, name, type, is_active, created_at, updated_at
 		FROM finance.profiles
-		ORDER BY created_at DESC
+		ORDER BY created_at ASC
 	`
 
 	rows, err := r.db.Query(query)
