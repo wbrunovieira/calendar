@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
 import ProfileModal from '@/components/finances/ProfileModal';
 import BankAccountModal from '@/components/finances/BankAccountModal';
@@ -11,6 +11,7 @@ import QuickExpense from '@/components/finances/QuickExpense';
 import SafeToSpend from '@/components/finances/SafeToSpend';
 import CreditCardInfo from '@/components/finances/CreditCardInfo';
 import InvestmentAccountInfo from '@/components/finances/InvestmentAccountInfo';
+import GlobalSearch from '@/components/finances/GlobalSearch';
 import type {
   Profile,
   BankAccount,
@@ -639,9 +640,34 @@ export default function FinancesPage() {
     ? profiles.find((profile) => profile.id === selectedProfileId)
     : null;
 
+  // Handle search result selection
+  const handleSearchSelectTransaction = useCallback((id: string) => {
+    const tx = transactions.find((t) => t.id === id);
+    if (tx) {
+      setEditingTransaction(tx);
+      setIsTransactionModalOpen(true);
+    }
+  }, [transactions]);
+
+  const handleSearchSelectRecurring = useCallback(() => {
+    // Navigate to recurring page
+    window.location.href = '/recurring';
+  }, []);
+
   return (
     <AppLayout>
       <div className="py-10 space-y-8">
+        {/* Global Search */}
+        <div className="mb-2">
+          <GlobalSearch
+            profileId={selectedProfileId}
+            categories={categories}
+            accounts={filteredAccounts}
+            onSelectTransaction={handleSearchSelectTransaction}
+            onSelectRecurring={handleSearchSelectRecurring}
+          />
+        </div>
+
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-white">Despesas e planejamento</h1>
