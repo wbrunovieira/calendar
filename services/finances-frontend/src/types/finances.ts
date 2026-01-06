@@ -192,6 +192,8 @@ export interface BudgetTarget {
   periodStart: string;
   amount: number;
   notes?: string;
+  isRecurring: boolean;
+  effectiveUntil?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -202,6 +204,7 @@ export interface BudgetTargetForm {
   period: string; // YYYY-MM
   amount: number;
   notes?: string;
+  isRecurring?: boolean;
 }
 
 export interface BudgetSummaryItem {

@@ -125,6 +125,40 @@ func (r *CategoryRepository) Deactivate(id string) error {
 	return nil
 }
 
+// GetDescendantIDs returns all descendant category IDs for a given category (including itself)
+func (r *CategoryRepository) GetDescendantIDs(id string) ([]string, error) {
+	query := `
+		WITH RECURSIVE descendants AS (
+			SELECT id FROM finance.categories WHERE id = $1
+			UNION ALL
+			SELECT c.id FROM finance.categories c
+			INNER JOIN descendants d ON c.parent_id = d.id
+		)
+		SELECT id FROM descendants
+	`
+
+	rows, err := r.db.Query(query, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var catID string
+		if err := rows.Scan(&catID); err != nil {
+			return nil, err
+		}
+		ids = append(ids, catID)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return ids, nil
+}
+
 type categoryScanner interface {
 	Scan(dest ...any) error
 }

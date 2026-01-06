@@ -330,6 +330,32 @@ func RunMigrations(db *sql.DB) error {
 				ADD COLUMN quota_price NUMERIC(15, 6);
 			END IF;
 		END $$`,
+
+		// Migration: Add is_recurring and effective_until to budget_targets for recurring budgets with versioning
+		`DO $$
+		BEGIN
+			-- Add is_recurring column (default FALSE keeps existing budgets as one-time)
+			IF NOT EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'finance'
+				AND table_name = 'budget_targets'
+				AND column_name = 'is_recurring'
+			) THEN
+				ALTER TABLE finance.budget_targets
+				ADD COLUMN is_recurring BOOLEAN NOT NULL DEFAULT FALSE;
+			END IF;
+
+			-- Add effective_until column for versioning (NULL means still active)
+			IF NOT EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'finance'
+				AND table_name = 'budget_targets'
+				AND column_name = 'effective_until'
+			) THEN
+				ALTER TABLE finance.budget_targets
+				ADD COLUMN effective_until DATE;
+			END IF;
+		END $$`,
 	}
 
 	for i, migration := range migrations {

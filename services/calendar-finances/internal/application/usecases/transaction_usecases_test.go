@@ -70,6 +70,17 @@ func (f *fakeCategoryRepo) ListByProfile(profileID string) ([]*category.Category
 	return list, nil
 }
 func (f *fakeCategoryRepo) Deactivate(string) error { return nil }
+func (f *fakeCategoryRepo) GetDescendantIDs(id string) ([]string, error) {
+	// Simple implementation: find the category and all children recursively
+	ids := []string{id}
+	for _, cat := range f.categories {
+		if cat.ParentID != nil && *cat.ParentID == id {
+			childIDs, _ := f.GetDescendantIDs(cat.ID)
+			ids = append(ids, childIDs...)
+		}
+	}
+	return ids, nil
+}
 
 type fakeTransactionRepo struct {
 	created []*transaction.Transaction

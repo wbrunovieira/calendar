@@ -11,14 +11,16 @@ import (
 
 // BudgetTarget represents a planned expense value for a category period.
 type BudgetTarget struct {
-	ID          string    `json:"id"`
-	ProfileID   string    `json:"profileId"`
-	CategoryID  string    `json:"categoryId"`
-	PeriodStart time.Time `json:"periodStart"`
-	Amount      float64   `json:"amount"`
-	Notes       *string   `json:"notes,omitempty"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID             string     `json:"id"`
+	ProfileID      string     `json:"profileId"`
+	CategoryID     string     `json:"categoryId"`
+	PeriodStart    time.Time  `json:"periodStart"`
+	Amount         float64    `json:"amount"`
+	Notes          *string    `json:"notes,omitempty"`
+	IsRecurring    bool       `json:"isRecurring"`
+	EffectiveUntil *time.Time `json:"effectiveUntil,omitempty"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	UpdatedAt      time.Time  `json:"updatedAt"`
 }
 
 // CreateParams wraps the input required to instantiate a budget target.
@@ -28,6 +30,7 @@ type CreateParams struct {
 	PeriodStart time.Time
 	Amount      float64
 	Notes       *string
+	IsRecurring bool
 }
 
 // NewBudgetTarget validates and builds a new target.
@@ -52,14 +55,16 @@ func NewBudgetTarget(params CreateParams) (*BudgetTarget, error) {
 	now := time.Now()
 
 	return &BudgetTarget{
-		ID:          uuid.New().String(),
-		ProfileID:   params.ProfileID,
-		CategoryID:  params.CategoryID,
-		PeriodStart: period,
-		Amount:      round2(params.Amount),
-		Notes:       normalizeString(params.Notes),
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:             uuid.New().String(),
+		ProfileID:      params.ProfileID,
+		CategoryID:     params.CategoryID,
+		PeriodStart:    period,
+		Amount:         round2(params.Amount),
+		Notes:          normalizeString(params.Notes),
+		IsRecurring:    params.IsRecurring,
+		EffectiveUntil: nil, // New budgets are always active
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}, nil
 }
 

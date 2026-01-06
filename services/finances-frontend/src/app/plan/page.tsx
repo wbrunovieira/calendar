@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
 import TransactionForm from '@/components/finances/TransactionForm';
-import type { Profile, BankAccount, RecurringTransaction, BudgetSummaryItem, Category, Transaction } from '@/types/finances';
+import type { Profile, BankAccount, RecurringTransaction, BudgetSummaryItem, Category, Transaction, TransactionFormData } from '@/types/finances';
 
 const API_BASE = 'http://localhost:3335/api/v1';
 
@@ -35,6 +35,7 @@ export default function PlanPage() {
   const [confirming, setConfirming] = useState<string | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [showTransactionForm, setShowTransactionForm] = useState(false);
+  const [savingTransaction, setSavingTransaction] = useState(false);
 
   const { startDate, endDate } = useMemo(() => {
     const now = new Date();
@@ -337,6 +338,50 @@ export default function PlanPage() {
     loadData();
   };
 
+  const handleCreateTransaction = async (payload: TransactionFormData) => {
+    if (!selectedProfileId) return;
+    try {
+      setSavingTransaction(true);
+      const cleanPayload = Object.fromEntries(
+        Object.entries(payload).filter(([, v]) => v !== undefined && v !== null)
+      );
+      const response = await fetch(`${API_BASE}/transactions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cleanPayload),
+      });
+      if (!response.ok) throw new Error('Erro ao criar transacao');
+      handleTransactionSaved();
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao criar transacao');
+    } finally {
+      setSavingTransaction(false);
+    }
+  };
+
+  const handleUpdateTransaction = async (id: string, payload: TransactionFormData) => {
+    if (!selectedProfileId) return;
+    try {
+      setSavingTransaction(true);
+      const cleanPayload = Object.fromEntries(
+        Object.entries(payload).filter(([, v]) => v !== undefined && v !== null)
+      );
+      const response = await fetch(`${API_BASE}/transactions/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cleanPayload),
+      });
+      if (!response.ok) throw new Error('Erro ao atualizar transacao');
+      handleTransactionSaved();
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao atualizar transacao');
+    } finally {
+      setSavingTransaction(false);
+    }
+  };
+
   // Combined totals for summary (recurring + planned)
   const combinedTotals = useMemo(() => {
     const plannedIncome = plannedTransactions
@@ -599,10 +644,18 @@ export default function PlanPage() {
                 </button>
               </div>
               <TransactionForm
-                profiles={profiles}
+                isOpen={showTransactionForm}
+                onClose={() => {
+                  setShowTransactionForm(false);
+                  setEditingTransaction(null);
+                }}
+                onSave={handleCreateTransaction}
+                onUpdate={handleUpdateTransaction}
                 accounts={accounts}
                 categories={categories}
-                onTransactionCreated={handleTransactionSaved}
+                defaultProfileId={selectedProfileId ?? ''}
+                loading={savingTransaction}
+                profiles={profiles.map((p) => ({ id: p.id, name: p.name }))}
                 editingTransaction={editingTransaction}
               />
             </div>

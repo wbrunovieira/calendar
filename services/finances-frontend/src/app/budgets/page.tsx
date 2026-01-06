@@ -14,6 +14,48 @@ const parseLocalDate = (value: string) => {
   return new Date(year, month - 1, day);
 };
 
+// Calculate pace tracking metrics
+const calculatePaceMetrics = (period: string, spent: number, budget: number) => {
+  const [year, month] = period.split('-').map(Number);
+  const firstDay = new Date(year, month - 1, 1);
+  const lastDay = new Date(year, month, 0);
+  const today = new Date();
+
+  const totalDays = lastDay.getDate();
+  const currentDay = today.getMonth() + 1 === month && today.getFullYear() === year
+    ? today.getDate()
+    : (today > lastDay ? totalDays : 0);
+
+  const daysRemaining = Math.max(0, totalDays - currentDay);
+  const percentMonth = totalDays > 0 ? (currentDay / totalDays) * 100 : 0;
+  const percentSpent = budget > 0 ? (spent / budget) * 100 : 0;
+
+  // Projection: if we continue at current pace
+  const dailyAverage = currentDay > 0 ? spent / currentDay : 0;
+  const projection = dailyAverage * totalDays;
+
+  // Safe to spend per day
+  const remaining = budget - spent;
+  const safePerDay = daysRemaining > 0 ? remaining / daysRemaining : remaining;
+
+  // Status: on track if spent% is within 10% of month%
+  let status: 'on_track' | 'ahead' | 'behind' = 'on_track';
+  if (percentSpent > percentMonth + 10) {
+    status = 'behind'; // spending too fast
+  } else if (percentSpent < percentMonth - 10) {
+    status = 'ahead'; // underspending (good)
+  }
+
+  return {
+    percentMonth: Math.round(percentMonth),
+    percentSpent: Math.round(percentSpent),
+    projection,
+    safePerDay,
+    daysRemaining,
+    status,
+  };
+};
+
 export default function BudgetsPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
@@ -23,7 +65,7 @@ export default function BudgetsPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState<{ categoryId: string; period: string; amount: string; notes: string }>({ categoryId: '', period, amount: '', notes: '' });
+  const [form, setForm] = useState<{ categoryId: string; period: string; amount: string; notes: string; isRecurring: boolean }>({ categoryId: '', period, amount: '', notes: '', isRecurring: true });
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const selectedProfile = useMemo(
@@ -78,7 +120,7 @@ export default function BudgetsPage() {
   }, [selectedProfileId, period]);
 
   const resetForm = () => {
-    setForm({ categoryId: '', period, amount: '', notes: '' });
+    setForm({ categoryId: '', period, amount: '', notes: '', isRecurring: true });
     setEditingId(null);
   };
 
@@ -91,6 +133,7 @@ export default function BudgetsPage() {
       period: form.period,
       amount: Number(form.amount),
       notes: form.notes || undefined,
+      isRecurring: form.isRecurring,
     };
     try {
       const url = editingId ? `${API_BASE}/budgets/${editingId}` : `${API_BASE}/budgets`;
@@ -204,7 +247,7 @@ export default function BudgetsPage() {
                     className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
                   />
                 </div>
-                <div className="md:col-span-5 flex gap-2">
+                <div className="md:col-span-5 flex gap-2 items-center">
                   <input
                     type="text"
                     value={form.notes}
@@ -212,6 +255,15 @@ export default function BudgetsPage() {
                     placeholder="Notas (opcional)"
                     className="flex-1 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
                   />
+                  <label className="flex items-center gap-2 text-white/80 text-sm whitespace-nowrap">
+                    <input
+                      type="checkbox"
+                      checked={form.isRecurring}
+                      onChange={(e) => setForm((f) => ({ ...f, isRecurring: e.target.checked }))}
+                      className="w-4 h-4 rounded bg-white/10 border-white/20"
+                    />
+                    Recorrente
+                  </label>
                   <button
                     type="submit"
                     className="px-4 py-2 rounded-lg font-semibold border bg-emerald-500/80 hover:bg-emerald-500 text-white border-emerald-400/40"
@@ -224,48 +276,93 @@ export default function BudgetsPage() {
                 </div>
               </form>
 
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="text-white/60">
-                      <th className="text-left py-2 pr-4">Categoria</th>
-                      <th className="text-left py-2 pr-4">Meta</th>
-                      <th className="text-left py-2 pr-4">Gasto</th>
-                      <th className="text-left py-2">Restante</th>
-                      <th className="py-2">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {summary.map((s) => {
-                      const cat = categories.find((c) => c.id === s.target.categoryId);
-                      const catName = cat ? cat.name : s.target.categoryId;
-                      return (
-                      <tr key={s.target.id} className="text-white/90 border-t border-white/10">
-                        <td className="py-2 pr-4">{catName}</td>
-                        <td className="py-2 pr-4">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(s.target.amount)}</td>
-                        <td className="py-2 pr-4">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(s.spent)}</td>
-                        <td className="py-2">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(s.remaining)}</td>
-                        <td className="py-2 text-right">
-                          <button
-                            onClick={() => {
-                              setEditingId(s.target.id);
-                              setForm({
-                                categoryId: s.target.categoryId,
-                                period: s.target.periodStart.split('T')[0].slice(0, 7),
-                                amount: String(s.target.amount),
-                                notes: s.target.notes || '',
-                              });
-                            }}
-                            className="px-3 py-1.5 rounded-lg text-xs border border-white/20 text-white/80 hover:bg-white/10"
-                          >
-                            Editar
-                          </button>
-                        </td>
-                      </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              <div className="space-y-4">
+                {summary.map((s) => {
+                  const cat = categories.find((c) => c.id === s.target.categoryId);
+                  const catName = cat ? cat.name : s.target.categoryId;
+                  const pace = calculatePaceMetrics(period, s.spent, s.target.amount);
+                  const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+
+                  const statusColor = pace.status === 'ahead' ? 'text-emerald-400' : pace.status === 'behind' ? 'text-rose-400' : 'text-amber-400';
+                  const statusLabel = pace.status === 'ahead' ? 'Abaixo do ritmo' : pace.status === 'behind' ? 'Acima do ritmo' : 'No ritmo';
+                  const progressColor = pace.status === 'ahead' ? 'bg-emerald-500' : pace.status === 'behind' ? 'bg-rose-500' : 'bg-amber-500';
+
+                  return (
+                    <div key={s.target.id} className="bg-white/5 border border-white/10 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <h4 className="text-white font-semibold">{catName}</h4>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${statusColor} bg-white/10`}>
+                            {statusLabel}
+                          </span>
+                          {s.target.isRecurring && (
+                            <span className="text-xs px-2 py-0.5 rounded-full text-blue-400 bg-blue-500/20">
+                              Recorrente
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => {
+                            setEditingId(s.target.id);
+                            setForm({
+                              categoryId: s.target.categoryId,
+                              period: s.target.periodStart.split('T')[0].slice(0, 7),
+                              amount: String(s.target.amount),
+                              notes: s.target.notes || '',
+                              isRecurring: s.target.isRecurring,
+                            });
+                          }}
+                          className="px-3 py-1.5 rounded-lg text-xs border border-white/20 text-white/80 hover:bg-white/10"
+                        >
+                          Editar
+                        </button>
+                      </div>
+
+                      {/* Progress bar */}
+                      <div className="mb-3">
+                        <div className="flex justify-between text-xs text-white/60 mb-1">
+                          <span>{fmt(s.spent)} de {fmt(s.target.amount)}</span>
+                          <span>{pace.percentSpent}% gasto</span>
+                        </div>
+                        <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full ${progressColor} transition-all`}
+                            style={{ width: `${Math.min(100, pace.percentSpent)}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between text-xs text-white/40 mt-1">
+                          <span>{pace.percentMonth}% do mês</span>
+                          <span>{pace.daysRemaining} dias restantes</span>
+                        </div>
+                      </div>
+
+                      {/* Metrics grid */}
+                      <div className="grid grid-cols-3 gap-4 text-center">
+                        <div className="bg-white/5 rounded-lg p-2">
+                          <p className="text-xs text-white/50">Restante</p>
+                          <p className={`text-sm font-semibold ${s.remaining >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {fmt(s.remaining)}
+                          </p>
+                        </div>
+                        <div className="bg-white/5 rounded-lg p-2">
+                          <p className="text-xs text-white/50">Projeção</p>
+                          <p className={`text-sm font-semibold ${pace.projection <= s.target.amount ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {fmt(pace.projection)}
+                          </p>
+                        </div>
+                        <div className="bg-white/5 rounded-lg p-2">
+                          <p className="text-xs text-white/50">Seguro/dia</p>
+                          <p className={`text-sm font-semibold ${pace.safePerDay >= 0 ? 'text-white' : 'text-rose-400'}`}>
+                            {fmt(pace.safePerDay)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {summary.length === 0 && !loading && (
+                  <p className="text-white/50 text-center py-8">Nenhum orçamento cadastrado para este período.</p>
+                )}
               </div>
 
               <div className="border-t border-white/10 pt-4">

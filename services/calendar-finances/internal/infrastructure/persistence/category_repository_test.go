@@ -78,3 +78,79 @@ func TestCategoryRepositoryFindByID(t *testing.T) {
 		t.Fatalf("expectations not met: %v", err)
 	}
 }
+
+func TestCategoryRepositoryGetDescendantIDs(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	repo := NewCategoryRepository(db)
+
+	// Test with parent category that has children
+	rows := sqlmock.NewRows([]string{"id"}).
+		AddRow("parent-123").
+		AddRow("child-1").
+		AddRow("child-2").
+		AddRow("grandchild-1")
+
+	mock.ExpectQuery(regexp.QuoteMeta("WITH RECURSIVE descendants AS")).
+		WithArgs("parent-123").
+		WillReturnRows(rows)
+
+	ids, err := repo.GetDescendantIDs("parent-123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(ids) != 4 {
+		t.Fatalf("expected 4 IDs, got %d", len(ids))
+	}
+
+	expectedIDs := map[string]bool{"parent-123": true, "child-1": true, "child-2": true, "grandchild-1": true}
+	for _, id := range ids {
+		if !expectedIDs[id] {
+			t.Fatalf("unexpected ID: %s", id)
+		}
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("expectations not met: %v", err)
+	}
+}
+
+func TestCategoryRepositoryGetDescendantIDsNoChildren(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	repo := NewCategoryRepository(db)
+
+	// Test with leaf category (no children)
+	rows := sqlmock.NewRows([]string{"id"}).
+		AddRow("leaf-cat")
+
+	mock.ExpectQuery(regexp.QuoteMeta("WITH RECURSIVE descendants AS")).
+		WithArgs("leaf-cat").
+		WillReturnRows(rows)
+
+	ids, err := repo.GetDescendantIDs("leaf-cat")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(ids) != 1 {
+		t.Fatalf("expected 1 ID, got %d", len(ids))
+	}
+
+	if ids[0] != "leaf-cat" {
+		t.Fatalf("expected leaf-cat, got %s", ids[0])
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("expectations not met: %v", err)
+	}
+}

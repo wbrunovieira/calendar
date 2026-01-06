@@ -6,26 +6,30 @@ import (
 	"time"
 
 	"github.com/brunovieira/calendar-finances/internal/domain/budgettarget"
+	"github.com/brunovieira/calendar-finances/internal/domain/category"
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
 )
 
 type BudgetTargetInput struct {
-	ProfileID  string  `json:"profileId"`
-	CategoryID string  `json:"categoryId"`
-	Period     string  `json:"period"`
-	Amount     float64 `json:"amount"`
-	Notes      *string `json:"notes,omitempty"`
+	ProfileID   string  `json:"profileId"`
+	CategoryID  string  `json:"categoryId"`
+	Period      string  `json:"period"`
+	Amount      float64 `json:"amount"`
+	Notes       *string `json:"notes,omitempty"`
+	IsRecurring bool    `json:"isRecurring"`
 }
 
 type BudgetTargetPresenter struct {
-	ID          string    `json:"id"`
-	ProfileID   string    `json:"profileId"`
-	CategoryID  string    `json:"categoryId"`
-	PeriodStart time.Time `json:"periodStart"`
-	Amount      float64   `json:"amount"`
-	Notes       *string   `json:"notes,omitempty"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID             string     `json:"id"`
+	ProfileID      string     `json:"profileId"`
+	CategoryID     string     `json:"categoryId"`
+	PeriodStart    time.Time  `json:"periodStart"`
+	Amount         float64    `json:"amount"`
+	Notes          *string    `json:"notes,omitempty"`
+	IsRecurring    bool       `json:"isRecurring"`
+	EffectiveUntil *time.Time `json:"effectiveUntil,omitempty"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	UpdatedAt      time.Time  `json:"updatedAt"`
 }
 
 type BudgetSummaryItem struct {
@@ -37,10 +41,11 @@ type BudgetSummaryItem struct {
 type BudgetTargetsService struct {
 	repo             budgettarget.Repository
 	transactionsRepo transaction.Repository
+	categoryRepo     category.Repository
 }
 
-func NewBudgetTargetsService(repo budgettarget.Repository, txRepo transaction.Repository) *BudgetTargetsService {
-	return &BudgetTargetsService{repo: repo, transactionsRepo: txRepo}
+func NewBudgetTargetsService(repo budgettarget.Repository, txRepo transaction.Repository, catRepo category.Repository) *BudgetTargetsService {
+	return &BudgetTargetsService{repo: repo, transactionsRepo: txRepo, categoryRepo: catRepo}
 }
 
 func (s *BudgetTargetsService) Create(input BudgetTargetInput) (*BudgetTargetPresenter, error) {
@@ -113,22 +118,35 @@ func (s *BudgetTargetsService) Summary(profileID, period string) ([]*BudgetSumma
 		return []*BudgetSummaryItem{}, nil
 	}
 
-	categoryIDs := make([]string, 0, len(targets))
+	// Build a map of target category -> all descendant category IDs
+	categoryDescendants := make(map[string][]string)
+	allCategoryIDs := make([]string, 0)
 	for _, target := range targets {
-		categoryIDs = append(categoryIDs, target.CategoryID)
+		descendants, err := s.categoryRepo.GetDescendantIDs(target.CategoryID)
+		if err != nil {
+			// If error, fallback to just the target category
+			descendants = []string{target.CategoryID}
+		}
+		categoryDescendants[target.CategoryID] = descendants
+		allCategoryIDs = append(allCategoryIDs, descendants...)
 	}
 
-	sums, err := s.transactionsRepo.SumByCategories(profileID, categoryIDs, periodStart, periodEnd)
+	// Get sums for all categories (including subcategories)
+	sums, err := s.transactionsRepo.SumByCategories(profileID, allCategoryIDs, periodStart, periodEnd)
 	if err != nil {
 		return nil, err
 	}
 
 	var summary []*BudgetSummaryItem
 	for _, target := range targets {
-		spent := sums[target.CategoryID]
+		// Sum all descendant categories
+		var spent float64
+		for _, catID := range categoryDescendants[target.CategoryID] {
+			spent += sums[catID]
+		}
 		summary = append(summary, &BudgetSummaryItem{
 			Target:    presentBudget(target),
-			Spent:     spent,
+			Spent:     round2(spent),
 			Remaining: round2(target.Amount - spent),
 		})
 	}
@@ -156,19 +174,22 @@ func (s *BudgetTargetsService) parseParams(input BudgetTargetInput) (budgettarge
 		PeriodStart: periodStart,
 		Amount:      input.Amount,
 		Notes:       normalizePtr(input.Notes),
+		IsRecurring: input.IsRecurring,
 	}, nil
 }
 
 func presentBudget(entity *budgettarget.BudgetTarget) *BudgetTargetPresenter {
 	return &BudgetTargetPresenter{
-		ID:          entity.ID,
-		ProfileID:   entity.ProfileID,
-		CategoryID:  entity.CategoryID,
-		PeriodStart: entity.PeriodStart,
-		Amount:      entity.Amount,
-		Notes:       entity.Notes,
-		CreatedAt:   entity.CreatedAt,
-		UpdatedAt:   entity.UpdatedAt,
+		ID:             entity.ID,
+		ProfileID:      entity.ProfileID,
+		CategoryID:     entity.CategoryID,
+		PeriodStart:    entity.PeriodStart,
+		Amount:         entity.Amount,
+		Notes:          entity.Notes,
+		IsRecurring:    entity.IsRecurring,
+		EffectiveUntil: entity.EffectiveUntil,
+		CreatedAt:      entity.CreatedAt,
+		UpdatedAt:      entity.UpdatedAt,
 	}
 }
 

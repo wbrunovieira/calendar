@@ -137,7 +137,7 @@ func main() {
 	recurringHandler := httpHandlers.NewRecurringTransactionHandlers(recurringService)
 
 	budgetRepo := persistence.NewBudgetTargetRepository(db)
-	budgetService := usecases.NewBudgetTargetsService(budgetRepo, transactionRepo)
+	budgetService := usecases.NewBudgetTargetsService(budgetRepo, transactionRepo, categoryRepo)
 	budgetHandler := httpHandlers.NewBudgetHandlers(budgetService)
 
 	// API v1 routes
