@@ -50,6 +50,13 @@ const MONTHS = [
 
 const MONTHS_SHORT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
+// Parse date without timezone conversion
+const parseLocalDate = (value: string) => {
+  const datePart = value.split('T')[0];
+  const [year, month, day] = datePart.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
+
 export default function DashboardPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
@@ -117,7 +124,7 @@ export default function DashboardPage() {
   const filteredTransactions = useMemo(() => {
     if (selectedMonth === null) return transactions;
     return transactions.filter((tx) => {
-      const txMonth = new Date(tx.occurredOn).getMonth();
+      const txMonth = parseLocalDate(tx.occurredOn).getMonth();
       return txMonth === selectedMonth;
     });
   }, [transactions, selectedMonth]);
@@ -126,7 +133,7 @@ export default function DashboardPage() {
   const monthlyData = useMemo(() => {
     const data = MONTHS_SHORT.map((month, index) => {
       const monthTx = transactions.filter((tx) => {
-        const txMonth = new Date(tx.occurredOn).getMonth();
+        const txMonth = parseLocalDate(tx.occurredOn).getMonth();
         return txMonth === index && tx.status === 'CONFIRMED';
       });
 
@@ -639,7 +646,7 @@ export default function DashboardPage() {
                           <div>
                             <p className="text-white font-medium">{tx.description}</p>
                             <p className="text-white/50 text-xs">
-                              {tx.categoryName} • {new Date(tx.occurredOn).toLocaleDateString('pt-BR')}
+                              {tx.categoryName} • {parseLocalDate(tx.occurredOn).toLocaleDateString('pt-BR')}
                             </p>
                           </div>
                         </div>

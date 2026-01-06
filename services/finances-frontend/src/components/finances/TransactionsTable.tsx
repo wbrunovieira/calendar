@@ -26,12 +26,18 @@ interface TransactionsTableProps {
 const formatCurrency = (value: number, currency = 'BRL') =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value);
 
-const formatDate = (value: string) =>
-  new Intl.DateTimeFormat('pt-BR', {
+const formatDate = (value: string) => {
+  // Extract date part to avoid timezone conversion (UTC -> local)
+  const datePart = value.split('T')[0];
+  const [year, month, day] = datePart.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+
+  return new Intl.DateTimeFormat('pt-BR', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
-  }).format(new Date(value));
+  }).format(date);
+};
 
 const statusStyles: Record<TransactionStatus, string> = {
   PLANNED: 'bg-white/10 text-white',

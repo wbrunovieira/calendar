@@ -36,6 +36,15 @@ const typeToCategory: Record<TransactionType, CategoryType> = {
   TRANSFER: 'TRANSFER',
 };
 
+// Get local date in YYYY-MM-DD format (without timezone conversion)
+const getLocalDateString = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const defaultForm = (profileId: string, status: TransactionStatus = 'CONFIRMED'): TransactionFormData => ({
   profileId,
   bankAccountId: '',
@@ -48,7 +57,7 @@ const defaultForm = (profileId: string, status: TransactionStatus = 'CONFIRMED')
   description: '',
   notes: undefined,
   costCenter: undefined,
-  occurredOn: new Date().toISOString().slice(0, 10),
+  occurredOn: getLocalDateString(),
   dueOn: undefined,
   recurrenceRule: undefined,
   installmentNumber: undefined,

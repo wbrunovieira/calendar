@@ -11,6 +11,15 @@ interface QuickExpenseProps {
   onSave: (payload: TransactionFormData) => Promise<void> | void;
 }
 
+// Get local date in YYYY-MM-DD format (without timezone conversion)
+const getLocalDateString = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export default function QuickExpense({ accounts, categories = [], defaultProfileId, profiles, onSave }: QuickExpenseProps) {
   const API_BASE = 'http://localhost:3335/api/v1';
   const [selectedProfileId, setSelectedProfileId] = useState<string>(defaultProfileId);
@@ -31,7 +40,7 @@ export default function QuickExpense({ accounts, categories = [], defaultProfile
   const [categoryId, setCategoryId] = useState<string>(expenseCategories[0]?.id ?? '');
   const [amount, setAmount] = useState<string>('');
   const [description, setDescription] = useState<string>('');
-  const [date, setDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState<string>(getLocalDateString);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {

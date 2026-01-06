@@ -7,6 +7,22 @@ import type { Profile, RecurringTransaction, BankAccount, Category, TransactionT
 
 const API_BASE = 'http://localhost:3335/api/v1';
 
+// Parse date without timezone conversion
+const parseLocalDate = (value: string) => {
+  const datePart = value.split('T')[0];
+  const [year, month, day] = datePart.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
+
+// Get local date in YYYY-MM-DD format (without timezone conversion)
+const getLocalDateString = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 type Frequency = 'DAILY' | 'WEEKLY' | 'MONTHLY';
 
 interface FormData {
@@ -28,7 +44,7 @@ const defaultForm = (): FormData => ({
   amount: '',
   description: '',
   frequency: 'MONTHLY',
-  startOn: new Date().toISOString().slice(0, 10),
+  startOn: getLocalDateString(),
   endOn: '',
   notes: '',
 });
@@ -319,7 +335,7 @@ export default function RecurringPage() {
                             {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: it.currency }).format(it.amount)}
                           </td>
                           <td className="py-3 pr-4">{getFrequencyLabel(it.recurrenceRule)}</td>
-                          <td className="py-3 pr-4">{new Date(it.nextOccurrence).toLocaleDateString('pt-BR')}</td>
+                          <td className="py-3 pr-4">{parseLocalDate(it.nextOccurrence).toLocaleDateString('pt-BR')}</td>
                           <td className="py-3">
                             <div className="flex gap-2">
                               <button

@@ -31,6 +31,15 @@ interface Calendar {
 }
 
 const API_BASE = 'http://localhost:3335/api/v1';
+
+// Format date to YYYY-MM-DD without timezone conversion
+const formatLocalDate = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const defaultFilters: TransactionFilters = {
   bankAccountId: null,
   type: 'ALL',
@@ -737,9 +746,8 @@ export default function FinancesPage() {
                       <div className="flex gap-2">
                         <button
                           onClick={() => {
-                            const today = new Date();
-                            const iso = today.toISOString().slice(0, 10);
-                            const next: TransactionFilters = { ...transactionFilters, from: iso, to: iso, type: 'EXPENSE' };
+                            const today = formatLocalDate(new Date());
+                            const next: TransactionFilters = { ...transactionFilters, from: today, to: today, type: 'EXPENSE' };
                             handleFilterChange(next);
                           }}
                           className="px-3 py-1.5 rounded-lg text-xs border border-white/20 text-white/80 hover:bg-white/10"
@@ -754,8 +762,8 @@ export default function FinancesPage() {
                             start.setDate(now.getDate() - day);
                             const end = new Date(start);
                             end.setDate(start.getDate() + 6);
-                            const from = start.toISOString().slice(0, 10);
-                            const to = end.toISOString().slice(0, 10);
+                            const from = formatLocalDate(start);
+                            const to = formatLocalDate(end);
                             const next: TransactionFilters = { ...transactionFilters, from, to, type: 'EXPENSE' };
                             handleFilterChange(next);
                           }}
@@ -766,10 +774,10 @@ export default function FinancesPage() {
                         <button
                           onClick={() => {
                             const now = new Date();
-                            const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-                            const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
-                            const from = start.toISOString().slice(0, 10);
-                            const to = end.toISOString().slice(0, 10);
+                            const start = new Date(now.getFullYear(), now.getMonth(), 1);
+                            const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                            const from = formatLocalDate(start);
+                            const to = formatLocalDate(end);
                             const next: TransactionFilters = { ...transactionFilters, from, to, type: 'EXPENSE' };
                             handleFilterChange(next);
                           }}

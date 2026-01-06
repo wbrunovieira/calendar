@@ -7,6 +7,13 @@ import type { Profile, BudgetTarget, BudgetSummaryItem, Category } from '@/types
 
 const API_BASE = 'http://localhost:3335/api/v1';
 
+// Parse date without timezone conversion
+const parseLocalDate = (value: string) => {
+  const datePart = value.split('T')[0];
+  const [year, month, day] = datePart.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
+
 export default function BudgetsPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
@@ -244,7 +251,7 @@ export default function BudgetsPage() {
                               setEditingId(s.target.id);
                               setForm({
                                 categoryId: s.target.categoryId,
-                                period: new Date(s.target.periodStart).toISOString().slice(0, 7),
+                                period: s.target.periodStart.split('T')[0].slice(0, 7),
                                 amount: String(s.target.amount),
                                 notes: s.target.notes || '',
                               });
@@ -269,7 +276,7 @@ export default function BudgetsPage() {
                     const catName = cat ? cat.name : t.categoryId;
                     return (
                     <li key={t.id}>
-                      {new Date(t.periodStart).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })} — {catName} — {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(t.amount)}
+                      {parseLocalDate(t.periodStart).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })} — {catName} — {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(t.amount)}
                     </li>
                     );
                   })}
