@@ -1,8 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
-import ProfileModal from '@/components/finances/ProfileModal';
 import BankAccountModal from '@/components/finances/BankAccountModal';
 import TransactionForm from '@/components/finances/TransactionForm';
 import TransactionsTable from '@/components/finances/TransactionsTable';
@@ -23,13 +22,6 @@ import type {
   Invoice,
 } from '@/types/finances';
 
-type TabType = 'dashboard' | 'settings';
-
-interface Calendar {
-  id: string;
-  name: string;
-  email: string | null;
-}
 
 const API_BASE = 'http://localhost:3335/api/v1';
 
@@ -50,10 +42,8 @@ const defaultFilters: TransactionFilters = {
 };
 
 export default function FinancesPage() {
-  const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [profilesLoading, setProfilesLoading] = useState(true);
-  const [calendars, setCalendars] = useState<Calendar[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [_budgetSummary, setBudgetSummary] = useState<BudgetSummaryItem[]>([]);
@@ -63,11 +53,9 @@ export default function FinancesPage() {
   const [transactionFilters, setTransactionFilters] = useState<TransactionFilters>({ ...defaultFilters });
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
 
-  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isBankAccountModalOpen, setIsBankAccountModalOpen] = useState(false);
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
 
-  const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
   const [editingBankAccount, setEditingBankAccount] = useState<BankAccount | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
 
@@ -84,7 +72,6 @@ export default function FinancesPage() {
 
   useEffect(() => {
     fetchProfiles();
-    fetchCalendars();
     fetchBankAccounts();
   }, []);
 
@@ -106,16 +93,6 @@ export default function FinancesPage() {
       console.error('Erro ao carregar perfis:', error);
     } finally {
       setProfilesLoading(false);
-    }
-  };
-
-  const fetchCalendars = async () => {
-    try {
-      const response = await fetch('http://localhost:3334/calendars');
-      const data = await response.json();
-      setCalendars(data.data || []);
-    } catch (error) {
-      console.error('Erro ao carregar calendários:', error);
     }
   };
 
@@ -254,90 +231,6 @@ export default function FinancesPage() {
     }
   }, [filteredAccounts, fetchInvoicesForCreditCards]);
 
-  const handleCreateProfile = async (
-    profileData: Omit<Profile, 'id' | 'isActive' | 'createdAt' | 'updatedAt'>,
-  ) => {
-    try {
-      const response = await fetch(`${API_BASE}/profiles`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(profileData),
-      });
-
-      if (!response.ok) {
-        const errorMessage = await response.text();
-        throw new Error(errorMessage || 'Erro ao criar perfil');
-      }
-
-      await fetchProfiles();
-    } catch (error) {
-      console.error('Erro ao criar perfil:', error);
-      alert('Erro ao criar perfil');
-    }
-  };
-
-  const handleUpdateProfile = async (
-    profileData: Omit<Profile, 'id' | 'isActive' | 'createdAt' | 'updatedAt'>,
-  ) => {
-    if (!editingProfile) return;
-
-    try {
-      const response = await fetch(`${API_BASE}/profiles/${editingProfile.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(profileData),
-      });
-
-      if (!response.ok) {
-        const errorMessage = await response.text();
-        throw new Error(errorMessage || 'Erro ao atualizar perfil');
-      }
-
-      await fetchProfiles();
-      setEditingProfile(null);
-    } catch (error) {
-      console.error('Erro ao atualizar perfil:', error);
-      alert('Erro ao atualizar perfil');
-    }
-  };
-
-  const handleDeleteProfile = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir este perfil?')) return;
-
-    try {
-      const response = await fetch(`${API_BASE}/profiles/${id}`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) {
-        const errorMessage = await response.text();
-        throw new Error(errorMessage || 'Erro ao excluir perfil');
-      }
-
-      await fetchProfiles();
-      if (selectedProfileId === id) {
-        setSelectedProfileId(null);
-      }
-    } catch (error) {
-      console.error('Erro ao excluir perfil:', error);
-      alert('Erro ao excluir perfil');
-    }
-  };
-
-  const handleSaveProfile = (
-    profileData: Omit<Profile, 'id' | 'isActive' | 'createdAt' | 'updatedAt'>,
-  ) => {
-    if (editingProfile) {
-      handleUpdateProfile(profileData);
-    } else {
-      handleCreateProfile(profileData);
-    }
-  };
-
   const handleCreateBankAccount = async (
     accountData: Omit<BankAccount, 'id' | 'isActive' | 'createdAt' | 'updatedAt'> & { initialInvoiceAmount?: number },
   ) => {
@@ -435,29 +328,6 @@ export default function FinancesPage() {
     } catch (error) {
       console.error('Erro ao atualizar conta bancária:', error);
       alert('Erro ao atualizar conta bancária');
-    }
-  };
-
-  const handleDeleteBankAccount = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir esta conta bancária?')) return;
-
-    try {
-      const response = await fetch(`${API_BASE}/bank-accounts/${id}`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) {
-        const errorMessage = await response.text();
-        throw new Error(errorMessage || 'Erro ao excluir conta bancária');
-      }
-
-      await fetchBankAccounts();
-      if (selectedProfileId) {
-        fetchTransactions(selectedProfileId, transactionFilters);
-      }
-    } catch (error) {
-      console.error('Erro ao excluir conta bancária:', error);
-      alert('Erro ao excluir conta bancária');
     }
   };
 
@@ -694,31 +564,7 @@ export default function FinancesPage() {
           </div>
         </div>
 
-        <div className="flex gap-3">
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className={`px-6 py-3 rounded-xl font-semibold transition-colors ${
-              activeTab === 'dashboard'
-                ? 'bg-white/20 text-white shadow-lg'
-                : 'bg-white/5 text-white/70 hover:bg-white/10'
-            }`}
-          >
-            Visão geral
-          </button>
-          <button
-            onClick={() => setActiveTab('settings')}
-            className={`px-6 py-3 rounded-xl font-semibold transition-colors ${
-              activeTab === 'settings'
-                ? 'bg-white/20 text-white shadow-lg'
-                : 'bg-white/5 text-white/70 hover:bg-white/10'
-            }`}
-          >
-            Configurações
-          </button>
-        </div>
-
-        {activeTab === 'dashboard' && (
-          <div className="space-y-6">
+        <div className="space-y-6">
             {profilesLoading ? (
               <div className="bg-white/5 border border-white/10 rounded-2xl p-8 text-center text-white/70">
                 Carregando perfis...
@@ -974,150 +820,7 @@ export default function FinancesPage() {
               </>
             )}
           </div>
-        )}
-
-        {activeTab === 'settings' && (
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-8 space-y-12">
-            <section>
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-2xl font-bold text-white">Perfis financeiros</h2>
-                  <p className="text-white/60 text-sm">Organize contas pessoais e corporativas</p>
-                </div>
-                <button
-                  onClick={() => {
-                    setEditingProfile(null);
-                    setIsProfileModalOpen(true);
-                  }}
-                  className="flex items-center gap-2 px-5 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white font-semibold border border-white/25"
-                >
-                  <span>➕</span>
-                  <span>Novo perfil</span>
-                </button>
-              </div>
-
-              {profilesLoading ? (
-                <div className="text-center py-12 text-white/60">Carregando...</div>
-              ) : profiles.length === 0 ? (
-                <div className="bg-white/10 border border-white/10 rounded-xl p-6 text-white/60 text-sm">
-                  Nenhum perfil cadastrado ainda. Utilize o botão acima para começar.
-                </div>
-              ) : (
-                <div className="grid gap-4">
-                  {profiles.map((profile) => {
-                    const calendar = calendars.find((calendar) => calendar.id === profile.calendarId);
-                    return (
-                      <div
-                        key={profile.id}
-                        className="bg-white/10 border border-white/15 rounded-xl p-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-full flex items-center justify-center text-xl bg-white/15">
-                            {profile.type === 'PERSONAL' ? '👤' : '🏢'}
-                          </div>
-                          <div>
-                            <h3 className="text-white font-semibold text-lg">{profile.name}</h3>
-                            <p className="text-white/60 text-sm">
-                              {profile.type === 'PERSONAL' ? 'Pessoal' : 'Empresarial'}
-                              {calendar ? ` • ${calendar.name}` : ''}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => {
-                              setEditingProfile(profile);
-                              setIsProfileModalOpen(true);
-                            }}
-                            className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white/80 border border-white/20"
-                          >
-                            Editar
-                          </button>
-                          <button
-                            onClick={() => handleDeleteProfile(profile.id)}
-                            className="px-4 py-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-100 border border-rose-500/30"
-                          >
-                            Excluir
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-
-            <section>
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-2xl font-bold text-white">Contas bancárias</h2>
-                  <p className="text-white/60 text-sm">Saldo consolidado e limites</p>
-                </div>
-                <button
-                  onClick={() => {
-                    setEditingBankAccount(null);
-                    setIsBankAccountModalOpen(true);
-                  }}
-                  className="flex items-center gap-2 px-5 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white font-semibold border border-white/25"
-                >
-                  <span>➕</span>
-                  <span>Nova conta</span>
-                </button>
-              </div>
-
-              {bankAccounts.length === 0 ? (
-                <div className="bg-white/10 border border-white/10 rounded-xl p-6 text-white/60 text-sm">
-                  Nenhuma conta cadastrada ainda. Use o botão acima para incluir um banco, cartão ou carteira.
-                </div>
-              ) : (
-                <div className="grid gap-4">
-                  {bankAccounts.map((account) => (
-                    <div
-                      key={account.id}
-                      className="bg-white/10 border border-white/15 rounded-xl p-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"
-                    >
-                      <div>
-                        <h3 className="text-white font-semibold text-lg">{account.name}</h3>
-                        <p className="text-white/60 text-sm">
-                          {account.type} • {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: account.currency }).format(account.currentBalance)}
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => {
-                            setEditingBankAccount(account);
-                            setIsBankAccountModalOpen(true);
-                          }}
-                          className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white/80 border border-white/20"
-                        >
-                          Editar
-                        </button>
-                        <button
-                          onClick={() => handleDeleteBankAccount(account.id)}
-                          className="px-4 py-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-100 border border-rose-500/30"
-                        >
-                          Excluir
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          </div>
-        )}
       </div>
-
-      <ProfileModal
-        isOpen={isProfileModalOpen}
-        onClose={() => {
-          setIsProfileModalOpen(false);
-          setEditingProfile(null);
-        }}
-        onSave={handleSaveProfile}
-        profile={editingProfile}
-        calendars={calendars}
-      />
 
       <BankAccountModal
         isOpen={isBankAccountModalOpen}

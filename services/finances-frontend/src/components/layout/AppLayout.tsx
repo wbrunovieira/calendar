@@ -16,6 +16,7 @@ const navItems = [
   { href: '/budgets', label: 'Orcamentos' },
   { href: '/plan', label: 'Planejamento' },
   { href: '/visao', label: 'Visao Mensal' },
+  { href: '/configuracoes', label: 'Configuracoes' },
 ];
 
 export default function AppLayout({ children }: AppLayoutProps) {
