@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type {
   BankAccount,
   Category,
@@ -51,6 +51,8 @@ const typeLabels: Record<TransactionType, string> = {
   TRANSFER: 'Transferência',
 };
 
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
+
 export default function TransactionsTable({
   transactions,
   categories,
@@ -63,6 +65,9 @@ export default function TransactionsTable({
   onEdit,
   loading = false,
 }: TransactionsTableProps) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+
   const categoryMap = useMemo(() => {
     const map = new Map<string, Category>();
     categories.forEach((category) => map.set(category.id, category));
@@ -75,8 +80,60 @@ export default function TransactionsTable({
     return map;
   }, [accounts]);
 
+  // Pagination calculations
+  const totalItems = transactions.length;
+  const totalPages = Math.ceil(totalItems / pageSize);
+
+  const paginatedTransactions = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    return transactions.slice(startIndex, endIndex);
+  }, [transactions, currentPage, pageSize]);
+
+  // Reset to page 1 when filters change (transactions array changes)
+  useMemo(() => {
+    setCurrentPage(1);
+  }, [transactions.length, filters]);
+
   const handleFilterChange = (partial: Partial<TransactionFilters>) => {
+    setCurrentPage(1);
     onFilterChange({ ...filters, ...partial });
+  };
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize);
+    setCurrentPage(1);
+  };
+
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
+
+  // Generate page numbers to display
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    const maxVisible = 5;
+
+    if (totalPages <= maxVisible + 2) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      pages.push(1);
+
+      if (currentPage > 3) pages.push('...');
+
+      const start = Math.max(2, currentPage - 1);
+      const end = Math.min(totalPages - 1, currentPage + 1);
+
+      for (let i = start; i <= end; i++) pages.push(i);
+
+      if (currentPage < totalPages - 2) pages.push('...');
+
+      pages.push(totalPages);
+    }
+
+    return pages;
   };
 
   return (
@@ -85,7 +142,10 @@ export default function TransactionsTable({
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h3 className="text-xl font-semibold text-white">Movimentações</h3>
-            <p className="text-white/60 text-sm">Controle completo de receitas, despesas e transferências</p>
+            <p className="text-white/60 text-sm">
+              {totalItems} {totalItems === 1 ? 'lançamento' : 'lançamentos'}
+              {totalPages > 1 && ` • Página ${currentPage} de ${totalPages}`}
+            </p>
           </div>
           <div className="flex flex-wrap gap-3">
             <select
@@ -174,7 +234,7 @@ export default function TransactionsTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {transactions.length === 0 && !loading && (
+            {paginatedTransactions.length === 0 && !loading && (
               <tr>
                 <td colSpan={7} className="px-6 py-12 text-center text-white/60">
                   Nenhum lançamento encontrado com os filtros selecionados.
@@ -182,7 +242,7 @@ export default function TransactionsTable({
               </tr>
             )}
 
-            {transactions.map((transaction) => {
+            {paginatedTransactions.map((transaction) => {
               const account = accountMap.get(transaction.bankAccountId);
               const category = transaction.categoryId
                 ? categoryMap.get(transaction.categoryId)
@@ -307,6 +367,87 @@ export default function TransactionsTable({
           </tbody>
         </table>
       </div>
+
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div className="p-4 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2 text-sm text-white/60">
+            <span>Exibir</span>
+            <select
+              value={pageSize}
+              onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+              className="px-2 py-1 rounded bg-white/10 border border-white/20 text-white text-sm"
+            >
+              {PAGE_SIZE_OPTIONS.map((size) => (
+                <option key={size} value={size} className="bg-slate-900">
+                  {size}
+                </option>
+              ))}
+            </select>
+            <span>por página</span>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => goToPage(1)}
+              disabled={currentPage === 1}
+              className="px-3 py-1.5 rounded-lg text-sm border border-white/20 text-white/80 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Primeira página"
+            >
+              ««
+            </button>
+            <button
+              onClick={() => goToPage(currentPage - 1)}
+              disabled={currentPage === 1}
+              className="px-3 py-1.5 rounded-lg text-sm border border-white/20 text-white/80 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Página anterior"
+            >
+              «
+            </button>
+
+            {getPageNumbers().map((page, index) =>
+              typeof page === 'number' ? (
+                <button
+                  key={index}
+                  onClick={() => goToPage(page)}
+                  className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                    page === currentPage
+                      ? 'bg-white/20 border-white/40 text-white font-semibold'
+                      : 'border-white/20 text-white/80 hover:bg-white/10'
+                  }`}
+                >
+                  {page}
+                </button>
+              ) : (
+                <span key={index} className="px-2 text-white/40">
+                  {page}
+                </span>
+              )
+            )}
+
+            <button
+              onClick={() => goToPage(currentPage + 1)}
+              disabled={currentPage === totalPages}
+              className="px-3 py-1.5 rounded-lg text-sm border border-white/20 text-white/80 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Próxima página"
+            >
+              »
+            </button>
+            <button
+              onClick={() => goToPage(totalPages)}
+              disabled={currentPage === totalPages}
+              className="px-3 py-1.5 rounded-lg text-sm border border-white/20 text-white/80 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Última página"
+            >
+              »»
+            </button>
+          </div>
+
+          <div className="text-sm text-white/60">
+            {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, totalItems)} de {totalItems}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
