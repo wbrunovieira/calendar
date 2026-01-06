@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
+import TransactionForm from '@/components/finances/TransactionForm';
 import type { Profile, BankAccount, RecurringTransaction, BudgetSummaryItem, Category, Transaction } from '@/types/finances';
 
 const API_BASE = 'http://localhost:3335/api/v1';
@@ -32,6 +33,8 @@ export default function PlanPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [showTransactionForm, setShowTransactionForm] = useState(false);
 
   const { startDate, endDate } = useMemo(() => {
     const now = new Date();
@@ -323,6 +326,17 @@ export default function PlanPage() {
     }
   };
 
+  const handleEditPlanned = (tx: Transaction) => {
+    setEditingTransaction(tx);
+    setShowTransactionForm(true);
+  };
+
+  const handleTransactionSaved = () => {
+    setShowTransactionForm(false);
+    setEditingTransaction(null);
+    loadData();
+  };
+
   // Combined totals for summary (recurring + planned)
   const combinedTotals = useMemo(() => {
     const plannedIncome = plannedTransactions
@@ -487,6 +501,13 @@ export default function PlanPage() {
                           {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(tx.amount * (tx.type === 'EXPENSE' ? -1 : 1))}
                         </div>
                         <button
+                          onClick={() => handleEditPlanned(tx)}
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-white/10 hover:bg-white/20 text-white"
+                          title="Editar transacao"
+                        >
+                          Editar
+                        </button>
+                        <button
                           onClick={() => handleConfirmPlanned(tx)}
                           disabled={confirming === tx.id}
                           className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
@@ -557,6 +578,37 @@ export default function PlanPage() {
           </div>
         </div>
       </div>
+
+      {/* Transaction Form Modal */}
+      {showTransactionForm && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 rounded-2xl border border-white/10 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-bold text-white">
+                  {editingTransaction ? 'Editar Transacao' : 'Nova Transacao'}
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowTransactionForm(false);
+                    setEditingTransaction(null);
+                  }}
+                  className="text-white/60 hover:text-white text-2xl"
+                >
+                  &times;
+                </button>
+              </div>
+              <TransactionForm
+                profiles={profiles}
+                accounts={accounts}
+                categories={categories}
+                onTransactionCreated={handleTransactionSaved}
+                editingTransaction={editingTransaction}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 }
