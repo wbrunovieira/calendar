@@ -546,25 +546,13 @@ export default function FinancesPage() {
             <h1 className="text-3xl font-bold text-white">Despesas e planejamento</h1>
             <p className="text-white/60 text-sm">Registre gastos diários, semanais e mensais; programe fixas e controle orçamentos por categoria.</p>
           </div>
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={openTransactionModal}
-              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-emerald-500/80 hover:bg-emerald-500 text-white font-semibold border border-emerald-400/40 transition-colors"
-            >
-              <span>➕</span>
-              <span>Novo lançamento</span>
-            </button>
-            <button
-              onClick={() => {
-                setEditingBankAccount(null);
-                setIsBankAccountModalOpen(true);
-              }}
-              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold border border-white/20 transition-colors"
-            >
-              <span>🏦</span>
-              <span>Adicionar conta</span>
-            </button>
-          </div>
+          <button
+            onClick={openTransactionModal}
+            className="flex items-center gap-2 px-5 py-2 rounded-xl bg-emerald-500/80 hover:bg-emerald-500 text-white font-semibold border border-emerald-400/40 transition-colors"
+          >
+            <span>➕</span>
+            <span>Novo lançamento</span>
+          </button>
         </div>
 
         <div className="space-y-6">
