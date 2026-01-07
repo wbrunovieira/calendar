@@ -11,6 +11,7 @@ interface TodayAlertsProps {
   categories: Category[];
   onPayInvoice?: (invoiceId: string, amount: number) => Promise<void>;
   onConfirmTransaction?: (id: string) => void;
+  onConfirmRecurring?: (recurring: RecurringTransaction) => Promise<void>;
 }
 
 const formatCurrency = (value: number, currency = 'BRL') =>
@@ -70,6 +71,7 @@ export default function TodayAlerts({
   categories,
   onPayInvoice,
   onConfirmTransaction,
+  onConfirmRecurring,
 }: TodayAlertsProps) {
   const today = formatLocalDate(new Date());
 
@@ -337,6 +339,14 @@ export default function TodayAlerts({
                     <span className={rt.type === 'INCOME' ? 'text-emerald-400' : 'text-red-400'} style={{ fontWeight: 600 }}>
                       {rt.type === 'INCOME' ? '+' : '-'}{formatCurrency(rt.amount, rt.currency)}
                     </span>
+                    {onConfirmRecurring && (
+                      <button
+                        onClick={() => onConfirmRecurring(rt)}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded-lg transition-colors"
+                      >
+                        {rt.type === 'INCOME' ? 'Ja recebi' : 'Ja paguei'}
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -459,6 +469,14 @@ export default function TodayAlerts({
                   <span className={rt.type === 'INCOME' ? 'text-emerald-400' : 'text-red-400'} style={{ fontWeight: 600 }}>
                     {rt.type === 'INCOME' ? '+' : '-'}{formatCurrency(rt.amount, rt.currency)}
                   </span>
+                  {onConfirmRecurring && (
+                    <button
+                      onClick={() => onConfirmRecurring(rt)}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded-lg transition-colors"
+                    >
+                      {rt.type === 'INCOME' ? 'Ja recebi' : 'Ja paguei'}
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

@@ -549,6 +549,45 @@ export default function FinancesPage() {
     window.location.href = '/recurring';
   }, []);
 
+  // Handler to confirm a recurring transaction (create a confirmed transaction from it)
+  const handleConfirmRecurring = useCallback(async (recurring: RecurringTransaction) => {
+    if (!selectedProfileId) return;
+
+    try {
+      // Create a confirmed transaction based on the recurring
+      const transactionData = {
+        profileId: recurring.profileId,
+        bankAccountId: recurring.bankAccountId || filteredAccounts[0]?.id,
+        categoryId: recurring.categoryId,
+        type: recurring.type,
+        status: 'CONFIRMED',
+        amount: recurring.amount,
+        currency: recurring.currency,
+        description: recurring.description,
+        notes: recurring.notes,
+        occurredOn: recurring.nextOccurrence.includes('T')
+          ? recurring.nextOccurrence.split('T')[0]
+          : recurring.nextOccurrence,
+      };
+
+      const response = await fetch(`${API_BASE}/transactions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(transactionData),
+      });
+
+      if (!response.ok) {
+        throw new Error('Erro ao criar transacao');
+      }
+
+      // Refresh transactions to update the alerts
+      await fetchTransactions(selectedProfileId, transactionFilters);
+    } catch (error) {
+      console.error('Erro ao confirmar recorrente:', error);
+      alert('Erro ao confirmar pagamento');
+    }
+  }, [selectedProfileId, filteredAccounts, transactionFilters, fetchTransactions]);
+
   return (
     <AppLayout>
       <div className="py-10 space-y-8">
@@ -573,6 +612,7 @@ export default function FinancesPage() {
             categories={categories}
             onPayInvoice={handlePayInvoice}
             onConfirmTransaction={(id) => updateTransactionStatus(id, 'CONFIRMED')}
+            onConfirmRecurring={handleConfirmRecurring}
           />
         )}
 
