@@ -11,6 +11,7 @@ import SafeToSpend from '@/components/finances/SafeToSpend';
 import CreditCardInfo from '@/components/finances/CreditCardInfo';
 import InvestmentAccountInfo from '@/components/finances/InvestmentAccountInfo';
 import GlobalSearch from '@/components/finances/GlobalSearch';
+import TodayAlerts from '@/components/finances/TodayAlerts';
 import type {
   Profile,
   BankAccount,
@@ -20,6 +21,7 @@ import type {
   TransactionFormData,
   BudgetSummaryItem,
   Invoice,
+  RecurringTransaction,
 } from '@/types/finances';
 
 
@@ -64,6 +66,9 @@ export default function FinancesPage() {
   // Invoice state for credit cards
   const [invoicesByAccount, setInvoicesByAccount] = useState<Record<string, Invoice[]>>({});
   const [currentInvoices, setCurrentInvoices] = useState<Record<string, Invoice>>({});
+
+  // Recurring transactions for alerts
+  const [recurringTransactions, setRecurringTransactions] = useState<RecurringTransaction[]>([]);
 
   const filteredAccounts = useMemo(
     () => bankAccounts.filter((account) => account.profileId === selectedProfileId),
@@ -210,10 +215,26 @@ export default function FinancesPage() {
     }
   }, []);
 
+  const fetchRecurringTransactions = useCallback(async (profileId: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/recurring-transactions?profileId=${profileId}`);
+      if (!response.ok) {
+        setRecurringTransactions([]);
+        return;
+      }
+      const data = await response.json();
+      setRecurringTransactions(data.data || []);
+    } catch (error) {
+      console.warn('Erro ao carregar transacoes recorrentes:', error);
+      setRecurringTransactions([]);
+    }
+  }, []);
+
   useEffect(() => {
     if (!selectedProfileId) {
       setCategories([]);
       setTransactions([]);
+      setRecurringTransactions([]);
       return;
     }
 
@@ -222,7 +243,8 @@ export default function FinancesPage() {
     fetchCategories(selectedProfileId);
     fetchTransactions(selectedProfileId, baseFilters);
     fetchBudgetSummary(selectedProfileId);
-  }, [selectedProfileId, fetchCategories, fetchTransactions, fetchBudgetSummary]);
+    fetchRecurringTransactions(selectedProfileId);
+  }, [selectedProfileId, fetchCategories, fetchTransactions, fetchBudgetSummary, fetchRecurringTransactions]);
 
   // Fetch invoices when filtered accounts change
   useEffect(() => {
@@ -540,6 +562,19 @@ export default function FinancesPage() {
             onSelectRecurring={handleSearchSelectRecurring}
           />
         </div>
+
+        {/* Today Alerts */}
+        {selectedProfileId && (
+          <TodayAlerts
+            transactions={transactions}
+            recurringTransactions={recurringTransactions}
+            invoices={invoicesByAccount}
+            accounts={filteredAccounts}
+            categories={categories}
+            onPayInvoice={handlePayInvoice}
+            onConfirmTransaction={(id) => updateTransactionStatus(id, 'CONFIRMED')}
+          />
+        )}
 
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
