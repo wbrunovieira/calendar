@@ -592,7 +592,7 @@ export default function FinancesPage() {
     <AppLayout>
       <div className="py-10 space-y-8">
         {/* Global Search */}
-        <div className="mb-2">
+        <div className="mb-10">
           <GlobalSearch
             profileId={selectedProfileId}
             categories={categories}
