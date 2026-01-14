@@ -332,6 +332,7 @@ export default function TodayAlerts({
                       <p className="text-white text-sm font-medium">{rt.description}</p>
                       <p className="text-red-400 text-xs">
                         Fixa atrasada - {daysOverdue === 1 ? 'ontem' : `${daysOverdue} dias`} ({formatDisplayDate(rt.nextOccurrence)})
+                        {getAccountName(rt.bankAccountId) && <span className="text-white/50"> • {getAccountName(rt.bankAccountId)}</span>}
                       </p>
                     </div>
                   </div>
@@ -369,7 +370,7 @@ export default function TodayAlerts({
                       <p className="text-white text-sm font-medium">{tx.description}</p>
                       <p className="text-red-400 text-xs">
                         Atrasado - {daysOverdue === 1 ? 'ontem' : `${daysOverdue} dias`} ({formatDisplayDate(date)})
-                        {getCategoryName(tx.categoryId) && ` - ${getCategoryName(tx.categoryId)}`}
+                        {getAccountName(tx.bankAccountId) && <span className="text-white/50"> • {getAccountName(tx.bankAccountId)}</span>}
                       </p>
                     </div>
                   </div>
@@ -461,7 +462,7 @@ export default function TodayAlerts({
                     <p className="text-white text-sm font-medium">{rt.description}</p>
                     <p className="text-white/50 text-xs">
                       Fixa {rt.type === 'INCOME' ? '(receita)' : '(despesa)'}
-                      {getCategoryName(rt.categoryId) && ` - ${getCategoryName(rt.categoryId)}`}
+                      {getAccountName(rt.bankAccountId) && ` • ${getAccountName(rt.bankAccountId)}`}
                     </p>
                   </div>
                 </div>
@@ -495,8 +496,7 @@ export default function TodayAlerts({
                     <p className="text-white text-sm font-medium">{tx.description}</p>
                     <p className="text-white/50 text-xs">
                       Planejado
-                      {getCategoryName(tx.categoryId) && ` - ${getCategoryName(tx.categoryId)}`}
-                      {getAccountName(tx.bankAccountId) && ` - ${getAccountName(tx.bankAccountId)}`}
+                      {getAccountName(tx.bankAccountId) && ` • ${getAccountName(tx.bankAccountId)}`}
                     </p>
                   </div>
                 </div>
