@@ -689,3 +689,24 @@ func nullableInt(value *int) interface{} {
 func round2(value float64) float64 {
 	return math.Round(value*100) / 100
 }
+
+// SumByInvoiceID returns the sum of all transaction amounts for a given invoice
+func (r *TransactionRepository) SumByInvoiceID(invoiceID string) (float64, error) {
+	if strings.TrimSpace(invoiceID) == "" {
+		return 0, errors.New("invoiceID is required")
+	}
+
+	query := `
+		SELECT COALESCE(SUM(amount), 0)
+		FROM finance.transactions
+		WHERE invoice_id = $1
+	`
+
+	var total float64
+	err := r.db.QueryRow(query, invoiceID).Scan(&total)
+	if err != nil {
+		return 0, err
+	}
+
+	return round2(total), nil
+}

@@ -5,6 +5,7 @@ import (
 
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
 	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
+	transactionPkg "github.com/brunovieira/calendar-finances/internal/domain/transaction"
 )
 
 // CreateInvoiceInput contains the parameters to create an invoice
@@ -74,18 +75,24 @@ type ListInvoicesInput struct {
 
 // ListInvoicesUseCase lists all invoices for a credit card
 type ListInvoicesUseCase struct {
-	invoiceRepo invoice.Repository
-	accountRepo bankaccount.Repository
+	invoiceRepo     invoice.Repository
+	accountRepo     bankaccount.Repository
+	transactionRepo transactionPkg.Repository
 }
 
 func NewListInvoicesUseCase(
 	invoiceRepo invoice.Repository,
 	accountRepo bankaccount.Repository,
+	transactionRepo ...transactionPkg.Repository,
 ) *ListInvoicesUseCase {
-	return &ListInvoicesUseCase{
+	uc := &ListInvoicesUseCase{
 		invoiceRepo: invoiceRepo,
 		accountRepo: accountRepo,
 	}
+	if len(transactionRepo) > 0 {
+		uc.transactionRepo = transactionRepo[0]
+	}
+	return uc
 }
 
 func (uc *ListInvoicesUseCase) Execute(bankAccountID string) ([]*invoice.Invoice, error) {
@@ -98,7 +105,24 @@ func (uc *ListInvoicesUseCase) Execute(bankAccountID string) ([]*invoice.Invoice
 		return nil, ErrNotCreditCard
 	}
 
-	return uc.invoiceRepo.FindByBankAccountID(bankAccountID)
+	invoices, err := uc.invoiceRepo.FindByBankAccountID(bankAccountID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Recalculate amounts from transactions if repo is available
+	if uc.transactionRepo != nil {
+		for _, inv := range invoices {
+			if inv.Status != invoice.StatusPaid {
+				total, err := uc.transactionRepo.SumByInvoiceID(inv.ID)
+				if err == nil {
+					inv.Amount = total
+				}
+			}
+		}
+	}
+
+	return invoices, nil
 }
 
 // GetOrCreateInvoiceForDateUseCase gets or creates the appropriate invoice for a transaction date
@@ -252,11 +276,16 @@ func (uc *PayInvoiceUseCase) Execute(input PayInvoiceInput) (*invoice.Invoice, e
 
 // GetInvoiceUseCase retrieves a specific invoice
 type GetInvoiceUseCase struct {
-	invoiceRepo invoice.Repository
+	invoiceRepo     invoice.Repository
+	transactionRepo transactionPkg.Repository
 }
 
-func NewGetInvoiceUseCase(invoiceRepo invoice.Repository) *GetInvoiceUseCase {
-	return &GetInvoiceUseCase{invoiceRepo: invoiceRepo}
+func NewGetInvoiceUseCase(invoiceRepo invoice.Repository, transactionRepo ...transactionPkg.Repository) *GetInvoiceUseCase {
+	uc := &GetInvoiceUseCase{invoiceRepo: invoiceRepo}
+	if len(transactionRepo) > 0 {
+		uc.transactionRepo = transactionRepo[0]
+	}
+	return uc
 }
 
 func (uc *GetInvoiceUseCase) Execute(invoiceID string) (*invoice.Invoice, error) {
@@ -264,23 +293,38 @@ func (uc *GetInvoiceUseCase) Execute(invoiceID string) (*invoice.Invoice, error)
 	if err != nil {
 		return nil, ErrInvoiceNotFound
 	}
+
+	// Recalculate amount from transactions if repo is available
+	if uc.transactionRepo != nil && inv.Status != invoice.StatusPaid {
+		total, err := uc.transactionRepo.SumByInvoiceID(invoiceID)
+		if err == nil {
+			inv.Amount = total
+		}
+	}
+
 	return inv, nil
 }
 
 // GetCurrentInvoiceUseCase retrieves the current open invoice for a credit card
 type GetCurrentInvoiceUseCase struct {
-	invoiceRepo invoice.Repository
-	accountRepo bankaccount.Repository
+	invoiceRepo     invoice.Repository
+	accountRepo     bankaccount.Repository
+	transactionRepo transactionPkg.Repository
 }
 
 func NewGetCurrentInvoiceUseCase(
 	invoiceRepo invoice.Repository,
 	accountRepo bankaccount.Repository,
+	transactionRepo ...transactionPkg.Repository,
 ) *GetCurrentInvoiceUseCase {
-	return &GetCurrentInvoiceUseCase{
+	uc := &GetCurrentInvoiceUseCase{
 		invoiceRepo: invoiceRepo,
 		accountRepo: accountRepo,
 	}
+	if len(transactionRepo) > 0 {
+		uc.transactionRepo = transactionRepo[0]
+	}
+	return uc
 }
 
 func (uc *GetCurrentInvoiceUseCase) Execute(bankAccountID string) (*invoice.Invoice, error) {
@@ -296,6 +340,14 @@ func (uc *GetCurrentInvoiceUseCase) Execute(bankAccountID string) (*invoice.Invo
 	inv, err := uc.invoiceRepo.FindOpenByBankAccountID(bankAccountID)
 	if err != nil {
 		return nil, err
+	}
+
+	// Recalculate amount from transactions if repo is available
+	if inv != nil && uc.transactionRepo != nil && inv.Status != invoice.StatusPaid {
+		total, err := uc.transactionRepo.SumByInvoiceID(inv.ID)
+		if err == nil {
+			inv.Amount = total
+		}
 	}
 
 	return inv, nil
@@ -325,6 +377,49 @@ func (uc *AddAmountToInvoiceUseCase) Execute(input AddAmountToInvoiceInput) (*in
 	if err := inv.AddAmount(input.Amount); err != nil {
 		return nil, ErrInvoiceNotOpen
 	}
+
+	if err := uc.invoiceRepo.Update(inv); err != nil {
+		return nil, err
+	}
+
+	return inv, nil
+}
+
+// RecalculateInvoiceAmountUseCase recalculates the invoice amount based on associated transactions
+type RecalculateInvoiceAmountUseCase struct {
+	invoiceRepo     invoice.Repository
+	transactionRepo transactionPkg.Repository
+}
+
+func NewRecalculateInvoiceAmountUseCase(
+	invoiceRepo invoice.Repository,
+	transactionRepo transactionPkg.Repository,
+) *RecalculateInvoiceAmountUseCase {
+	return &RecalculateInvoiceAmountUseCase{
+		invoiceRepo:     invoiceRepo,
+		transactionRepo: transactionRepo,
+	}
+}
+
+func (uc *RecalculateInvoiceAmountUseCase) Execute(invoiceID string) (*invoice.Invoice, error) {
+	inv, err := uc.invoiceRepo.FindByID(invoiceID)
+	if err != nil {
+		return nil, ErrInvoiceNotFound
+	}
+
+	if inv.Status == invoice.StatusPaid {
+		return nil, ErrInvoiceAlreadyPaid
+	}
+
+	// Sum all transactions associated with this invoice
+	total, err := uc.transactionRepo.SumByInvoiceID(invoiceID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Update the invoice amount
+	inv.Amount = total
+	inv.UpdatedAt = time.Now()
 
 	if err := uc.invoiceRepo.Update(inv); err != nil {
 		return nil, err

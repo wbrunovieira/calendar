@@ -1,0 +1,810 @@
+package usecases
+
+import (
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
+	"github.com/brunovieira/calendar-finances/internal/domain/category"
+	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
+	"github.com/brunovieira/calendar-finances/internal/domain/profile"
+	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
+)
+
+// Test fixtures for invoice tests
+type testFixtures struct {
+	profileID    string
+	cardID       string
+	checkingID   string
+	categoryID   string
+	closingDay   int
+	dueDay       int
+	profileRepo  *fakeProfileRepo
+	accountRepo  *fakeAccountRepo
+	categoryRepo *fakeCategoryRepo
+	txRepo       *fakeTransactionRepoWithInvoice
+	invoiceRepo  *fakeInvoiceRepo
+}
+
+func newTestFixtures() *testFixtures {
+	profileID := "profile-1"
+	cardID := "card-mercado-pago"
+	checkingID := "checking-nubank"
+	categoryID := "cat-restaurante"
+	closingDay := 9
+	dueDay := 14
+
+	now := time.Now()
+
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {
+			ID:         profileID,
+			CalendarID: "cal-1",
+			Name:       "Bruno Pessoal",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	limit := 5000.0
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		cardID: {
+			ID:             cardID,
+			ProfileID:      profileID,
+			Name:           "Cartão Mercado Pago",
+			Type:           bankaccount.AccountTypeCreditCard,
+			InitialBalance: 0,
+			CurrentBalance: 0,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreditLimit:    &limit,
+			ClosingDay:     &closingDay,
+			DueDay:         &dueDay,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+		checkingID: {
+			ID:             checkingID,
+			ProfileID:      profileID,
+			Name:           "Nubank Conta Corrente",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 10000,
+			CurrentBalance: 10000,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{
+		categoryID: {
+			ID:        categoryID,
+			ProfileID: profileID,
+			Name:      "Restaurante",
+			Type:      category.TypeExpense,
+			IsActive:  true,
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+	}}
+
+	txRepo := &fakeTransactionRepoWithInvoice{}
+	invoiceRepo := &fakeInvoiceRepo{invoices: make(map[string]*invoice.Invoice)}
+
+	return &testFixtures{
+		profileID:    profileID,
+		cardID:       cardID,
+		checkingID:   checkingID,
+		categoryID:   categoryID,
+		closingDay:   closingDay,
+		dueDay:       dueDay,
+		profileRepo:  profileRepo,
+		accountRepo:  accountRepo,
+		categoryRepo: categoryRepo,
+		txRepo:       txRepo,
+		invoiceRepo:  invoiceRepo,
+	}
+}
+
+// Extended fake transaction repository that supports invoice operations
+type fakeTransactionRepoWithInvoice struct {
+	transactions []*transaction.Transaction
+}
+
+func (f *fakeTransactionRepoWithInvoice) Create(tx *transaction.Transaction) error {
+	f.transactions = append(f.transactions, tx)
+	return nil
+}
+
+func (f *fakeTransactionRepoWithInvoice) GetByID(id string) (*transaction.Transaction, error) {
+	for _, tx := range f.transactions {
+		if tx.ID == id {
+			return tx, nil
+		}
+	}
+	return nil, errors.New("not found")
+}
+
+func (f *fakeTransactionRepoWithInvoice) List(filter transaction.ListFilter) ([]*transaction.Transaction, error) {
+	return f.transactions, nil
+}
+
+func (f *fakeTransactionRepoWithInvoice) Update(tx *transaction.Transaction) error {
+	for i, existing := range f.transactions {
+		if existing.ID == tx.ID {
+			f.transactions[i] = tx
+			return nil
+		}
+	}
+	return errors.New("not found")
+}
+
+func (f *fakeTransactionRepoWithInvoice) UpdateStatus(string, transaction.Status, time.Time, *string) error {
+	return nil
+}
+
+func (f *fakeTransactionRepoWithInvoice) Delete(id string) error {
+	for i, tx := range f.transactions {
+		if tx.ID == id {
+			f.transactions = append(f.transactions[:i], f.transactions[i+1:]...)
+			return nil
+		}
+	}
+	return errors.New("not found")
+}
+
+func (f *fakeTransactionRepoWithInvoice) SumByCategories(profileID string, categoryIDs []string, from, to time.Time) (map[string]float64, error) {
+	return nil, nil
+}
+
+func (f *fakeTransactionRepoWithInvoice) SumByInvoiceID(invoiceID string) (float64, error) {
+	var total float64
+	for _, tx := range f.transactions {
+		if tx.InvoiceID != nil && *tx.InvoiceID == invoiceID {
+			total += tx.Amount
+		}
+	}
+	return total, nil
+}
+
+// Test: Transaction before closing day should go to current month's invoice
+func TestCreditCardTransaction_BeforeClosingDay_GoesToCurrentMonthInvoice(t *testing.T) {
+	f := newTestFixtures()
+	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo)
+
+	// Card closes on day 9, transaction on day 5 should go to January invoice
+	confirmedStatus := "CONFIRMED"
+	input := CreateTransactionInput{
+		ProfileID:     f.profileID,
+		BankAccountID: f.cardID,
+		CategoryID:    &f.categoryID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        100.00,
+		Currency:      "BRL",
+		Description:   "Almoço",
+		OccurredOn:    "2026-01-05", // Before closing day 9
+	}
+
+	tx, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should have invoice assigned
+	if tx.InvoiceID == nil {
+		t.Fatal("expected transaction to have invoice ID assigned")
+	}
+
+	// Invoice should be for January
+	inv, err := f.invoiceRepo.FindByID(*tx.InvoiceID)
+	if err != nil {
+		t.Fatalf("failed to find invoice: %v", err)
+	}
+
+	if inv.ReferenceDate.Month() != time.January {
+		t.Errorf("expected January invoice, got %s", inv.ReferenceDate.Month())
+	}
+
+	// Invoice amount should equal transaction amount
+	if inv.Amount != 100.00 {
+		t.Errorf("expected invoice amount 100.00, got %f", inv.Amount)
+	}
+}
+
+// Test: Transaction on closing day should go to current month's invoice
+func TestCreditCardTransaction_OnClosingDay_GoesToCurrentMonthInvoice(t *testing.T) {
+	f := newTestFixtures()
+	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo)
+
+	confirmedStatus := "CONFIRMED"
+	input := CreateTransactionInput{
+		ProfileID:     f.profileID,
+		BankAccountID: f.cardID,
+		CategoryID:    &f.categoryID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        75.50,
+		Currency:      "BRL",
+		Description:   "Jantar",
+		OccurredOn:    "2026-01-09", // On closing day 9
+	}
+
+	tx, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if tx.InvoiceID == nil {
+		t.Fatal("expected transaction to have invoice ID assigned")
+	}
+
+	inv, err := f.invoiceRepo.FindByID(*tx.InvoiceID)
+	if err != nil {
+		t.Fatalf("failed to find invoice: %v", err)
+	}
+
+	if inv.ReferenceDate.Month() != time.January {
+		t.Errorf("expected January invoice (closing day), got %s", inv.ReferenceDate.Month())
+	}
+}
+
+// Test: Transaction after closing day should go to next month's invoice
+func TestCreditCardTransaction_AfterClosingDay_GoesToNextMonthInvoice(t *testing.T) {
+	f := newTestFixtures()
+	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo)
+
+	confirmedStatus := "CONFIRMED"
+	input := CreateTransactionInput{
+		ProfileID:     f.profileID,
+		BankAccountID: f.cardID,
+		CategoryID:    &f.categoryID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        200.00,
+		Currency:      "BRL",
+		Description:   "Compra",
+		OccurredOn:    "2026-01-10", // After closing day 9
+	}
+
+	tx, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if tx.InvoiceID == nil {
+		t.Fatal("expected transaction to have invoice ID assigned")
+	}
+
+	inv, err := f.invoiceRepo.FindByID(*tx.InvoiceID)
+	if err != nil {
+		t.Fatalf("failed to find invoice: %v", err)
+	}
+
+	if inv.ReferenceDate.Month() != time.February {
+		t.Errorf("expected February invoice (after closing), got %s", inv.ReferenceDate.Month())
+	}
+}
+
+// Test: Multiple transactions should accumulate in same invoice
+func TestCreditCardTransaction_MultipleTransactions_AccumulateInSameInvoice(t *testing.T) {
+	f := newTestFixtures()
+	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo)
+
+	confirmedStatus := "CONFIRMED"
+
+	// First transaction
+	input1 := CreateTransactionInput{
+		ProfileID:     f.profileID,
+		BankAccountID: f.cardID,
+		CategoryID:    &f.categoryID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        100.00,
+		Currency:      "BRL",
+		Description:   "Almoço 1",
+		OccurredOn:    "2026-01-02",
+	}
+	tx1, err := useCase.Execute(input1)
+	if err != nil {
+		t.Fatalf("unexpected error on tx1: %v", err)
+	}
+
+	// Second transaction - same billing cycle
+	input2 := CreateTransactionInput{
+		ProfileID:     f.profileID,
+		BankAccountID: f.cardID,
+		CategoryID:    &f.categoryID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        50.00,
+		Currency:      "BRL",
+		Description:   "Almoço 2",
+		OccurredOn:    "2026-01-05",
+	}
+	tx2, err := useCase.Execute(input2)
+	if err != nil {
+		t.Fatalf("unexpected error on tx2: %v", err)
+	}
+
+	// Third transaction - same billing cycle
+	input3 := CreateTransactionInput{
+		ProfileID:     f.profileID,
+		BankAccountID: f.cardID,
+		CategoryID:    &f.categoryID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        75.50,
+		Currency:      "BRL",
+		Description:   "Jantar",
+		OccurredOn:    "2026-01-08",
+	}
+	tx3, err := useCase.Execute(input3)
+	if err != nil {
+		t.Fatalf("unexpected error on tx3: %v", err)
+	}
+
+	// All transactions should reference same invoice
+	if *tx1.InvoiceID != *tx2.InvoiceID || *tx2.InvoiceID != *tx3.InvoiceID {
+		t.Error("expected all transactions to have same invoice ID")
+	}
+
+	// Invoice amount should be sum of all transactions
+	inv, _ := f.invoiceRepo.FindByID(*tx1.InvoiceID)
+	expectedTotal := 100.00 + 50.00 + 75.50
+	if inv.Amount != expectedTotal {
+		t.Errorf("expected invoice amount %f, got %f", expectedTotal, inv.Amount)
+	}
+}
+
+// Test: Transactions across closing day boundary should go to different invoices
+func TestCreditCardTransaction_AcrossClosingBoundary_DifferentInvoices(t *testing.T) {
+	f := newTestFixtures()
+	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo)
+
+	confirmedStatus := "CONFIRMED"
+
+	// Transaction before closing (January invoice)
+	input1 := CreateTransactionInput{
+		ProfileID:     f.profileID,
+		BankAccountID: f.cardID,
+		CategoryID:    &f.categoryID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        100.00,
+		Currency:      "BRL",
+		Description:   "Antes do fechamento",
+		OccurredOn:    "2026-01-08", // Day before closing
+	}
+	tx1, err := useCase.Execute(input1)
+	if err != nil {
+		t.Fatalf("unexpected error on tx1: %v", err)
+	}
+
+	// Transaction after closing (February invoice)
+	input2 := CreateTransactionInput{
+		ProfileID:     f.profileID,
+		BankAccountID: f.cardID,
+		CategoryID:    &f.categoryID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        200.00,
+		Currency:      "BRL",
+		Description:   "Depois do fechamento",
+		OccurredOn:    "2026-01-10", // Day after closing
+	}
+	tx2, err := useCase.Execute(input2)
+	if err != nil {
+		t.Fatalf("unexpected error on tx2: %v", err)
+	}
+
+	// Should have different invoices
+	if *tx1.InvoiceID == *tx2.InvoiceID {
+		t.Error("expected transactions to have different invoice IDs")
+	}
+
+	// Verify correct months
+	inv1, _ := f.invoiceRepo.FindByID(*tx1.InvoiceID)
+	inv2, _ := f.invoiceRepo.FindByID(*tx2.InvoiceID)
+
+	if inv1.ReferenceDate.Month() != time.January {
+		t.Errorf("expected January invoice for tx1, got %s", inv1.ReferenceDate.Month())
+	}
+	if inv2.ReferenceDate.Month() != time.February {
+		t.Errorf("expected February invoice for tx2, got %s", inv2.ReferenceDate.Month())
+	}
+
+	// Verify amounts
+	if inv1.Amount != 100.00 {
+		t.Errorf("expected January invoice amount 100.00, got %f", inv1.Amount)
+	}
+	if inv2.Amount != 200.00 {
+		t.Errorf("expected February invoice amount 200.00, got %f", inv2.Amount)
+	}
+}
+
+// Test: Non-credit card transaction should not have invoice
+func TestCheckingAccountTransaction_NoInvoice(t *testing.T) {
+	f := newTestFixtures()
+	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo)
+
+	confirmedStatus := "CONFIRMED"
+	input := CreateTransactionInput{
+		ProfileID:     f.profileID,
+		BankAccountID: f.checkingID, // Checking account, not credit card
+		CategoryID:    &f.categoryID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        500.00,
+		Currency:      "BRL",
+		Description:   "Transferência PIX",
+		OccurredOn:    "2026-01-05",
+	}
+
+	tx, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Checking account transactions should NOT have invoice
+	if tx.InvoiceID != nil {
+		t.Error("expected checking account transaction to have no invoice ID")
+	}
+}
+
+// Test: Income transaction on credit card should not have invoice
+func TestCreditCardIncomeTransaction_NoInvoice(t *testing.T) {
+	f := newTestFixtures()
+
+	// Add income category
+	incomeCatID := "cat-income"
+	f.categoryRepo.categories[incomeCatID] = &category.Category{
+		ID:        incomeCatID,
+		ProfileID: f.profileID,
+		Name:      "Reembolso",
+		Type:      category.TypeIncome,
+		IsActive:  true,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo)
+
+	confirmedStatus := "CONFIRMED"
+	input := CreateTransactionInput{
+		ProfileID:     f.profileID,
+		BankAccountID: f.cardID,
+		CategoryID:    &incomeCatID,
+		Type:          "INCOME", // Income, not expense
+		Status:        &confirmedStatus,
+		Amount:        100.00,
+		Currency:      "BRL",
+		Description:   "Estorno",
+		OccurredOn:    "2026-01-05",
+	}
+
+	tx, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Income transactions should NOT affect invoice
+	if tx.InvoiceID != nil {
+		t.Error("expected income transaction on credit card to have no invoice ID")
+	}
+}
+
+// Test: December year-end crossing
+func TestCreditCardTransaction_YearEndCrossing(t *testing.T) {
+	f := newTestFixtures()
+	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo)
+
+	confirmedStatus := "CONFIRMED"
+
+	// Transaction in December after closing (should go to January next year)
+	input := CreateTransactionInput{
+		ProfileID:     f.profileID,
+		BankAccountID: f.cardID,
+		CategoryID:    &f.categoryID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        150.00,
+		Currency:      "BRL",
+		Description:   "Compra de Natal",
+		OccurredOn:    "2025-12-15", // After closing day 9
+	}
+
+	tx, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if tx.InvoiceID == nil {
+		t.Fatal("expected transaction to have invoice ID assigned")
+	}
+
+	inv, _ := f.invoiceRepo.FindByID(*tx.InvoiceID)
+
+	// Should be January 2026 invoice
+	if inv.ReferenceDate.Month() != time.January || inv.ReferenceDate.Year() != 2026 {
+		t.Errorf("expected January 2026 invoice, got %s %d", inv.ReferenceDate.Month(), inv.ReferenceDate.Year())
+	}
+}
+
+// Test: Invoice dates calculation
+func TestInvoiceDatesCalculation(t *testing.T) {
+	f := newTestFixtures()
+	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo)
+
+	confirmedStatus := "CONFIRMED"
+	input := CreateTransactionInput{
+		ProfileID:     f.profileID,
+		BankAccountID: f.cardID,
+		CategoryID:    &f.categoryID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        100.00,
+		Currency:      "BRL",
+		Description:   "Test",
+		OccurredOn:    "2026-01-05",
+	}
+
+	tx, _ := useCase.Execute(input)
+	inv, _ := f.invoiceRepo.FindByID(*tx.InvoiceID)
+
+	// Card: closingDay=9, dueDay=14
+	// January 2026 invoice:
+	// - Opening: December 10, 2025 (day after previous closing)
+	// - Closing: January 9, 2026
+	// - Due: January 14, 2026
+
+	expectedOpening := time.Date(2025, 12, 10, 0, 0, 0, 0, time.UTC)
+	expectedClosing := time.Date(2026, 1, 9, 0, 0, 0, 0, time.UTC)
+	expectedDue := time.Date(2026, 1, 14, 0, 0, 0, 0, time.UTC)
+
+	if !inv.OpeningDate.Equal(expectedOpening) {
+		t.Errorf("expected opening date %v, got %v", expectedOpening, inv.OpeningDate)
+	}
+	if !inv.ClosingDate.Equal(expectedClosing) {
+		t.Errorf("expected closing date %v, got %v", expectedClosing, inv.ClosingDate)
+	}
+	if !inv.DueDate.Equal(expectedDue) {
+		t.Errorf("expected due date %v, got %v", expectedDue, inv.DueDate)
+	}
+}
+
+// Test: RecalculateInvoiceAmount use case
+func TestRecalculateInvoiceAmount(t *testing.T) {
+	f := newTestFixtures()
+	createUC := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo)
+	recalcUC := NewRecalculateInvoiceAmountUseCase(f.invoiceRepo, f.txRepo)
+
+	confirmedStatus := "CONFIRMED"
+
+	// Create some transactions
+	input1 := CreateTransactionInput{
+		ProfileID:     f.profileID,
+		BankAccountID: f.cardID,
+		CategoryID:    &f.categoryID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        100.00,
+		Currency:      "BRL",
+		Description:   "Tx 1",
+		OccurredOn:    "2026-01-02",
+	}
+	tx1, _ := createUC.Execute(input1)
+
+	input2 := CreateTransactionInput{
+		ProfileID:     f.profileID,
+		BankAccountID: f.cardID,
+		CategoryID:    &f.categoryID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        50.00,
+		Currency:      "BRL",
+		Description:   "Tx 2",
+		OccurredOn:    "2026-01-05",
+	}
+	createUC.Execute(input2)
+
+	// Manually corrupt the invoice amount to simulate inconsistency
+	inv, _ := f.invoiceRepo.FindByID(*tx1.InvoiceID)
+	inv.Amount = 999.99 // Wrong value
+	f.invoiceRepo.Update(inv)
+
+	// Recalculate should fix it
+	recalculatedInv, err := recalcUC.Execute(*tx1.InvoiceID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expectedTotal := 100.00 + 50.00
+	if recalculatedInv.Amount != expectedTotal {
+		t.Errorf("expected recalculated amount %f, got %f", expectedTotal, recalculatedInv.Amount)
+	}
+}
+
+// Test: calculateReferenceMonth function
+func TestCalculateReferenceMonth(t *testing.T) {
+	testCases := []struct {
+		name        string
+		txDate      time.Time
+		closingDay  int
+		expectedRef time.Time
+	}{
+		{
+			name:        "Before closing day - same month",
+			txDate:      time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC),
+			closingDay:  9,
+			expectedRef: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:        "On closing day - same month",
+			txDate:      time.Date(2026, 1, 9, 0, 0, 0, 0, time.UTC),
+			closingDay:  9,
+			expectedRef: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:        "After closing day - next month",
+			txDate:      time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC),
+			closingDay:  9,
+			expectedRef: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:        "December after closing - January next year",
+			txDate:      time.Date(2025, 12, 15, 0, 0, 0, 0, time.UTC),
+			closingDay:  9,
+			expectedRef: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:        "Last day of month - next month",
+			txDate:      time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC),
+			closingDay:  25,
+			expectedRef: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := calculateReferenceMonth(tc.txDate, tc.closingDay)
+			if !result.Equal(tc.expectedRef) {
+				t.Errorf("expected %v, got %v", tc.expectedRef, result)
+			}
+		})
+	}
+}
+
+// Test: PLANNED transaction should also be assigned to invoice
+func TestCreditCardPlannedTransaction_AssignedToInvoice(t *testing.T) {
+	f := newTestFixtures()
+	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo)
+
+	// PLANNED status (default)
+	input := CreateTransactionInput{
+		ProfileID:     f.profileID,
+		BankAccountID: f.cardID,
+		CategoryID:    &f.categoryID,
+		Type:          "EXPENSE",
+		Amount:        100.00,
+		Currency:      "BRL",
+		Description:   "Compra planejada",
+		OccurredOn:    "2026-01-05",
+	}
+
+	tx, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if tx.Status != transaction.StatusPlanned {
+		t.Errorf("expected PLANNED status, got %s", tx.Status)
+	}
+
+	// PLANNED transactions should also have invoice assigned
+	if tx.InvoiceID == nil {
+		t.Error("expected PLANNED transaction to have invoice ID assigned")
+	}
+}
+
+// Test: Invoice ContainsDate method
+func TestInvoiceContainsDate(t *testing.T) {
+	inv := &invoice.Invoice{
+		OpeningDate: time.Date(2025, 12, 10, 0, 0, 0, 0, time.UTC),
+		ClosingDate: time.Date(2026, 1, 9, 0, 0, 0, 0, time.UTC),
+	}
+
+	testCases := []struct {
+		name     string
+		date     time.Time
+		expected bool
+	}{
+		{"Before opening", time.Date(2025, 12, 9, 0, 0, 0, 0, time.UTC), false},
+		{"On opening", time.Date(2025, 12, 10, 0, 0, 0, 0, time.UTC), true},
+		{"Middle of cycle", time.Date(2025, 12, 25, 0, 0, 0, 0, time.UTC), true},
+		{"On closing", time.Date(2026, 1, 9, 0, 0, 0, 0, time.UTC), true},
+		{"After closing", time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC), false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := inv.ContainsDate(tc.date)
+			if result != tc.expected {
+				t.Errorf("ContainsDate(%v) = %v, expected %v", tc.date, result, tc.expected)
+			}
+		})
+	}
+}
+
+// Test: Invoice with different closing/due day configurations
+func TestInvoiceWithDifferentConfigurations(t *testing.T) {
+	testCases := []struct {
+		name            string
+		closingDay      int
+		dueDay          int
+		txDate          string
+		expectedRefMonth time.Month
+		expectedDueMonth time.Month
+	}{
+		{
+			name:            "Due day after closing day (same month)",
+			closingDay:      9,
+			dueDay:          14,
+			txDate:          "2026-01-05",
+			expectedRefMonth: time.January,
+			expectedDueMonth: time.January,
+		},
+		{
+			name:            "Due day before closing day (next month)",
+			closingDay:      25,
+			dueDay:          5,
+			txDate:          "2026-01-20",
+			expectedRefMonth: time.January,
+			expectedDueMonth: time.February,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newTestFixtures()
+
+			// Update card configuration
+			card := f.accountRepo.accounts[f.cardID]
+			card.ClosingDay = &tc.closingDay
+			card.DueDay = &tc.dueDay
+
+			useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo)
+
+			confirmedStatus := "CONFIRMED"
+			input := CreateTransactionInput{
+				ProfileID:     f.profileID,
+				BankAccountID: f.cardID,
+				CategoryID:    &f.categoryID,
+				Type:          "EXPENSE",
+				Status:        &confirmedStatus,
+				Amount:        100.00,
+				Currency:      "BRL",
+				Description:   "Test",
+				OccurredOn:    tc.txDate,
+			}
+
+			tx, err := useCase.Execute(input)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			inv, _ := f.invoiceRepo.FindByID(*tx.InvoiceID)
+
+			if inv.ReferenceDate.Month() != tc.expectedRefMonth {
+				t.Errorf("expected reference month %s, got %s", tc.expectedRefMonth, inv.ReferenceDate.Month())
+			}
+			if inv.DueDate.Month() != tc.expectedDueMonth {
+				t.Errorf("expected due month %s, got %s", tc.expectedDueMonth, inv.DueDate.Month())
+			}
+		})
+	}
+}

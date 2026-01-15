@@ -16,6 +16,7 @@ type InvoiceHandlers struct {
 	closeUC          *usecases.CloseInvoiceUseCase
 	payUC            *usecases.PayInvoiceUseCase
 	addAmountUC      *usecases.AddAmountToInvoiceUseCase
+	recalculateUC    *usecases.RecalculateInvoiceAmountUseCase
 }
 
 func NewInvoiceHandlers(
@@ -26,6 +27,7 @@ func NewInvoiceHandlers(
 	closeUC *usecases.CloseInvoiceUseCase,
 	payUC *usecases.PayInvoiceUseCase,
 	addAmountUC *usecases.AddAmountToInvoiceUseCase,
+	recalculateUC *usecases.RecalculateInvoiceAmountUseCase,
 ) *InvoiceHandlers {
 	return &InvoiceHandlers{
 		createUC:         createUC,
@@ -35,6 +37,7 @@ func NewInvoiceHandlers(
 		closeUC:          closeUC,
 		payUC:            payUC,
 		addAmountUC:      addAmountUC,
+		recalculateUC:    recalculateUC,
 	}
 }
 
@@ -179,6 +182,23 @@ func (h *InvoiceHandlers) AddAmount(w http.ResponseWriter, r *http.Request) {
 	input.InvoiceID = id
 
 	invoice, err := h.addAmountUC.Execute(input)
+	if err != nil {
+		status := http.StatusBadRequest
+		if err == usecases.ErrInvoiceNotFound {
+			status = http.StatusNotFound
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+
+	respondJSON(w, map[string]any{"data": invoice})
+}
+
+// Recalculate handles POST /api/v1/invoices/{id}/recalculate
+func (h *InvoiceHandlers) Recalculate(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+
+	invoice, err := h.recalculateUC.Execute(id)
 	if err != nil {
 		status := http.StatusBadRequest
 		if err == usecases.ErrInvoiceNotFound {

@@ -116,12 +116,13 @@ func main() {
 
 	// Initialize Invoice use cases and handlers
 	createInvoiceUC := usecases.NewCreateInvoiceUseCase(invoiceRepo, bankAccountRepo)
-	listInvoicesUC := usecases.NewListInvoicesUseCase(invoiceRepo, bankAccountRepo)
-	getInvoiceUC := usecases.NewGetInvoiceUseCase(invoiceRepo)
-	getCurrentInvoiceUC := usecases.NewGetCurrentInvoiceUseCase(invoiceRepo, bankAccountRepo)
+	listInvoicesUC := usecases.NewListInvoicesUseCase(invoiceRepo, bankAccountRepo, transactionRepo)
+	getInvoiceUC := usecases.NewGetInvoiceUseCase(invoiceRepo, transactionRepo)
+	getCurrentInvoiceUC := usecases.NewGetCurrentInvoiceUseCase(invoiceRepo, bankAccountRepo, transactionRepo)
 	closeInvoiceUC := usecases.NewCloseInvoiceUseCase(invoiceRepo)
 	payInvoiceUC := usecases.NewPayInvoiceUseCase(invoiceRepo)
 	addAmountToInvoiceUC := usecases.NewAddAmountToInvoiceUseCase(invoiceRepo)
+	recalculateInvoiceUC := usecases.NewRecalculateInvoiceAmountUseCase(invoiceRepo, transactionRepo)
 	invoiceHandler := httpHandlers.NewInvoiceHandlers(
 		createInvoiceUC,
 		listInvoicesUC,
@@ -130,6 +131,7 @@ func main() {
 		closeInvoiceUC,
 		payInvoiceUC,
 		addAmountToInvoiceUC,
+		recalculateInvoiceUC,
 	)
 
 	recurringRepo := persistence.NewRecurringTransactionRepository(db)
@@ -194,6 +196,7 @@ func main() {
 	apiRouter.HandleFunc("/invoices/{id}/close", invoiceHandler.Close).Methods("POST")
 	apiRouter.HandleFunc("/invoices/{id}/pay", invoiceHandler.Pay).Methods("POST")
 	apiRouter.HandleFunc("/invoices/{id}/add-amount", invoiceHandler.AddAmount).Methods("POST")
+	apiRouter.HandleFunc("/invoices/{id}/recalculate", invoiceHandler.Recalculate).Methods("POST")
 
 	// CORS configuration
 	corsHandler := cors.New(cors.Options{

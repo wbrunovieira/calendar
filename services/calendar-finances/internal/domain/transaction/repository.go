@@ -21,4 +21,5 @@ type Repository interface {
 	UpdateStatus(id string, status Status, occurredOn time.Time, notes *string) error
 	Delete(id string) error
 	SumByCategories(profileID string, categoryIDs []string, from, to time.Time) (map[string]float64, error)
+	SumByInvoiceID(invoiceID string) (float64, error)
 }

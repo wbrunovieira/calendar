@@ -136,6 +136,16 @@ func (f *fakeTransactionRepo) SumByCategories(profileID string, categoryIDs []st
 	return result, nil
 }
 
+func (f *fakeTransactionRepo) SumByInvoiceID(invoiceID string) (float64, error) {
+	var total float64
+	for _, tx := range f.created {
+		if tx.InvoiceID != nil && *tx.InvoiceID == invoiceID {
+			total += tx.Amount
+		}
+	}
+	return total, nil
+}
+
 type fakeInvoiceRepo struct {
 	invoices map[string]*invoice.Invoice
 }

@@ -94,6 +94,9 @@ func (f *fakeTxRepoForBudget) UpdateStatus(id string, status transaction.Status,
 	return nil
 }
 func (f *fakeTxRepoForBudget) Delete(id string) error { return nil }
+func (f *fakeTxRepoForBudget) SumByInvoiceID(invoiceID string) (float64, error) {
+	return 0, nil
+}
 
 type fakeCategoryRepoForBudget struct {
 	categories map[string]*category.Category
