@@ -341,6 +341,12 @@ function MonthCard({
     }),
   [transactions, isCategoryInBudget]);
 
+  // Income transactions (all, not just outside budget)
+  const incomeTransactions = useMemo(() => ({
+    confirmed: transactions.filter((tx) => tx.type === 'INCOME' && tx.status === 'CONFIRMED'),
+    planned: transactions.filter((tx) => tx.type === 'INCOME' && tx.status === 'PLANNED'),
+  }), [transactions]);
+
   // Totals
   const totals = useMemo(() => {
     const budgetTotal = budgetSummary.reduce((sum, b) => sum + Math.max(b.target.amount, b.spent), 0);
@@ -350,8 +356,10 @@ function MonthCard({
     const recurringIncome = recurringOutsideBudget.filter((r) => r.type === 'INCOME').reduce((sum, r) => sum + r.amount, 0);
     const pendingExpense = pendingTxOutsideBudget.filter((tx) => tx.type === 'EXPENSE').reduce((sum, tx) => sum + tx.amount, 0);
     const pendingIncome = pendingTxOutsideBudget.filter((tx) => tx.type === 'INCOME').reduce((sum, tx) => sum + tx.amount, 0);
-    return { budgetTotal, budgetSpent, budgetRemaining, recurringExpense, recurringIncome, pendingExpense, pendingIncome };
-  }, [budgetSummary, recurringOutsideBudget, pendingTxOutsideBudget]);
+    const confirmedIncome = incomeTransactions.confirmed.reduce((sum, tx) => sum + tx.amount, 0);
+    const plannedIncome = incomeTransactions.planned.reduce((sum, tx) => sum + tx.amount, 0);
+    return { budgetTotal, budgetSpent, budgetRemaining, recurringExpense, recurringIncome, pendingExpense, pendingIncome, confirmedIncome, plannedIncome };
+  }, [budgetSummary, recurringOutsideBudget, pendingTxOutsideBudget, incomeTransactions]);
 
   const getPendingRecurringForCategory = useCallback((budgetCategoryId: string) => {
     const today = new Date();
@@ -385,7 +393,7 @@ function MonthCard({
   }, [transactions, getCategoryChain]);
 
   const totalExpense = totals.budgetTotal + totals.recurringExpense + totals.pendingExpense;
-  const totalIncome = totals.recurringIncome + totals.pendingIncome;
+  const totalIncome = totals.confirmedIncome + totals.plannedIncome;
   const balance = totalIncome - totalExpense;
 
   return (
@@ -566,7 +574,7 @@ function MonthCard({
       )}
 
       {/* Income */}
-      {totals.recurringIncome > 0 && (
+      {(totals.confirmedIncome > 0 || totals.plannedIncome > 0) && (
         <div
           className="bg-white/5 border border-white/10 rounded-lg p-2 cursor-pointer hover:bg-white/10 transition-colors"
           onClick={() => onToggleSection(`${period}-income`)}
@@ -575,17 +583,60 @@ function MonthCard({
             <div className="flex items-center gap-1">
               <span className="text-emerald-400 text-xs">💰</span>
               <span className="text-white/80 text-xs">Receitas</span>
+              <span className="text-[10px] text-white/40">({incomeTransactions.confirmed.length + incomeTransactions.planned.length})</span>
             </div>
-            <span className="text-emerald-400 text-xs font-medium">{fmt(totals.recurringIncome)}</span>
+            <span className="text-emerald-400 text-xs font-medium">{fmt(totalIncome)}</span>
           </div>
           {expandedSections.has(`${period}-income`) && (
-            <div className="mt-2 space-y-0.5 border-t border-white/10 pt-2">
-              {recurringOutsideBudget.filter(r => r.type === 'INCOME').map((item) => (
-                <div key={item.id} className="flex justify-between text-[10px]">
-                  <span className="text-white/60">{item.description}</span>
-                  <span className="text-emerald-400">{fmt(item.amount)}</span>
+            <div className="mt-2 space-y-1 border-t border-white/10 pt-2">
+              {incomeTransactions.confirmed.length > 0 && (
+                <div className="mb-2">
+                  <p className="text-[10px] text-emerald-400 mb-1">Já recebido</p>
+                  <div className="space-y-0.5">
+                    {incomeTransactions.confirmed.map((tx) => (
+                      <div key={tx.id} className="flex justify-between text-[10px]">
+                        <span className="text-white/60 truncate flex-1">
+                          {tx.description}
+                          <span className="text-white/30 ml-1">
+                            ({new Date(tx.occurredOn).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })})
+                          </span>
+                        </span>
+                        <span className="text-emerald-400 ml-1">{fmt(tx.amount)}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between text-[10px] pt-0.5 border-t border-white/10">
+                      <span className="text-white/40">Subtotal</span>
+                      <span className="text-emerald-400 font-medium">{fmt(totals.confirmedIncome)}</span>
+                    </div>
+                  </div>
                 </div>
-              ))}
+              )}
+              {incomeTransactions.planned.length > 0 && (
+                <div className="mb-2">
+                  <p className="text-[10px] text-blue-400 mb-1">A receber</p>
+                  <div className="space-y-0.5">
+                    {incomeTransactions.planned.map((tx) => (
+                      <div key={tx.id} className="flex justify-between text-[10px]">
+                        <span className="text-white/60 truncate flex-1">
+                          {tx.description}
+                          <span className="text-white/30 ml-1">
+                            ({new Date(tx.occurredOn).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })})
+                          </span>
+                        </span>
+                        <span className="text-blue-400 ml-1">{fmt(tx.amount)}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between text-[10px] pt-0.5 border-t border-white/10">
+                      <span className="text-white/40">Subtotal</span>
+                      <span className="text-blue-400 font-medium">{fmt(totals.plannedIncome)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div className="flex justify-between text-[10px] pt-1 border-t border-white/20">
+                <span className="text-white font-medium">Total receitas</span>
+                <span className="text-emerald-400 font-medium">{fmt(totalIncome)}</span>
+              </div>
             </div>
           )}
         </div>
@@ -636,9 +687,21 @@ function MonthCard({
           <span className="text-white">Total despesas</span>
           <span className="text-rose-400">{fmt(totalExpense)}</span>
         </div>
+        {totals.confirmedIncome > 0 && (
+          <div className="flex justify-between text-xs">
+            <span className="text-white/60">Já recebido</span>
+            <span className="text-emerald-400">{fmt(totals.confirmedIncome)}</span>
+          </div>
+        )}
+        {totals.plannedIncome > 0 && (
+          <div className="flex justify-between text-xs">
+            <span className="text-white/60">A receber</span>
+            <span className="text-blue-400">{fmt(totals.plannedIncome)}</span>
+          </div>
+        )}
         {totalIncome > 0 && (
-          <div className="flex justify-between text-xs font-medium">
-            <span className="text-white">Receitas</span>
+          <div className="flex justify-between text-xs font-medium border-t border-white/10 pt-1">
+            <span className="text-white">Total receitas</span>
             <span className="text-emerald-400">{fmt(totalIncome)}</span>
           </div>
         )}
