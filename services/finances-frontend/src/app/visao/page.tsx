@@ -3,7 +3,14 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import type { Profile, RecurringTransaction, Transaction, Category, BudgetSummaryItem } from '@/types/finances';
+
+const CHART_COLORS = [
+  '#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6',
+  '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1',
+  '#14b8a6', '#a855f7', '#eab308', '#22c55e', '#0ea5e9'
+];
 
 const API_BASE = 'http://localhost:3335/api/v1';
 
@@ -396,6 +403,63 @@ function MonthCard({
   const totalIncome = totals.confirmedIncome + totals.plannedIncome;
   const balance = totalIncome - totalExpense;
 
+  // Calculate expense totals by category for pie charts
+  const categoryExpenseData = useMemo(() => {
+    const expenseTransactions = transactions.filter((tx) => tx.type === 'EXPENSE');
+
+    // Group by parent category (top-level)
+    const parentTotals = new Map<string, { name: string; value: number }>();
+    // Group by actual category (subcategory level)
+    const subTotals = new Map<string, { name: string; value: number; parentName: string }>();
+
+    expenseTransactions.forEach((tx) => {
+      if (!tx.categoryId) return;
+
+      const cat = categories.find((c) => c.id === tx.categoryId);
+      if (!cat) return;
+
+      // Find top-level parent
+      let topParent = cat;
+      let parentChain = [cat.name];
+      while (topParent.parentId) {
+        const parent = categories.find((c) => c.id === topParent.parentId);
+        if (parent) {
+          topParent = parent;
+          parentChain.unshift(parent.name);
+        } else {
+          break;
+        }
+      }
+
+      // Aggregate by parent category
+      const existing = parentTotals.get(topParent.id);
+      if (existing) {
+        existing.value += tx.amount;
+      } else {
+        parentTotals.set(topParent.id, { name: topParent.name, value: tx.amount });
+      }
+
+      // Aggregate by subcategory (use full path for clarity)
+      const subKey = tx.categoryId;
+      const subName = parentChain.length > 1 ? parentChain.slice(-2).join(' > ') : cat.name;
+      const existingSub = subTotals.get(subKey);
+      if (existingSub) {
+        existingSub.value += tx.amount;
+      } else {
+        subTotals.set(subKey, { name: subName, value: tx.amount, parentName: topParent.name });
+      }
+    });
+
+    const parentData = Array.from(parentTotals.values())
+      .sort((a, b) => b.value - a.value);
+
+    const subData = Array.from(subTotals.values())
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10); // Top 10 subcategories
+
+    return { parentData, subData };
+  }, [transactions, categories]);
+
   return (
     <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-3">
       <h3 className="text-lg font-semibold text-white capitalize border-b border-white/10 pb-2">
@@ -710,6 +774,106 @@ function MonthCard({
           <span className={balance >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{fmt(balance)}</span>
         </div>
       </div>
+
+      {/* Pie Charts - Category Breakdown */}
+      {categoryExpenseData.parentData.length > 0 && (
+        <div className="border-t border-white/10 pt-6 space-y-6">
+          <h4 className="text-base font-semibold text-white">Despesas por Categoria</h4>
+
+          {/* Parent Categories Pie Chart */}
+          <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+            <p className="text-sm text-white/70 mb-3 text-center font-medium">Categorias principais</p>
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={categoryExpenseData.parentData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={isCompact ? 50 : 60}
+                    outerRadius={isCompact ? 85 : 100}
+                    paddingAngle={3}
+                    dataKey="value"
+                    label={({ name, percent }) => isCompact ? `${(percent * 100).toFixed(0)}%` : `${name} ${(percent * 100).toFixed(0)}%`}
+                    labelLine={!isCompact}
+                  >
+                    {categoryExpenseData.parentData.map((_, index) => (
+                      <Cell key={`cell-parent-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(value: number) => fmt(value)}
+                    contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px', fontSize: '14px' }}
+                    labelStyle={{ color: '#fff', fontSize: '14px' }}
+                  />
+                  {isCompact && <Legend wrapperStyle={{ fontSize: '12px' }} />}
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            {/* Legend list for non-compact */}
+            {!isCompact && (
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                {categoryExpenseData.parentData.map((item, index) => (
+                  <div key={item.name} className="flex items-center gap-2 text-sm">
+                    <div
+                      className="w-3 h-3 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
+                    />
+                    <span className="text-white/70 truncate">{item.name}</span>
+                    <span className="text-white font-medium ml-auto">{fmt(item.value)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Subcategories Pie Chart */}
+          {categoryExpenseData.subData.length > 1 && (
+            <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+              <p className="text-sm text-white/70 mb-3 text-center font-medium">Subcategorias (top 10)</p>
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={categoryExpenseData.subData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={isCompact ? 50 : 60}
+                      outerRadius={isCompact ? 85 : 100}
+                      paddingAngle={3}
+                      dataKey="value"
+                      label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
+                      labelLine={false}
+                    >
+                      {categoryExpenseData.subData.map((_, index) => (
+                        <Cell key={`cell-sub-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(value: number) => fmt(value)}
+                      contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px', fontSize: '14px' }}
+                      labelStyle={{ color: '#fff', fontSize: '14px' }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              {/* Legend list */}
+              <div className="mt-4 space-y-1.5">
+                {categoryExpenseData.subData.map((item, index) => (
+                  <div key={`${item.name}-${index}`} className="flex items-center gap-2 text-sm">
+                    <div
+                      className="w-3 h-3 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
+                    />
+                    <span className="text-white/70 truncate flex-1">{item.name}</span>
+                    <span className="text-white font-medium">{fmt(item.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
