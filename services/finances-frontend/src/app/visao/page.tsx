@@ -403,6 +403,67 @@ function MonthCard({
   const totalIncome = totals.confirmedIncome + totals.plannedIncome;
   const balance = totalIncome - totalExpense;
 
+  // Calculate weeks in the month and expenses per week for budget categories
+  const weeklyBudgetData = useMemo(() => {
+    const lastDay = new Date(year, month, 0);
+    const totalDays = lastDay.getDate();
+
+    // Calculate full weeks (7 days each), remaining days go to last week
+    const fullWeeks = Math.floor(totalDays / 7);
+    const remainingDays = totalDays % 7;
+    // If remaining days exist, merge with last week; otherwise use 4 weeks
+    const numWeeks = remainingDays > 0 ? fullWeeks : fullWeeks;
+
+    // Define week ranges - last week gets extra days
+    const weeks: { start: number; end: number; label: string }[] = [];
+    for (let i = 0; i < numWeeks; i++) {
+      const start = i * 7 + 1;
+      const isLastWeek = i === numWeeks - 1;
+      const end = isLastWeek ? totalDays : (i + 1) * 7;
+      weeks.push({ start, end, label: `Sem ${i + 1} (${start}-${end})` });
+    }
+
+    // Get transactions for each budget category grouped by week
+    const budgetWeeklyData: {
+      categoryId: string;
+      categoryName: string;
+      budgetAmount: number;
+      weeklyBudget: number;
+      weeks: { label: string; spent: number; transactions: Transaction[] }[];
+      totalSpent: number;
+    }[] = [];
+
+    budgetSummary.forEach((budget) => {
+      const cat = categories.find((c) => c.id === budget.target.categoryId);
+      const categoryName = cat?.name || 'Categoria';
+      const weeklyBudget = budget.target.amount / numWeeks;
+
+      const weekData = weeks.map((week) => {
+        const weekTx = transactions.filter((tx) => {
+          if (tx.type !== 'EXPENSE' || tx.status !== 'CONFIRMED') return false;
+          if (!tx.categoryId) return false;
+          const chain = getCategoryChain(tx.categoryId);
+          if (!chain.includes(budget.target.categoryId)) return false;
+          const txDay = new Date(tx.occurredOn).getDate();
+          return txDay >= week.start && txDay <= week.end;
+        });
+        const spent = weekTx.reduce((sum, tx) => sum + tx.amount, 0);
+        return { label: week.label, spent, transactions: weekTx };
+      });
+
+      budgetWeeklyData.push({
+        categoryId: budget.target.categoryId,
+        categoryName,
+        budgetAmount: budget.target.amount,
+        weeklyBudget,
+        weeks: weekData,
+        totalSpent: budget.spent,
+      });
+    });
+
+    return { weeks, budgetWeeklyData, numWeeks };
+  }, [budgetSummary, transactions, categories, getCategoryChain, year, month]);
+
   // Calculate expense totals by category for pie charts
   const categoryExpenseData = useMemo(() => {
     const expenseTransactions = transactions.filter((tx) => tx.type === 'EXPENSE');
@@ -607,6 +668,101 @@ function MonthCard({
       {budgetSummary.length === 0 && (
         <div className="text-center py-4">
           <p className="text-white/50 text-xs">Nenhum orcamento.</p>
+        </div>
+      )}
+
+      {/* Weekly Budget Breakdown */}
+      {weeklyBudgetData.budgetWeeklyData.length > 0 && (
+        <div className="space-y-4">
+          <h4 className="text-base font-semibold text-white/70">Gastos por Semana</h4>
+          {weeklyBudgetData.budgetWeeklyData.map((budgetCat) => {
+            const categoryKey = `${period}-weekly-${budgetCat.categoryId}`;
+            const isCategoryExpanded = expandedSections.has(categoryKey);
+
+            return (
+              <div key={budgetCat.categoryId} className="bg-white/5 border border-white/10 rounded-xl p-4">
+                <div
+                  className="flex items-center justify-between cursor-pointer"
+                  onClick={() => onToggleSection(categoryKey)}
+                >
+                  <div className="flex items-center gap-2">
+                    <svg
+                      className={`w-4 h-4 text-white/50 transition-transform duration-200 ${isCategoryExpanded ? 'rotate-90' : ''}`}
+                      fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                    <span className="text-white text-base font-medium">{budgetCat.categoryName}</span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-white/50 text-sm">Meta: {fmt(budgetCat.weeklyBudget)}/sem</span>
+                    <span className="text-white font-semibold text-sm">{fmt(budgetCat.totalSpent)}</span>
+                  </div>
+                </div>
+
+                <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isCategoryExpanded ? 'max-h-[800px] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
+                  <div className="space-y-3">
+                    {budgetCat.weeks.map((week, idx) => {
+                      const isOverWeeklyBudget = week.spent > budgetCat.weeklyBudget;
+                      const percentOfWeekly = budgetCat.weeklyBudget > 0 ? (week.spent / budgetCat.weeklyBudget) * 100 : 0;
+                      const weekKey = `${period}-${budgetCat.categoryId}-week-${idx}`;
+                      const isExpanded = expandedSections.has(weekKey);
+
+                      return (
+                        <div key={idx} className="bg-white/5 rounded-lg p-3">
+                          <div
+                            className="flex items-center justify-between cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              week.transactions.length > 0 && onToggleSection(weekKey);
+                            }}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-white/80 text-sm font-medium">{week.label}</span>
+                              {week.transactions.length > 0 && (
+                                <span className="text-white/40 text-xs">({week.transactions.length})</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className={`text-sm font-semibold ${isOverWeeklyBudget ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                {fmt(week.spent)}
+                              </span>
+                              <span className={`text-xs ${isOverWeeklyBudget ? 'text-rose-400/70' : 'text-white/50'}`}>
+                                ({Math.round(percentOfWeekly)}%)
+                              </span>
+                            </div>
+                          </div>
+                          {/* Progress bar */}
+                          <div className="h-1.5 bg-white/10 rounded-full overflow-hidden mt-2">
+                            <div
+                              className={`h-full transition-all ${isOverWeeklyBudget ? 'bg-rose-500' : 'bg-emerald-500'}`}
+                              style={{ width: `${Math.min(100, percentOfWeekly)}%` }}
+                            />
+                          </div>
+                          {/* Expandable transactions */}
+                          {isExpanded && week.transactions.length > 0 && (
+                            <div className="mt-3 pt-3 border-t border-white/10 space-y-1">
+                              {week.transactions.map((tx) => (
+                                <div key={tx.id} className="flex justify-between text-xs">
+                                  <span className="text-white/60 truncate flex-1">
+                                    {tx.description}
+                                    <span className="text-white/30 ml-1">
+                                      ({new Date(tx.occurredOn).toLocaleDateString('pt-BR', { day: '2-digit' })})
+                                    </span>
+                                  </span>
+                                  <span className="text-emerald-400 ml-2 font-medium">{fmt(tx.amount)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
