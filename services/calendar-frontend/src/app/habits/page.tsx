@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import type { Event, Calendar } from '@/types/calendar';
 import ProfileSelector from '@/components/habits/ProfileSelector';
 import CategoryBadge from '@/components/habits/CategoryBadge';
+import CreateHabitTodoModal from '@/components/habits/CreateHabitTodoModal';
 
 type TabType = 'habits' | 'todos';
 
@@ -97,6 +98,7 @@ export default function HabitsPage() {
   const [loading, setLoading] = useState(true);
   const [calendarsLoading, setCalendarsLoading] = useState(true);
   const [showCompleted, setShowCompleted] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   const today = formatLocalDate(new Date());
 
@@ -246,27 +248,39 @@ export default function HabitsPage() {
           />
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-2 mb-6">
+        {/* Tabs and Create Button */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex gap-2">
+            <button
+              onClick={() => setActiveTab('habits')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                activeTab === 'habits'
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-white/10 text-white/70 hover:bg-white/20'
+              }`}
+            >
+              Habitos ({uniqueHabits.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('todos')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                activeTab === 'todos'
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-white/10 text-white/70 hover:bg-white/20'
+              }`}
+            >
+              Tarefas ({pendingTodos.length})
+            </button>
+          </div>
+
           <button
-            onClick={() => setActiveTab('habits')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeTab === 'habits'
-                ? 'bg-purple-600 text-white'
-                : 'bg-white/10 text-white/70 hover:bg-white/20'
-            }`}
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
           >
-            Habitos ({uniqueHabits.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('todos')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeTab === 'todos'
-                ? 'bg-purple-600 text-white'
-                : 'bg-white/10 text-white/70 hover:bg-white/20'
-            }`}
-          >
-            Tarefas ({pendingTodos.length})
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            <span>Criar {activeTab === 'habits' ? 'Habito' : 'Tarefa'}</span>
           </button>
         </div>
 
@@ -517,6 +531,16 @@ export default function HabitsPage() {
           </>
         )}
       </div>
+
+      {/* Create Modal */}
+      <CreateHabitTodoModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onCreated={fetchData}
+        eventType={activeTab === 'habits' ? 'HABIT' : 'TODO'}
+        calendars={calendars}
+        selectedCalendarId={selectedCalendarId}
+      />
     </div>
   );
 }
