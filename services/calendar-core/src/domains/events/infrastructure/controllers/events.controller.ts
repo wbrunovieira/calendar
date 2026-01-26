@@ -17,6 +17,7 @@ import { UpdateEventUseCase } from '../../application/use-cases/update-event.use
 import { ToggleEventExecutionUseCase } from '../../application/use-cases/toggle-event-execution.use-case';
 import { GetEventExecutionsUseCase } from '../../application/use-cases/get-event-executions.use-case';
 import { GetEventsStatsUseCase } from '../../application/use-cases/get-events-stats.use-case';
+import { GetHabitsStatsUseCase } from '../../application/use-cases/get-habits-stats.use-case';
 import { CreateEventDto } from '../dtos/create-event.dto';
 import { UpdateEventDto } from '../dtos/update-event.dto';
 import { ToggleEventExecutionDto } from '../dtos/toggle-event-execution.dto';
@@ -32,6 +33,7 @@ export class EventsController {
     private readonly toggleEventExecutionUseCase: ToggleEventExecutionUseCase,
     private readonly getEventExecutionsUseCase: GetEventExecutionsUseCase,
     private readonly getEventsStatsUseCase: GetEventsStatsUseCase,
+    private readonly getHabitsStatsUseCase: GetHabitsStatsUseCase,
   ) {}
 
   // Helper: converter RRULE para formato antigo (compatibilidade frontend)
@@ -191,6 +193,18 @@ export class EventsController {
       createdAt: execution.createdAt,
       updatedAt: execution.updatedAt,
     };
+  }
+
+  @Get('habits/stats')
+  @HttpCode(HttpStatus.OK)
+  async getHabitsStats(
+    @Query('calendarId') calendarId?: string,
+    @Query('categoryId') categoryId?: string,
+  ) {
+    return await this.getHabitsStatsUseCase.execute({
+      calendarId,
+      categoryId,
+    });
   }
 
   @Get('stats')

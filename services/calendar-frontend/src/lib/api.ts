@@ -1,4 +1,4 @@
-import type { Event, Category, CategoryType } from '@/types/calendar';
+import type { Event, Category, CategoryType, HabitStats } from '@/types/calendar';
 
 /**
  * API client for calendar backend
@@ -143,6 +143,14 @@ export const api = {
       if (params.includeBreakdown !== undefined) queryParams.append('includeBreakdown', String(params.includeBreakdown));
 
       return fetchAPI<StatsData[]>(`/events/stats?${queryParams.toString()}`);
+    },
+    getHabitsStats: (params?: { calendarId?: string; categoryId?: string }) => {
+      const queryParams = new URLSearchParams();
+      if (params?.calendarId) queryParams.append('calendarId', params.calendarId);
+      if (params?.categoryId) queryParams.append('categoryId', params.categoryId);
+
+      const query = queryParams.toString();
+      return fetchAPI<HabitStats[]>(`/events/habits/stats${query ? `?${query}` : ''}`);
     },
   },
 
