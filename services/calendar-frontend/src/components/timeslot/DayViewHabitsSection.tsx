@@ -149,7 +149,7 @@ export default function DayViewHabitsSection({ date, onHabitToggled }: DayViewHa
         }`}
       >
         {/* Content */}
-        <div className="p-3">
+        <div className="p-3 max-h-64 overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center py-6">
               <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
