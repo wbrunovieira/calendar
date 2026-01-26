@@ -39,7 +39,7 @@ export class EventsController {
   ) {}
 
   private convertRRuleToLegacy(recurrenceRule: string | null): any {
-    if (\!recurrenceRule) {
+    if (!recurrenceRule) {
       return {
         isRecurring: false,
         recurrenceFrequency: null,
@@ -52,7 +52,7 @@ export class EventsController {
     }
 
     const rule = RRuleHelper.parse(recurrenceRule);
-    if (\!rule) {
+    if (!rule) {
       return {
         isRecurring: false,
         recurrenceFrequency: null,
