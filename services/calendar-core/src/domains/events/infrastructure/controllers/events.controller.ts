@@ -9,21 +9,22 @@ import {
   Query,
   HttpCode,
   HttpStatus,
-} from '@nestjs/common';
-import { CreateEventUseCase } from '../../application/use-cases/create-event.use-case';
-import { DeleteEventUseCase } from '../../application/use-cases/delete-event.use-case';
-import { ListEventsUseCase } from '../../application/use-cases/list-events.use-case';
-import { UpdateEventUseCase } from '../../application/use-cases/update-event.use-case';
-import { ToggleEventExecutionUseCase } from '../../application/use-cases/toggle-event-execution.use-case';
-import { GetEventExecutionsUseCase } from '../../application/use-cases/get-event-executions.use-case';
-import { GetEventsStatsUseCase } from '../../application/use-cases/get-events-stats.use-case';
-import { GetHabitsStatsUseCase } from '../../application/use-cases/get-habits-stats.use-case';
-import { CreateEventDto } from '../dtos/create-event.dto';
-import { UpdateEventDto } from '../dtos/update-event.dto';
-import { ToggleEventExecutionDto } from '../dtos/toggle-event-execution.dto';
-import { RRuleHelper } from '../../domain/utils/rrule-helper';
+} from "@nestjs/common";
+import { CreateEventUseCase } from "../../application/use-cases/create-event.use-case";
+import { DeleteEventUseCase } from "../../application/use-cases/delete-event.use-case";
+import { ListEventsUseCase } from "../../application/use-cases/list-events.use-case";
+import { UpdateEventUseCase } from "../../application/use-cases/update-event.use-case";
+import { ToggleEventExecutionUseCase } from "../../application/use-cases/toggle-event-execution.use-case";
+import { GetEventExecutionsUseCase } from "../../application/use-cases/get-event-executions.use-case";
+import { GetEventsStatsUseCase } from "../../application/use-cases/get-events-stats.use-case";
+import { GetHabitsStatsUseCase } from "../../application/use-cases/get-habits-stats.use-case";
+import { ReorderEventsUseCase } from "../../application/use-cases/reorder-events.use-case";
+import { CreateEventDto } from "../dtos/create-event.dto";
+import { UpdateEventDto } from "../dtos/update-event.dto";
+import { ToggleEventExecutionDto } from "../dtos/toggle-event-execution.dto";
+import { RRuleHelper } from "../../domain/utils/rrule-helper";
 
-@Controller('events')
+@Controller("events")
 export class EventsController {
   constructor(
     private readonly createEventUseCase: CreateEventUseCase,
@@ -34,11 +35,11 @@ export class EventsController {
     private readonly getEventExecutionsUseCase: GetEventExecutionsUseCase,
     private readonly getEventsStatsUseCase: GetEventsStatsUseCase,
     private readonly getHabitsStatsUseCase: GetHabitsStatsUseCase,
+    private readonly reorderEventsUseCase: ReorderEventsUseCase,
   ) {}
 
-  // Helper: converter RRULE para formato antigo (compatibilidade frontend)
   private convertRRuleToLegacy(recurrenceRule: string | null): any {
-    if (!recurrenceRule) {
+    if (\!recurrenceRule) {
       return {
         isRecurring: false,
         recurrenceFrequency: null,
@@ -51,7 +52,7 @@ export class EventsController {
     }
 
     const rule = RRuleHelper.parse(recurrenceRule);
-    if (!rule) {
+    if (\!rule) {
       return {
         isRecurring: false,
         recurrenceFrequency: null,
@@ -77,12 +78,12 @@ export class EventsController {
   @Get()
   @HttpCode(HttpStatus.OK)
   async list(
-    @Query('calendarId') calendarId?: string,
-    @Query('categoryId') categoryId?: string,
-    @Query('search') search?: string,
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
-    @Query('eventType') eventType?: string,
+    @Query("calendarId") calendarId?: string,
+    @Query("categoryId") categoryId?: string,
+    @Query("search") search?: string,
+    @Query("startDate") startDate?: string,
+    @Query("endDate") endDate?: string,
+    @Query("eventType") eventType?: string,
   ) {
     const events = await this.listEventsUseCase.execute({
       calendarId,
@@ -92,9 +93,6 @@ export class EventsController {
       endDate,
       eventType,
     });
-
-    // Eventos já vêm expandidos e convertidos do ListEventsUseCase
-    // Não precisa converter novamente
     return events;
   }
 
@@ -126,10 +124,10 @@ export class EventsController {
     };
   }
 
-  @Put(':id')
+  @Put(":id")
   @HttpCode(HttpStatus.OK)
   async update(
-    @Param('id') id: string,
+    @Param("id") id: string,
     @Body() updateEventDto: UpdateEventDto,
   ) {
     const event = await this.updateEventUseCase.execute(id, updateEventDto);
@@ -157,23 +155,23 @@ export class EventsController {
     };
   }
 
-  @Delete(':id')
+  @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
-  async delete(@Param('id') id: string) {
+  async delete(@Param("id") id: string) {
     await this.deleteEventUseCase.execute(id);
   }
 
-  @Delete(':id/recurring')
+  @Delete(":id/recurring")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteRecurring(
-    @Param('id') id: string,
-    @Query('scope') scope: 'this' | 'future' | 'all',
-    @Query('occurrenceDate') occurrenceDate: string,
+    @Param("id") id: string,
+    @Query("scope") scope: "this" | "future" | "all",
+    @Query("occurrenceDate") occurrenceDate: string,
   ) {
     await this.deleteEventUseCase.executeRecurring(id, scope, occurrenceDate);
   }
 
-  @Post('executions/toggle')
+  @Post("executions/toggle")
   @HttpCode(HttpStatus.OK)
   async toggleExecution(@Body() dto: ToggleEventExecutionDto) {
     const execution = await this.toggleEventExecutionUseCase.execute({
@@ -195,11 +193,18 @@ export class EventsController {
     };
   }
 
-  @Get('habits/stats')
+  @Post("reorder")
+  @HttpCode(HttpStatus.OK)
+  async reorder(@Body() body: { orderedIds: string[] }) {
+    await this.reorderEventsUseCase.execute({ orderedIds: body.orderedIds });
+    return { success: true };
+  }
+
+  @Get("habits/stats")
   @HttpCode(HttpStatus.OK)
   async getHabitsStats(
-    @Query('calendarId') calendarId?: string,
-    @Query('categoryId') categoryId?: string,
+    @Query("calendarId") calendarId?: string,
+    @Query("categoryId") categoryId?: string,
   ) {
     return await this.getHabitsStatsUseCase.execute({
       calendarId,
@@ -207,17 +212,17 @@ export class EventsController {
     });
   }
 
-  @Get('stats')
+  @Get("stats")
   @HttpCode(HttpStatus.OK)
   async getStats(
-    @Query('startDate') startDate: string,
-    @Query('endDate') endDate: string,
-    @Query('calendarId') calendarId?: string,
-    @Query('categoryId') categoryId?: string,
-    @Query('categoryTypeId') categoryTypeId?: string,
-    @Query('groupBy')
-    groupBy?: 'day' | 'week' | 'month' | 'category' | 'categoryType' | 'total',
-    @Query('includeBreakdown') includeBreakdown?: string,
+    @Query("startDate") startDate: string,
+    @Query("endDate") endDate: string,
+    @Query("calendarId") calendarId?: string,
+    @Query("categoryId") categoryId?: string,
+    @Query("categoryTypeId") categoryTypeId?: string,
+    @Query("groupBy")
+    groupBy?: "day" | "week" | "month" | "category" | "categoryType" | "total",
+    @Query("includeBreakdown") includeBreakdown?: string,
   ) {
     return await this.getEventsStatsUseCase.execute({
       startDate,
@@ -226,13 +231,13 @@ export class EventsController {
       categoryId,
       categoryTypeId,
       groupBy,
-      includeBreakdown: includeBreakdown === 'true',
+      includeBreakdown: includeBreakdown === "true",
     });
   }
 
-  @Get(':id/executions')
+  @Get(":id/executions")
   @HttpCode(HttpStatus.OK)
-  async getExecutions(@Param('id') eventId: string) {
+  async getExecutions(@Param("id") eventId: string) {
     const executions = await this.getEventExecutionsUseCase.execute(eventId);
 
     return executions.map((execution) => ({

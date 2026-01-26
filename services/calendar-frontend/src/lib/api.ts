@@ -152,6 +152,11 @@ export const api = {
       const query = queryParams.toString();
       return fetchAPI<HabitStats[]>(`/events/habits/stats${query ? `?${query}` : ''}`);
     },
+    reorder: (orderedIds: string[]) =>
+      fetchAPI<{ success: boolean }>('/events/reorder', {
+        method: 'POST',
+        body: JSON.stringify({ orderedIds }),
+      }),
   },
 
   // Calendars (Profiles)

@@ -8,6 +8,7 @@ import { ToggleEventExecutionUseCase } from './application/use-cases/toggle-even
 import { GetEventExecutionsUseCase } from './application/use-cases/get-event-executions.use-case';
 import { GetEventsStatsUseCase } from './application/use-cases/get-events-stats.use-case';
 import { GetHabitsStatsUseCase } from './application/use-cases/get-habits-stats.use-case';
+import { ReorderEventsUseCase } from './application/use-cases/reorder-events.use-case';
 import { EventRepository } from './infrastructure/repositories/event.repository';
 import { EventExecutionRepository } from './infrastructure/repositories/event-execution.repository';
 
@@ -22,6 +23,7 @@ import { EventExecutionRepository } from './infrastructure/repositories/event-ex
     GetEventExecutionsUseCase,
     GetEventsStatsUseCase,
     GetHabitsStatsUseCase,
+    ReorderEventsUseCase,
     EventRepository,
     EventExecutionRepository,
   ],

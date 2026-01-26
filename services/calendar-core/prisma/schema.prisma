@@ -140,6 +140,9 @@ model Event {
   // Para TODOs: data de vencimento
   dueDate               DateTime? @map("due_date") @db.Date
 
+  // Ordem de exibição para drag and drop
+  displayOrder          Int       @default(0) @map("display_order")
+
   // Google Calendar
   googleEventId         String?   @map("google_event_id")
   isActive              Boolean   @default(true) @map("is_active")

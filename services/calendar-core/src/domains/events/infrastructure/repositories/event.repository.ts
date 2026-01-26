@@ -1,12 +1,12 @@
-import { Injectable } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
-import { Event } from '../../domain/entities/event.entity';
+import { Injectable } from "@nestjs/common";
+import { PrismaClient } from "@prisma/client";
+import { Event } from "../../domain/entities/event.entity";
 
 export interface FindAllFilters {
   calendarId?: string;
   categoryId?: string;
   search?: string;
-  eventType?: string; // 'EVENT' | 'HABIT' | 'TODO'
+  eventType?: string;
 }
 
 @Injectable()
@@ -32,7 +32,7 @@ export class EventRepository {
         recurrenceRule: event.recurrenceRule,
         recurrenceMasterId: event.recurrenceMasterId,
         status: event.status,
-        eventType: event.eventType || 'EVENT',
+        eventType: event.eventType || "EVENT",
         priority: event.priority,
         dueDate: event.dueDate,
         isActive: event.isActive,
@@ -63,8 +63,8 @@ export class EventRepository {
 
     if (filters?.search) {
       where.OR = [
-        { title: { contains: filters.search, mode: 'insensitive' } },
-        { description: { contains: filters.search, mode: 'insensitive' } },
+        { title: { contains: filters.search, mode: "insensitive" } },
+        { description: { contains: filters.search, mode: "insensitive" } },
       ];
     }
 
@@ -74,7 +74,7 @@ export class EventRepository {
 
     const events = await this.prisma.event.findMany({
       where,
-      orderBy: [{ startDate: 'asc' }, { startTime: 'asc' }],
+      orderBy: [{ displayOrder: "asc" }, { startDate: "asc" }, { startTime: "asc" }],
       include: {
         category: true,
         categoryType: true,
@@ -107,7 +107,7 @@ export class EventRepository {
   async findByCalendarId(calendarId: string): Promise<Event[]> {
     const events = await this.prisma.event.findMany({
       where: { calendarId, isActive: true },
-      orderBy: { startDate: 'asc' },
+      orderBy: [{ displayOrder: "asc" }, { startDate: "asc" }],
     });
 
     return events.map((event) => new Event(event));
@@ -142,6 +142,19 @@ export class EventRepository {
     await this.prisma.event.delete({
       where: { id },
     });
+  }
+
+  async updateDisplayOrder(updates: { id: string; displayOrder: number }[]): Promise<void> {
+    if (updates.length === 0) return;
+
+    await this.prisma.$transaction(
+      updates.map(({ id, displayOrder }) =>
+        this.prisma.event.update({
+          where: { id },
+          data: { displayOrder },
+        })
+      )
+    );
   }
 
   async onModuleDestroy() {

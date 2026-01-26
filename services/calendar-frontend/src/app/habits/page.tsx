@@ -99,6 +99,7 @@ export default function HabitsPage() {
   const [calendarsLoading, setCalendarsLoading] = useState(true);
   const [showCompleted, setShowCompleted] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [draggedId, setDraggedId] = useState<string | null>(null);
 
   const today = formatLocalDate(new Date());
 
@@ -219,6 +220,54 @@ export default function HabitsPage() {
     return todos.filter(t => t.executions?.some(e => e.completed));
   }, [todos]);
 
+  // Drag and drop handlers
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    setDraggedId(id);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetId: string, list: (Event & { streak?: number })[]) => {
+    e.preventDefault();
+    if (!draggedId || draggedId === targetId) {
+      setDraggedId(null);
+      return;
+    }
+
+    const draggedIndex = list.findIndex(item => (item.originalEventId || item.id) === draggedId);
+    const targetIndex = list.findIndex(item => (item.originalEventId || item.id) === targetId);
+
+    if (draggedIndex === -1 || targetIndex === -1) {
+      setDraggedId(null);
+      return;
+    }
+
+    // Reorder the list
+    const newList = [...list];
+    const [draggedItem] = newList.splice(draggedIndex, 1);
+    newList.splice(targetIndex, 0, draggedItem);
+
+    // Get the master IDs in the new order
+    const orderedIds = newList.map(item => item.originalEventId || item.id);
+
+    try {
+      await api.events.reorder(orderedIds);
+      await fetchData();
+    } catch (error) {
+      console.error('Error reordering:', error);
+    }
+
+    setDraggedId(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedId(null);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#350545] via-[#4a0860] to-[#792990] p-6">
       <div className="max-w-4xl mx-auto">
@@ -311,15 +360,24 @@ export default function HabitsPage() {
                         const isCompleted = habit.executions?.some(
                           e => e.executionDate.split('T')[0] === today && e.completed
                         );
+                        const habitId = habit.originalEventId || habit.id;
 
                         return (
                           <div
                             key={habit.id}
-                            className={`flex items-center justify-between p-4 rounded-xl transition-colors ${
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, habitId)}
+                            onDragOver={handleDragOver}
+                            onDrop={(e) => handleDrop(e, habitId, todayHabits)}
+                            onDragEnd={handleDragEnd}
+                            className={`flex items-center justify-between p-4 rounded-xl transition-colors cursor-grab active:cursor-grabbing ${
                               isCompleted ? 'bg-emerald-500/20 border border-emerald-400/30' : 'bg-white/5 hover:bg-white/10'
-                            }`}
+                            } ${draggedId === habitId ? 'opacity-50' : ''}`}
                           >
                             <div className="flex items-center gap-3">
+                              <svg className="w-4 h-4 text-white/30 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                              </svg>
                               <button
                                 onClick={() => toggleHabitCompletion(habit)}
                                 className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
@@ -366,33 +424,46 @@ export default function HabitsPage() {
                     <p className="text-white/60 text-center py-4">Nenhum habito cadastrado</p>
                   ) : (
                     <div className="space-y-3">
-                      {uniqueHabits.map(habit => (
-                        <div
-                          key={habit.id}
-                          className="flex items-center justify-between p-4 bg-white/5 rounded-xl hover:bg-white/10 transition-colors"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div>
-                              <p className="font-medium text-white">{habit.title}</p>
-                              <p className="text-sm text-white/50">
-                                {habit.recurrenceFrequency === 'daily' && 'Diario'}
-                                {habit.recurrenceFrequency === 'weekly' && 'Semanal'}
-                                {habit.recurrenceFrequency === 'monthly' && 'Mensal'}
-                                {habit.startTime && ` • ${habit.startTime}`}
-                                {selectedCalendarId === null && habit.calendarId && ` • ${getCalendarName(habit.calendarId)}`}
-                              </p>
+                      {uniqueHabits.map(habit => {
+                        const habitId = habit.originalEventId || habit.id;
+                        return (
+                          <div
+                            key={habit.id}
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, habitId)}
+                            onDragOver={handleDragOver}
+                            onDrop={(e) => handleDrop(e, habitId, uniqueHabits)}
+                            onDragEnd={handleDragEnd}
+                            className={`flex items-center justify-between p-4 bg-white/5 rounded-xl hover:bg-white/10 transition-colors cursor-grab active:cursor-grabbing ${
+                              draggedId === habitId ? 'opacity-50' : ''
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <svg className="w-4 h-4 text-white/30 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                              </svg>
+                              <div>
+                                <p className="font-medium text-white">{habit.title}</p>
+                                <p className="text-sm text-white/50">
+                                  {habit.recurrenceFrequency === 'daily' && 'Diario'}
+                                  {habit.recurrenceFrequency === 'weekly' && 'Semanal'}
+                                  {habit.recurrenceFrequency === 'monthly' && 'Mensal'}
+                                  {habit.startTime && ` • ${habit.startTime}`}
+                                  {selectedCalendarId === null && habit.calendarId && ` • ${getCalendarName(habit.calendarId)}`}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              {habit.streak > 0 && (
+                                <span className="flex items-center gap-1 px-2 py-1 bg-orange-500/20 text-orange-400 rounded-lg text-sm">
+                                  <span>🔥</span>
+                                  <span>{habit.streak}</span>
+                                </span>
+                              )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-3">
-                            {habit.streak > 0 && (
-                              <span className="flex items-center gap-1 px-2 py-1 bg-orange-500/20 text-orange-400 rounded-lg text-sm">
-                                <span>🔥</span>
-                                <span>{habit.streak}</span>
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
