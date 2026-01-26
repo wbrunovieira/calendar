@@ -293,6 +293,21 @@ func RunMigrations(db *sql.DB) error {
 		// Index for investment accounts
 		`CREATE INDEX IF NOT EXISTS idx_bank_accounts_investment_type ON finance.bank_accounts(investment_type) WHERE type = 'INVESTMENT'`,
 
+		// Migration: Add review_on to recurring_transactions for pause review reminders
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'finance'
+				AND table_name = 'recurring_transactions'
+				AND column_name = 'review_on'
+			) THEN
+				ALTER TABLE finance.recurring_transactions
+				ADD COLUMN review_on DATE;
+			END IF;
+		END $$`,
+		`CREATE INDEX IF NOT EXISTS idx_recurring_transactions_review ON finance.recurring_transactions(review_on) WHERE review_on IS NOT NULL`,
+
 		// Migration: Add FII to investment_type constraint and add quota columns
 		`DO $$
 		BEGIN

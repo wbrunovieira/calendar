@@ -33,6 +33,7 @@ type RecurringTransaction struct {
 	EndOn          *time.Time
 	NextOccurrence time.Time
 	Status         Status
+	ReviewOn       *time.Time // Date to review paused transactions
 	Notes          *string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
@@ -52,6 +53,7 @@ type CreateParams struct {
 	EndOn          *time.Time
 	NextOccurrence time.Time
 	Status         Status
+	ReviewOn       *time.Time
 	Notes          *string
 }
 
@@ -103,6 +105,7 @@ func New(params CreateParams) (*RecurringTransaction, error) {
 		EndOn:          normalizeTime(params.EndOn),
 		NextOccurrence: params.NextOccurrence,
 		Status:         params.Status,
+		ReviewOn:       normalizeTime(params.ReviewOn),
 		Notes:          normalizeString(params.Notes),
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -136,6 +139,12 @@ func (r *RecurringTransaction) SetStatus(status Status) error {
 	r.Status = status
 	r.UpdatedAt = time.Now()
 	return nil
+}
+
+// SetReviewOn sets the review date for paused transactions.
+func (r *RecurringTransaction) SetReviewOn(reviewOn *time.Time) {
+	r.ReviewOn = normalizeTime(reviewOn)
+	r.UpdatedAt = time.Now()
 }
 
 func validateStatus(status Status) error {

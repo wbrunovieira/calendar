@@ -20,6 +20,7 @@ type CreateRecurringTransactionInput struct {
 	EndOn          *string `json:"endOn,omitempty"`
 	NextOccurrence string  `json:"nextOccurrence"`
 	Status         string  `json:"status"`
+	ReviewOn       *string `json:"reviewOn,omitempty"`
 	Notes          *string `json:"notes,omitempty"`
 }
 
@@ -37,6 +38,7 @@ type RecurringTransactionPresenter struct {
 	EndOn          *time.Time `json:"endOn,omitempty"`
 	NextOccurrence time.Time  `json:"nextOccurrence"`
 	Status         string     `json:"status"`
+	ReviewOn       *time.Time `json:"reviewOn,omitempty"`
 	Notes          *string    `json:"notes,omitempty"`
 	CreatedAt      time.Time  `json:"createdAt"`
 	UpdatedAt      time.Time  `json:"updatedAt"`
@@ -150,6 +152,15 @@ func (s *RecurringTransactionsService) parseParams(input CreateRecurringTransact
 		endOn = &parsed
 	}
 
+	var reviewOn *time.Time
+	if input.ReviewOn != nil && strings.TrimSpace(*input.ReviewOn) != "" {
+		parsed, err := time.Parse(time.DateOnly, strings.TrimSpace(*input.ReviewOn))
+		if err != nil {
+			return recurringtransaction.CreateParams{}, ErrInvalidInput
+		}
+		reviewOn = &parsed
+	}
+
 	status := recurringtransaction.Status(strings.ToUpper(strings.TrimSpace(input.Status)))
 	if status == "" {
 		status = recurringtransaction.StatusActive
@@ -168,6 +179,7 @@ func (s *RecurringTransactionsService) parseParams(input CreateRecurringTransact
 		EndOn:          endOn,
 		NextOccurrence: nextOccurrence,
 		Status:         status,
+		ReviewOn:       reviewOn,
 		Notes:          normalizePtr(input.Notes),
 	}, nil
 }
@@ -187,6 +199,7 @@ func presentRecurring(entity *recurringtransaction.RecurringTransaction) *Recurr
 		EndOn:          entity.EndOn,
 		NextOccurrence: entity.NextOccurrence,
 		Status:         string(entity.Status),
+		ReviewOn:       entity.ReviewOn,
 		Notes:          entity.Notes,
 		CreatedAt:      entity.CreatedAt,
 		UpdatedAt:      entity.UpdatedAt,

@@ -21,10 +21,10 @@ func (r *RecurringTransactionRepository) Create(entity *recurringtransaction.Rec
 	query := `
 		INSERT INTO finance.recurring_transactions (
 			id, profile_id, bank_account_id, category_id, type, amount, currency, description,
-			recurrence_rule, start_on, end_on, next_occurrence, status, notes, created_at, updated_at
+			recurrence_rule, start_on, end_on, next_occurrence, status, review_on, notes, created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8,
-			$9, $10, $11, $12, $13, $14, $15, $16
+			$9, $10, $11, $12, $13, $14, $15, $16, $17
 		)
 	`
 
@@ -42,6 +42,7 @@ func (r *RecurringTransactionRepository) Create(entity *recurringtransaction.Rec
 		nullableTimePtr(entity.EndOn),
 		entity.NextOccurrence,
 		entity.Status,
+		nullableTimePtr(entity.ReviewOn),
 		nullableString(entity.Notes),
 		entity.CreatedAt,
 		entity.UpdatedAt,
@@ -63,8 +64,9 @@ func (r *RecurringTransactionRepository) Update(entity *recurringtransaction.Rec
 			end_on = $10,
 			next_occurrence = $11,
 			status = $12,
-			notes = $13,
-			updated_at = $14
+			review_on = $13,
+			notes = $14,
+			updated_at = $15
 		WHERE id = $1
 	`
 
@@ -81,6 +83,7 @@ func (r *RecurringTransactionRepository) Update(entity *recurringtransaction.Rec
 		nullableTimePtr(entity.EndOn),
 		entity.NextOccurrence,
 		entity.Status,
+		nullableTimePtr(entity.ReviewOn),
 		nullableString(entity.Notes),
 		entity.UpdatedAt,
 	)
@@ -101,7 +104,7 @@ func (r *RecurringTransactionRepository) Update(entity *recurringtransaction.Rec
 func (r *RecurringTransactionRepository) FindByID(id string) (*recurringtransaction.RecurringTransaction, error) {
 	query := `
 		SELECT id, profile_id, bank_account_id, category_id, type, amount, currency, description,
-			recurrence_rule, start_on, end_on, next_occurrence, status, notes, created_at, updated_at
+			recurrence_rule, start_on, end_on, next_occurrence, status, review_on, notes, created_at, updated_at
 		FROM finance.recurring_transactions
 		WHERE id = $1
 	`
@@ -113,7 +116,7 @@ func (r *RecurringTransactionRepository) FindByID(id string) (*recurringtransact
 func (r *RecurringTransactionRepository) ListByProfile(profileID string) ([]*recurringtransaction.RecurringTransaction, error) {
 	query := `
 		SELECT id, profile_id, bank_account_id, category_id, type, amount, currency, description,
-			recurrence_rule, start_on, end_on, next_occurrence, status, notes, created_at, updated_at
+			recurrence_rule, start_on, end_on, next_occurrence, status, review_on, notes, created_at, updated_at
 		FROM finance.recurring_transactions
 		WHERE profile_id = $1
 		ORDER BY next_occurrence ASC
@@ -164,6 +167,7 @@ func scanRecurring(scanner recurringScanner) (*recurringtransaction.RecurringTra
 		category    sql.NullString
 		description sql.NullString
 		endOn       sql.NullTime
+		reviewOn    sql.NullTime
 		notes       sql.NullString
 	)
 
@@ -181,6 +185,7 @@ func scanRecurring(scanner recurringScanner) (*recurringtransaction.RecurringTra
 		&endOn,
 		&entity.NextOccurrence,
 		&entity.Status,
+		&reviewOn,
 		&notes,
 		&entity.CreatedAt,
 		&entity.UpdatedAt,
@@ -206,6 +211,10 @@ func scanRecurring(scanner recurringScanner) (*recurringtransaction.RecurringTra
 	if endOn.Valid {
 		value := endOn.Time
 		entity.EndOn = &value
+	}
+	if reviewOn.Valid {
+		value := reviewOn.Time
+		entity.ReviewOn = &value
 	}
 	if notes.Valid {
 		value := notes.String
