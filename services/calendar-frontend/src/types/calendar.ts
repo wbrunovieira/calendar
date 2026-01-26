@@ -40,6 +40,8 @@ export interface EventExecution {
   notes?: string;
 }
 
+export type EventType = 'EVENT' | 'HABIT' | 'TODO';
+
 export interface Event {
   id: string;
   calendarId: string;
@@ -63,4 +65,18 @@ export interface Event {
   // For recurring event occurrences (expanded by backend)
   originalEventId?: string; // The ID of the original recurring event
   occurrenceDate?: string;  // The specific date (YYYY-MM-DD) this occurrence represents
+  // Habit/Todo fields
+  eventType?: EventType;
+  priority?: number; // 1=high, 2=medium, 3=low
+  dueDate?: string;
+}
+
+export interface HabitStats {
+  habitId: string;
+  habitTitle: string;
+  currentStreak: number;
+  longestStreak: number;
+  weeklyCompletions: { date: string; completed: boolean }[];
+  monthlyCompletionRate: number;
+  totalCompletions: number;
 }

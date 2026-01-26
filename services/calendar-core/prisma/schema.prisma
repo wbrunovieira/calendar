@@ -131,6 +131,15 @@ model Event {
   // Status do evento
   status                String    @default("CONFIRMED") // CONFIRMED, CANCELLED, TENTATIVE
 
+  // Tipo de evento: EVENT (compromisso), HABIT (habito), TODO (tarefa)
+  eventType             String    @default("EVENT") @map("event_type")
+
+  // Para TODOs: prioridade (1=alta, 2=media, 3=baixa)
+  priority              Int?
+
+  // Para TODOs: data de vencimento
+  dueDate               DateTime? @map("due_date") @db.Date
+
   // Google Calendar
   googleEventId         String?   @map("google_event_id")
   isActive              Boolean   @default(true) @map("is_active")
@@ -158,6 +167,7 @@ model Event {
   @@index([recurrenceMasterId])
   @@index([googleEventId])
   @@index([status])
+  @@index([eventType])
   @@map("events")
 }
 

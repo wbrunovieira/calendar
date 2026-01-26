@@ -145,6 +145,42 @@ export default function Sidebar({ className = '', onToggle }: SidebarProps) {
             </Link>
           </li>
 
+          {/* Habits Button */}
+          <li>
+            <Link
+              href="/habits"
+              className={`flex items-center gap-3 px-3 py-3 rounded-lg text-white hover:bg-white/30 transition-all duration-300 shadow-md hover:shadow-lg border group relative ${
+                pathname === '/habits'
+                  ? 'bg-white/30 border-white/30 shadow-lg'
+                  : 'bg-white/10 border-white/10'
+              }`}
+            >
+              {pathname === '/habits' && (
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-white rounded-r-full"></div>
+              )}
+              <div className="w-6 h-6 flex items-center justify-center flex-shrink-0">
+                <svg
+                  className="w-6 h-6 transition-transform duration-300 group-hover:scale-110"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+              </div>
+              {!isCollapsed && (
+                <span className="font-semibold text-sm whitespace-nowrap overflow-hidden">
+                  Habitos
+                </span>
+              )}
+            </Link>
+          </li>
+
           {/* Finances Button - External App */}
           <li>
             <a

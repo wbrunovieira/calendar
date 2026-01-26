@@ -19,6 +19,15 @@ export class Event {
   // Status
   status: string; // CONFIRMED, CANCELLED, TENTATIVE
 
+  // Tipo de evento: EVENT (compromisso), HABIT (habito), TODO (tarefa)
+  eventType: string;
+
+  // Para TODOs: prioridade (1=alta, 2=media, 3=baixa)
+  priority?: number | null;
+
+  // Para TODOs: data de vencimento
+  dueDate?: Date | null;
+
   // Google Calendar
   googleEventId?: string | null;
   isActive: boolean;
@@ -42,6 +51,9 @@ export class Event {
     recurrenceRule?: string | null;
     recurrenceMasterId?: string | null;
     status?: string;
+    eventType?: string;
+    priority?: number | null;
+    dueDate?: Date | null;
   }): Event {
     const event = new Event({
       id: '',
@@ -57,6 +69,9 @@ export class Event {
       recurrenceRule: data.recurrenceRule || null,
       recurrenceMasterId: data.recurrenceMasterId || null,
       status: data.status || 'CONFIRMED',
+      eventType: data.eventType || 'EVENT',
+      priority: data.priority || null,
+      dueDate: data.dueDate || null,
       googleEventId: null,
       isActive: true,
       createdAt: new Date(),

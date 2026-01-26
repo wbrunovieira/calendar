@@ -1,4 +1,13 @@
-import { IsOptional, IsString, IsBoolean, IsNumber, IsArray } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsBoolean,
+  IsNumber,
+  IsArray,
+  IsIn,
+  Min,
+  Max,
+} from 'class-validator';
 
 export class UpdateEventDto {
   @IsOptional()
@@ -68,4 +77,22 @@ export class UpdateEventDto {
   @IsOptional()
   @IsString()
   occurrenceDate?: string; // The specific date of the occurrence being edited
+
+  // Tipo de evento: EVENT (compromisso), HABIT (habito), TODO (tarefa)
+  @IsOptional()
+  @IsString()
+  @IsIn(['EVENT', 'HABIT', 'TODO'])
+  eventType?: string;
+
+  // Para TODOs: prioridade (1=alta, 2=media, 3=baixa)
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(3)
+  priority?: number;
+
+  // Para TODOs: data de vencimento
+  @IsOptional()
+  @IsString()
+  dueDate?: string;
 }

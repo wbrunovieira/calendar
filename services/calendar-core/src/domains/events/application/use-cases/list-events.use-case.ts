@@ -8,7 +8,8 @@ export interface ListEventsFilters {
   categoryId?: string;
   search?: string;
   startDate?: string; // Date range start (YYYY-MM-DD)
-  endDate?: string;   // Date range end (YYYY-MM-DD)
+  endDate?: string; // Date range end (YYYY-MM-DD)
+  eventType?: string; // 'EVENT' | 'HABIT' | 'TODO'
 }
 
 @Injectable()
@@ -20,7 +21,7 @@ export class ListEventsUseCase {
 
     // Se não tem date range, retorna eventos como estão (backward compatibility)
     if (!filters?.startDate || !filters?.endDate) {
-      return events.map(event => ({
+      return events.map((event) => ({
         ...event,
         executions: event.executions || [],
       }));
@@ -28,8 +29,18 @@ export class ListEventsUseCase {
 
     // Garantir que datas sejam interpretadas no timezone local, não UTC
     // Parse date string as local date components
-    const [startYear, startMonth, startDay] = filters.startDate.split('-').map(Number);
-    const rangeStart = new Date(startYear, startMonth - 1, startDay, 0, 0, 0, 0);
+    const [startYear, startMonth, startDay] = filters.startDate
+      .split('-')
+      .map(Number);
+    const rangeStart = new Date(
+      startYear,
+      startMonth - 1,
+      startDay,
+      0,
+      0,
+      0,
+      0,
+    );
 
     const [endYear, endMonth, endDay] = filters.endDate.split('-').map(Number);
     const rangeEnd = new Date(endYear, endMonth - 1, endDay, 23, 59, 59, 999);
@@ -135,56 +146,72 @@ export class ListEventsUseCase {
         startDate: dateStr, // Retornar como string YYYY-MM-DD, não Date object
         endDate: event.endDate,
         ...legacy, // Campos do formato legado (isRecurring, recurrenceFrequency, etc.)
+        eventType: event.eventType || 'EVENT',
+        priority: event.priority,
+        dueDate: event.dueDate,
         googleEventId: event.googleEventId,
         isActive: event.isActive,
         createdAt: event.createdAt,
         updatedAt: event.updatedAt,
         originalEventId: event.id, // Referência ao evento master
-        occurrenceDate: dateStr,   // Data específica desta ocorrência
+        occurrenceDate: dateStr, // Data específica desta ocorrência
         executions: (() => {
           // Debug ANTES do filtro para Rezar ao Acordar
           if (event.title === 'Rezar ao Acordar') {
-            console.log(`[list-events] 🔍 ANTES DO FILTRO - Rezar ao Acordar (ocorrência: ${dateStr}):`, {
-              dateStr,
-              completionsTotal: event.completions?.length || 0,
-              allCompletions: event.completions?.map(c => ({
-                occurrenceDate: c.occurrenceDate,
-                completed: c.completed,
-              })),
-            });
+            console.log(
+              `[list-events] 🔍 ANTES DO FILTRO - Rezar ao Acordar (ocorrência: ${dateStr}):`,
+              {
+                dateStr,
+                completionsTotal: event.completions?.length || 0,
+                allCompletions: event.completions?.map((c) => ({
+                  occurrenceDate: c.occurrenceDate,
+                  completed: c.completed,
+                })),
+              },
+            );
           }
 
-          return event.completions?.filter(c => {
-            const compDate = new Date(c.occurrenceDate);
-            const compDateStr = compDate.toISOString().split('T')[0];
-            const matches = compDateStr === dateStr;
+          return (
+            event.completions
+              ?.filter((c) => {
+                const compDate = new Date(c.occurrenceDate);
+                const compDateStr = compDate.toISOString().split('T')[0];
+                const matches = compDateStr === dateStr;
 
-            // Debug específico para Rezar ao Acordar
-            if (event.title === 'Rezar ao Acordar' && dateStr === '2025-10-15') {
-              console.log(`[list-events] 🔍 Rezar ao Acordar (${dateStr}):`, {
-                completionsTotal: event.completions?.length || 0,
-                currentCompletion: {
-                  occurrenceDate: c.occurrenceDate,
-                  parsed: compDateStr,
-                  completed: c.completed,
-                },
-                dateStr,
-                matches,
-              });
-            }
+                // Debug específico para Rezar ao Acordar
+                if (
+                  event.title === 'Rezar ao Acordar' &&
+                  dateStr === '2025-10-15'
+                ) {
+                  console.log(
+                    `[list-events] 🔍 Rezar ao Acordar (${dateStr}):`,
+                    {
+                      completionsTotal: event.completions?.length || 0,
+                      currentCompletion: {
+                        occurrenceDate: c.occurrenceDate,
+                        parsed: compDateStr,
+                        completed: c.completed,
+                      },
+                      dateStr,
+                      matches,
+                    },
+                  );
+                }
 
-            return matches;
-          }).map(c => ({
-          id: c.id,
-          eventId: c.eventId,
-          executionDate: c.occurrenceDate,
-          completed: c.completed,
-          completedAt: c.completedAt,
-          notes: c.notes,
-          createdAt: c.createdAt,
-          updatedAt: c.updatedAt,
-        })) || [];
-        })()
+                return matches;
+              })
+              .map((c) => ({
+                id: c.id,
+                eventId: c.eventId,
+                executionDate: c.occurrenceDate,
+                completed: c.completed,
+                completedAt: c.completedAt,
+                notes: c.notes,
+                createdAt: c.createdAt,
+                updatedAt: c.updatedAt,
+              })) || []
+          );
+        })(),
       });
     }
 

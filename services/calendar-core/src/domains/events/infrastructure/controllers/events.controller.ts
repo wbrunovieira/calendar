@@ -1,4 +1,15 @@
-import { Controller, Post, Get, Delete, Put, Body, Param, Query, HttpCode, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Delete,
+  Put,
+  Body,
+  Param,
+  Query,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
 import { CreateEventUseCase } from '../../application/use-cases/create-event.use-case';
 import { DeleteEventUseCase } from '../../application/use-cases/delete-event.use-case';
 import { ListEventsUseCase } from '../../application/use-cases/list-events.use-case';
@@ -69,6 +80,7 @@ export class EventsController {
     @Query('search') search?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Query('eventType') eventType?: string,
   ) {
     const events = await this.listEventsUseCase.execute({
       calendarId,
@@ -76,6 +88,7 @@ export class EventsController {
       search,
       startDate,
       endDate,
+      eventType,
     });
 
     // Eventos já vêm expandidos e convertidos do ListEventsUseCase
@@ -101,6 +114,9 @@ export class EventsController {
       startDate: event.startDate,
       endDate: event.endDate,
       ...legacy,
+      eventType: event.eventType,
+      priority: event.priority,
+      dueDate: event.dueDate,
       googleEventId: event.googleEventId,
       isActive: event.isActive,
       createdAt: event.createdAt,
@@ -110,7 +126,10 @@ export class EventsController {
 
   @Put(':id')
   @HttpCode(HttpStatus.OK)
-  async update(@Param('id') id: string, @Body() updateEventDto: UpdateEventDto) {
+  async update(
+    @Param('id') id: string,
+    @Body() updateEventDto: UpdateEventDto,
+  ) {
     const event = await this.updateEventUseCase.execute(id, updateEventDto);
     const legacy = this.convertRRuleToLegacy(event.recurrenceRule ?? null);
 
@@ -126,6 +145,9 @@ export class EventsController {
       startDate: event.startDate,
       endDate: event.endDate,
       ...legacy,
+      eventType: event.eventType,
+      priority: event.priority,
+      dueDate: event.dueDate,
       googleEventId: event.googleEventId,
       isActive: event.isActive,
       createdAt: event.createdAt,
@@ -179,7 +201,8 @@ export class EventsController {
     @Query('calendarId') calendarId?: string,
     @Query('categoryId') categoryId?: string,
     @Query('categoryTypeId') categoryTypeId?: string,
-    @Query('groupBy') groupBy?: 'day' | 'week' | 'month' | 'category' | 'categoryType' | 'total',
+    @Query('groupBy')
+    groupBy?: 'day' | 'week' | 'month' | 'category' | 'categoryType' | 'total',
     @Query('includeBreakdown') includeBreakdown?: string,
   ) {
     return await this.getEventsStatsUseCase.execute({

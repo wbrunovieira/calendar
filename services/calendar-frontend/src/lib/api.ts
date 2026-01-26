@@ -44,6 +44,7 @@ interface ListEventsParams {
   search?: string;
   startDate?: string; // YYYY-MM-DD
   endDate?: string;   // YYYY-MM-DD
+  eventType?: 'EVENT' | 'HABIT' | 'TODO';
 }
 
 export interface EventExecution {
@@ -95,9 +96,16 @@ export const api = {
       if (params?.search) queryParams.append('search', params.search);
       if (params?.startDate) queryParams.append('startDate', params.startDate);
       if (params?.endDate) queryParams.append('endDate', params.endDate);
+      if (params?.eventType) queryParams.append('eventType', params.eventType);
 
       const query = queryParams.toString();
       return fetchAPI<Event[]>(`/events${query ? `?${query}` : ''}`);
+    },
+    listHabits: (params?: Omit<ListEventsParams, 'eventType'>) => {
+      return api.events.list({ ...params, eventType: 'HABIT' });
+    },
+    listTodos: (params?: Omit<ListEventsParams, 'eventType'>) => {
+      return api.events.list({ ...params, eventType: 'TODO' });
     },
     create: (data: Record<string, unknown>) =>
       fetchAPI<Event>('/events', {

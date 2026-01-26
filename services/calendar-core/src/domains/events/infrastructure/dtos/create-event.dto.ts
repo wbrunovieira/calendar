@@ -1,4 +1,15 @@
-import { IsString, IsOptional, IsBoolean, IsArray, IsNumber, IsDateString, Matches } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  IsArray,
+  IsNumber,
+  IsDateString,
+  Matches,
+  IsIn,
+  Min,
+  Max,
+} from 'class-validator';
 
 export class CreateEventDto {
   @IsString()
@@ -68,4 +79,22 @@ export class CreateEventDto {
   @IsOptional()
   @IsDateString()
   recurrenceEndDate?: string;
+
+  // Tipo de evento: EVENT (compromisso), HABIT (habito), TODO (tarefa)
+  @IsOptional()
+  @IsString()
+  @IsIn(['EVENT', 'HABIT', 'TODO'])
+  eventType?: string;
+
+  // Para TODOs: prioridade (1=alta, 2=media, 3=baixa)
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(3)
+  priority?: number;
+
+  // Para TODOs: data de vencimento
+  @IsOptional()
+  @IsDateString()
+  dueDate?: string;
 }

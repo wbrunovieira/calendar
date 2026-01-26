@@ -6,6 +6,7 @@ export interface FindAllFilters {
   calendarId?: string;
   categoryId?: string;
   search?: string;
+  eventType?: string; // 'EVENT' | 'HABIT' | 'TODO'
 }
 
 @Injectable()
@@ -31,6 +32,9 @@ export class EventRepository {
         recurrenceRule: event.recurrenceRule,
         recurrenceMasterId: event.recurrenceMasterId,
         status: event.status,
+        eventType: event.eventType || 'EVENT',
+        priority: event.priority,
+        dueDate: event.dueDate,
         isActive: event.isActive,
       },
     });
@@ -62,6 +66,10 @@ export class EventRepository {
         { title: { contains: filters.search, mode: 'insensitive' } },
         { description: { contains: filters.search, mode: 'insensitive' } },
       ];
+    }
+
+    if (filters?.eventType) {
+      where.eventType = filters.eventType;
     }
 
     const events = await this.prisma.event.findMany({
@@ -119,6 +127,9 @@ export class EventRepository {
         categoryTypeId: event.categoryTypeId,
         recurrenceRule: event.recurrenceRule,
         status: event.status,
+        eventType: event.eventType,
+        priority: event.priority,
+        dueDate: event.dueDate,
         isActive: event.isActive,
         updatedAt: new Date(),
       },

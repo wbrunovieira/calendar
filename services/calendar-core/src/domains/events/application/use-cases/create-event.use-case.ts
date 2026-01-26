@@ -12,7 +12,11 @@ export class CreateEventUseCase {
     // Converter formato antigo para RRULE se for recorrente
     let recurrenceRule: string | null = null;
     if (dto.isRecurring && dto.recurrenceFrequency) {
-      const freq = dto.recurrenceFrequency.toUpperCase() as 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+      const freq = dto.recurrenceFrequency.toUpperCase() as
+        | 'DAILY'
+        | 'WEEKLY'
+        | 'MONTHLY'
+        | 'YEARLY';
 
       // Parse recurrence end date as local date
       let untilDate: Date | undefined;
@@ -48,6 +52,13 @@ export class CreateEventUseCase {
       endDate = new Date(y, m - 1, d);
     }
 
+    // Parse dueDate for TODOs
+    let dueDate: Date | null = null;
+    if (dto.dueDate) {
+      const [y, m, d] = dto.dueDate.split('-').map(Number);
+      dueDate = new Date(y, m - 1, d);
+    }
+
     const event = Event.create({
       calendarId: dto.calendarId,
       categoryId: dto.categoryId,
@@ -61,6 +72,9 @@ export class CreateEventUseCase {
       recurrenceRule,
       recurrenceMasterId: null,
       status: 'CONFIRMED',
+      eventType: dto.eventType || 'EVENT',
+      priority: dto.priority || null,
+      dueDate,
     });
 
     return await this.eventRepository.create(event);

@@ -29,7 +29,8 @@ export class UpdateEventUseCase {
 
     if (dto.calendarId !== undefined) updateData.calendarId = dto.calendarId;
     if (dto.categoryId !== undefined) updateData.categoryId = dto.categoryId;
-    if (dto.categoryTypeId !== undefined) updateData.categoryTypeId = dto.categoryTypeId;
+    if (dto.categoryTypeId !== undefined)
+      updateData.categoryTypeId = dto.categoryTypeId;
     if (dto.title !== undefined) updateData.title = dto.title;
     if (dto.description !== undefined) updateData.description = dto.description;
     if (dto.startTime !== undefined) updateData.startTime = dto.startTime;
@@ -50,13 +51,19 @@ export class UpdateEventUseCase {
 
     // Atualizar RRULE se necessário
     if (dto.isRecurring && dto.recurrenceFrequency) {
-      const freq = dto.recurrenceFrequency.toUpperCase() as 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+      const freq = dto.recurrenceFrequency.toUpperCase() as
+        | 'DAILY'
+        | 'WEEKLY'
+        | 'MONTHLY'
+        | 'YEARLY';
       updateData.recurrenceRule = RRuleHelper.toString({
         freq,
         interval: dto.recurrenceInterval || 1,
         byweekday: dto.recurrenceDaysOfWeek,
         bymonthday: dto.recurrenceDayOfMonth,
-        until: dto.recurrenceEndDate ? new Date(dto.recurrenceEndDate) : undefined,
+        until: dto.recurrenceEndDate
+          ? new Date(dto.recurrenceEndDate)
+          : undefined,
       });
     }
 
@@ -64,7 +71,11 @@ export class UpdateEventUseCase {
     return updatedEvent;
   }
 
-  private async handleRecurringEventEdit(id: string, existingEvent: any, dto: UpdateEventDto) {
+  private async handleRecurringEventEdit(
+    id: string,
+    existingEvent: any,
+    dto: UpdateEventDto,
+  ) {
     const scope = dto.recurringEditScope;
 
     console.log('[UpdateEventUseCase] handleRecurringEventEdit called', {
@@ -191,7 +202,7 @@ export class UpdateEventUseCase {
       newStartDate.setHours(0, 0, 0, 0);
 
       // Ajustar dia da semana se for semanal e a data mudou
-      let newRule = { ...currentRule };
+      const newRule = { ...currentRule };
       if (currentRule.freq === 'WEEKLY' && dto.startDate) {
         const newDayOfWeek = newStartDate.getDay();
         const originalDayOfWeek = originalOccurrenceDate.getDay();
@@ -199,7 +210,7 @@ export class UpdateEventUseCase {
         if (newDayOfWeek !== originalDayOfWeek && currentRule.byweekday) {
           // Substituir dia antigo pelo novo
           newRule.byweekday = currentRule.byweekday
-            .filter(day => day !== originalDayOfWeek)
+            .filter((day) => day !== originalDayOfWeek)
             .concat([newDayOfWeek])
             .sort();
 
@@ -245,9 +256,11 @@ export class UpdateEventUseCase {
 
       if (dto.calendarId !== undefined) updateData.calendarId = dto.calendarId;
       if (dto.categoryId !== undefined) updateData.categoryId = dto.categoryId;
-      if (dto.categoryTypeId !== undefined) updateData.categoryTypeId = dto.categoryTypeId;
+      if (dto.categoryTypeId !== undefined)
+        updateData.categoryTypeId = dto.categoryTypeId;
       if (dto.title !== undefined) updateData.title = dto.title;
-      if (dto.description !== undefined) updateData.description = dto.description;
+      if (dto.description !== undefined)
+        updateData.description = dto.description;
       if (dto.startTime !== undefined) updateData.startTime = dto.startTime;
       if (dto.endTime !== undefined) updateData.endTime = dto.endTime;
 
@@ -296,9 +309,12 @@ export class UpdateEventUseCase {
         if (currentRule) {
           if (currentRule.freq === 'DAILY') {
             // Para eventos DAILY, atualizar o startDate (isso move toda a série)
-            console.log('[UpdateEventUseCase] DAILY event detected - updating startDate', {
-              newStartDate,
-            });
+            console.log(
+              '[UpdateEventUseCase] DAILY event detected - updating startDate',
+              {
+                newStartDate,
+              },
+            );
             updateData.startDate = newStartDate;
           } else if (currentRule.freq === 'WEEKLY') {
             // Para eventos WEEKLY, atualizar o startDate E o dia da semana no RRULE se necessário
@@ -320,7 +336,9 @@ export class UpdateEventUseCase {
               const newRule = {
                 ...currentRule,
                 byweekday: currentRule.byweekday
-                  .map(day => day === originalDayOfWeek ? newDayOfWeek : day)
+                  .map((day) =>
+                    day === originalDayOfWeek ? newDayOfWeek : day,
+                  )
                   .filter((day, index, arr) => arr.indexOf(day) === index) // Remove duplicatas
                   .sort(),
               };
@@ -350,20 +368,29 @@ export class UpdateEventUseCase {
 
       // Atualizar RRULE se passou novos parâmetros
       if (dto.recurrenceFrequency !== undefined) {
-        const freq = dto.recurrenceFrequency.toUpperCase() as 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+        const freq = dto.recurrenceFrequency.toUpperCase() as
+          | 'DAILY'
+          | 'WEEKLY'
+          | 'MONTHLY'
+          | 'YEARLY';
         updateData.recurrenceRule = RRuleHelper.toString({
           freq,
           interval: dto.recurrenceInterval || 1,
           byweekday: dto.recurrenceDaysOfWeek,
           bymonthday: dto.recurrenceDayOfMonth,
-          until: dto.recurrenceEndDate ? new Date(dto.recurrenceEndDate) : undefined,
+          until: dto.recurrenceEndDate
+            ? new Date(dto.recurrenceEndDate)
+            : undefined,
         });
       }
 
-      console.log('[UpdateEventUseCase] Final updateData before repository.update', {
-        updateData,
-        eventId: id,
-      });
+      console.log(
+        '[UpdateEventUseCase] Final updateData before repository.update',
+        {
+          updateData,
+          eventId: id,
+        },
+      );
 
       const updatedEvent = await this.eventRepository.update(id, updateData);
 
