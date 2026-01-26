@@ -9,7 +9,7 @@ type CalendarViewMode = ViewMode | 'month' | 'week' | '3days' | 'day';
 
 export function useCalendarNavigation() {
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [viewMode, setViewMode] = useState<CalendarViewMode>('month');
+  const [viewMode, setViewMode] = useState<CalendarViewMode>('day');
 
   const previousPeriod = () => {
     if (viewMode === 'month') {
