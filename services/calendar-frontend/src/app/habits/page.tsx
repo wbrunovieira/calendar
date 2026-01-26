@@ -8,6 +8,7 @@ import ProfileSelector from '@/components/habits/ProfileSelector';
 import CategoryBadge from '@/components/habits/CategoryBadge';
 import LabelBadge from '@/components/labels/LabelBadge';
 import CreateHabitTodoModal from '@/components/habits/CreateHabitTodoModal';
+import EditTodoModal from '@/components/habits/EditTodoModal';
 
 type TabType = 'habits' | 'todos';
 
@@ -100,6 +101,7 @@ export default function HabitsPage() {
   const [calendarsLoading, setCalendarsLoading] = useState(true);
   const [showCompleted, setShowCompleted] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingTodo, setEditingTodo] = useState<Event | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
 
   const today = formatLocalDate(new Date());
@@ -539,6 +541,15 @@ export default function HabitsPage() {
                                     {dueStatus.label}
                                   </span>
                                 )}
+                                <button
+                                  onClick={() => setEditingTodo(todo)}
+                                  className="p-1.5 text-white/40 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                                  title="Editar tarefa"
+                                >
+                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                  </svg>
+                                </button>
                               </div>
                             </div>
                           );
@@ -598,6 +609,15 @@ export default function HabitsPage() {
                                 </div>
                               </div>
                             </div>
+                            <button
+                              onClick={() => setEditingTodo(todo)}
+                              className="p-1.5 text-white/40 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                              title="Editar tarefa"
+                            >
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                              </svg>
+                            </button>
                           </div>
                         ))}
                       </div>
@@ -618,6 +638,15 @@ export default function HabitsPage() {
         eventType={activeTab === 'habits' ? 'HABIT' : 'TODO'}
         calendars={calendars}
         selectedCalendarId={selectedCalendarId}
+      />
+
+      {/* Edit Todo Modal */}
+      <EditTodoModal
+        isOpen={editingTodo !== null}
+        onClose={() => setEditingTodo(null)}
+        onUpdated={fetchData}
+        todo={editingTodo}
+        calendars={calendars}
       />
     </div>
   );
