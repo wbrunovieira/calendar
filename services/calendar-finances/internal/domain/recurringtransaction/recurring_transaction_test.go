@@ -274,6 +274,267 @@ func TestAmountRounding(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// CalculateNextOccurrence Tests (TDD)
+// =============================================================================
+
+func TestCalculateNextOccurrence_Monthly_WhenDateHasPassed(t *testing.T) {
+	// Given: A monthly recurring transaction starting Jan 1st
+	// When: Today is Jan 26th (the 1st has passed)
+	// Then: Next occurrence should be Feb 1st
+
+	startOn := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	nextOccurrence := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+
+	rt, err := New(CreateParams{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         191.84,
+		Description:    "Fly with Greg",
+		RecurrenceRule: "FREQ=MONTHLY",
+		StartOn:        startOn,
+		NextOccurrence: nextOccurrence,
+		Status:         StatusActive,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Reference date: Jan 26, 2026
+	referenceDate := time.Date(2026, time.January, 26, 0, 0, 0, 0, time.UTC)
+	calculatedNext := rt.CalculateNextOccurrence(referenceDate)
+
+	// Expected: Feb 1, 2026
+	expected := time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC)
+
+	if !calculatedNext.Equal(expected) {
+		t.Errorf("expected %v, got %v", expected, calculatedNext)
+	}
+}
+
+func TestCalculateNextOccurrence_Monthly_WhenDateHasNotPassed(t *testing.T) {
+	// Given: A monthly recurring transaction starting Jan 28th
+	// When: Today is Jan 26th (the 28th has NOT passed)
+	// Then: Next occurrence should be Jan 28th (same month)
+
+	startOn := time.Date(2026, time.January, 28, 0, 0, 0, 0, time.UTC)
+	nextOccurrence := time.Date(2026, time.January, 28, 0, 0, 0, 0, time.UTC)
+
+	rt, err := New(CreateParams{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         100.00,
+		Description:    "Test Subscription",
+		RecurrenceRule: "FREQ=MONTHLY",
+		StartOn:        startOn,
+		NextOccurrence: nextOccurrence,
+		Status:         StatusActive,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	referenceDate := time.Date(2026, time.January, 26, 0, 0, 0, 0, time.UTC)
+	calculatedNext := rt.CalculateNextOccurrence(referenceDate)
+
+	expected := time.Date(2026, time.January, 28, 0, 0, 0, 0, time.UTC)
+
+	if !calculatedNext.Equal(expected) {
+		t.Errorf("expected %v, got %v", expected, calculatedNext)
+	}
+}
+
+func TestCalculateNextOccurrence_Monthly_MultipleMonthsPassed(t *testing.T) {
+	// Given: A monthly recurring transaction starting Jan 1st
+	// When: Today is April 15th (3+ months have passed)
+	// Then: Next occurrence should be May 1st
+
+	startOn := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	nextOccurrence := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+
+	rt, err := New(CreateParams{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         100.00,
+		Description:    "Test Subscription",
+		RecurrenceRule: "FREQ=MONTHLY",
+		StartOn:        startOn,
+		NextOccurrence: nextOccurrence,
+		Status:         StatusActive,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	referenceDate := time.Date(2026, time.April, 15, 0, 0, 0, 0, time.UTC)
+	calculatedNext := rt.CalculateNextOccurrence(referenceDate)
+
+	expected := time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC)
+
+	if !calculatedNext.Equal(expected) {
+		t.Errorf("expected %v, got %v", expected, calculatedNext)
+	}
+}
+
+func TestCalculateNextOccurrence_Weekly(t *testing.T) {
+	// Given: A weekly recurring transaction starting Monday Jan 6th
+	// When: Today is Jan 26th (Sunday)
+	// Then: Next occurrence should be Monday Jan 27th
+
+	startOn := time.Date(2026, time.January, 5, 0, 0, 0, 0, time.UTC) // Monday
+	nextOccurrence := time.Date(2026, time.January, 5, 0, 0, 0, 0, time.UTC)
+
+	rt, err := New(CreateParams{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         50.00,
+		Description:    "Weekly Payment",
+		RecurrenceRule: "FREQ=WEEKLY",
+		StartOn:        startOn,
+		NextOccurrence: nextOccurrence,
+		Status:         StatusActive,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	referenceDate := time.Date(2026, time.January, 26, 0, 0, 0, 0, time.UTC) // Sunday
+	calculatedNext := rt.CalculateNextOccurrence(referenceDate)
+
+	// Jan 5 + 3 weeks = Jan 26, but that's today, so next is Jan 5 + 4 weeks = Feb 2
+	// Wait, let me recalculate: Jan 5, 12, 19, 26 (today), so next is Feb 2
+	expected := time.Date(2026, time.February, 2, 0, 0, 0, 0, time.UTC)
+
+	if !calculatedNext.Equal(expected) {
+		t.Errorf("expected %v, got %v", expected, calculatedNext)
+	}
+}
+
+func TestCalculateNextOccurrence_Daily(t *testing.T) {
+	// Given: A daily recurring transaction starting Jan 1st
+	// When: Today is Jan 26th
+	// Then: Next occurrence should be Jan 27th
+
+	startOn := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	nextOccurrence := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+
+	rt, err := New(CreateParams{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         10.00,
+		Description:    "Daily Coffee",
+		RecurrenceRule: "FREQ=DAILY",
+		StartOn:        startOn,
+		NextOccurrence: nextOccurrence,
+		Status:         StatusActive,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	referenceDate := time.Date(2026, time.January, 26, 0, 0, 0, 0, time.UTC)
+	calculatedNext := rt.CalculateNextOccurrence(referenceDate)
+
+	expected := time.Date(2026, time.January, 27, 0, 0, 0, 0, time.UTC)
+
+	if !calculatedNext.Equal(expected) {
+		t.Errorf("expected %v, got %v", expected, calculatedNext)
+	}
+}
+
+func TestCalculateNextOccurrence_WithEndDate_StopsAtEnd(t *testing.T) {
+	// Given: A monthly recurring transaction with endOn Feb 15th
+	// When: Today is Feb 20th (after end date)
+	// Then: Should return zero time (no more occurrences)
+
+	startOn := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	nextOccurrence := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	endOn := time.Date(2026, time.February, 15, 0, 0, 0, 0, time.UTC)
+
+	rt, err := New(CreateParams{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         100.00,
+		Description:    "Limited Subscription",
+		RecurrenceRule: "FREQ=MONTHLY",
+		StartOn:        startOn,
+		NextOccurrence: nextOccurrence,
+		EndOn:          &endOn,
+		Status:         StatusActive,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	referenceDate := time.Date(2026, time.February, 20, 0, 0, 0, 0, time.UTC)
+	calculatedNext := rt.CalculateNextOccurrence(referenceDate)
+
+	if !calculatedNext.IsZero() {
+		t.Errorf("expected zero time (no more occurrences), got %v", calculatedNext)
+	}
+}
+
+func TestCalculateNextOccurrence_Paused_ReturnsZero(t *testing.T) {
+	// Given: A paused recurring transaction
+	// Then: Should return zero time (paused transactions have no next occurrence)
+
+	startOn := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	nextOccurrence := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+
+	rt, err := New(CreateParams{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         100.00,
+		Description:    "Paused Subscription",
+		RecurrenceRule: "FREQ=MONTHLY",
+		StartOn:        startOn,
+		NextOccurrence: nextOccurrence,
+		Status:         StatusPaused,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	referenceDate := time.Date(2026, time.January, 26, 0, 0, 0, 0, time.UTC)
+	calculatedNext := rt.CalculateNextOccurrence(referenceDate)
+
+	if !calculatedNext.IsZero() {
+		t.Errorf("expected zero time for paused transaction, got %v", calculatedNext)
+	}
+}
+
+func TestCalculateNextOccurrence_Monthly_WithBYMONTHDAY(t *testing.T) {
+	// Given: A monthly recurring transaction with BYMONTHDAY=15
+	// When: Today is Jan 26th
+	// Then: Next occurrence should be Feb 15th
+
+	startOn := time.Date(2026, time.January, 15, 0, 0, 0, 0, time.UTC)
+	nextOccurrence := time.Date(2026, time.January, 15, 0, 0, 0, 0, time.UTC)
+
+	rt, err := New(CreateParams{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         100.00,
+		Description:    "Mid-month Payment",
+		RecurrenceRule: "FREQ=MONTHLY;BYMONTHDAY=15",
+		StartOn:        startOn,
+		NextOccurrence: nextOccurrence,
+		Status:         StatusActive,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	referenceDate := time.Date(2026, time.January, 26, 0, 0, 0, 0, time.UTC)
+	calculatedNext := rt.CalculateNextOccurrence(referenceDate)
+
+	expected := time.Date(2026, time.February, 15, 0, 0, 0, 0, time.UTC)
+
+	if !calculatedNext.Equal(expected) {
+		t.Errorf("expected %v, got %v", expected, calculatedNext)
+	}
+}
+
 func TestUpdate(t *testing.T) {
 	startOn := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	nextOccurrence := time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC)

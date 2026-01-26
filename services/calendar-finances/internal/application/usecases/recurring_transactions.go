@@ -185,6 +185,13 @@ func (s *RecurringTransactionsService) parseParams(input CreateRecurringTransact
 }
 
 func presentRecurring(entity *recurringtransaction.RecurringTransaction) *RecurringTransactionPresenter {
+	// Calculate the correct next occurrence based on today's date
+	nextOccurrence := entity.CalculateNextOccurrence(time.Now())
+	if nextOccurrence.IsZero() {
+		// If no next occurrence (paused/ended), use the stored value for reference
+		nextOccurrence = entity.NextOccurrence
+	}
+
 	return &RecurringTransactionPresenter{
 		ID:             entity.ID,
 		ProfileID:      entity.ProfileID,
@@ -197,7 +204,7 @@ func presentRecurring(entity *recurringtransaction.RecurringTransaction) *Recurr
 		RecurrenceRule: entity.RecurrenceRule,
 		StartOn:        entity.StartOn,
 		EndOn:          entity.EndOn,
-		NextOccurrence: entity.NextOccurrence,
+		NextOccurrence: nextOccurrence,
 		Status:         string(entity.Status),
 		ReviewOn:       entity.ReviewOn,
 		Notes:          entity.Notes,

@@ -604,6 +604,48 @@ func TestPausedTransactionsShouldNotBeCountedInTotals(t *testing.T) {
 
 // TestListReturnsCorrectStatusForFiltering ensures the API returns
 // the status field correctly so the frontend can filter out non-active items.
+// TestListReturnsCalculatedNextOccurrence verifies that the List method
+// returns the calculated next occurrence, not the stored one.
+func TestListReturnsCalculatedNextOccurrence(t *testing.T) {
+	repo := newFakeRecurringRepo()
+	service := NewRecurringTransactionsService(repo)
+
+	// Create a transaction with an old nextOccurrence (in the past)
+	_, err := service.Create(CreateRecurringTransactionInput{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         191.84,
+		Description:    "Fly with Greg",
+		RecurrenceRule: "FREQ=MONTHLY",
+		StartOn:        "2026-01-01",
+		NextOccurrence: "2026-01-01", // This is in the past (today is Jan 26)
+		Status:         "ACTIVE",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating: %v", err)
+	}
+
+	list, err := service.List("profile-1")
+	if err != nil {
+		t.Fatalf("unexpected error listing: %v", err)
+	}
+
+	if len(list) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(list))
+	}
+
+	item := list[0]
+
+	// The nextOccurrence should be calculated based on today's date
+	// Since today is Jan 26, and the recurrence is monthly starting Jan 1,
+	// the next occurrence should be Feb 1 (not Jan 1)
+	today := time.Now()
+	if item.NextOccurrence.Before(today) && item.Status == "ACTIVE" {
+		t.Errorf("nextOccurrence %v should not be before today %v for active transaction",
+			item.NextOccurrence, today)
+	}
+}
+
 func TestListReturnsCorrectStatusForFiltering(t *testing.T) {
 	repo := newFakeRecurringRepo()
 	service := NewRecurringTransactionsService(repo)

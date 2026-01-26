@@ -147,6 +147,119 @@ func (r *RecurringTransaction) SetReviewOn(reviewOn *time.Time) {
 	r.UpdatedAt = time.Now()
 }
 
+// CalculateNextOccurrence calculates the next occurrence date based on the
+// recurrence rule and a reference date (usually today). Returns zero time
+// if the transaction is paused, cancelled, or has ended.
+func (r *RecurringTransaction) CalculateNextOccurrence(referenceDate time.Time) time.Time {
+	// Paused or cancelled transactions have no next occurrence
+	if r.Status != StatusActive {
+		return time.Time{}
+	}
+
+	// Parse the recurrence rule
+	rule := parseRecurrenceRule(r.RecurrenceRule)
+	freq := rule["FREQ"]
+
+	// Get the day of month from BYMONTHDAY or from StartOn
+	dayOfMonth := r.StartOn.Day()
+	if byMonthDay, ok := rule["BYMONTHDAY"]; ok {
+		if d, err := parseInt(byMonthDay); err == nil {
+			dayOfMonth = d
+		}
+	}
+
+	var next time.Time
+
+	switch freq {
+	case "DAILY":
+		next = r.calculateNextDaily(referenceDate)
+	case "WEEKLY":
+		next = r.calculateNextWeekly(referenceDate)
+	case "MONTHLY":
+		next = r.calculateNextMonthly(referenceDate, dayOfMonth)
+	default:
+		// Default to monthly if unknown frequency
+		next = r.calculateNextMonthly(referenceDate, dayOfMonth)
+	}
+
+	// Check if next occurrence is after end date
+	if r.EndOn != nil && !r.EndOn.IsZero() && next.After(*r.EndOn) {
+		return time.Time{}
+	}
+
+	return next
+}
+
+func (r *RecurringTransaction) calculateNextDaily(referenceDate time.Time) time.Time {
+	// Start from the day after reference date
+	next := time.Date(
+		referenceDate.Year(), referenceDate.Month(), referenceDate.Day()+1,
+		0, 0, 0, 0, time.UTC,
+	)
+	return next
+}
+
+func (r *RecurringTransaction) calculateNextWeekly(referenceDate time.Time) time.Time {
+	// Get the weekday from StartOn
+	targetWeekday := r.StartOn.Weekday()
+
+	// Find the next occurrence of that weekday after referenceDate
+	next := referenceDate
+	for {
+		next = next.AddDate(0, 0, 1)
+		if next.Weekday() == targetWeekday {
+			return time.Date(next.Year(), next.Month(), next.Day(), 0, 0, 0, 0, time.UTC)
+		}
+	}
+}
+
+func (r *RecurringTransaction) calculateNextMonthly(referenceDate time.Time, dayOfMonth int) time.Time {
+	// Start with the target day in the reference month
+	year := referenceDate.Year()
+	month := referenceDate.Month()
+
+	// Create a date for the target day in the current month
+	candidate := time.Date(year, month, dayOfMonth, 0, 0, 0, 0, time.UTC)
+
+	// If the candidate is after the reference date, that's our next occurrence
+	if candidate.After(referenceDate) {
+		return candidate
+	}
+
+	// Otherwise, move to next month
+	nextMonth := month + 1
+	nextYear := year
+	if nextMonth > 12 {
+		nextMonth = 1
+		nextYear++
+	}
+
+	return time.Date(nextYear, nextMonth, dayOfMonth, 0, 0, 0, 0, time.UTC)
+}
+
+func parseRecurrenceRule(rule string) map[string]string {
+	result := make(map[string]string)
+	parts := strings.Split(rule, ";")
+	for _, part := range parts {
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) == 2 {
+			result[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+		}
+	}
+	return result
+}
+
+func parseInt(s string) (int, error) {
+	var n int
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0, errors.New("invalid number")
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n, nil
+}
+
 func validateStatus(status Status) error {
 	switch status {
 	case StatusActive, StatusPaused, StatusCanceled:
