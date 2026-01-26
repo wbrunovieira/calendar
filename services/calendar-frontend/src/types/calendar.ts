@@ -32,6 +32,16 @@ export interface Category {
   isActive: boolean;
 }
 
+export interface Label {
+  id: string;
+  calendarId: string;
+  name: string;
+  color: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface EventExecution {
   id: string;
   eventId: string;
@@ -47,8 +57,10 @@ export interface Event {
   calendarId: string;
   categoryId?: string;
   categoryTypeId?: string;
+  labelId?: string;
   category?: Category; // Category object from API (includes icon, color, name, type)
   categoryType?: CategoryType; // CategoryType object from API
+  label?: Label; // Label object from API
   title: string;
   description?: string;
   startTime: string;

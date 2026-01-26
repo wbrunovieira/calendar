@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import type { Calendar, Category } from '@/types/calendar';
+import LabelSelector from '@/components/labels/LabelSelector';
 
 interface CreateHabitTodoModalProps {
   isOpen: boolean;
@@ -29,6 +30,7 @@ export default function CreateHabitTodoModal({
   const [priority, setPriority] = useState<number | undefined>(undefined);
   const [dueDate, setDueDate] = useState('');
   const [categoryId, setCategoryId] = useState('');
+  const [labelId, setLabelId] = useState<string | undefined>(undefined);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -43,6 +45,7 @@ export default function CreateHabitTodoModal({
       setPriority(undefined);
       setDueDate('');
       setCategoryId('');
+      setLabelId(undefined);
     }
   }, [isOpen, selectedCalendarId]);
 
@@ -96,6 +99,7 @@ export default function CreateHabitTodoModal({
           priority: priority || undefined,
           dueDate: dueDate || undefined,
           categoryId: categoryId || undefined,
+          labelId: labelId || undefined,
         });
       }
 
@@ -255,6 +259,15 @@ export default function CreateHabitTodoModal({
                     ))}
                   </select>
                 </div>
+              )}
+
+              {/* Label Selector */}
+              {effectiveCalendarId && (
+                <LabelSelector
+                  calendarId={effectiveCalendarId}
+                  selectedLabelId={labelId}
+                  onSelect={setLabelId}
+                />
               )}
             </>
           )}

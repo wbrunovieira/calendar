@@ -63,6 +63,7 @@ export class CreateEventUseCase {
       calendarId: dto.calendarId,
       categoryId: dto.categoryId,
       categoryTypeId: dto.categoryTypeId,
+      labelId: dto.labelId || null,
       title: dto.title,
       description: dto.description,
       startTime: dto.startTime,

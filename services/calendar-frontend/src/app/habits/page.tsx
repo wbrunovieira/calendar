@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import type { Event, Calendar } from '@/types/calendar';
 import ProfileSelector from '@/components/habits/ProfileSelector';
 import CategoryBadge from '@/components/habits/CategoryBadge';
+import LabelBadge from '@/components/labels/LabelBadge';
 import CreateHabitTodoModal from '@/components/habits/CreateHabitTodoModal';
 
 type TabType = 'habits' | 'todos';
@@ -521,6 +522,9 @@ export default function HabitsPage() {
                                     {todo.category && (
                                       <CategoryBadge category={todo.category} />
                                     )}
+                                    {todo.label && (
+                                      <LabelBadge label={todo.label} />
+                                    )}
                                   </div>
                                 </div>
                               </div>
@@ -587,6 +591,9 @@ export default function HabitsPage() {
                                   )}
                                   {todo.category && (
                                     <CategoryBadge category={todo.category} />
+                                  )}
+                                  {todo.label && (
+                                    <LabelBadge label={todo.label} />
                                   )}
                                 </div>
                               </div>

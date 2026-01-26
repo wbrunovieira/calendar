@@ -3,6 +3,7 @@ export class Event {
   calendarId: string;
   categoryId?: string | null;
   categoryTypeId?: string | null;
+  labelId?: string | null;
   title: string;
   description?: string | null;
   startTime: string; // HH:mm format
@@ -42,6 +43,7 @@ export class Event {
     calendarId: string;
     categoryId?: string;
     categoryTypeId?: string;
+    labelId?: string | null;
     title: string;
     description?: string;
     startTime: string;
@@ -60,6 +62,7 @@ export class Event {
       calendarId: data.calendarId,
       categoryId: data.categoryId,
       categoryTypeId: data.categoryTypeId,
+      labelId: data.labelId ?? null,
       title: data.title,
       description: data.description,
       startTime: data.startTime,

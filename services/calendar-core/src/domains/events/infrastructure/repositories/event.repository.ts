@@ -23,6 +23,7 @@ export class EventRepository {
         calendarId: event.calendarId,
         categoryId: event.categoryId,
         categoryTypeId: event.categoryTypeId,
+        labelId: event.labelId,
         title: event.title,
         description: event.description,
         startTime: event.startTime,
@@ -78,6 +79,7 @@ export class EventRepository {
       include: {
         category: true,
         categoryType: true,
+        label: true,
         exceptions: true,
         overrides: {
           include: {
@@ -92,6 +94,7 @@ export class EventRepository {
       ...new Event(event),
       category: event.category,
       categoryType: event.categoryType,
+      label: event.label,
       exceptions: event.exceptions,
       overrides: event.overrides,
       executions: event.completions.map((completion) => ({
@@ -125,6 +128,7 @@ export class EventRepository {
         endDate: event.endDate,
         categoryId: event.categoryId,
         categoryTypeId: event.categoryTypeId,
+        labelId: event.labelId,
         recurrenceRule: event.recurrenceRule,
         status: event.status,
         eventType: event.eventType,

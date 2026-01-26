@@ -5,6 +5,7 @@ import { CalendarsModule } from './domains/calendars/calendars.module';
 import { CategoriesModule } from './domains/categories/categories.module';
 import { CategoryTypesModule } from './domains/category-types/category-types.module';
 import { EventsModule } from './domains/events/events.module';
+import { LabelsModule } from './domains/labels/labels.module';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 
 @Module({
@@ -13,6 +14,7 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
     CategoriesModule,
     CategoryTypesModule,
     EventsModule,
+    LabelsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

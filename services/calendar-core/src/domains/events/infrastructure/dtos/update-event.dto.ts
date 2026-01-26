@@ -24,6 +24,10 @@ export class UpdateEventDto {
 
   @IsOptional()
   @IsString()
+  labelId?: string;
+
+  @IsOptional()
+  @IsString()
   title?: string;
 
   @IsOptional()

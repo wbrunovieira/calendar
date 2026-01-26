@@ -1,4 +1,4 @@
-import type { Event, Category, CategoryType, HabitStats, Calendar } from '@/types/calendar';
+import type { Event, Category, CategoryType, HabitStats, Calendar, Label } from '@/types/calendar';
 
 /**
  * API client for calendar backend
@@ -205,6 +205,28 @@ export const api = {
       }),
     delete: (id: string) =>
       fetchAPI<void>(`/category-types/${id}`, {
+        method: 'DELETE',
+      }),
+  },
+
+  // Labels
+  labels: {
+    list: (calendarId?: string) => {
+      const query = calendarId ? `?calendarId=${calendarId}` : '';
+      return fetchAPI<Label[]>(`/labels${query}`);
+    },
+    create: (data: { calendarId: string; name: string; color: string }) =>
+      fetchAPI<Label>('/labels', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    update: (id: string, data: { name?: string; color?: string }) =>
+      fetchAPI<Label>(`/labels/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    delete: (id: string) =>
+      fetchAPI<void>(`/labels/${id}`, {
         method: 'DELETE',
       }),
   },

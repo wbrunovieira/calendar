@@ -44,6 +44,7 @@ model Calendar {
   categories    Category[]
   categoryTypes CategoryType[]
   events        Event[]
+  labels        Label[]
 
   @@index([userId])
   @@index([googleCalendarId])
@@ -92,6 +93,22 @@ model Category {
   @@map("categories")
 }
 
+model Label {
+  id         String   @id @default(uuid())
+  calendarId String   @map("calendar_id")
+  name       String
+  color      String // HEX color
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  calendar Calendar @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  events   Event[]
+
+  @@index([calendarId])
+  @@map("labels")
+}
+
 // Many-to-many relationship between Category and CategoryType
 model CategoryToType {
   id             String   @id @default(uuid())
@@ -113,6 +130,7 @@ model Event {
   calendarId            String    @map("calendar_id")
   categoryId            String?   @map("category_id")
   categoryTypeId        String?   @map("category_type_id")
+  labelId               String?   @map("label_id")
   title                 String
   description           String?
   startTime             String    @map("start_time") // TIME stored as string (HH:mm)
@@ -153,6 +171,7 @@ model Event {
   calendar              Calendar              @relation(fields: [calendarId], references: [id], onDelete: Cascade)
   category              Category?             @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   categoryType          CategoryType?         @relation(fields: [categoryTypeId], references: [id], onDelete: SetNull)
+  label                 Label?                @relation(fields: [labelId], references: [id], onDelete: SetNull)
   recurrenceMaster      Event?                @relation("RecurrenceHierarchy", fields: [recurrenceMasterId], references: [id], onDelete: Cascade)
   derivedEvents         Event[]               @relation("RecurrenceHierarchy")
 
@@ -166,6 +185,7 @@ model Event {
   @@index([calendarId])
   @@index([categoryId])
   @@index([categoryTypeId])
+  @@index([labelId])
   @@index([startDate])
   @@index([recurrenceMasterId])
   @@index([googleEventId])

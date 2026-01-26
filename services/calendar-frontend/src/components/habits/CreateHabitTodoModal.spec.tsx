@@ -13,6 +13,10 @@ vi.mock('@/lib/api', () => ({
     categories: {
       list: vi.fn(),
     },
+    labels: {
+      list: vi.fn(),
+      create: vi.fn(),
+    },
   },
 }));
 
@@ -55,6 +59,7 @@ describe('CreateHabitTodoModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(api.categories.list).mockResolvedValue(mockCategories);
+    vi.mocked(api.labels.list).mockResolvedValue([]);
     vi.mocked(api.events.create).mockResolvedValue({
       id: 'new-event-1',
       calendarId: 'cal-1',
