@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import type { Event, Calendar, FlexibleHabitProgress } from '@/types/calendar';
 import ProfileSelector from '@/components/habits/ProfileSelector';
 import CategoryBadge from '@/components/habits/CategoryBadge';
+import CategoryTypeBadge from '@/components/habits/CategoryTypeBadge';
 import LabelBadge from '@/components/labels/LabelBadge';
 import CreateHabitTodoModal from '@/components/habits/CreateHabitTodoModal';
 import EditTodoModal from '@/components/habits/EditTodoModal';
@@ -430,6 +431,13 @@ export default function HabitsPage() {
                                 {habit.description && (
                                   <p className="text-sm text-white/50">{habit.description}</p>
                                 )}
+                                {(habit.categoryType || habit.category || habit.label) && (
+                                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                    {habit.categoryType && <CategoryTypeBadge categoryType={habit.categoryType} />}
+                                    {habit.category && <CategoryBadge category={habit.category} />}
+                                    {habit.label && <LabelBadge label={habit.label} />}
+                                  </div>
+                                )}
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
@@ -488,6 +496,13 @@ export default function HabitsPage() {
                                   {habit.startTime && ` • ${habit.startTime}`}
                                   {selectedCalendarId === null && habit.calendarId && ` • ${getCalendarName(habit.calendarId)}`}
                                 </p>
+                                {(habit.categoryType || habit.category || habit.label) && (
+                                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                    {habit.categoryType && <CategoryTypeBadge categoryType={habit.categoryType} />}
+                                    {habit.category && <CategoryBadge category={habit.category} />}
+                                    {habit.label && <LabelBadge label={habit.label} />}
+                                  </div>
+                                )}
                               </div>
                             </div>
                             <div className="flex items-center gap-3">
@@ -572,6 +587,13 @@ export default function HabitsPage() {
                                     {habit.startTime && ` • ${habit.startTime}`}
                                     {selectedCalendarId === null && habit.calendarId && ` • ${getCalendarName(habit.calendarId)}`}
                                   </p>
+                                  {(habit.categoryType || habit.category || habit.label) && (
+                                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                      {habit.categoryType && <CategoryTypeBadge categoryType={habit.categoryType} />}
+                                      {habit.category && <CategoryBadge category={habit.category} />}
+                                      {habit.label && <LabelBadge label={habit.label} />}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                               <div className="flex items-center gap-3">
