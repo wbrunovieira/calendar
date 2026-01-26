@@ -3,12 +3,13 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import type { Event, Calendar } from '@/types/calendar';
+import type { Event, Calendar, FlexibleHabitProgress } from '@/types/calendar';
 import ProfileSelector from '@/components/habits/ProfileSelector';
 import CategoryBadge from '@/components/habits/CategoryBadge';
 import LabelBadge from '@/components/labels/LabelBadge';
 import CreateHabitTodoModal from '@/components/habits/CreateHabitTodoModal';
 import EditTodoModal from '@/components/habits/EditTodoModal';
+import EditHabitModal from '@/components/habits/EditHabitModal';
 
 type TabType = 'habits' | 'todos';
 
@@ -102,7 +103,9 @@ export default function HabitsPage() {
   const [showCompleted, setShowCompleted] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingTodo, setEditingTodo] = useState<Event | null>(null);
+  const [editingHabit, setEditingHabit] = useState<Event | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [flexibleProgress, setFlexibleProgress] = useState<FlexibleHabitProgress[]>([]);
 
   const today = formatLocalDate(new Date());
 
@@ -142,13 +145,17 @@ export default function HabitsPage() {
         ...(selectedCalendarId && { calendarId: selectedCalendarId }),
       };
 
-      const [habitsData, todosData] = await Promise.all([
+      const progressParams = selectedCalendarId ? { calendarId: selectedCalendarId } : undefined;
+
+      const [habitsData, todosData, progressData] = await Promise.all([
         api.events.listHabits(params),
         api.events.listTodos(params),
+        api.events.getWeeklyProgress(progressParams),
       ]);
 
       setHabits(habitsData || []);
       setTodos(todosData || []);
+      setFlexibleProgress(progressData || []);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -192,8 +199,8 @@ export default function HabitsPage() {
     return calendar?.name || '';
   };
 
-  // Group habits by unique habit (not occurrence)
-  const uniqueHabits = useMemo(() => {
+  // Group habits by unique habit (not occurrence) - separate fixed and flexible
+  const { uniqueHabits, fixedHabits, flexibleHabitsWithProgress } = useMemo(() => {
     const habitMap = new Map<string, Event & { streak: number }>();
 
     habits.forEach(habit => {
@@ -203,8 +210,25 @@ export default function HabitsPage() {
       }
     });
 
-    return Array.from(habitMap.values());
-  }, [habits]);
+    const all = Array.from(habitMap.values());
+
+    // Separate fixed and flexible habits
+    const fixed = all.filter(h => h.recurrenceType !== 'FLEXIBLE');
+
+    // Match flexible habits with their progress data
+    const flexible = all
+      .filter(h => h.recurrenceType === 'FLEXIBLE')
+      .map(h => {
+        const progress = flexibleProgress.find(p => p.habitId === (h.originalEventId || h.id));
+        return { ...h, progress };
+      });
+
+    return {
+      uniqueHabits: all,
+      fixedHabits: fixed,
+      flexibleHabitsWithProgress: flexible,
+    };
+  }, [habits, flexibleProgress]);
 
   // Today's habits (occurrences for today)
   const todayHabits = useMemo(() => {
@@ -415,6 +439,15 @@ export default function HabitsPage() {
                                 </span>
                               )}
                               <span className="text-white/40 text-sm">{habit.startTime}</span>
+                              <button
+                                onClick={() => setEditingHabit(habit)}
+                                className="p-1.5 text-white/40 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                                title="Editar habito"
+                              >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                </svg>
+                              </button>
                             </div>
                           </div>
                         );
@@ -423,15 +456,12 @@ export default function HabitsPage() {
                   )}
                 </div>
 
-                {/* All Habits */}
-                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
-                  <h2 className="text-lg font-semibold text-white mb-4">Todos os Habitos</h2>
-
-                  {uniqueHabits.length === 0 ? (
-                    <p className="text-white/60 text-center py-4">Nenhum habito cadastrado</p>
-                  ) : (
+                {/* Fixed Habits (Daily/Monthly) */}
+                {fixedHabits.length > 0 && (
+                  <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
+                    <h2 className="text-lg font-semibold text-white mb-4">Habitos Fixos</h2>
                     <div className="space-y-3">
-                      {uniqueHabits.map(habit => {
+                      {fixedHabits.map(habit => {
                         const habitId = habit.originalEventId || habit.id;
                         return (
                           <div
@@ -439,7 +469,7 @@ export default function HabitsPage() {
                             draggable
                             onDragStart={(e) => handleDragStart(e, habitId)}
                             onDragOver={handleDragOver}
-                            onDrop={(e) => handleDrop(e, habitId, uniqueHabits)}
+                            onDrop={(e) => handleDrop(e, habitId, fixedHabits)}
                             onDragEnd={handleDragEnd}
                             className={`flex items-center justify-between p-4 bg-white/5 rounded-xl hover:bg-white/10 transition-colors cursor-grab active:cursor-grabbing ${
                               draggedId === habitId ? 'opacity-50' : ''
@@ -464,16 +494,151 @@ export default function HabitsPage() {
                               {habit.streak > 0 && (
                                 <span className="flex items-center gap-1 px-2 py-1 bg-orange-500/20 text-orange-400 rounded-lg text-sm">
                                   <span>🔥</span>
-                                  <span>{habit.streak}</span>
+                                  <span>{habit.streak} dias</span>
                                 </span>
                               )}
+                              <button
+                                onClick={() => setEditingHabit(habit)}
+                                className="p-1.5 text-white/40 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                                title="Editar habito"
+                              >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                </svg>
+                              </button>
                             </div>
                           </div>
                         );
                       })}
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
+
+                {/* Flexible Weekly Habits */}
+                {flexibleHabitsWithProgress.length > 0 && (
+                  <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
+                    <h2 className="text-lg font-semibold text-white mb-4">Habitos Semanais Flexiveis</h2>
+                    <div className="space-y-3">
+                      {flexibleHabitsWithProgress.map(habit => {
+                        const habitId = habit.originalEventId || habit.id;
+                        const progress = habit.progress;
+                        const currentWeek = progress?.currentWeek;
+                        const completed = currentWeek?.completedCount || 0;
+                        const target = currentWeek?.targetCount || habit.weeklyTargetCount || 2;
+                        const percentage = Math.min((completed / target) * 100, 100);
+                        const isGoalMet = currentWeek?.isGoalMet || completed >= target;
+                        const weeklyStreak = progress?.currentStreak || 0;
+                        const isCompletedToday = currentWeek?.completedDates?.includes(today) || false;
+
+                        return (
+                          <div
+                            key={habit.id}
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, habitId)}
+                            onDragOver={handleDragOver}
+                            onDrop={(e) => handleDrop(e, habitId, flexibleHabitsWithProgress)}
+                            onDragEnd={handleDragEnd}
+                            className={`p-4 rounded-xl transition-colors cursor-grab active:cursor-grabbing ${
+                              isGoalMet ? 'bg-emerald-500/20 border border-emerald-400/30' : 'bg-white/5 hover:bg-white/10'
+                            } ${draggedId === habitId ? 'opacity-50' : ''}`}
+                          >
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-3">
+                                <svg className="w-4 h-4 text-white/30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                                </svg>
+                                {/* Toggle button for today */}
+                                <button
+                                  onClick={() => toggleHabitCompletion({ ...habit, occurrenceDate: today })}
+                                  className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+                                    isCompletedToday
+                                      ? 'bg-emerald-500 border-emerald-500 text-white'
+                                      : 'border-white/40 hover:border-white/60'
+                                  }`}
+                                  title={isCompletedToday ? 'Desmarcar hoje' : 'Marcar como feito hoje'}
+                                >
+                                  {isCompletedToday && (
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  )}
+                                </button>
+                                <div>
+                                  <p className={`font-medium ${isGoalMet ? 'text-emerald-300' : 'text-white'}`}>
+                                    {habit.title}
+                                  </p>
+                                  <p className="text-sm text-white/50">
+                                    {target}x por semana
+                                    {habit.startTime && ` • ${habit.startTime}`}
+                                    {selectedCalendarId === null && habit.calendarId && ` • ${getCalendarName(habit.calendarId)}`}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                {weeklyStreak > 0 && (
+                                  <span className="flex items-center gap-1 px-2 py-1 bg-purple-500/20 text-purple-400 rounded-lg text-sm">
+                                    <span>🏆</span>
+                                    <span>{weeklyStreak} {weeklyStreak === 1 ? 'semana' : 'semanas'}</span>
+                                  </span>
+                                )}
+                                <span className={`text-sm font-medium ${isGoalMet ? 'text-emerald-400' : 'text-white/70'}`}>
+                                  {completed}/{target}
+                                </span>
+                                <button
+                                  onClick={() => setEditingHabit(habit)}
+                                  className="p-1.5 text-white/40 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                                  title="Editar habito"
+                                >
+                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                  </svg>
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Progress Bar */}
+                            <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all duration-300 ${
+                                  isGoalMet ? 'bg-emerald-500' : 'bg-purple-500'
+                                }`}
+                                style={{ width: `${percentage}%` }}
+                              />
+                            </div>
+
+                            {/* Preferred Days */}
+                            {habit.weeklyPreferredDays && habit.weeklyPreferredDays.length > 0 && (
+                              <div className="mt-2 flex items-center gap-1">
+                                <span className="text-xs text-white/40">Dias preferidos:</span>
+                                <div className="flex gap-1">
+                                  {habit.weeklyPreferredDays.map(day => (
+                                    <span key={day} className="text-xs px-1.5 py-0.5 bg-white/10 rounded text-white/60">
+                                      {day === 'MO' ? 'Seg' : day === 'TU' ? 'Ter' : day === 'WE' ? 'Qua' : day === 'TH' ? 'Qui' : day === 'FR' ? 'Sex' : day === 'SA' ? 'Sab' : 'Dom'}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Days remaining hint for current week */}
+                            {!isGoalMet && currentWeek?.daysRemaining !== undefined && currentWeek.daysRemaining > 0 && (
+                              <p className="text-xs text-white/40 mt-2">
+                                {target - completed} {target - completed === 1 ? 'vez faltando' : 'vezes faltando'} • {currentWeek.daysRemaining} {currentWeek.daysRemaining === 1 ? 'dia restante' : 'dias restantes'} na semana
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Empty state */}
+                {uniqueHabits.length === 0 && (
+                  <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
+                    <p className="text-white/60 text-center py-4">Nenhum habito cadastrado</p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -658,6 +823,15 @@ export default function HabitsPage() {
         onClose={() => setEditingTodo(null)}
         onUpdated={fetchData}
         todo={editingTodo}
+        calendars={calendars}
+      />
+
+      {/* Edit Habit Modal */}
+      <EditHabitModal
+        isOpen={editingHabit !== null}
+        onClose={() => setEditingHabit(null)}
+        onUpdated={fetchData}
+        habit={editingHabit}
         calendars={calendars}
       />
     </div>

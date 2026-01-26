@@ -29,6 +29,11 @@ export class Event {
   // Para TODOs: data de vencimento
   dueDate?: Date | null;
 
+  // Hábitos semanais flexíveis
+  recurrenceType?: string | null; // "FIXED" | "FLEXIBLE"
+  weeklyTargetCount?: number | null; // Meta semanal (ex: 2 vezes por semana)
+  weeklyPreferredDays?: string[]; // Dias preferidos ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
+
   // Google Calendar
   googleEventId?: string | null;
   isActive: boolean;
@@ -56,6 +61,9 @@ export class Event {
     eventType?: string;
     priority?: number | null;
     dueDate?: Date | null;
+    recurrenceType?: string | null;
+    weeklyTargetCount?: number | null;
+    weeklyPreferredDays?: string[];
   }): Event {
     const event = new Event({
       id: '',
@@ -75,6 +83,9 @@ export class Event {
       eventType: data.eventType || 'EVENT',
       priority: data.priority || null,
       dueDate: data.dueDate || null,
+      recurrenceType: data.recurrenceType || null,
+      weeklyTargetCount: data.weeklyTargetCount || null,
+      weeklyPreferredDays: data.weeklyPreferredDays || [],
       googleEventId: null,
       isActive: true,
       createdAt: new Date(),

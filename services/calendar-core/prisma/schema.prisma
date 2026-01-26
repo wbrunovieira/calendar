@@ -161,6 +161,11 @@ model Event {
   // Ordem de exibição para drag and drop
   displayOrder          Int       @default(0) @map("display_order")
 
+  // Hábitos semanais flexíveis
+  recurrenceType        String?   @map("recurrence_type") // "FIXED" | "FLEXIBLE"
+  weeklyTargetCount     Int?      @map("weekly_target_count") // Meta semanal (ex: 2 vezes por semana)
+  weeklyPreferredDays   String[]  @map("weekly_preferred_days") // Dias preferidos ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
+
   // Google Calendar
   googleEventId         String?   @map("google_event_id")
   isActive              Boolean   @default(true) @map("is_active")
@@ -181,6 +186,7 @@ model Event {
   overriddenBy          RecurrenceOverride[]  @relation("OverrideEvent")
   completions           EventCompletion[]
   reminders             EventReminder[]
+  weeklyGoalCompletions WeeklyGoalCompletion[]
 
   @@index([calendarId])
   @@index([categoryId])
@@ -245,6 +251,27 @@ model EventCompletion {
   @@index([occurrenceDate])
   @@index([completed])
   @@map("event_completions")
+}
+
+// Tracking de metas semanais para hábitos flexíveis
+model WeeklyGoalCompletion {
+  id              String   @id @default(uuid())
+  eventId         String   @map("event_id")
+  weekStartDate   DateTime @map("week_start_date") @db.Date // Segunda-feira da semana
+  targetCount     Int      @map("target_count") // Meta (ex: 2)
+  completedCount  Int      @default(0) @map("completed_count") // Quantas vezes fez
+  completedDates  String[] @map("completed_dates") // Datas em que completou (YYYY-MM-DD)
+  isGoalMet       Boolean  @default(false) @map("is_goal_met") // true se completedCount >= targetCount
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, weekStartDate])
+  @@index([eventId])
+  @@index([weekStartDate])
+  @@index([isGoalMet])
+  @@map("weekly_goal_completions")
 }
 
 model EventReminder {

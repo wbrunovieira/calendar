@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
-import type { Calendar, Category } from '@/types/calendar';
+import type { Calendar, Category, CategoryType } from '@/types/calendar';
 import LabelSelector from '@/components/labels/LabelSelector';
 
 interface CreateHabitTodoModalProps {
@@ -30,9 +30,25 @@ export default function CreateHabitTodoModal({
   const [priority, setPriority] = useState<number | undefined>(undefined);
   const [dueDate, setDueDate] = useState('');
   const [categoryId, setCategoryId] = useState('');
+  const [categoryTypeId, setCategoryTypeId] = useState('');
   const [labelId, setLabelId] = useState<string | undefined>(undefined);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [categoryTypes, setCategoryTypes] = useState<CategoryType[]>([]);
   const [loading, setLoading] = useState(false);
+  // Flexible weekly habit states
+  const [recurrenceType, setRecurrenceType] = useState<'FIXED' | 'FLEXIBLE'>('FIXED');
+  const [weeklyTargetCount, setWeeklyTargetCount] = useState(2);
+  const [weeklyPreferredDays, setWeeklyPreferredDays] = useState<string[]>([]);
+
+  const DAYS_OF_WEEK = [
+    { value: 'MO', label: 'Seg' },
+    { value: 'TU', label: 'Ter' },
+    { value: 'WE', label: 'Qua' },
+    { value: 'TH', label: 'Qui' },
+    { value: 'FR', label: 'Sex' },
+    { value: 'SA', label: 'Sab' },
+    { value: 'SU', label: 'Dom' },
+  ];
 
   // Reset form when modal opens/closes or eventType changes
   useEffect(() => {
@@ -45,18 +61,32 @@ export default function CreateHabitTodoModal({
       setPriority(undefined);
       setDueDate('');
       setCategoryId('');
+      setCategoryTypeId('');
       setLabelId(undefined);
+      setRecurrenceType('FIXED');
+      setWeeklyTargetCount(2);
+      setWeeklyPreferredDays([]);
     }
   }, [isOpen, selectedCalendarId]);
 
-  // Fetch categories when calendar changes (for TODOs)
+  // Fetch categories and category types when calendar changes
   useEffect(() => {
-    if (eventType === 'TODO' && calendarId) {
-      api.categories.list(calendarId).then(setCategories).catch(console.error);
+    const effectiveId = selectedCalendarId || calendarId;
+    if (effectiveId) {
+      Promise.all([
+        api.categories.list(effectiveId),
+        api.categoryTypes.list(effectiveId),
+      ])
+        .then(([cats, types]) => {
+          setCategories(cats);
+          setCategoryTypes(types);
+        })
+        .catch(console.error);
     } else {
       setCategories([]);
+      setCategoryTypes([]);
     }
-  }, [eventType, calendarId]);
+  }, [calendarId, selectedCalendarId]);
 
   const effectiveCalendarId = selectedCalendarId || calendarId;
 
@@ -81,17 +111,38 @@ export default function CreateHabitTodoModal({
       };
 
       if (eventType === 'HABIT') {
-        // Build recurrence rule
-        const freqMap = {
-          daily: 'FREQ=DAILY',
-          weekly: 'FREQ=WEEKLY',
-          monthly: 'FREQ=MONTHLY',
+        // Common habit fields
+        const habitData = {
+          ...baseData,
+          categoryId: categoryId || undefined,
+          categoryTypeId: categoryTypeId || undefined,
+          labelId: labelId || undefined,
         };
 
-        await api.events.create({
-          ...baseData,
-          recurrenceRule: freqMap[frequency],
-        });
+        // Build recurrence rule based on frequency and type
+        if (frequency === 'weekly' && recurrenceType === 'FLEXIBLE') {
+          // Flexible weekly habit
+          await api.events.create({
+            ...habitData,
+            recurrenceRule: 'FREQ=WEEKLY',
+            recurrenceType: 'FLEXIBLE',
+            weeklyTargetCount,
+            weeklyPreferredDays: weeklyPreferredDays.length > 0 ? weeklyPreferredDays : undefined,
+          });
+        } else {
+          // Fixed habit (daily, weekly with fixed days, monthly)
+          const freqMap = {
+            daily: 'FREQ=DAILY',
+            weekly: 'FREQ=WEEKLY',
+            monthly: 'FREQ=MONTHLY',
+          };
+
+          await api.events.create({
+            ...habitData,
+            recurrenceRule: freqMap[frequency],
+            recurrenceType: 'FIXED',
+          });
+        }
       } else {
         // TODO
         await api.events.create({
@@ -99,6 +150,7 @@ export default function CreateHabitTodoModal({
           priority: priority || undefined,
           dueDate: dueDate || undefined,
           categoryId: categoryId || undefined,
+          categoryTypeId: categoryTypeId || undefined,
           labelId: labelId || undefined,
         });
       }
@@ -183,7 +235,13 @@ export default function CreateHabitTodoModal({
                 <select
                   id="frequency"
                   value={frequency}
-                  onChange={(e) => setFrequency(e.target.value as 'daily' | 'weekly' | 'monthly')}
+                  onChange={(e) => {
+                    setFrequency(e.target.value as 'daily' | 'weekly' | 'monthly');
+                    // Reset to FIXED when changing frequency
+                    if (e.target.value !== 'weekly') {
+                      setRecurrenceType('FIXED');
+                    }
+                  }}
                   className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                 >
                   <option value="daily">Diario</option>
@@ -192,9 +250,109 @@ export default function CreateHabitTodoModal({
                 </select>
               </div>
 
+              {/* Weekly habit type selection */}
+              {frequency === 'weekly' && (
+                <div>
+                  <label className="block text-sm font-medium text-white/70 mb-2">
+                    Tipo de Recorrencia
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setRecurrenceType('FIXED')}
+                      className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        recurrenceType === 'FIXED'
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-white/10 text-white/70 hover:bg-white/20'
+                      }`}
+                    >
+                      Dias Fixos
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRecurrenceType('FLEXIBLE')}
+                      className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        recurrenceType === 'FLEXIBLE'
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-white/10 text-white/70 hover:bg-white/20'
+                      }`}
+                    >
+                      Meta Flexivel
+                    </button>
+                  </div>
+                  <p className="text-xs text-white/50 mt-1">
+                    {recurrenceType === 'FIXED'
+                      ? 'Aparece em dias especificos da semana'
+                      : 'Meta de vezes por semana, qualquer dia'}
+                  </p>
+                </div>
+              )}
+
+              {/* Flexible weekly: target count */}
+              {frequency === 'weekly' && recurrenceType === 'FLEXIBLE' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-white/70 mb-2">
+                      Quantas vezes por semana?
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setWeeklyTargetCount(Math.max(1, weeklyTargetCount - 1))}
+                        className="w-10 h-10 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-colors text-xl"
+                      >
+                        -
+                      </button>
+                      <span className="text-2xl font-bold text-white w-12 text-center">
+                        {weeklyTargetCount}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setWeeklyTargetCount(Math.min(7, weeklyTargetCount + 1))}
+                        className="w-10 h-10 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-colors text-xl"
+                      >
+                        +
+                      </button>
+                      <span className="text-white/60 text-sm">vezes por semana</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-white/70 mb-2">
+                      Dias Preferidos (opcional)
+                    </label>
+                    <p className="text-xs text-white/50 mb-2">
+                      Ajuda a organizar sua agenda, mas nao e obrigatorio
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {DAYS_OF_WEEK.map((day) => (
+                        <button
+                          key={day.value}
+                          type="button"
+                          onClick={() => {
+                            setWeeklyPreferredDays((prev) =>
+                              prev.includes(day.value)
+                                ? prev.filter((d) => d !== day.value)
+                                : [...prev, day.value]
+                            );
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                            weeklyPreferredDays.includes(day.value)
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-white/10 text-white/70 hover:bg-white/20'
+                          }`}
+                        >
+                          {day.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+
               <div>
                 <label htmlFor="startTime" className="block text-sm font-medium text-white/70 mb-1">
-                  Horario
+                  Horario Preferido
                 </label>
                 <input
                   type="time"
@@ -204,6 +362,59 @@ export default function CreateHabitTodoModal({
                   className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
               </div>
+
+              {/* Category Type */}
+              {categoryTypes.length > 0 && (
+                <div>
+                  <label htmlFor="habitCategoryType" className="block text-sm font-medium text-white/70 mb-1">
+                    Tipo
+                  </label>
+                  <select
+                    id="habitCategoryType"
+                    value={categoryTypeId}
+                    onChange={(e) => setCategoryTypeId(e.target.value)}
+                    className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="">Sem tipo</option>
+                    {categoryTypes.map((type) => (
+                      <option key={type.id} value={type.id}>
+                        {type.icon} {type.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Category */}
+              {categories.length > 0 && (
+                <div>
+                  <label htmlFor="habitCategory" className="block text-sm font-medium text-white/70 mb-1">
+                    Categoria
+                  </label>
+                  <select
+                    id="habitCategory"
+                    value={categoryId}
+                    onChange={(e) => setCategoryId(e.target.value)}
+                    className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="">Sem categoria</option>
+                    {categories.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.icon} {cat.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Label Selector */}
+              {effectiveCalendarId && (
+                <LabelSelector
+                  calendarId={effectiveCalendarId}
+                  selectedLabelId={labelId}
+                  onSelect={setLabelId}
+                />
+              )}
             </>
           )}
 
@@ -240,13 +451,36 @@ export default function CreateHabitTodoModal({
                 />
               </div>
 
+              {/* Category Type */}
+              {categoryTypes.length > 0 && (
+                <div>
+                  <label htmlFor="todoCategoryType" className="block text-sm font-medium text-white/70 mb-1">
+                    Tipo
+                  </label>
+                  <select
+                    id="todoCategoryType"
+                    value={categoryTypeId}
+                    onChange={(e) => setCategoryTypeId(e.target.value)}
+                    className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="">Sem tipo</option>
+                    {categoryTypes.map((type) => (
+                      <option key={type.id} value={type.id}>
+                        {type.icon} {type.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Category */}
               {categories.length > 0 && (
                 <div>
-                  <label htmlFor="category" className="block text-sm font-medium text-white/70 mb-1">
+                  <label htmlFor="todoCategory" className="block text-sm font-medium text-white/70 mb-1">
                     Categoria
                   </label>
                   <select
-                    id="category"
+                    id="todoCategory"
                     value={categoryId}
                     onChange={(e) => setCategoryId(e.target.value)}
                     className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"

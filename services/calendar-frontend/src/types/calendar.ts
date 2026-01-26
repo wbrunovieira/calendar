@@ -82,6 +82,10 @@ export interface Event {
   priority?: number; // 1=high, 2=medium, 3=low
   dueDate?: string;
   displayOrder?: number;
+  // Flexible weekly habit fields
+  recurrenceType?: 'FIXED' | 'FLEXIBLE';
+  weeklyTargetCount?: number; // Target times per week (e.g., 2)
+  weeklyPreferredDays?: string[]; // Preferred days ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
 }
 
 export interface HabitStats {
@@ -92,4 +96,24 @@ export interface HabitStats {
   weeklyCompletions: { date: string; completed: boolean }[];
   monthlyCompletionRate: number;
   totalCompletions: number;
+}
+
+export interface WeekProgress {
+  weekStartDate: string; // YYYY-MM-DD (Monday)
+  targetCount: number;
+  completedCount: number;
+  completedDates: string[];
+  isGoalMet: boolean;
+  daysRemaining?: number; // Only for current week
+}
+
+export interface FlexibleHabitProgress {
+  habitId: string;
+  habitTitle: string;
+  weeklyTargetCount: number;
+  weeklyPreferredDays: string[];
+  currentWeek: WeekProgress;
+  weekHistory: WeekProgress[];
+  currentStreak: number;
+  longestStreak: number;
 }

@@ -106,4 +106,21 @@ export class CreateEventDto {
   @IsOptional()
   @IsDateString()
   dueDate?: string;
+
+  // Hábitos semanais flexíveis
+  @IsOptional()
+  @IsString()
+  @IsIn(['FIXED', 'FLEXIBLE'])
+  recurrenceType?: string; // "FIXED" | "FLEXIBLE"
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(7)
+  weeklyTargetCount?: number; // Meta semanal (ex: 2 vezes por semana)
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  weeklyPreferredDays?: string[]; // Dias preferidos ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
 }

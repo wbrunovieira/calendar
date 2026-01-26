@@ -63,6 +63,26 @@ export class CreateEventUseCase {
       dueDate = new Date(y, m - 1, d);
     }
 
+    // Determine recurrence type
+    let recurrenceType: string | null = null;
+    let weeklyTargetCount: number | null = null;
+    let weeklyPreferredDays: string[] = [];
+
+    if (dto.recurrenceType === 'FLEXIBLE' && dto.weeklyTargetCount) {
+      // Flexible weekly habit
+      recurrenceType = 'FLEXIBLE';
+      weeklyTargetCount = dto.weeklyTargetCount;
+      weeklyPreferredDays = dto.weeklyPreferredDays || [];
+      // For flexible habits, we use a simple FREQ=WEEKLY without BYDAY
+      // The actual days are flexible based on weeklyTargetCount
+      if (!recurrenceRule) {
+        recurrenceRule = 'FREQ=WEEKLY';
+      }
+    } else if (recurrenceRule) {
+      // Fixed recurrence (traditional)
+      recurrenceType = 'FIXED';
+    }
+
     const event = Event.create({
       calendarId: dto.calendarId,
       categoryId: dto.categoryId,
@@ -80,6 +100,9 @@ export class CreateEventUseCase {
       eventType: dto.eventType || 'EVENT',
       priority: dto.priority || null,
       dueDate,
+      recurrenceType,
+      weeklyTargetCount,
+      weeklyPreferredDays,
     });
 
     return await this.eventRepository.create(event);
