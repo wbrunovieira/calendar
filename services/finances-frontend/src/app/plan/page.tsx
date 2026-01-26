@@ -130,6 +130,9 @@ export default function PlanPage() {
     };
 
     recurrings.forEach((r) => {
+      // Skip paused or cancelled recurring transactions
+      if (r.status !== 'ACTIVE') return;
+
       const rule = parseRule(r.recurrenceRule || '');
       const freq = rule.get('FREQ') || 'MONTHLY';
       const byMonthDay = rule.get('BYMONTHDAY');

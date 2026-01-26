@@ -494,3 +494,152 @@ func TestClearReviewOnWhenReactivating(t *testing.T) {
 		t.Fatalf("expected ReviewOn to be cleared when reactivating, got %v", updated.ReviewOn)
 	}
 }
+
+// TestPausedTransactionsShouldNotBeCountedInTotals verifies that when listing
+// recurring transactions, paused ones are correctly marked so the frontend
+// can filter them out from calculations.
+func TestPausedTransactionsShouldNotBeCountedInTotals(t *testing.T) {
+	repo := newFakeRecurringRepo()
+	service := NewRecurringTransactionsService(repo)
+
+	// Create active transactions
+	_, _ = service.Create(CreateRecurringTransactionInput{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         100.00,
+		Description:    "Active Subscription 1",
+		RecurrenceRule: "FREQ=MONTHLY",
+		StartOn:        "2026-01-01",
+		NextOccurrence: "2026-02-01",
+		Status:         "ACTIVE",
+	})
+
+	_, _ = service.Create(CreateRecurringTransactionInput{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         50.00,
+		Description:    "Active Subscription 2",
+		RecurrenceRule: "FREQ=MONTHLY",
+		StartOn:        "2026-01-01",
+		NextOccurrence: "2026-02-01",
+		Status:         "ACTIVE",
+	})
+
+	// Create paused transaction (should NOT be counted)
+	reviewOn := "2026-05-01"
+	_, _ = service.Create(CreateRecurringTransactionInput{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         24.99,
+		Description:    "Flight Academy (PAUSED)",
+		RecurrenceRule: "FREQ=MONTHLY",
+		StartOn:        "2026-01-01",
+		NextOccurrence: "2026-02-01",
+		Status:         "PAUSED",
+		ReviewOn:       &reviewOn,
+	})
+
+	// Create cancelled transaction (should NOT be counted)
+	_, _ = service.Create(CreateRecurringTransactionInput{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         9.99,
+		Description:    "Cancelled Subscription",
+		RecurrenceRule: "FREQ=MONTHLY",
+		StartOn:        "2026-01-01",
+		NextOccurrence: "2026-02-01",
+		Status:         "CANCELLED",
+	})
+
+	// List all transactions
+	list, err := service.List("profile-1")
+	if err != nil {
+		t.Fatalf("unexpected error listing: %v", err)
+	}
+
+	if len(list) != 4 {
+		t.Fatalf("expected 4 total items, got %d", len(list))
+	}
+
+	// Calculate totals only for ACTIVE transactions (simulating frontend logic)
+	var activeTotal float64
+	var activeCount int
+	for _, item := range list {
+		if item.Status == "ACTIVE" {
+			activeTotal += item.Amount
+			activeCount++
+		}
+	}
+
+	if activeCount != 2 {
+		t.Fatalf("expected 2 active transactions, got %d", activeCount)
+	}
+
+	expectedTotal := 150.00 // 100 + 50 (NOT including paused 24.99 or cancelled 9.99)
+	if activeTotal != expectedTotal {
+		t.Fatalf("expected active total %.2f, got %.2f", expectedTotal, activeTotal)
+	}
+
+	// Verify paused transaction has correct status
+	var pausedItem *RecurringTransactionPresenter
+	for _, item := range list {
+		if item.Description == "Flight Academy (PAUSED)" {
+			pausedItem = item
+			break
+		}
+	}
+
+	if pausedItem == nil {
+		t.Fatal("paused transaction not found in list")
+	}
+
+	if pausedItem.Status != "PAUSED" {
+		t.Fatalf("expected PAUSED status, got %s", pausedItem.Status)
+	}
+
+	if pausedItem.ReviewOn == nil {
+		t.Fatal("expected ReviewOn to be set for paused transaction")
+	}
+}
+
+// TestListReturnsCorrectStatusForFiltering ensures the API returns
+// the status field correctly so the frontend can filter out non-active items.
+func TestListReturnsCorrectStatusForFiltering(t *testing.T) {
+	repo := newFakeRecurringRepo()
+	service := NewRecurringTransactionsService(repo)
+
+	statuses := []string{"ACTIVE", "PAUSED", "CANCELLED"}
+
+	for i, status := range statuses {
+		_, err := service.Create(CreateRecurringTransactionInput{
+			ProfileID:      "profile-1",
+			Type:           "EXPENSE",
+			Amount:         float64(10 * (i + 1)),
+			Description:    "Transaction " + status,
+			RecurrenceRule: "FREQ=MONTHLY",
+			StartOn:        "2026-01-01",
+			NextOccurrence: "2026-02-01",
+			Status:         status,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error creating %s transaction: %v", status, err)
+		}
+	}
+
+	list, err := service.List("profile-1")
+	if err != nil {
+		t.Fatalf("unexpected error listing: %v", err)
+	}
+
+	statusMap := make(map[string]bool)
+	for _, item := range list {
+		statusMap[item.Status] = true
+	}
+
+	// Verify all statuses are returned correctly
+	for _, status := range statuses {
+		if !statusMap[status] {
+			t.Errorf("expected to find transaction with status %s", status)
+		}
+	}
+}
