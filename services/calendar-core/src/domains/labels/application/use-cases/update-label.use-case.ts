@@ -1,6 +1,6 @@
-import { Injectable, Inject, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Label } from '../../domain/entities/label.entity';
-import { LabelRepository } from '../../infrastructure/repositories/label.repository.interface';
+import { PrismaLabelRepository } from '../../infrastructure/repositories/label.repository';
 
 export interface UpdateLabelInput {
   name?: string;
@@ -9,10 +9,7 @@ export interface UpdateLabelInput {
 
 @Injectable()
 export class UpdateLabelUseCase {
-  constructor(
-    @Inject('LabelRepository')
-    private readonly labelRepository: LabelRepository,
-  ) {}
+  constructor(private readonly labelRepository: PrismaLabelRepository) {}
 
   async execute(id: string, input: UpdateLabelInput): Promise<Label> {
     const label = await this.labelRepository.findById(id);

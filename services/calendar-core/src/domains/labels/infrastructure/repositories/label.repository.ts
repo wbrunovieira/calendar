@@ -1,11 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../../../prisma/prisma.service';
+import { PrismaClient } from '@prisma/client';
 import { Label } from '../../domain/entities/label.entity';
-import { LabelRepository } from './label.repository.interface';
+import type { LabelRepository } from './label.repository.interface';
 
 @Injectable()
 export class PrismaLabelRepository implements LabelRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  private prisma: PrismaClient;
+
+  constructor() {
+    this.prisma = new PrismaClient();
+  }
 
   async create(label: Label): Promise<Label> {
     const data = label.toJSON();
@@ -103,5 +107,9 @@ export class PrismaLabelRepository implements LabelRepository {
     await this.prisma.label.delete({
       where: { id },
     });
+  }
+
+  async onModuleDestroy() {
+    await this.prisma.$disconnect();
   }
 }

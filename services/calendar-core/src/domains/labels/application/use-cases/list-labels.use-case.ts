@@ -1,13 +1,10 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Label } from '../../domain/entities/label.entity';
-import { LabelRepository } from '../../infrastructure/repositories/label.repository.interface';
+import { PrismaLabelRepository } from '../../infrastructure/repositories/label.repository';
 
 @Injectable()
 export class ListLabelsUseCase {
-  constructor(
-    @Inject('LabelRepository')
-    private readonly labelRepository: LabelRepository,
-  ) {}
+  constructor(private readonly labelRepository: PrismaLabelRepository) {}
 
   async execute(calendarId: string): Promise<Label[]> {
     return this.labelRepository.findByCalendarId(calendarId);

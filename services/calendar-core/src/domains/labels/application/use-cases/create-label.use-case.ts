@@ -1,6 +1,6 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Label } from '../../domain/entities/label.entity';
-import { LabelRepository } from '../../infrastructure/repositories/label.repository.interface';
+import { PrismaLabelRepository } from '../../infrastructure/repositories/label.repository';
 import { randomUUID } from 'crypto';
 
 export interface CreateLabelInput {
@@ -11,10 +11,7 @@ export interface CreateLabelInput {
 
 @Injectable()
 export class CreateLabelUseCase {
-  constructor(
-    @Inject('LabelRepository')
-    private readonly labelRepository: LabelRepository,
-  ) {}
+  constructor(private readonly labelRepository: PrismaLabelRepository) {}
 
   async execute(input: CreateLabelInput): Promise<Label> {
     const now = new Date();

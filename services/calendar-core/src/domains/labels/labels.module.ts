@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { PrismaModule } from '../../prisma/prisma.module';
 import { LabelsController } from './infrastructure/controllers/labels.controller';
 import { PrismaLabelRepository } from './infrastructure/repositories/label.repository';
 import { CreateLabelUseCase } from './application/use-cases/create-label.use-case';
@@ -8,18 +7,14 @@ import { UpdateLabelUseCase } from './application/use-cases/update-label.use-cas
 import { DeleteLabelUseCase } from './application/use-cases/delete-label.use-case';
 
 @Module({
-  imports: [PrismaModule],
   controllers: [LabelsController],
   providers: [
-    {
-      provide: 'LabelRepository',
-      useClass: PrismaLabelRepository,
-    },
+    PrismaLabelRepository,
     CreateLabelUseCase,
     ListLabelsUseCase,
     UpdateLabelUseCase,
     DeleteLabelUseCase,
   ],
-  exports: ['LabelRepository'],
+  exports: [PrismaLabelRepository],
 })
 export class LabelsModule {}
