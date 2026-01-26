@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import type { Transaction, RecurringTransaction, Invoice, BankAccount, Category } from '@/types/finances';
 
 interface TodayAlertsProps {
@@ -219,21 +220,59 @@ export default function TodayAlerts({
     return { toPay, toReceive, overduePay, overdueReceive };
   }, [plannedToday, plannedOverdue, recurringToday, recurringOverdue, todayInvoices, overdueInvoices]);
 
+  // State for dismissed review reminders (persisted in session)
+  const [dismissedReviews, setDismissedReviews] = useState<Set<string>>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = sessionStorage.getItem('dismissedReviewAlerts');
+      if (stored) {
+        return new Set(JSON.parse(stored));
+      }
+    }
+    return new Set();
+  });
+
+  const dismissReview = (id: string) => {
+    const newDismissed = new Set(dismissedReviews);
+    newDismissed.add(id);
+    setDismissedReviews(newDismissed);
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('dismissedReviewAlerts', JSON.stringify([...newDismissed]));
+    }
+  };
+
+  // Paused transactions with review dates approaching (10, 5, 1, 0 days)
+  const reviewReminders = useMemo(() => {
+    const alertDays = [10, 5, 1, 0];
+    const results: { rt: RecurringTransaction; daysUntil: number }[] = [];
+
+    recurringTransactions.forEach((rt) => {
+      if (rt.status !== 'PAUSED' || !rt.reviewOn) return;
+      if (dismissedReviews.has(rt.id)) return;
+
+      const reviewDate = extractDateStr(rt.reviewOn);
+      if (!reviewDate) return;
+
+      const daysUntil = -getDaysOverdue(reviewDate, today); // Negative because we want days until, not days since
+
+      // Show alert if within any of our thresholds
+      if (alertDays.includes(daysUntil) || daysUntil < 0) {
+        results.push({ rt, daysUntil });
+      }
+    });
+
+    return results.sort((a, b) => a.daysUntil - b.daysUntil);
+  }, [recurringTransactions, today, dismissedReviews]);
+
   const hasAlerts =
     plannedPending.length > 0 ||
     recurringPending.length > 0 ||
-    invoicesPending.length > 0;
+    invoicesPending.length > 0 ||
+    reviewReminders.length > 0;
 
   const hasOverdue =
     overdueInvoices.length > 0 ||
     plannedOverdue.length > 0 ||
     recurringOverdue.length > 0;
-
-  const getCategoryName = (categoryId?: string) => {
-    if (!categoryId) return '';
-    const cat = categories.find((c) => c.id === categoryId);
-    return cat?.name || '';
-  };
 
   const getAccountName = (accountId?: string) => {
     if (!accountId) return '';
@@ -515,6 +554,76 @@ export default function TodayAlerts({
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Review Reminders for Paused Transactions - Purple alert */}
+      {reviewReminders.length > 0 && (
+        <div className="bg-gradient-to-r from-purple-500/20 via-violet-500/20 to-indigo-500/20 border border-purple-400/30 rounded-2xl p-4 backdrop-blur-sm">
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-2xl">⏸️</span>
+            <div className="flex-1">
+              <h3 className="text-white font-semibold">Revisao de Assinaturas Pausadas</h3>
+              <p className="text-white/60 text-sm">
+                {reviewReminders.length} {reviewReminders.length === 1 ? 'assinatura precisa' : 'assinaturas precisam'} de revisao
+              </p>
+            </div>
+            <Link
+              href="/recurring"
+              className="text-purple-300 hover:text-purple-200 text-sm underline"
+            >
+              Ver todas
+            </Link>
+          </div>
+
+          <div className="space-y-2">
+            {reviewReminders.map(({ rt, daysUntil }) => {
+              const getReviewMessage = () => {
+                if (daysUntil < 0) {
+                  const daysOverdue = Math.abs(daysUntil);
+                  return <span className="text-red-400">Revisao atrasada ha {daysOverdue} {daysOverdue === 1 ? 'dia' : 'dias'}</span>;
+                }
+                if (daysUntil === 0) return <span className="text-amber-400">Revisar hoje!</span>;
+                if (daysUntil === 1) return <span className="text-amber-400">Revisar amanha</span>;
+                return <span className="text-purple-300">Revisar em {daysUntil} dias</span>;
+              };
+
+              return (
+                <div
+                  key={rt.id}
+                  className="flex items-center justify-between bg-white/5 rounded-xl p-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">
+                      {rt.type === 'INCOME' ? '💰' : '📋'}
+                    </span>
+                    <div>
+                      <p className="text-white text-sm font-medium">{rt.description}</p>
+                      <p className="text-xs">
+                        {getReviewMessage()}
+                        <span className="text-white/50"> • {formatDisplayDate(rt.reviewOn!)} • {formatCurrency(rt.amount, rt.currency)}/mes</span>
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => dismissReview(rt.id)}
+                      className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white/70 text-xs rounded-lg transition-colors"
+                      title="Ignorar por agora"
+                    >
+                      Ignorar
+                    </button>
+                    <Link
+                      href="/recurring"
+                      className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs rounded-lg transition-colors"
+                    >
+                      Revisar
+                    </Link>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

@@ -481,7 +481,7 @@ function MonthCard({
 
       // Find top-level parent
       let topParent = cat;
-      let parentChain = [cat.name];
+      const parentChain = [cat.name];
       while (topParent.parentId) {
         const parent = categories.find((c) => c.id === topParent.parentId);
         if (parent) {
@@ -950,7 +950,7 @@ function MonthCard({
                     outerRadius={isCompact ? 85 : 100}
                     paddingAngle={3}
                     dataKey="value"
-                    label={({ name, percent }) => isCompact ? `${(percent * 100).toFixed(0)}%` : `${name} ${(percent * 100).toFixed(0)}%`}
+                    label={({ name, percent }) => isCompact ? `${((percent ?? 0) * 100).toFixed(0)}%` : `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
                     labelLine={!isCompact}
                   >
                     {categoryExpenseData.parentData.map((_, index) => (
@@ -958,7 +958,7 @@ function MonthCard({
                     ))}
                   </Pie>
                   <Tooltip
-                    formatter={(value: number) => fmt(value)}
+                    formatter={(value) => fmt(typeof value === 'number' ? value : 0)}
                     contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px', fontSize: '14px' }}
                     labelStyle={{ color: '#fff', fontSize: '14px' }}
                   />
@@ -998,7 +998,7 @@ function MonthCard({
                       outerRadius={isCompact ? 85 : 100}
                       paddingAngle={3}
                       dataKey="value"
-                      label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
+                      label={({ percent }) => `${((percent ?? 0) * 100).toFixed(0)}%`}
                       labelLine={false}
                     >
                       {categoryExpenseData.subData.map((_, index) => (
@@ -1006,7 +1006,7 @@ function MonthCard({
                       ))}
                     </Pie>
                     <Tooltip
-                      formatter={(value: number) => fmt(value)}
+                      formatter={(value) => fmt(typeof value === 'number' ? value : 0)}
                       contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px', fontSize: '14px' }}
                       labelStyle={{ color: '#fff', fontSize: '14px' }}
                     />
