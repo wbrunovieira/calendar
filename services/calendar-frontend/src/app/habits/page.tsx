@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import type { Event, Calendar } from '@/types/calendar';
 
@@ -205,6 +206,15 @@ export default function HabitsPage() {
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="mb-6">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 text-white/60 hover:text-white transition-colors mb-4"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            <span>Voltar ao Calendario</span>
+          </Link>
           <h1 className="text-2xl font-bold text-white mb-2">Habitos & Tarefas</h1>
           <p className="text-white/60">Gerencie seus habitos diarios e tarefas pendentes</p>
         </div>
