@@ -14,6 +14,7 @@ import RecurringEventActionModal from '../modals/RecurringEventActionModal';
 import TimeColumn from '../timeslot/TimeColumn';
 import TimeSlotDayColumn from '../timeslot/TimeSlotDayColumn';
 import TimeSlotSummaryStats from '../timeslot/TimeSlotSummaryStats';
+import DayViewHabitsSection from '../timeslot/DayViewHabitsSection';
 
 interface TimeSlotViewProps {
   days: Date[];
@@ -288,11 +289,15 @@ export function TimeSlotView({
                 }}
                 onEventEdit={onEditClick}
                 onEventDelete={onDeleteClick}
-                onHabitToggled={onEventUpdate}
               />
             );
           })}
         </div>
+
+        {/* Today's Habits Section - only show in single day view */}
+        {isSingleDay && (
+          <DayViewHabitsSection date={days[0]} onHabitToggled={onEventUpdate} />
+        )}
       </div>
     </>
   );
