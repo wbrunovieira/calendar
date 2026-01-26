@@ -167,54 +167,30 @@ export class ListEventsUseCase {
         originalEventId: event.id, // Referência ao evento master
         occurrenceDate: dateStr, // Data específica desta ocorrência
         executions: (() => {
-          // Debug ANTES do filtro para Rezar ao Acordar
-          if (event.title === 'Rezar ao Acordar') {
-            console.log(
-              `[list-events] 🔍 ANTES DO FILTRO - Rezar ao Acordar (ocorrência: ${dateStr}):`,
-              {
-                dateStr,
-                completionsTotal: event.completions?.length || 0,
-                allCompletions: event.completions?.map((c) => ({
-                  occurrenceDate: c.occurrenceDate,
-                  completed: c.completed,
-                })),
-              },
-            );
-          }
-
           return (
-            event.completions
+            event.executions
               ?.filter((c) => {
-                const compDate = new Date(c.occurrenceDate);
-                const compDateStr = formatLocalDate(compDate);
-                const matches = compDateStr === dateStr;
-
-                // Debug específico para Rezar ao Acordar
-                if (
-                  event.title === 'Rezar ao Acordar' &&
-                  dateStr === '2025-10-15'
-                ) {
-                  console.log(
-                    `[list-events] 🔍 Rezar ao Acordar (${dateStr}):`,
-                    {
-                      completionsTotal: event.completions?.length || 0,
-                      currentCompletion: {
-                        occurrenceDate: c.occurrenceDate,
-                        parsed: compDateStr,
-                        completed: c.completed,
-                      },
-                      dateStr,
-                      matches,
-                    },
-                  );
+                // Handle executionDate which can be a Date object or string
+                // If it's a Date, Prisma returns it as UTC midnight, so we need to extract the date parts carefully
+                let compDateStr: string;
+                if (typeof c.executionDate === 'string') {
+                  // If it's already a string, extract the date part
+                  compDateStr = c.executionDate.split('T')[0];
+                } else if (c.executionDate instanceof Date) {
+                  // If it's a Date object, use UTC date to avoid timezone issues
+                  // Because Prisma stores DATE type as UTC midnight
+                  const d = c.executionDate;
+                  compDateStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+                } else {
+                  compDateStr = '';
                 }
-
+                const matches = compDateStr === dateStr;
                 return matches;
               })
               .map((c) => ({
                 id: c.id,
                 eventId: c.eventId,
-                executionDate: c.occurrenceDate,
+                executionDate: c.executionDate,
                 completed: c.completed,
                 completedAt: c.completedAt,
                 notes: c.notes,

@@ -90,21 +90,23 @@ export class EventRepository {
       },
     });
 
-    return events.map((event) => ({
-      ...new Event(event),
-      category: event.category,
-      categoryType: event.categoryType,
-      label: event.label,
-      exceptions: event.exceptions,
-      overrides: event.overrides,
-      executions: event.completions.map((completion) => ({
-        id: completion.id,
-        eventId: completion.eventId,
-        executionDate: completion.occurrenceDate,
-        completed: completion.completed,
-        notes: completion.notes,
-      })),
-    }));
+    return events.map((event) => {
+      return {
+        ...new Event(event),
+        category: event.category,
+        categoryType: event.categoryType,
+        label: event.label,
+        exceptions: event.exceptions,
+        overrides: event.overrides,
+        executions: event.completions.map((completion) => ({
+          id: completion.id,
+          eventId: completion.eventId,
+          executionDate: completion.occurrenceDate,
+          completed: completion.completed,
+          notes: completion.notes,
+        })),
+      };
+    });
   }
 
   async findByCalendarId(calendarId: string): Promise<Event[]> {
