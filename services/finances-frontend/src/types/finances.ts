@@ -165,6 +165,7 @@ export interface RecurringTransaction {
   endOn?: string;
   nextOccurrence: string;
   status: RecurringStatus;
+  reviewOn?: string;
   notes?: string;
   createdAt: string;
   updatedAt: string;

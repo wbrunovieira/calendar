@@ -15,12 +15,19 @@ const parseLocalDate = (value: string) => {
 };
 
 // Get local date in YYYY-MM-DD format (without timezone conversion)
-const getLocalDateString = () => {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
+const getLocalDateString = (date?: Date) => {
+  const d = date || new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+};
+
+// Get date X months from now
+const getDateMonthsFromNow = (months: number) => {
+  const date = new Date();
+  date.setMonth(date.getMonth() + months);
+  return getLocalDateString(date);
 };
 
 type Frequency = 'DAILY' | 'WEEKLY' | 'MONTHLY';
@@ -64,6 +71,11 @@ export default function RecurringPage() {
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+
+  // Pause modal state
+  const [pauseModalOpen, setPauseModalOpen] = useState(false);
+  const [pausingItem, setPausingItem] = useState<RecurringTransaction | null>(null);
+  const [reviewOnDate, setReviewOnDate] = useState('');
 
   const selectedProfile = useMemo(
     () => profiles.find((p) => p.id === selectedProfileId) || null,
@@ -242,22 +254,90 @@ export default function RecurringPage() {
   };
 
   const handleToggleStatus = async (item: RecurringTransaction) => {
-    const newStatus = item.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
-    setTogglingId(item.id);
+    if (item.status === 'ACTIVE') {
+      // Open pause modal to set review date
+      setPausingItem(item);
+      setReviewOnDate(getDateMonthsFromNow(3)); // Default to 3 months
+      setPauseModalOpen(true);
+    } else {
+      // Resume directly
+      setTogglingId(item.id);
+      try {
+        const res = await fetch(`${API_BASE}/recurring-transactions/${item.id}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'ACTIVE' }),
+        });
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        await loadRecurring();
+      } catch (e) {
+        console.warn('Erro ao alterar status', e);
+        setError('Nao foi possivel alterar o status.');
+      } finally {
+        setTogglingId(null);
+      }
+    }
+  };
+
+  const handlePauseConfirm = async () => {
+    if (!pausingItem) return;
+    setTogglingId(pausingItem.id);
+    setPauseModalOpen(false);
     try {
-      const res = await fetch(`${API_BASE}/recurring-transactions/${item.id}/status`, {
+      // First update status to PAUSED
+      const statusRes = await fetch(`${API_BASE}/recurring-transactions/${pausingItem.id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ status: 'PAUSED' }),
       });
-      if (!res.ok) throw new Error(`status ${res.status}`);
+      if (!statusRes.ok) throw new Error(`status ${statusRes.status}`);
+
+      // Then update with reviewOn date via PUT
+      if (reviewOnDate) {
+        const freq = pausingItem.recurrenceRule.includes('DAILY') ? 'DAILY'
+          : pausingItem.recurrenceRule.includes('WEEKLY') ? 'WEEKLY' : 'MONTHLY';
+        const updatePayload = {
+          profileId: pausingItem.profileId,
+          bankAccountId: pausingItem.bankAccountId || undefined,
+          categoryId: pausingItem.categoryId || undefined,
+          type: pausingItem.type,
+          amount: pausingItem.amount,
+          currency: pausingItem.currency,
+          description: pausingItem.description,
+          recurrenceRule: `FREQ=${freq}`,
+          startOn: pausingItem.startOn.slice(0, 10),
+          endOn: pausingItem.endOn ? pausingItem.endOn.slice(0, 10) : undefined,
+          nextOccurrence: pausingItem.nextOccurrence.slice(0, 10),
+          status: 'PAUSED',
+          reviewOn: reviewOnDate,
+          notes: pausingItem.notes || undefined,
+        };
+        const cleanPayload = Object.fromEntries(
+          Object.entries(updatePayload).filter(([, v]) => v !== undefined)
+        );
+        const updateRes = await fetch(`${API_BASE}/recurring-transactions/${pausingItem.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cleanPayload),
+        });
+        if (!updateRes.ok) throw new Error(`status ${updateRes.status}`);
+      }
+
       await loadRecurring();
     } catch (e) {
-      console.warn('Erro ao alterar status', e);
-      setError('Nao foi possivel alterar o status.');
+      console.warn('Erro ao pausar', e);
+      setError('Nao foi possivel pausar a transacao.');
     } finally {
       setTogglingId(null);
+      setPausingItem(null);
+      setReviewOnDate('');
     }
+  };
+
+  const closePauseModal = () => {
+    setPauseModalOpen(false);
+    setPausingItem(null);
+    setReviewOnDate('');
   };
 
   const getStatusLabel = (status: string) => {
@@ -377,13 +457,20 @@ export default function RecurringPage() {
                             )}
                           </td>
                           <td className="py-3 pr-4">
-                            <span className={`text-xs px-2 py-1 rounded-full ${
-                              it.status === 'ACTIVE' ? 'bg-emerald-500/20 text-emerald-200' :
-                              it.status === 'PAUSED' ? 'bg-amber-500/20 text-amber-200' :
-                              'bg-zinc-500/20 text-zinc-200'
-                            }`}>
-                              {getStatusLabel(it.status)}
-                            </span>
+                            <div className="flex flex-col gap-1">
+                              <span className={`text-xs px-2 py-1 rounded-full w-fit ${
+                                it.status === 'ACTIVE' ? 'bg-emerald-500/20 text-emerald-200' :
+                                it.status === 'PAUSED' ? 'bg-amber-500/20 text-amber-200' :
+                                'bg-zinc-500/20 text-zinc-200'
+                              }`}>
+                                {getStatusLabel(it.status)}
+                              </span>
+                              {it.status === 'PAUSED' && it.reviewOn && (
+                                <span className="text-xs text-amber-300/70">
+                                  Revisar: {parseLocalDate(it.reviewOn).toLocaleDateString('pt-BR')}
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="py-3">
                             <div className="flex gap-1">
@@ -445,6 +532,81 @@ export default function RecurringPage() {
           )}
         </div>
       </div>
+
+      {/* Pause Modal */}
+      {pauseModalOpen && pausingItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 w-full max-w-md mx-4">
+            <h3 className="text-xl font-bold text-white mb-2">Pausar Transacao</h3>
+            <p className="text-white/70 mb-4">
+              Pausando: <span className="text-white font-medium">{pausingItem.description}</span>
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-white/70 mb-1">Lembrar de revisar em:</label>
+                <input
+                  type="date"
+                  value={reviewOnDate}
+                  onChange={(e) => setReviewOnDate(e.target.value)}
+                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
+                />
+                <p className="text-xs text-white/50 mt-1">
+                  Voce sera alertado nesta data para revisar a pausa.
+                </p>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setReviewOnDate(getDateMonthsFromNow(1))}
+                  className="px-3 py-1.5 text-xs bg-white/10 hover:bg-white/20 text-white/70 rounded-lg transition-colors"
+                >
+                  1 mes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReviewOnDate(getDateMonthsFromNow(3))}
+                  className="px-3 py-1.5 text-xs bg-white/10 hover:bg-white/20 text-white/70 rounded-lg transition-colors"
+                >
+                  3 meses
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReviewOnDate(getDateMonthsFromNow(6))}
+                  className="px-3 py-1.5 text-xs bg-white/10 hover:bg-white/20 text-white/70 rounded-lg transition-colors"
+                >
+                  6 meses
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReviewOnDate('')}
+                  className="px-3 py-1.5 text-xs bg-white/10 hover:bg-white/20 text-white/70 rounded-lg transition-colors"
+                >
+                  Sem lembrete
+                </button>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-6">
+              <button
+                type="button"
+                onClick={closePauseModal}
+                className="flex-1 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg border border-white/20 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handlePauseConfirm}
+                className="flex-1 px-4 py-2 bg-amber-500/80 hover:bg-amber-500 text-white rounded-lg font-semibold border border-amber-400/40 transition-colors"
+              >
+                Pausar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal */}
       {modalOpen && (
