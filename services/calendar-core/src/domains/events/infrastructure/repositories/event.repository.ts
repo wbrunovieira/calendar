@@ -120,6 +120,7 @@ export class EventRepository {
     const updated = await this.prisma.event.update({
       where: { id },
       data: {
+        calendarId: event.calendarId,
         title: event.title,
         description: event.description,
         startTime: event.startTime,
