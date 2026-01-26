@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { api } from '@/lib/api';
 import type { Calendar, Category, CategoryType } from '@/types/calendar';
 import LabelSelector from '@/components/labels/LabelSelector';
@@ -89,6 +89,24 @@ export default function CreateHabitTodoModal({
   }, [calendarId, selectedCalendarId]);
 
   const effectiveCalendarId = selectedCalendarId || calendarId;
+
+  // Filter categories based on selected categoryType
+  const filteredCategories = useMemo(() => {
+    if (!categoryTypeId) return categories;
+    return categories.filter(cat =>
+      cat.categoryTypes?.some(ct => ct.id === categoryTypeId)
+    );
+  }, [categories, categoryTypeId]);
+
+  // Reset categoryId when categoryTypeId changes
+  useEffect(() => {
+    if (categoryTypeId && categoryId) {
+      const categoryStillValid = filteredCategories.some(cat => cat.id === categoryId);
+      if (!categoryStillValid) {
+        setCategoryId('');
+      }
+    }
+  }, [categoryTypeId, categoryId, filteredCategories]);
 
   const canCreate = title.trim() !== '' && effectiveCalendarId !== '';
 
@@ -372,10 +390,13 @@ export default function CreateHabitTodoModal({
                   <select
                     id="habitCategoryType"
                     value={categoryTypeId}
-                    onChange={(e) => setCategoryTypeId(e.target.value)}
+                    onChange={(e) => {
+                      setCategoryTypeId(e.target.value);
+                      setCategoryId(''); // Reset category when type changes
+                    }}
                     className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                   >
-                    <option value="">Sem tipo</option>
+                    <option value="">Selecione um tipo</option>
                     {categoryTypes.map((type) => (
                       <option key={type.id} value={type.id}>
                         {type.icon} {type.name}
@@ -385,8 +406,8 @@ export default function CreateHabitTodoModal({
                 </div>
               )}
 
-              {/* Category */}
-              {categories.length > 0 && (
+              {/* Category - only shown when type is selected */}
+              {categoryTypeId && filteredCategories.length > 0 && (
                 <div>
                   <label htmlFor="habitCategory" className="block text-sm font-medium text-white/70 mb-1">
                     Categoria
@@ -397,8 +418,8 @@ export default function CreateHabitTodoModal({
                     onChange={(e) => setCategoryId(e.target.value)}
                     className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                   >
-                    <option value="">Sem categoria</option>
-                    {categories.map((cat) => (
+                    <option value="">Selecione uma categoria</option>
+                    {filteredCategories.map((cat) => (
                       <option key={cat.id} value={cat.id}>
                         {cat.icon} {cat.name}
                       </option>
@@ -460,10 +481,13 @@ export default function CreateHabitTodoModal({
                   <select
                     id="todoCategoryType"
                     value={categoryTypeId}
-                    onChange={(e) => setCategoryTypeId(e.target.value)}
+                    onChange={(e) => {
+                      setCategoryTypeId(e.target.value);
+                      setCategoryId(''); // Reset category when type changes
+                    }}
                     className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                   >
-                    <option value="">Sem tipo</option>
+                    <option value="">Selecione um tipo</option>
                     {categoryTypes.map((type) => (
                       <option key={type.id} value={type.id}>
                         {type.icon} {type.name}
@@ -473,8 +497,8 @@ export default function CreateHabitTodoModal({
                 </div>
               )}
 
-              {/* Category */}
-              {categories.length > 0 && (
+              {/* Category - only shown when type is selected */}
+              {categoryTypeId && filteredCategories.length > 0 && (
                 <div>
                   <label htmlFor="todoCategory" className="block text-sm font-medium text-white/70 mb-1">
                     Categoria
@@ -485,8 +509,8 @@ export default function CreateHabitTodoModal({
                     onChange={(e) => setCategoryId(e.target.value)}
                     className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                   >
-                    <option value="">Sem categoria</option>
-                    {categories.map((cat) => (
+                    <option value="">Selecione uma categoria</option>
+                    {filteredCategories.map((cat) => (
                       <option key={cat.id} value={cat.id}>
                         {cat.icon} {cat.name}
                       </option>

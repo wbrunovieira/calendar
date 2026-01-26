@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { api } from '@/lib/api';
-import type { Calendar, Category, Event } from '@/types/calendar';
+import type { Calendar, Category, CategoryType, Event } from '@/types/calendar';
 import LabelSelector from '@/components/labels/LabelSelector';
 
 interface EditTodoModalProps {
@@ -26,8 +26,10 @@ export default function EditTodoModal({
   const [priority, setPriority] = useState<number | undefined>(undefined);
   const [dueDate, setDueDate] = useState('');
   const [categoryId, setCategoryId] = useState('');
+  const [categoryTypeId, setCategoryTypeId] = useState('');
   const [labelId, setLabelId] = useState<string | undefined>(undefined);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [categoryTypes, setCategoryTypes] = useState<CategoryType[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Load todo data when modal opens
@@ -39,18 +41,36 @@ export default function EditTodoModal({
       setPriority(todo.priority || undefined);
       setDueDate(todo.dueDate ? todo.dueDate.split('T')[0] : '');
       setCategoryId(todo.categoryId || '');
+      setCategoryTypeId(todo.categoryTypeId || '');
       setLabelId(todo.labelId || undefined);
     }
   }, [isOpen, todo]);
 
-  // Fetch categories when calendar changes
+  // Fetch categories and category types when calendar changes
   useEffect(() => {
     if (calendarId) {
-      api.categories.list(calendarId).then(setCategories).catch(console.error);
+      Promise.all([
+        api.categories.list(calendarId),
+        api.categoryTypes.list(calendarId),
+      ])
+        .then(([cats, types]) => {
+          setCategories(cats);
+          setCategoryTypes(types);
+        })
+        .catch(console.error);
     } else {
       setCategories([]);
+      setCategoryTypes([]);
     }
   }, [calendarId]);
+
+  // Filter categories based on selected categoryType
+  const filteredCategories = useMemo(() => {
+    if (!categoryTypeId) return categories;
+    return categories.filter(cat =>
+      cat.categoryTypes?.some(ct => ct.id === categoryTypeId)
+    );
+  }, [categories, categoryTypeId]);
 
   const canSave = title.trim() !== '' && calendarId !== '';
 
@@ -67,6 +87,7 @@ export default function EditTodoModal({
         priority: priority || null,
         dueDate: dueDate || null,
         categoryId: categoryId || null,
+        categoryTypeId: categoryTypeId || null,
         labelId: labelId || null,
       });
 
@@ -168,8 +189,33 @@ export default function EditTodoModal({
             />
           </div>
 
-          {/* Category */}
-          {categories.length > 0 && (
+          {/* Category Type */}
+          {categoryTypes.length > 0 && (
+            <div>
+              <label htmlFor="categoryType" className="block text-sm font-medium text-white/70 mb-1">
+                Tipo
+              </label>
+              <select
+                id="categoryType"
+                value={categoryTypeId}
+                onChange={(e) => {
+                  setCategoryTypeId(e.target.value);
+                  setCategoryId(''); // Reset category when type changes
+                }}
+                className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+              >
+                <option value="">Selecione um tipo</option>
+                {categoryTypes.map((type) => (
+                  <option key={type.id} value={type.id}>
+                    {type.icon} {type.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Category - only shown when type is selected */}
+          {categoryTypeId && filteredCategories.length > 0 && (
             <div>
               <label htmlFor="category" className="block text-sm font-medium text-white/70 mb-1">
                 Categoria
@@ -180,8 +226,8 @@ export default function EditTodoModal({
                 onChange={(e) => setCategoryId(e.target.value)}
                 className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
               >
-                <option value="">Sem categoria</option>
-                {categories.map((cat) => (
+                <option value="">Selecione uma categoria</option>
+                {filteredCategories.map((cat) => (
                   <option key={cat.id} value={cat.id}>
                     {cat.icon} {cat.name}
                   </option>
