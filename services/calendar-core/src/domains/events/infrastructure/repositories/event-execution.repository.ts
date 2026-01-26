@@ -68,7 +68,10 @@ export class EventExecutionRepository {
     return new EventExecution(created);
   }
 
-  async update(id: string, data: Partial<EventExecution>): Promise<EventExecution> {
+  async update(
+    id: string,
+    data: Partial<EventExecution>,
+  ): Promise<EventExecution> {
     const updated = await this.prisma.eventCompletion.update({
       where: { id },
       data: {

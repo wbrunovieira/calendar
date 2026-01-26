@@ -22,14 +22,14 @@ export interface StatsData {
     [key: string]: {
       total: number;
       completed: number;
-    }
+    };
   };
 }
 
 export interface GetEventsStatsFilters {
   // Filtros de período (obrigatórios)
   startDate: string; // YYYY-MM-DD
-  endDate: string;   // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
 
   // Filtros de contexto (opcionais)
   calendarId?: string;
@@ -63,12 +63,22 @@ export class GetEventsStatsUseCase {
     rangeEnd.setHours(23, 59, 59, 999);
 
     // Coletar todas as ocorrências de eventos no período
-    const occurrences = this.collectOccurrences(events, rangeStart, rangeEnd, filters.categoryTypeId);
+    const occurrences = this.collectOccurrences(
+      events,
+      rangeStart,
+      rangeEnd,
+      filters.categoryTypeId,
+    );
 
     // Agrupar conforme o groupBy solicitado
     switch (groupBy) {
       case 'day':
-        return this.groupByDay(occurrences, rangeStart, rangeEnd, filters.includeBreakdown);
+        return this.groupByDay(
+          occurrences,
+          rangeStart,
+          rangeEnd,
+          filters.includeBreakdown,
+        );
       case 'week':
         return this.groupByWeek(occurrences, rangeStart, rangeEnd);
       case 'month':
@@ -80,11 +90,21 @@ export class GetEventsStatsUseCase {
       case 'total':
         return this.groupByTotal(occurrences);
       default:
-        return this.groupByDay(occurrences, rangeStart, rangeEnd, filters.includeBreakdown);
+        return this.groupByDay(
+          occurrences,
+          rangeStart,
+          rangeEnd,
+          filters.includeBreakdown,
+        );
     }
   }
 
-  private collectOccurrences(events: any[], rangeStart: Date, rangeEnd: Date, categoryTypeIdFilter?: string) {
+  private collectOccurrences(
+    events: any[],
+    rangeStart: Date,
+    rangeEnd: Date,
+    categoryTypeIdFilter?: string,
+  ) {
     const occurrences: Array<{
       date: string;
       eventId: string;
@@ -98,7 +118,10 @@ export class GetEventsStatsUseCase {
 
     for (const event of events) {
       // Filtrar por categoryTypeId se fornecido
-      if (categoryTypeIdFilter && event.categoryTypeId !== categoryTypeIdFilter) {
+      if (
+        categoryTypeIdFilter &&
+        event.categoryTypeId !== categoryTypeIdFilter
+      ) {
         continue;
       }
 
@@ -112,7 +135,7 @@ export class GetEventsStatsUseCase {
 
         if (eventDate >= rangeStart && eventDate <= rangeEnd) {
           const execution = event.executions?.find(
-            (exec) => exec.executionDate?.split('T')[0] === dateStr
+            (exec) => exec.executionDate?.split('T')[0] === dateStr,
           );
 
           occurrences.push({
@@ -153,7 +176,8 @@ export class GetEventsStatsUseCase {
         }
 
         const completion = event.completions?.find(
-          (c) => new Date(c.occurrenceDate).toISOString().split('T')[0] === dateStr
+          (c) =>
+            new Date(c.occurrenceDate).toISOString().split('T')[0] === dateStr,
         );
 
         occurrences.push({
@@ -184,7 +208,12 @@ export class GetEventsStatsUseCase {
     return endMinutes - startMinutes;
   }
 
-  private groupByDay(occurrences: any[], rangeStart: Date, rangeEnd: Date, includeBreakdown?: boolean): StatsData[] {
+  private groupByDay(
+    occurrences: any[],
+    rangeStart: Date,
+    rangeEnd: Date,
+    includeBreakdown?: boolean,
+  ): StatsData[] {
     const statsMap = new Map<string, any>();
 
     // Inicializar todos os dias no range
@@ -230,7 +259,8 @@ export class GetEventsStatsUseCase {
     let currentStreak = 0;
     for (const date of sortedDates) {
       const stats = statsMap.get(date);
-      const percentage = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+      const percentage =
+        stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
 
       // Calcular streak
       if (percentage === 100 && stats.total > 0) {
@@ -239,9 +269,13 @@ export class GetEventsStatsUseCase {
         currentStreak = 0;
       }
 
-      const avgDuration = stats.durations.length > 0
-        ? Math.round(stats.durations.reduce((a, b) => a + b, 0) / stats.durations.length)
-        : undefined;
+      const avgDuration =
+        stats.durations.length > 0
+          ? Math.round(
+              stats.durations.reduce((a, b) => a + b, 0) /
+                stats.durations.length,
+            )
+          : undefined;
 
       result.push({
         key: date,
@@ -259,8 +293,15 @@ export class GetEventsStatsUseCase {
     return result;
   }
 
-  private groupByWeek(occurrences: any[], rangeStart: Date, rangeEnd: Date): StatsData[] {
-    const weekMap = new Map<string, { total: number; completed: number; durations: number[] }>();
+  private groupByWeek(
+    occurrences: any[],
+    rangeStart: Date,
+    rangeEnd: Date,
+  ): StatsData[] {
+    const weekMap = new Map<
+      string,
+      { total: number; completed: number; durations: number[] }
+    >();
 
     for (const occ of occurrences) {
       const date = new Date(occ.date);
@@ -280,10 +321,15 @@ export class GetEventsStatsUseCase {
 
     const result: StatsData[] = [];
     for (const [weekKey, stats] of weekMap.entries()) {
-      const percentage = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
-      const avgDuration = stats.durations.length > 0
-        ? Math.round(stats.durations.reduce((a, b) => a + b, 0) / stats.durations.length)
-        : undefined;
+      const percentage =
+        stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+      const avgDuration =
+        stats.durations.length > 0
+          ? Math.round(
+              stats.durations.reduce((a, b) => a + b, 0) /
+                stats.durations.length,
+            )
+          : undefined;
 
       result.push({
         key: weekKey,
@@ -300,8 +346,15 @@ export class GetEventsStatsUseCase {
     return result;
   }
 
-  private groupByMonth(occurrences: any[], rangeStart: Date, rangeEnd: Date): StatsData[] {
-    const monthMap = new Map<string, { total: number; completed: number; durations: number[] }>();
+  private groupByMonth(
+    occurrences: any[],
+    rangeStart: Date,
+    rangeEnd: Date,
+  ): StatsData[] {
+    const monthMap = new Map<
+      string,
+      { total: number; completed: number; durations: number[] }
+    >();
 
     for (const occ of occurrences) {
       const monthKey = occ.date.substring(0, 7); // YYYY-MM
@@ -320,10 +373,15 @@ export class GetEventsStatsUseCase {
 
     const result: StatsData[] = [];
     for (const [monthKey, stats] of monthMap.entries()) {
-      const percentage = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
-      const avgDuration = stats.durations.length > 0
-        ? Math.round(stats.durations.reduce((a, b) => a + b, 0) / stats.durations.length)
-        : undefined;
+      const percentage =
+        stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+      const avgDuration =
+        stats.durations.length > 0
+          ? Math.round(
+              stats.durations.reduce((a, b) => a + b, 0) /
+                stats.durations.length,
+            )
+          : undefined;
 
       result.push({
         key: monthKey,
@@ -341,11 +399,19 @@ export class GetEventsStatsUseCase {
   }
 
   private groupByCategory(occurrences: any[]): StatsData[] {
-    const categoryMap = new Map<string, { name: string; total: number; completed: number; durations: number[] }>();
+    const categoryMap = new Map<
+      string,
+      { name: string; total: number; completed: number; durations: number[] }
+    >();
 
     for (const occ of occurrences) {
       if (!categoryMap.has(occ.categoryId)) {
-        categoryMap.set(occ.categoryId, { name: occ.categoryName, total: 0, completed: 0, durations: [] });
+        categoryMap.set(occ.categoryId, {
+          name: occ.categoryName,
+          total: 0,
+          completed: 0,
+          durations: [],
+        });
       }
 
       const stats = categoryMap.get(occ.categoryId)!;
@@ -358,10 +424,15 @@ export class GetEventsStatsUseCase {
 
     const result: StatsData[] = [];
     for (const [categoryId, stats] of categoryMap.entries()) {
-      const percentage = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
-      const avgDuration = stats.durations.length > 0
-        ? Math.round(stats.durations.reduce((a, b) => a + b, 0) / stats.durations.length)
-        : undefined;
+      const percentage =
+        stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+      const avgDuration =
+        stats.durations.length > 0
+          ? Math.round(
+              stats.durations.reduce((a, b) => a + b, 0) /
+                stats.durations.length,
+            )
+          : undefined;
 
       result.push({
         key: categoryId,
@@ -379,11 +450,19 @@ export class GetEventsStatsUseCase {
   }
 
   private groupByCategoryType(occurrences: any[]): StatsData[] {
-    const typeMap = new Map<string, { name: string; total: number; completed: number; durations: number[] }>();
+    const typeMap = new Map<
+      string,
+      { name: string; total: number; completed: number; durations: number[] }
+    >();
 
     for (const occ of occurrences) {
       if (!typeMap.has(occ.categoryTypeId)) {
-        typeMap.set(occ.categoryTypeId, { name: occ.categoryTypeName, total: 0, completed: 0, durations: [] });
+        typeMap.set(occ.categoryTypeId, {
+          name: occ.categoryTypeName,
+          total: 0,
+          completed: 0,
+          durations: [],
+        });
       }
 
       const stats = typeMap.get(occ.categoryTypeId)!;
@@ -396,10 +475,15 @@ export class GetEventsStatsUseCase {
 
     const result: StatsData[] = [];
     for (const [typeId, stats] of typeMap.entries()) {
-      const percentage = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
-      const avgDuration = stats.durations.length > 0
-        ? Math.round(stats.durations.reduce((a, b) => a + b, 0) / stats.durations.length)
-        : undefined;
+      const percentage =
+        stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+      const avgDuration =
+        stats.durations.length > 0
+          ? Math.round(
+              stats.durations.reduce((a, b) => a + b, 0) /
+                stats.durations.length,
+            )
+          : undefined;
 
       result.push({
         key: typeId,
@@ -430,26 +514,32 @@ export class GetEventsStatsUseCase {
     }
 
     const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
-    const avgDuration = durations.length > 0
-      ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
-      : undefined;
+    const avgDuration =
+      durations.length > 0
+        ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
+        : undefined;
 
-    return [{
-      key: 'total',
-      label: 'Total Geral',
-      total,
-      completed,
-      pending: total - completed,
-      percentage,
-      averageCompletionTime: avgDuration,
-    }];
+    return [
+      {
+        key: 'total',
+        label: 'Total Geral',
+        total,
+        completed,
+        pending: total - completed,
+        percentage,
+        averageCompletionTime: avgDuration,
+      },
+    ];
   }
 
   private getWeekKey(date: Date): string {
     const year = date.getFullYear();
     const firstDayOfYear = new Date(year, 0, 1);
-    const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000;
-    const weekNumber = Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+    const pastDaysOfYear =
+      (date.getTime() - firstDayOfYear.getTime()) / 86400000;
+    const weekNumber = Math.ceil(
+      (pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7,
+    );
     return `${year}-W${weekNumber.toString().padStart(2, '0')}`;
   }
 }

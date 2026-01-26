@@ -45,7 +45,10 @@ export class CategoryTypeRepository {
     return type ? new CategoryType(type) : null;
   }
 
-  async findByValue(value: string, calendarId: string): Promise<CategoryType | null> {
+  async findByValue(
+    value: string,
+    calendarId: string,
+  ): Promise<CategoryType | null> {
     const type = await this.prisma.categoryType.findFirst({
       where: { value, calendarId, isActive: true },
     });
@@ -53,7 +56,10 @@ export class CategoryTypeRepository {
     return type ? new CategoryType(type) : null;
   }
 
-  async update(id: string, categoryType: Partial<CategoryType>): Promise<CategoryType> {
+  async update(
+    id: string,
+    categoryType: Partial<CategoryType>,
+  ): Promise<CategoryType> {
     const updated = await this.prisma.categoryType.update({
       where: { id },
       data: {

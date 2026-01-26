@@ -9,9 +9,14 @@ export class CreateCategoryTypeUseCase {
 
   async execute(dto: CreateCategoryTypeDto): Promise<CategoryType> {
     // Check if value already exists for this calendar
-    const existing = await this.repository.findByValue(dto.value, dto.calendarId);
+    const existing = await this.repository.findByValue(
+      dto.value,
+      dto.calendarId,
+    );
     if (existing) {
-      throw new ConflictException(`Category type with value '${dto.value}' already exists for this calendar`);
+      throw new ConflictException(
+        `Category type with value '${dto.value}' already exists for this calendar`,
+      );
     }
 
     const categoryType = CategoryType.create({

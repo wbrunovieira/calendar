@@ -32,7 +32,7 @@ export class CategoryRepository {
     // Se foram fornecidos typeIds, criar relacionamentos
     if (typeIds && typeIds.length > 0) {
       await this.prisma.categoryToType.createMany({
-        data: typeIds.map(typeId => ({
+        data: typeIds.map((typeId) => ({
           categoryId: created.id,
           categoryTypeId: typeId,
         })),
@@ -68,7 +68,7 @@ export class CategoryRepository {
 
     return {
       ...new Category(category),
-      categoryTypes: category.categoryTypes.map(ct => ct.categoryType),
+      categoryTypes: category.categoryTypes.map((ct) => ct.categoryType),
     };
   }
 
@@ -87,11 +87,15 @@ export class CategoryRepository {
 
     return categories.map((cat) => ({
       ...new Category(cat),
-      categoryTypes: cat.categoryTypes.map(ct => ct.categoryType),
+      categoryTypes: cat.categoryTypes.map((ct) => ct.categoryType),
     }));
   }
 
-  async update(id: string, category: Partial<Category>, typeIds?: string[]): Promise<any> {
+  async update(
+    id: string,
+    category: Partial<Category>,
+    typeIds?: string[],
+  ): Promise<any> {
     // Atualizar campos básicos da categoria
     const updated = await this.prisma.category.update({
       where: { id },
@@ -115,7 +119,7 @@ export class CategoryRepository {
       // Criar novos relacionamentos
       if (typeIds.length > 0) {
         await this.prisma.categoryToType.createMany({
-          data: typeIds.map(typeId => ({
+          data: typeIds.map((typeId) => ({
             categoryId: id,
             categoryTypeId: typeId,
           })),

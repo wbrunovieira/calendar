@@ -24,7 +24,9 @@ export class RRuleHelper {
     }
 
     if (options.byweekday && options.byweekday.length > 0) {
-      const days = options.byweekday.map(d => this.weekdayToRRule(d)).join(',');
+      const days = options.byweekday
+        .map((d) => this.weekdayToRRule(d))
+        .join(',');
       parts.push(`BYDAY=${days}`);
     }
 
@@ -60,7 +62,9 @@ export class RRuleHelper {
           options.interval = parseInt(value);
           break;
         case 'BYDAY':
-          options.byweekday = value.split(',').map(d => this.rruleToWeekday(d));
+          options.byweekday = value
+            .split(',')
+            .map((d) => this.rruleToWeekday(d));
           break;
         case 'BYMONTHDAY':
           options.bymonthday = parseInt(value);
@@ -111,16 +115,39 @@ export class RRuleHelper {
 
     switch (options.freq) {
       case 'DAILY':
-        this.generateDaily(effectiveStart, effectiveEnd, options.interval || 1, occurrences);
+        this.generateDaily(
+          effectiveStart,
+          effectiveEnd,
+          options.interval || 1,
+          occurrences,
+        );
         break;
       case 'WEEKLY':
-        this.generateWeekly(seriesStart, effectiveStart, effectiveEnd, options, occurrences);
+        this.generateWeekly(
+          seriesStart,
+          effectiveStart,
+          effectiveEnd,
+          options,
+          occurrences,
+        );
         break;
       case 'MONTHLY':
-        this.generateMonthly(seriesStart, effectiveStart, effectiveEnd, options, occurrences);
+        this.generateMonthly(
+          seriesStart,
+          effectiveStart,
+          effectiveEnd,
+          options,
+          occurrences,
+        );
         break;
       case 'YEARLY':
-        this.generateYearly(seriesStart, effectiveStart, effectiveEnd, options, occurrences);
+        this.generateYearly(
+          seriesStart,
+          effectiveStart,
+          effectiveEnd,
+          options,
+          occurrences,
+        );
         break;
     }
 

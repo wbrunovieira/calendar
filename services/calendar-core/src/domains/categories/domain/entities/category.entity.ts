@@ -28,7 +28,9 @@ export class Category {
     });
   }
 
-  update(data: Partial<Pick<Category, 'name' | 'icon' | 'color' | 'type'>>): void {
+  update(
+    data: Partial<Pick<Category, 'name' | 'icon' | 'color' | 'type'>>,
+  ): void {
     Object.assign(this, data);
     this.updatedAt = new Date();
   }

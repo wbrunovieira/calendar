@@ -7,7 +7,9 @@ export class LoggerMiddleware implements NestMiddleware {
     const { method, originalUrl, ip } = req;
     const startTime = Date.now();
 
-    console.log(`[${new Date().toISOString()}] ${method} ${originalUrl} - IP: ${ip}`);
+    console.log(
+      `[${new Date().toISOString()}] ${method} ${originalUrl} - IP: ${ip}`,
+    );
     console.log('Headers:', JSON.stringify(req.headers, null, 2));
     if (req.body && Object.keys(req.body).length > 0) {
       console.log('Body:', JSON.stringify(req.body, null, 2));

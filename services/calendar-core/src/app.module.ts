@@ -8,7 +8,12 @@ import { EventsModule } from './domains/events/events.module';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 
 @Module({
-  imports: [CalendarsModule, CategoriesModule, CategoryTypesModule, EventsModule],
+  imports: [
+    CalendarsModule,
+    CategoriesModule,
+    CategoryTypesModule,
+    EventsModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })

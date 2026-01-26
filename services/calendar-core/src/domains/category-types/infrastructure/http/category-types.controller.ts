@@ -1,4 +1,15 @@
-import { Controller, Post, Get, Delete, Put, Body, Param, HttpCode, HttpStatus, Query } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Delete,
+  Put,
+  Body,
+  Param,
+  HttpCode,
+  HttpStatus,
+  Query,
+} from '@nestjs/common';
 import { CreateCategoryTypeUseCase } from '../../application/use-cases/create-category-type.use-case';
 import { ListCategoryTypesUseCase } from '../../application/use-cases/list-category-types.use-case';
 import { UpdateCategoryTypeUseCase } from '../../application/use-cases/update-category-type.use-case';
@@ -18,7 +29,9 @@ export class CategoryTypesController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() createCategoryTypeDto: CreateCategoryTypeDto) {
-    const categoryType = await this.createCategoryTypeUseCase.execute(createCategoryTypeDto);
+    const categoryType = await this.createCategoryTypeUseCase.execute(
+      createCategoryTypeDto,
+    );
 
     return {
       id: categoryType.id,
@@ -53,8 +66,14 @@ export class CategoryTypesController {
 
   @Put(':id')
   @HttpCode(HttpStatus.OK)
-  async update(@Param('id') id: string, @Body() updateCategoryTypeDto: UpdateCategoryTypeDto) {
-    const categoryType = await this.updateCategoryTypeUseCase.execute(id, updateCategoryTypeDto);
+  async update(
+    @Param('id') id: string,
+    @Body() updateCategoryTypeDto: UpdateCategoryTypeDto,
+  ) {
+    const categoryType = await this.updateCategoryTypeUseCase.execute(
+      id,
+      updateCategoryTypeDto,
+    );
 
     return {
       id: categoryType.id,

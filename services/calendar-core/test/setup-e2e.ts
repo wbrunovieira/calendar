@@ -5,7 +5,8 @@ let prisma: PrismaClient;
 
 // Setup before all E2E tests
 beforeAll(async () => {
-  process.env.DATABASE_URL = 'postgresql://calendar:calendar123@localhost:5433/calendar_test_db';
+  process.env.DATABASE_URL =
+    'postgresql://calendar:calendar123@localhost:5433/calendar_test_db';
   process.env.NODE_ENV = 'test';
   process.env.TZ = 'America/Sao_Paulo';
 

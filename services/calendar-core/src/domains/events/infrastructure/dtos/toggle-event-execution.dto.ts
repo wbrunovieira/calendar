@@ -1,4 +1,10 @@
-import { IsBoolean, IsDateString, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  IsBoolean,
+  IsDateString,
+  IsOptional,
+  IsString,
+  IsUUID,
+} from 'class-validator';
 
 export class ToggleEventExecutionDto {
   @IsUUID()

@@ -9,7 +9,9 @@ import { vi, expect } from 'vitest';
 /**
  * Sets up fake timers with a fixed date
  */
-export function useFakeTimers(date: Date = new Date('2024-11-16T10:00:00-03:00')) {
+export function useFakeTimers(
+  date: Date = new Date('2024-11-16T10:00:00-03:00'),
+) {
   vi.useFakeTimers();
   vi.setSystemTime(date);
 }
