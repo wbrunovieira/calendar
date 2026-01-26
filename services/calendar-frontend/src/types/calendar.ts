@@ -69,6 +69,7 @@ export interface Event {
   eventType?: EventType;
   priority?: number; // 1=high, 2=medium, 3=low
   dueDate?: string;
+  displayOrder?: number;
 }
 
 export interface HabitStats {

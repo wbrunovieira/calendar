@@ -11,6 +11,7 @@ import TimeSlotDayHeader from '../timeslot/TimeSlotDayHeader';
 import TimeSlotGrid from '../timeslot/TimeSlotGrid';
 import TimeSlotEventCard from '../timeslot/TimeSlotEventCard';
 import EmptyDayMessage from '../ui/common/EmptyDayMessage';
+import DayViewHabitsSection from '../timeslot/DayViewHabitsSection';
 
 interface DayStats {
   total: number;
@@ -43,6 +44,7 @@ interface TimeSlotDayColumnProps {
   onEventToggleExecution: (eventId: string, date: Date, isCompleted: boolean, e: React.MouseEvent) => void;
   onEventEdit?: (event: Event, e: React.MouseEvent) => void;
   onEventDelete: (event: Event, e: React.MouseEvent) => void;
+  onHabitToggled?: () => void;
 }
 
 export default function TimeSlotDayColumn({
@@ -70,6 +72,7 @@ export default function TimeSlotDayColumn({
   onEventToggleExecution,
   onEventEdit,
   onEventDelete,
+  onHabitToggled,
 }: TimeSlotDayColumnProps) {
   // Calculate event positions for this day
   const eventsWithTimes = dayEvents.map(event => {
@@ -232,6 +235,11 @@ export default function TimeSlotDayColumn({
           <EmptyDayMessage daysCount={daysCount} />
         )}
       </div>
+
+      {/* Today's Habits Section - only show in single day view */}
+      {isSingleDay && (
+        <DayViewHabitsSection date={date} onHabitToggled={onHabitToggled} />
+      )}
     </div>
   );
 }

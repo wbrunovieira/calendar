@@ -288,6 +288,7 @@ export function TimeSlotView({
                 }}
                 onEventEdit={onEditClick}
                 onEventDelete={onDeleteClick}
+                onHabitToggled={onEventUpdate}
               />
             );
           })}
