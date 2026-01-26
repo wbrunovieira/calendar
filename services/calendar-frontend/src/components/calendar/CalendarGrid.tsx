@@ -22,6 +22,39 @@ interface CalendarGridProps {
   onEditClick: (event: Event, e: React.MouseEvent) => void;
   onDeleteClick: (event: Event, e: React.MouseEvent) => void;
   onEventUpdate: () => void;
+  onPreviousPeriod?: () => void;
+  onNextPeriod?: () => void;
+}
+
+// Navigation arrow button component
+function NavigationArrow({
+  direction,
+  onClick,
+}: {
+  direction: 'left' | 'right';
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center justify-center w-10 h-10 md:w-12 md:h-12 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/40 transition-all duration-200 text-white/70 hover:text-white hover:scale-110 active:scale-95 shadow-lg"
+      aria-label={direction === 'left' ? 'Período anterior' : 'Próximo período'}
+    >
+      <svg
+        className="w-5 h-5 md:w-6 md:h-6"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d={direction === 'left' ? 'M15 19l-7-7 7-7' : 'M9 5l7 7-7 7'}
+        />
+      </svg>
+    </button>
+  );
 }
 
 export default function CalendarGrid({
@@ -35,6 +68,8 @@ export default function CalendarGrid({
   onEditClick,
   onDeleteClick,
   onEventUpdate,
+  onPreviousPeriod,
+  onNextPeriod,
 }: CalendarGridProps) {
   return (
     <div className="p-2 md:p-3" style={{ backgroundColor: '#350545' }}>
@@ -49,20 +84,35 @@ export default function CalendarGrid({
           onDeleteClick={onDeleteClick}
         />
       ) : (
-        <TimeSlotView
-          days={getDaysForView(viewMode, currentDate)}
-          events={events}
-          categories={categories}
-          categoryTypes={categoryTypes}
-          selectedCalendars={selectedCalendars}
-          onEditClick={onEditClick}
-          onDeleteClick={onDeleteClick}
-          onEventUpdate={onEventUpdate}
-          onTimeSlotClick={onTimeSlotClick}
-          daysOfWeek={viewMode === 'week' ? [...DAYS_OF_WEEK_SHORT] : undefined}
-          daysOfWeekFull={[...DAYS_OF_WEEK_FULL]}
-          monthNames={[...MONTH_NAMES]}
-        />
+        <div className="flex items-start gap-2 md:gap-4">
+          {/* Left navigation arrow */}
+          <div className="flex-shrink-0 pt-24 md:pt-28">
+            <NavigationArrow direction="left" onClick={onPreviousPeriod} />
+          </div>
+
+          {/* TimeSlot View */}
+          <div className="flex-1 min-w-0">
+            <TimeSlotView
+              days={getDaysForView(viewMode, currentDate)}
+              events={events}
+              categories={categories}
+              categoryTypes={categoryTypes}
+              selectedCalendars={selectedCalendars}
+              onEditClick={onEditClick}
+              onDeleteClick={onDeleteClick}
+              onEventUpdate={onEventUpdate}
+              onTimeSlotClick={onTimeSlotClick}
+              daysOfWeek={viewMode === 'week' ? [...DAYS_OF_WEEK_SHORT] : undefined}
+              daysOfWeekFull={[...DAYS_OF_WEEK_FULL]}
+              monthNames={[...MONTH_NAMES]}
+            />
+          </div>
+
+          {/* Right navigation arrow */}
+          <div className="flex-shrink-0 pt-24 md:pt-28">
+            <NavigationArrow direction="right" onClick={onNextPeriod} />
+          </div>
+        </div>
       )}
     </div>
   );

@@ -74,6 +74,8 @@ export default function CalendarCard({
         onEditClick={onEditClick}
         onDeleteClick={onDeleteClick}
         onEventUpdate={onEventUpdate}
+        onPreviousPeriod={onPreviousPeriod}
+        onNextPeriod={onNextPeriod}
       />
 
       {/* Calendar Footer */}
