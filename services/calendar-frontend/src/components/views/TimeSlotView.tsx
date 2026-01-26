@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useState } from 'react';
 import { Event, Category, CategoryType } from '@/types/calendar';
+import { calendars } from '@/data/calendars';
 import { useDragAndDrop } from '@/hooks/useDragAndDrop';
 import { useTimeSlotEventUpdate } from '@/hooks/useTimeSlotEventUpdate';
 import { useEventResize } from '@/hooks/useEventResize';
@@ -15,6 +16,8 @@ import TimeColumn from '../timeslot/TimeColumn';
 import TimeSlotDayColumn from '../timeslot/TimeSlotDayColumn';
 import TimeSlotSummaryStats from '../timeslot/TimeSlotSummaryStats';
 import DayViewHabitsSection from '../timeslot/DayViewHabitsSection';
+import DayViewTasksSection from '../timeslot/DayViewTasksSection';
+import EditTodoModal from '../habits/EditTodoModal';
 
 interface TimeSlotViewProps {
   days: Date[];
@@ -48,6 +51,9 @@ export function TimeSlotView({
   const hours = HOURS_ARRAY;
   const today = new Date();
   const { handleDragStart, handleDragEnd, handleDragOver, handleDrop } = useDragAndDrop();
+
+  // State for editing tasks from day view
+  const [editingTodo, setEditingTodo] = useState<Event | null>(null);
 
   // Custom hooks for business logic
   const {
@@ -296,9 +302,28 @@ export function TimeSlotView({
 
         {/* Today's Habits Section - only show in single day view */}
         {isSingleDay && (
-          <DayViewHabitsSection date={days[0]} onHabitToggled={onEventUpdate} />
+          <>
+            <DayViewHabitsSection date={days[0]} onHabitToggled={onEventUpdate} />
+            <DayViewTasksSection
+              date={days[0]}
+              onTaskToggled={onEventUpdate}
+              onEditTask={setEditingTodo}
+            />
+          </>
         )}
       </div>
+
+      {/* Edit Todo Modal */}
+      <EditTodoModal
+        isOpen={editingTodo !== null}
+        onClose={() => setEditingTodo(null)}
+        onUpdated={() => {
+          setEditingTodo(null);
+          onEventUpdate?.();
+        }}
+        todo={editingTodo}
+        calendars={calendars}
+      />
     </>
   );
 }
