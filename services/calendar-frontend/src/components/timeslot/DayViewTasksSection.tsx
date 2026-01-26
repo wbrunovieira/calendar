@@ -47,6 +47,7 @@ export default function DayViewTasksSection({ date, onTaskToggled, onEditTask }:
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(true);
+  const [draggedId, setDraggedId] = useState<string | null>(null);
 
   const dateString = formatDateToString(date);
 
@@ -83,16 +84,10 @@ export default function DayViewTasksSection({ date, onTaskToggled, onEditTask }:
         return false;
       });
 
-      // Sort by priority first (1 = high priority comes first), then by due date
-      const sortedTasks = [...relevantTasks].sort((a, b) => {
-        if (a.priority && b.priority) return a.priority - b.priority;
-        if (a.priority) return -1;
-        if (b.priority) return 1;
-        if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
-        if (a.dueDate) return -1;
-        if (b.dueDate) return 1;
-        return 0;
-      });
+      // Sort by displayOrder (for drag and drop)
+      const sortedTasks = [...relevantTasks].sort((a, b) =>
+        (a.displayOrder || 0) - (b.displayOrder || 0)
+      );
 
       setTasks(sortedTasks);
 
@@ -134,6 +129,54 @@ export default function DayViewTasksSection({ date, onTaskToggled, onEditTask }:
   // Check if we have multiple profiles
   const hasMultipleProfiles = tasksByCalendar.size > 1;
 
+  // Drag and drop handlers
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    setDraggedId(id);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetId: string, list: Event[]) => {
+    e.preventDefault();
+    if (!draggedId || draggedId === targetId) {
+      setDraggedId(null);
+      return;
+    }
+
+    const draggedIndex = list.findIndex(item => item.id === draggedId);
+    const targetIndex = list.findIndex(item => item.id === targetId);
+
+    if (draggedIndex === -1 || targetIndex === -1) {
+      setDraggedId(null);
+      return;
+    }
+
+    // Reorder the list
+    const newList = [...list];
+    const [draggedItem] = newList.splice(draggedIndex, 1);
+    newList.splice(targetIndex, 0, draggedItem);
+
+    // Get the IDs in the new order
+    const orderedIds = newList.map(item => item.id);
+
+    try {
+      await api.events.reorder(orderedIds);
+      await fetchTasks();
+    } catch (error) {
+      console.error('Error reordering:', error);
+    }
+
+    setDraggedId(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedId(null);
+  };
+
   const handleToggle = async (task: Event) => {
     const isCompleted = completedIds.has(task.id);
 
@@ -167,21 +210,32 @@ export default function DayViewTasksSection({ date, onTaskToggled, onEditTask }:
   const totalCount = tasks.length;
 
   // Render a single task item
-  const renderTaskItem = (task: Event) => {
+  const renderTaskItem = (task: Event, list: Event[]) => {
     const isCompleted = completedIds.has(task.id);
     const isToggling = toggling === task.id;
     const priority = getPriorityInfo(task.priority);
     const dueStatus = getDueDateStatus(task.dueDate, dateString);
+    const isDragged = draggedId === task.id;
 
     return (
       <li key={task.id}>
         <div
-          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${
+          draggable
+          onDragStart={(e) => handleDragStart(e, task.id)}
+          onDragOver={handleDragOver}
+          onDrop={(e) => handleDrop(e, task.id, list)}
+          onDragEnd={handleDragEnd}
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 cursor-grab active:cursor-grabbing ${
             isCompleted
               ? 'bg-green-500/20 border border-green-500/30'
               : 'bg-white/5 border border-white/10 hover:border-white/20'
-          }`}
+          } ${isDragged ? 'opacity-50' : ''}`}
         >
+          {/* Drag handle */}
+          <svg className="w-4 h-4 text-white/30 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+          </svg>
+
           {/* Checkbox */}
           <button
             onClick={() => handleToggle(task)}
@@ -333,7 +387,7 @@ export default function DayViewTasksSection({ date, onTaskToggled, onEditTask }:
                     </div>
                     {/* Tasks list */}
                     <ul className="space-y-2">
-                      {calendarTasks.map(renderTaskItem)}
+                      {calendarTasks.map(task => renderTaskItem(task, calendarTasks))}
                     </ul>
                   </div>
                 );
@@ -343,14 +397,14 @@ export default function DayViewTasksSection({ date, onTaskToggled, onEditTask }:
             // Single profile - no grouping needed
             <ul className="space-y-2">
               {/* Pending tasks first */}
-              {pendingTasks.map(renderTaskItem)}
+              {pendingTasks.map(task => renderTaskItem(task, pendingTasks))}
               {/* Completed tasks */}
               {completedTasks.length > 0 && pendingTasks.length > 0 && (
                 <li className="border-t border-white/10 pt-2 mt-2">
                   <span className="text-white/40 text-xs px-1">Concluidas ({completedTasks.length})</span>
                 </li>
               )}
-              {completedTasks.map(renderTaskItem)}
+              {completedTasks.map(task => renderTaskItem(task, completedTasks))}
             </ul>
           )}
         </div>

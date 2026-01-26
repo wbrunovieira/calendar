@@ -214,13 +214,17 @@ export default function HabitsPage() {
     });
   }, [habits, today]);
 
-  // Pending and completed todos
+  // Pending and completed todos - sorted by displayOrder
   const pendingTodos = useMemo(() => {
-    return todos.filter(t => !t.executions?.some(e => e.completed));
+    return todos
+      .filter(t => !t.executions?.some(e => e.completed))
+      .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
   }, [todos]);
 
   const completedTodos = useMemo(() => {
-    return todos.filter(t => t.executions?.some(e => e.completed));
+    return todos
+      .filter(t => t.executions?.some(e => e.completed))
+      .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
   }, [todos]);
 
   // Drag and drop handlers
@@ -486,28 +490,26 @@ export default function HabitsPage() {
                     <p className="text-white/60 text-center py-4">Nenhuma tarefa pendente</p>
                   ) : (
                     <div className="space-y-3">
-                      {pendingTodos
-                        .sort((a, b) => {
-                          // Sort by priority first (1 = high priority comes first)
-                          if (a.priority && b.priority) return a.priority - b.priority;
-                          if (a.priority) return -1;
-                          if (b.priority) return 1;
-                          // Then by due date
-                          if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
-                          if (a.dueDate) return -1;
-                          if (b.dueDate) return 1;
-                          return 0;
-                        })
-                        .map(todo => {
+                      {pendingTodos.map(todo => {
                           const priority = getPriorityLabel(todo.priority);
                           const dueStatus = getDueDateStatus(todo.dueDate);
 
                           return (
                             <div
                               key={todo.id}
-                              className="flex items-center justify-between p-4 bg-white/5 rounded-xl hover:bg-white/10 transition-colors"
+                              draggable
+                              onDragStart={(e) => handleDragStart(e, todo.id)}
+                              onDragOver={handleDragOver}
+                              onDrop={(e) => handleDrop(e, todo.id, pendingTodos)}
+                              onDragEnd={handleDragEnd}
+                              className={`flex items-center justify-between p-4 bg-white/5 rounded-xl hover:bg-white/10 transition-colors cursor-grab active:cursor-grabbing ${
+                                draggedId === todo.id ? 'opacity-50' : ''
+                              }`}
                             >
                               <div className="flex items-center gap-3">
+                                <svg className="w-4 h-4 text-white/30 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                                </svg>
                                 <button
                                   onClick={() => toggleTodoCompletion(todo)}
                                   className="w-6 h-6 rounded border-2 border-white/40 hover:border-white/60 transition-colors"
@@ -583,9 +585,19 @@ export default function HabitsPage() {
                         {completedTodos.map(todo => (
                           <div
                             key={todo.id}
-                            className="flex items-center justify-between p-4 bg-emerald-500/10 rounded-xl"
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, todo.id)}
+                            onDragOver={handleDragOver}
+                            onDrop={(e) => handleDrop(e, todo.id, completedTodos)}
+                            onDragEnd={handleDragEnd}
+                            className={`flex items-center justify-between p-4 bg-emerald-500/10 rounded-xl cursor-grab active:cursor-grabbing ${
+                              draggedId === todo.id ? 'opacity-50' : ''
+                            }`}
                           >
                             <div className="flex items-center gap-3">
+                              <svg className="w-4 h-4 text-white/30 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                              </svg>
                               <button
                                 onClick={() => toggleTodoCompletion(todo)}
                                 className="w-6 h-6 rounded border-2 bg-emerald-500 border-emerald-500 flex items-center justify-center"
