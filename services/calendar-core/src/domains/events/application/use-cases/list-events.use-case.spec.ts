@@ -232,6 +232,101 @@ describe('ListEventsUseCase', () => {
     });
   });
 
+  describe('daily habits on future dates', () => {
+    it('should show daily habit created today when viewing tomorrow', async () => {
+      // Scenario: User creates a daily habit on Jan 26
+      // When viewing Jan 27, the habit should appear
+      const habit = createEvent({
+        eventType: 'HABIT',
+        title: 'Daily Reading',
+        recurrenceRule: 'FREQ=DAILY',
+        startDate: new Date(2026, 0, 26), // Jan 26, 2026 (creation date)
+      });
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([habit]);
+
+      // View tomorrow (Jan 27)
+      const result = await useCase.execute({
+        startDate: '2026-01-27',
+        endDate: '2026-01-27',
+      });
+
+      // Should have 1 occurrence for Jan 27
+      expect(result).toHaveLength(1);
+      expect(result[0].occurrenceDate).toBe('2026-01-27');
+      expect(result[0].eventType).toBe('HABIT');
+    });
+
+    it('should show daily habit created today when viewing multiple future days', async () => {
+      // Scenario: User creates a daily habit on Jan 26
+      // When viewing Jan 27-29, all 3 days should show the habit
+      const habit = createEvent({
+        eventType: 'HABIT',
+        title: 'Daily Meditation',
+        recurrenceRule: 'FREQ=DAILY',
+        startDate: new Date(2026, 0, 26), // Jan 26, 2026
+      });
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([habit]);
+
+      const result = await useCase.execute({
+        startDate: '2026-01-27',
+        endDate: '2026-01-29',
+      });
+
+      // Should have 3 occurrences (Jan 27, 28, 29)
+      expect(result).toHaveLength(3);
+      expect(result.map(r => r.occurrenceDate)).toEqual([
+        '2026-01-27',
+        '2026-01-28',
+        '2026-01-29',
+      ]);
+    });
+
+    it('should NOT show daily habit when viewing days before creation', async () => {
+      // Scenario: User creates a daily habit on Jan 26
+      // When viewing Jan 25, the habit should NOT appear
+      const habit = createEvent({
+        eventType: 'HABIT',
+        title: 'Daily Reading',
+        recurrenceRule: 'FREQ=DAILY',
+        startDate: new Date(2026, 0, 26), // Jan 26, 2026
+      });
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([habit]);
+
+      const result = await useCase.execute({
+        startDate: '2026-01-25',
+        endDate: '2026-01-25',
+      });
+
+      // Should have 0 occurrences (habit didn't exist on Jan 25)
+      expect(result).toHaveLength(0);
+    });
+
+    it('should show daily habit on creation day and future days', async () => {
+      // Scenario: User creates a daily habit on Jan 26
+      // When viewing Jan 26-28, all 3 days should show the habit
+      const habit = createEvent({
+        eventType: 'HABIT',
+        title: 'Daily Exercise',
+        recurrenceRule: 'FREQ=DAILY',
+        startDate: new Date(2026, 0, 26), // Jan 26, 2026
+      });
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([habit]);
+
+      const result = await useCase.execute({
+        startDate: '2026-01-26',
+        endDate: '2026-01-28',
+      });
+
+      // Should have 3 occurrences (Jan 26, 27, 28)
+      expect(result).toHaveLength(3);
+      expect(result.map(r => r.occurrenceDate)).toEqual([
+        '2026-01-26',
+        '2026-01-27',
+        '2026-01-28',
+      ]);
+    });
+  });
+
   describe('executions handling', () => {
     it('should include executions for habits', async () => {
       const habit = createEvent({

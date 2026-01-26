@@ -179,6 +179,63 @@ describe('CreateEventUseCase', () => {
     });
   });
 
+  describe('direct recurrenceRule handling', () => {
+    it('should use recurrenceRule directly when provided (frontend HABIT creation)', async () => {
+      vi.mocked(mockEventRepository.create!).mockImplementation(async (event) => event);
+
+      // This is how the frontend creates HABITs - sending recurrenceRule directly
+      const result = await useCase.execute({
+        ...baseEventDto,
+        eventType: 'HABIT',
+        recurrenceRule: 'FREQ=DAILY',
+      });
+
+      expect(result.eventType).toBe('HABIT');
+      expect(result.recurrenceRule).toBe('FREQ=DAILY');
+    });
+
+    it('should use recurrenceRule directly for weekly habit', async () => {
+      vi.mocked(mockEventRepository.create!).mockImplementation(async (event) => event);
+
+      const result = await useCase.execute({
+        ...baseEventDto,
+        eventType: 'HABIT',
+        recurrenceRule: 'FREQ=WEEKLY',
+      });
+
+      expect(result.eventType).toBe('HABIT');
+      expect(result.recurrenceRule).toBe('FREQ=WEEKLY');
+    });
+
+    it('should use recurrenceRule directly for monthly habit', async () => {
+      vi.mocked(mockEventRepository.create!).mockImplementation(async (event) => event);
+
+      const result = await useCase.execute({
+        ...baseEventDto,
+        eventType: 'HABIT',
+        recurrenceRule: 'FREQ=MONTHLY',
+      });
+
+      expect(result.eventType).toBe('HABIT');
+      expect(result.recurrenceRule).toBe('FREQ=MONTHLY');
+    });
+
+    it('should prefer direct recurrenceRule over legacy format', async () => {
+      vi.mocked(mockEventRepository.create!).mockImplementation(async (event) => event);
+
+      // If both are provided, direct recurrenceRule should win
+      const result = await useCase.execute({
+        ...baseEventDto,
+        eventType: 'HABIT',
+        recurrenceRule: 'FREQ=DAILY',
+        isRecurring: true,
+        recurrenceFrequency: 'weekly', // This should be ignored
+      });
+
+      expect(result.recurrenceRule).toBe('FREQ=DAILY');
+    });
+  });
+
   describe('complete TODO creation', () => {
     it('should create TODO with all fields', async () => {
       vi.mocked(mockEventRepository.create!).mockImplementation(async (event) => event);

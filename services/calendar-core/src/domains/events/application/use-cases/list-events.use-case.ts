@@ -3,6 +3,17 @@ import { Event } from '../../domain/entities/event.entity';
 import { EventRepository } from '../../infrastructure/repositories/event.repository';
 import { RRuleHelper } from '../../domain/utils/rrule-helper';
 
+/**
+ * Formats a Date object to YYYY-MM-DD string in local timezone
+ * This avoids UTC conversion issues that can shift dates by a day
+ */
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export interface ListEventsFilters {
   calendarId?: string;
   categoryId?: string;
@@ -94,7 +105,7 @@ export class ListEventsUseCase {
     if (event.exceptions) {
       for (const exception of event.exceptions) {
         const exceptionDate = new Date(exception.exceptionDate);
-        exceptions.add(exceptionDate.toISOString().split('T')[0]);
+        exceptions.add(formatLocalDate(exceptionDate));
       }
     }
 
@@ -103,14 +114,14 @@ export class ListEventsUseCase {
     if (event.overrides) {
       for (const override of event.overrides) {
         const overrideDate = new Date(override.occurrenceDate);
-        const dateStr = overrideDate.toISOString().split('T')[0];
+        const dateStr = formatLocalDate(overrideDate);
         overridesMap.set(dateStr, override.overrideEvent);
       }
     }
 
     // Para cada data gerada pela RRULE
     for (const date of dates) {
-      const dateStr = date.toISOString().split('T')[0];
+      const dateStr = formatLocalDate(date);
 
       // Se está nas exceções, pula
       if (exceptions.has(dateStr)) {
@@ -175,7 +186,7 @@ export class ListEventsUseCase {
             event.completions
               ?.filter((c) => {
                 const compDate = new Date(c.occurrenceDate);
-                const compDateStr = compDate.toISOString().split('T')[0];
+                const compDateStr = formatLocalDate(compDate);
                 const matches = compDateStr === dateStr;
 
                 // Debug específico para Rezar ao Acordar

@@ -59,9 +59,14 @@ export class CreateEventDto {
   @IsBoolean()
   isRecurring?: boolean;
 
+  // Direct RRULE string (preferred for new frontend)
   @IsOptional()
   @IsString()
-  recurrenceFrequency?: string; // 'daily', 'weekly', 'monthly', 'yearly'
+  recurrenceRule?: string; // e.g., 'FREQ=DAILY', 'FREQ=WEEKLY;BYDAY=MO,WE,FR'
+
+  @IsOptional()
+  @IsString()
+  recurrenceFrequency?: string; // 'daily', 'weekly', 'monthly', 'yearly' (legacy)
 
   @IsOptional()
   @IsNumber()

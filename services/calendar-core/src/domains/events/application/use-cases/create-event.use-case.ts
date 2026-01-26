@@ -9,9 +9,13 @@ export class CreateEventUseCase {
   constructor(private readonly eventRepository: EventRepository) {}
 
   async execute(dto: CreateEventDto): Promise<Event> {
-    // Converter formato antigo para RRULE se for recorrente
+    // Use direct recurrenceRule if provided, otherwise convert legacy format
     let recurrenceRule: string | null = null;
-    if (dto.isRecurring && dto.recurrenceFrequency) {
+
+    if (dto.recurrenceRule) {
+      // Direct RRULE string from frontend (preferred)
+      recurrenceRule = dto.recurrenceRule;
+    } else if (dto.isRecurring && dto.recurrenceFrequency) {
       const freq = dto.recurrenceFrequency.toUpperCase() as
         | 'DAILY'
         | 'WEEKLY'
