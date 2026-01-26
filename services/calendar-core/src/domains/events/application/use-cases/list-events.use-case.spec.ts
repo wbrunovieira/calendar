@@ -15,7 +15,7 @@ describe('ListEventsUseCase', () => {
     useCase = new ListEventsUseCase(mockEventRepository as EventRepository);
   });
 
-  const createEvent = (overrides: Partial<Event> = {}): Event => {
+  const createEvent = (overrides: Record<string, any> = {}): Event => {
     return new Event({
       id: 'event-1',
       calendarId: 'calendar-1',

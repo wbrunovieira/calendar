@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { GetHabitsStatsUseCase } from './get-habits-stats.use-case';
 import { EventRepository } from '../../infrastructure/repositories/event.repository';
 import { EventExecutionRepository } from '../../infrastructure/repositories/event-execution.repository';
@@ -182,7 +182,7 @@ describe('GetHabitsStatsUseCase', () => {
       vi.mocked(mockEventRepository.findAll!).mockResolvedValue([habit]);
 
       // Complete 10 out of 15 days in January (up to Jan 15)
-      const executions = [];
+      const executions: EventExecution[] = [];
       for (let day = 1; day <= 10; day++) {
         executions.push(createExecution('habit-1', new Date(2024, 0, day), true));
       }
