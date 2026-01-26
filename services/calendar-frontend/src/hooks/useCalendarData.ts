@@ -20,7 +20,7 @@ export function useCalendarData() {
       const dateRange = getDefaultDateRange();
 
       const [fetchedEvents, fetchedCategories, fetchedCategoryTypes] = await Promise.all([
-        api.events.list(dateRange),
+        api.events.list({ ...dateRange, eventType: 'EVENT' }),
         api.categories.list(),
         api.categoryTypes.list(),
       ]);
