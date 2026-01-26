@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import CalendarIcon from '../ui/common/CalendarIcon';
+import SidebarHabitsWidget from '../sidebar/SidebarHabitsWidget';
 
 interface SidebarProps {
   className?: string;
@@ -259,6 +260,9 @@ export default function Sidebar({ className = '', onToggle }: SidebarProps) {
           </li>
         </ul>
       </nav>
+
+      {/* Today's Habits Widget */}
+      <SidebarHabitsWidget isCollapsed={isCollapsed} />
 
       {/* Footer with collapsed indicator */}
       {!isCollapsed && (
