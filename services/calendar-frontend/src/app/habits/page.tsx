@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import type { Event, Calendar } from '@/types/calendar';
 import ProfileSelector from '@/components/habits/ProfileSelector';
+import CategoryBadge from '@/components/habits/CategoryBadge';
 
 type TabType = 'habits' | 'todos';
 
@@ -428,9 +429,14 @@ export default function HabitsPage() {
                                   {todo.description && (
                                     <p className="text-sm text-white/50">{todo.description}</p>
                                   )}
-                                  {selectedCalendarId === null && todo.calendarId && (
-                                    <p className="text-xs text-white/40 mt-1">{getCalendarName(todo.calendarId)}</p>
-                                  )}
+                                  <div className="flex items-center gap-2 mt-1">
+                                    {selectedCalendarId === null && todo.calendarId && (
+                                      <span className="text-xs text-white/40">{getCalendarName(todo.calendarId)}</span>
+                                    )}
+                                    {todo.category && (
+                                      <CategoryBadge category={todo.category} />
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                               <div className="flex items-center gap-2">
@@ -490,9 +496,14 @@ export default function HabitsPage() {
                               </button>
                               <div>
                                 <p className="font-medium text-white/60 line-through">{todo.title}</p>
-                                {selectedCalendarId === null && todo.calendarId && (
-                                  <p className="text-xs text-white/40">{getCalendarName(todo.calendarId)}</p>
-                                )}
+                                <div className="flex items-center gap-2 mt-1">
+                                  {selectedCalendarId === null && todo.calendarId && (
+                                    <span className="text-xs text-white/40">{getCalendarName(todo.calendarId)}</span>
+                                  )}
+                                  {todo.category && (
+                                    <CategoryBadge category={todo.category} />
+                                  )}
+                                </div>
                               </div>
                             </div>
                           </div>
