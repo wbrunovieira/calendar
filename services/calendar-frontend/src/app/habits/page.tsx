@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import type { Event, Calendar } from '@/types/calendar';
+import ProfileSelector from '@/components/habits/ProfileSelector';
 
 type TabType = 'habits' | 'todos';
 
@@ -91,7 +92,9 @@ export default function HabitsPage() {
   const [habits, setHabits] = useState<Event[]>([]);
   const [todos, setTodos] = useState<Event[]>([]);
   const [calendars, setCalendars] = useState<Calendar[]>([]);
+  const [selectedCalendarId, setSelectedCalendarId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [calendarsLoading, setCalendarsLoading] = useState(true);
   const [showCompleted, setShowCompleted] = useState(false);
 
   const today = formatLocalDate(new Date());
@@ -108,24 +111,43 @@ export default function HabitsPage() {
     };
   }, []);
 
+  // Fetch calendars on mount
+  useEffect(() => {
+    const fetchCalendars = async () => {
+      try {
+        setCalendarsLoading(true);
+        const calendarsData = await api.calendars.list();
+        setCalendars(calendarsData || []);
+      } catch (error) {
+        console.error('Error fetching calendars:', error);
+      } finally {
+        setCalendarsLoading(false);
+      }
+    };
+    fetchCalendars();
+  }, []);
+
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const [habitsData, todosData, calendarsResponse] = await Promise.all([
-        api.events.listHabits(dateRange),
-        api.events.listTodos(dateRange),
-        fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3334'}/calendars`).then(r => r.json()),
+      const params = {
+        ...dateRange,
+        ...(selectedCalendarId && { calendarId: selectedCalendarId }),
+      };
+
+      const [habitsData, todosData] = await Promise.all([
+        api.events.listHabits(params),
+        api.events.listTodos(params),
       ]);
 
       setHabits(habitsData || []);
       setTodos(todosData || []);
-      setCalendars(calendarsResponse.data || []);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
       setLoading(false);
     }
-  }, [dateRange]);
+  }, [dateRange, selectedCalendarId]);
 
   useEffect(() => {
     fetchData();
@@ -155,6 +177,12 @@ export default function HabitsPage() {
     } catch (error) {
       console.error('Error toggling todo:', error);
     }
+  };
+
+  // Get calendar name for display
+  const getCalendarName = (calendarId: string) => {
+    const calendar = calendars.find(c => c.id === calendarId);
+    return calendar?.name || '';
   };
 
   // Group habits by unique habit (not occurrence)
@@ -188,19 +216,6 @@ export default function HabitsPage() {
     return todos.filter(t => t.executions?.some(e => e.completed));
   }, [todos]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-[#350545] via-[#4a0860] to-[#792990] p-6">
-        <div className="max-w-4xl mx-auto">
-          <div className="animate-pulse space-y-4">
-            <div className="h-8 bg-white/10 rounded w-48"></div>
-            <div className="h-64 bg-white/10 rounded-2xl"></div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#350545] via-[#4a0860] to-[#792990] p-6">
       <div className="max-w-4xl mx-auto">
@@ -217,6 +232,17 @@ export default function HabitsPage() {
           </Link>
           <h1 className="text-2xl font-bold text-white mb-2">Habitos & Tarefas</h1>
           <p className="text-white/60">Gerencie seus habitos diarios e tarefas pendentes</p>
+        </div>
+
+        {/* Profile Selector */}
+        <div className="mb-6">
+          <h3 className="text-sm font-medium text-white/70 mb-2">Perfil</h3>
+          <ProfileSelector
+            calendars={calendars}
+            selectedId={selectedCalendarId}
+            onSelect={setSelectedCalendarId}
+            loading={calendarsLoading}
+          />
         </div>
 
         {/* Tabs */}
@@ -243,219 +269,241 @@ export default function HabitsPage() {
           </button>
         </div>
 
-        {/* Habits Tab */}
-        {activeTab === 'habits' && (
-          <div className="space-y-6">
-            {/* Today's Habits */}
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
-              <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                <span>Habitos de Hoje</span>
-                <span className="text-sm font-normal text-white/60">
-                  {todayHabits.filter(h => h.executions?.some(e => e.completed && e.executionDate.split('T')[0] === today)).length}/{todayHabits.length}
-                </span>
-              </h2>
+        {/* Loading State */}
+        {loading ? (
+          <div className="animate-pulse space-y-4">
+            <div className="h-64 bg-white/10 rounded-2xl"></div>
+          </div>
+        ) : (
+          <>
+            {/* Habits Tab */}
+            {activeTab === 'habits' && (
+              <div className="space-y-6">
+                {/* Today's Habits */}
+                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
+                  <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                    <span>Habitos de Hoje</span>
+                    <span className="text-sm font-normal text-white/60">
+                      {todayHabits.filter(h => h.executions?.some(e => e.completed && e.executionDate.split('T')[0] === today)).length}/{todayHabits.length}
+                    </span>
+                  </h2>
 
-              {todayHabits.length === 0 ? (
-                <p className="text-white/60 text-center py-4">Nenhum habito para hoje</p>
-              ) : (
-                <div className="space-y-3">
-                  {todayHabits.map(habit => {
-                    const isCompleted = habit.executions?.some(
-                      e => e.executionDate.split('T')[0] === today && e.completed
-                    );
+                  {todayHabits.length === 0 ? (
+                    <p className="text-white/60 text-center py-4">Nenhum habito para hoje</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {todayHabits.map(habit => {
+                        const isCompleted = habit.executions?.some(
+                          e => e.executionDate.split('T')[0] === today && e.completed
+                        );
 
-                    return (
-                      <div
-                        key={habit.id}
-                        className={`flex items-center justify-between p-4 rounded-xl transition-colors ${
-                          isCompleted ? 'bg-emerald-500/20 border border-emerald-400/30' : 'bg-white/5 hover:bg-white/10'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={() => toggleHabitCompletion(habit)}
-                            className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
-                              isCompleted
-                                ? 'bg-emerald-500 border-emerald-500 text-white'
-                                : 'border-white/40 hover:border-white/60'
+                        return (
+                          <div
+                            key={habit.id}
+                            className={`flex items-center justify-between p-4 rounded-xl transition-colors ${
+                              isCompleted ? 'bg-emerald-500/20 border border-emerald-400/30' : 'bg-white/5 hover:bg-white/10'
                             }`}
                           >
-                            {isCompleted && (
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
-                            )}
-                          </button>
-                          <div>
-                            <p className={`font-medium ${isCompleted ? 'text-emerald-300 line-through' : 'text-white'}`}>
-                              {habit.title}
-                            </p>
-                            {habit.description && (
-                              <p className="text-sm text-white/50">{habit.description}</p>
-                            )}
+                            <div className="flex items-center gap-3">
+                              <button
+                                onClick={() => toggleHabitCompletion(habit)}
+                                className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+                                  isCompleted
+                                    ? 'bg-emerald-500 border-emerald-500 text-white'
+                                    : 'border-white/40 hover:border-white/60'
+                                }`}
+                              >
+                                {isCompleted && (
+                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                )}
+                              </button>
+                              <div>
+                                <p className={`font-medium ${isCompleted ? 'text-emerald-300 line-through' : 'text-white'}`}>
+                                  {habit.title}
+                                </p>
+                                {habit.description && (
+                                  <p className="text-sm text-white/50">{habit.description}</p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {selectedCalendarId === null && habit.calendarId && (
+                                <span className="text-xs text-white/40 bg-white/5 px-2 py-1 rounded">
+                                  {getCalendarName(habit.calendarId)}
+                                </span>
+                              )}
+                              <span className="text-white/40 text-sm">{habit.startTime}</span>
+                            </div>
                           </div>
-                        </div>
-                        <span className="text-white/40 text-sm">{habit.startTime}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* All Habits */}
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
-              <h2 className="text-lg font-semibold text-white mb-4">Todos os Habitos</h2>
-
-              {uniqueHabits.length === 0 ? (
-                <p className="text-white/60 text-center py-4">Nenhum habito cadastrado</p>
-              ) : (
-                <div className="space-y-3">
-                  {uniqueHabits.map(habit => (
-                    <div
-                      key={habit.id}
-                      className="flex items-center justify-between p-4 bg-white/5 rounded-xl hover:bg-white/10 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl">
-                          {habit.isRecurring ? (habit.recurrenceFrequency === 'daily' ? '' : '') : ''}
-                        </span>
-                        <div>
-                          <p className="font-medium text-white">{habit.title}</p>
-                          <p className="text-sm text-white/50">
-                            {habit.recurrenceFrequency === 'daily' && 'Diario'}
-                            {habit.recurrenceFrequency === 'weekly' && 'Semanal'}
-                            {habit.recurrenceFrequency === 'monthly' && 'Mensal'}
-                            {habit.startTime && ` • ${habit.startTime}`}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        {habit.streak > 0 && (
-                          <span className="flex items-center gap-1 px-2 py-1 bg-orange-500/20 text-orange-400 rounded-lg text-sm">
-                            <span>🔥</span>
-                            <span>{habit.streak}</span>
-                          </span>
-                        )}
-                      </div>
+                        );
+                      })}
                     </div>
-                  ))}
+                  )}
                 </div>
-              )}
-            </div>
-          </div>
-        )}
 
-        {/* Todos Tab */}
-        {activeTab === 'todos' && (
-          <div className="space-y-6">
-            {/* Pending Todos */}
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
-              <h2 className="text-lg font-semibold text-white mb-4">
-                Tarefas Pendentes ({pendingTodos.length})
-              </h2>
+                {/* All Habits */}
+                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
+                  <h2 className="text-lg font-semibold text-white mb-4">Todos os Habitos</h2>
 
-              {pendingTodos.length === 0 ? (
-                <p className="text-white/60 text-center py-4">Nenhuma tarefa pendente</p>
-              ) : (
-                <div className="space-y-3">
-                  {pendingTodos
-                    .sort((a, b) => {
-                      // Sort by priority first (1 = high priority comes first)
-                      if (a.priority && b.priority) return a.priority - b.priority;
-                      if (a.priority) return -1;
-                      if (b.priority) return 1;
-                      // Then by due date
-                      if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
-                      if (a.dueDate) return -1;
-                      if (b.dueDate) return 1;
-                      return 0;
-                    })
-                    .map(todo => {
-                      const priority = getPriorityLabel(todo.priority);
-                      const dueStatus = getDueDateStatus(todo.dueDate);
-
-                      return (
+                  {uniqueHabits.length === 0 ? (
+                    <p className="text-white/60 text-center py-4">Nenhum habito cadastrado</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {uniqueHabits.map(habit => (
                         <div
-                          key={todo.id}
+                          key={habit.id}
                           className="flex items-center justify-between p-4 bg-white/5 rounded-xl hover:bg-white/10 transition-colors"
                         >
                           <div className="flex items-center gap-3">
-                            <button
-                              onClick={() => toggleTodoCompletion(todo)}
-                              className="w-6 h-6 rounded border-2 border-white/40 hover:border-white/60 transition-colors"
-                            />
                             <div>
-                              <p className="font-medium text-white">{todo.title}</p>
-                              {todo.description && (
-                                <p className="text-sm text-white/50">{todo.description}</p>
-                              )}
+                              <p className="font-medium text-white">{habit.title}</p>
+                              <p className="text-sm text-white/50">
+                                {habit.recurrenceFrequency === 'daily' && 'Diario'}
+                                {habit.recurrenceFrequency === 'weekly' && 'Semanal'}
+                                {habit.recurrenceFrequency === 'monthly' && 'Mensal'}
+                                {habit.startTime && ` • ${habit.startTime}`}
+                                {selectedCalendarId === null && habit.calendarId && ` • ${getCalendarName(habit.calendarId)}`}
+                              </p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            {priority && (
-                              <span className={`px-2 py-1 rounded text-xs ${priority.bg} ${priority.color}`}>
-                                {priority.label}
-                              </span>
-                            )}
-                            {dueStatus && (
-                              <span className={`text-sm ${dueStatus.color}`}>
-                                {dueStatus.label}
+                          <div className="flex items-center gap-3">
+                            {habit.streak > 0 && (
+                              <span className="flex items-center gap-1 px-2 py-1 bg-orange-500/20 text-orange-400 rounded-lg text-sm">
+                                <span>🔥</span>
+                                <span>{habit.streak}</span>
                               </span>
                             )}
                           </div>
                         </div>
-                      );
-                    })}
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
-            {/* Completed Todos */}
-            {completedTodos.length > 0 && (
-              <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
-                <button
-                  onClick={() => setShowCompleted(!showCompleted)}
-                  className="flex items-center justify-between w-full text-left"
-                >
-                  <h2 className="text-lg font-semibold text-white">
-                    Concluidas ({completedTodos.length})
+            {/* Todos Tab */}
+            {activeTab === 'todos' && (
+              <div className="space-y-6">
+                {/* Pending Todos */}
+                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
+                  <h2 className="text-lg font-semibold text-white mb-4">
+                    Tarefas Pendentes ({pendingTodos.length})
                   </h2>
-                  <svg
-                    className={`w-5 h-5 text-white/60 transition-transform ${showCompleted ? 'rotate-180' : ''}`}
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
 
-                {showCompleted && (
-                  <div className="mt-4 space-y-3">
-                    {completedTodos.map(todo => (
-                      <div
-                        key={todo.id}
-                        className="flex items-center justify-between p-4 bg-emerald-500/10 rounded-xl"
+                  {pendingTodos.length === 0 ? (
+                    <p className="text-white/60 text-center py-4">Nenhuma tarefa pendente</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {pendingTodos
+                        .sort((a, b) => {
+                          // Sort by priority first (1 = high priority comes first)
+                          if (a.priority && b.priority) return a.priority - b.priority;
+                          if (a.priority) return -1;
+                          if (b.priority) return 1;
+                          // Then by due date
+                          if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+                          if (a.dueDate) return -1;
+                          if (b.dueDate) return 1;
+                          return 0;
+                        })
+                        .map(todo => {
+                          const priority = getPriorityLabel(todo.priority);
+                          const dueStatus = getDueDateStatus(todo.dueDate);
+
+                          return (
+                            <div
+                              key={todo.id}
+                              className="flex items-center justify-between p-4 bg-white/5 rounded-xl hover:bg-white/10 transition-colors"
+                            >
+                              <div className="flex items-center gap-3">
+                                <button
+                                  onClick={() => toggleTodoCompletion(todo)}
+                                  className="w-6 h-6 rounded border-2 border-white/40 hover:border-white/60 transition-colors"
+                                />
+                                <div>
+                                  <p className="font-medium text-white">{todo.title}</p>
+                                  {todo.description && (
+                                    <p className="text-sm text-white/50">{todo.description}</p>
+                                  )}
+                                  {selectedCalendarId === null && todo.calendarId && (
+                                    <p className="text-xs text-white/40 mt-1">{getCalendarName(todo.calendarId)}</p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {priority && (
+                                  <span className={`px-2 py-1 rounded text-xs ${priority.bg} ${priority.color}`}>
+                                    {priority.label}
+                                  </span>
+                                )}
+                                {dueStatus && (
+                                  <span className={`text-sm ${dueStatus.color}`}>
+                                    {dueStatus.label}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Completed Todos */}
+                {completedTodos.length > 0 && (
+                  <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
+                    <button
+                      onClick={() => setShowCompleted(!showCompleted)}
+                      className="flex items-center justify-between w-full text-left"
+                    >
+                      <h2 className="text-lg font-semibold text-white">
+                        Concluidas ({completedTodos.length})
+                      </h2>
+                      <svg
+                        className={`w-5 h-5 text-white/60 transition-transform ${showCompleted ? 'rotate-180' : ''}`}
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
                       >
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={() => toggleTodoCompletion(todo)}
-                            className="w-6 h-6 rounded border-2 bg-emerald-500 border-emerald-500 flex items-center justify-center"
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+
+                    {showCompleted && (
+                      <div className="mt-4 space-y-3">
+                        {completedTodos.map(todo => (
+                          <div
+                            key={todo.id}
+                            className="flex items-center justify-between p-4 bg-emerald-500/10 rounded-xl"
                           >
-                            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                          </button>
-                          <p className="font-medium text-white/60 line-through">{todo.title}</p>
-                        </div>
+                            <div className="flex items-center gap-3">
+                              <button
+                                onClick={() => toggleTodoCompletion(todo)}
+                                className="w-6 h-6 rounded border-2 bg-emerald-500 border-emerald-500 flex items-center justify-center"
+                              >
+                                <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                              </button>
+                              <div>
+                                <p className="font-medium text-white/60 line-through">{todo.title}</p>
+                                {selectedCalendarId === null && todo.calendarId && (
+                                  <p className="text-xs text-white/40">{getCalendarName(todo.calendarId)}</p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
                 )}
               </div>
             )}
-          </div>
+          </>
         )}
       </div>
     </div>

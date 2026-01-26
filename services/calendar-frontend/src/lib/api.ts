@@ -1,4 +1,4 @@
-import type { Event, Category, CategoryType, HabitStats } from '@/types/calendar';
+import type { Event, Category, CategoryType, HabitStats, Calendar } from '@/types/calendar';
 
 /**
  * API client for calendar backend
@@ -152,6 +152,12 @@ export const api = {
       const query = queryParams.toString();
       return fetchAPI<HabitStats[]>(`/events/habits/stats${query ? `?${query}` : ''}`);
     },
+  },
+
+  // Calendars (Profiles)
+  calendars: {
+    list: () =>
+      fetchAPI<{ data: Calendar[]; total: number }>('/calendars').then((res) => res.data),
   },
 
   // Categories
