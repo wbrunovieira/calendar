@@ -47,6 +47,7 @@ const getShortDate = (dateStr: string) => {
 
 export default function HabitsDashboardPage() {
   const [habits, setHabits] = useState<Event[]>([]);
+  const [todos, setTodos] = useState<Event[]>([]);
   const [habitStats, setHabitStats] = useState<HabitStats[]>([]);
   const [flexibleProgress, setFlexibleProgress] = useState<FlexibleHabitProgress[]>([]);
   const [calendars, setCalendars] = useState<Calendar[]>([]);
@@ -62,11 +63,14 @@ export default function HabitsDashboardPage() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [calendarsData, habitsData, statsData, flexibleData] = await Promise.all([
+        const [calendarsData, habitsData, todosData, statsData, flexibleData] = await Promise.all([
           api.calendars.list(),
           api.events.listHabits({
             startDate: monthDays[0],
             endDate: today,
+            ...(selectedCalendarId && { calendarId: selectedCalendarId }),
+          }),
+          api.events.listTodos({
             ...(selectedCalendarId && { calendarId: selectedCalendarId }),
           }),
           api.events.getHabitsStats(
@@ -79,6 +83,7 @@ export default function HabitsDashboardPage() {
 
         setCalendars(calendarsData || []);
         setHabits(habitsData || []);
+        setTodos(todosData || []);
         setHabitStats(statsData || []);
         setFlexibleProgress(flexibleData || []);
       } catch (error) {
@@ -179,6 +184,53 @@ export default function HabitsDashboardPage() {
       currentStreak,
     };
   }, [weeklyData, monthlyData, habitStats, today]);
+
+  // Todos stats
+  const todosStats = useMemo(() => {
+    const pending = todos.filter(t => !t.executions?.some(e => e.completed));
+    const completed = todos.filter(t => t.executions?.some(e => e.completed));
+
+    // Group by priority
+    const highPriority = pending.filter(t => t.priority === 1);
+    const mediumPriority = pending.filter(t => t.priority === 2);
+    const lowPriority = pending.filter(t => t.priority === 3);
+    const noPriority = pending.filter(t => !t.priority);
+
+    // Overdue tasks
+    const overdue = pending.filter(t => {
+      if (!t.dueDate) return false;
+      const due = t.dueDate.split('T')[0];
+      return due < today;
+    });
+
+    // Due today
+    const dueToday = pending.filter(t => {
+      if (!t.dueDate) return false;
+      const due = t.dueDate.split('T')[0];
+      return due === today;
+    });
+
+    // Due this week
+    const weekEnd = weekDays[weekDays.length - 1];
+    const dueThisWeek = pending.filter(t => {
+      if (!t.dueDate) return false;
+      const due = t.dueDate.split('T')[0];
+      return due > today && due <= weekEnd;
+    });
+
+    return {
+      total: todos.length,
+      pending: pending.length,
+      completed: completed.length,
+      highPriority,
+      mediumPriority,
+      lowPriority,
+      noPriority,
+      overdue,
+      dueToday,
+      dueThisWeek,
+    };
+  }, [todos, today, weekDays]);
 
   // Get color based on percentage
   const getBarColor = (completed: number, total: number) => {
@@ -463,13 +515,152 @@ export default function HabitsDashboardPage() {
               </div>
             )}
 
-            {/* Link to Habits Page */}
-            <div className="text-center">
+            {/* Tasks Section */}
+            <div className="bg-gradient-to-r from-blue-500/20 via-indigo-500/20 to-violet-500/20 backdrop-blur-sm rounded-xl p-6 border border-blue-400/30">
+              <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                <span>📋</span>
+                <span>Tarefas</span>
+              </h2>
+
+              {/* Tasks Summary Cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                <div className="bg-white/10 rounded-lg p-3 text-center">
+                  <div className="text-2xl font-bold text-white">{todosStats.pending}</div>
+                  <div className="text-xs text-white/60">Pendentes</div>
+                </div>
+                <div className="bg-white/10 rounded-lg p-3 text-center">
+                  <div className="text-2xl font-bold text-emerald-400">{todosStats.completed}</div>
+                  <div className="text-xs text-white/60">Concluidas</div>
+                </div>
+                <div className="bg-white/10 rounded-lg p-3 text-center">
+                  <div className="text-2xl font-bold text-red-400">{todosStats.overdue.length}</div>
+                  <div className="text-xs text-white/60">Atrasadas</div>
+                </div>
+                <div className="bg-white/10 rounded-lg p-3 text-center">
+                  <div className="text-2xl font-bold text-amber-400">{todosStats.dueToday.length}</div>
+                  <div className="text-xs text-white/60">Para Hoje</div>
+                </div>
+              </div>
+
+              {/* Priority Breakdown */}
+              <div className="mb-6">
+                <h3 className="text-sm font-medium text-white/70 mb-3">Por Prioridade</h3>
+                <div className="flex gap-2">
+                  {todosStats.highPriority.length > 0 && (
+                    <div className="flex items-center gap-1 px-3 py-1 bg-red-500/20 border border-red-400/30 rounded-lg">
+                      <span className="text-red-400 font-bold">{todosStats.highPriority.length}</span>
+                      <span className="text-xs text-red-300">Alta</span>
+                    </div>
+                  )}
+                  {todosStats.mediumPriority.length > 0 && (
+                    <div className="flex items-center gap-1 px-3 py-1 bg-yellow-500/20 border border-yellow-400/30 rounded-lg">
+                      <span className="text-yellow-400 font-bold">{todosStats.mediumPriority.length}</span>
+                      <span className="text-xs text-yellow-300">Media</span>
+                    </div>
+                  )}
+                  {todosStats.lowPriority.length > 0 && (
+                    <div className="flex items-center gap-1 px-3 py-1 bg-blue-500/20 border border-blue-400/30 rounded-lg">
+                      <span className="text-blue-400 font-bold">{todosStats.lowPriority.length}</span>
+                      <span className="text-xs text-blue-300">Baixa</span>
+                    </div>
+                  )}
+                  {todosStats.noPriority.length > 0 && (
+                    <div className="flex items-center gap-1 px-3 py-1 bg-white/10 border border-white/20 rounded-lg">
+                      <span className="text-white/70 font-bold">{todosStats.noPriority.length}</span>
+                      <span className="text-xs text-white/50">Sem</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Overdue Tasks */}
+              {todosStats.overdue.length > 0 && (
+                <div className="mb-4">
+                  <h3 className="text-sm font-medium text-red-400 mb-2">Atrasadas</h3>
+                  <div className="space-y-2">
+                    {todosStats.overdue.slice(0, 5).map(task => (
+                      <div key={task.id} className="flex items-center justify-between p-2 bg-red-500/10 border border-red-400/20 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          {task.priority === 1 && <span className="text-red-400">!</span>}
+                          {task.priority === 2 && <span className="text-yellow-400">!</span>}
+                          <span className="text-white text-sm">{task.title}</span>
+                        </div>
+                        <span className="text-xs text-red-400">
+                          {task.dueDate && getShortDate(task.dueDate.split('T')[0])}
+                        </span>
+                      </div>
+                    ))}
+                    {todosStats.overdue.length > 5 && (
+                      <div className="text-xs text-white/50 text-center">
+                        +{todosStats.overdue.length - 5} mais
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Due Today */}
+              {todosStats.dueToday.length > 0 && (
+                <div className="mb-4">
+                  <h3 className="text-sm font-medium text-amber-400 mb-2">Para Hoje</h3>
+                  <div className="space-y-2">
+                    {todosStats.dueToday.map(task => (
+                      <div key={task.id} className="flex items-center justify-between p-2 bg-amber-500/10 border border-amber-400/20 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          {task.priority === 1 && <span className="text-red-400">!</span>}
+                          {task.priority === 2 && <span className="text-yellow-400">!</span>}
+                          <span className="text-white text-sm">{task.title}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Due This Week */}
+              {todosStats.dueThisWeek.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-medium text-blue-400 mb-2">Esta Semana</h3>
+                  <div className="space-y-2">
+                    {todosStats.dueThisWeek.slice(0, 5).map(task => (
+                      <div key={task.id} className="flex items-center justify-between p-2 bg-blue-500/10 border border-blue-400/20 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          {task.priority === 1 && <span className="text-red-400">!</span>}
+                          {task.priority === 2 && <span className="text-yellow-400">!</span>}
+                          <span className="text-white text-sm">{task.title}</span>
+                        </div>
+                        <span className="text-xs text-blue-400">
+                          {task.dueDate && getShortDate(task.dueDate.split('T')[0])}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {todosStats.total === 0 && (
+                <div className="text-center py-4 text-white/50">
+                  Nenhuma tarefa cadastrada
+                </div>
+              )}
+            </div>
+
+            {/* Links */}
+            <div className="flex justify-center gap-4">
               <Link
                 href="/habits"
                 className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-colors"
               >
                 <span>Gerenciar Habitos</span>
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </Link>
+              <Link
+                href="/habits?tab=todos"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors"
+              >
+                <span>Gerenciar Tarefas</span>
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
