@@ -160,6 +160,10 @@ export class ListEventsUseCase {
         eventType: event.eventType || 'EVENT',
         priority: event.priority,
         dueDate: event.dueDate,
+        // Flexible habit fields
+        recurrenceType: event.recurrenceType || 'FIXED',
+        weeklyTargetCount: event.weeklyTargetCount || null,
+        weeklyPreferredDays: event.weeklyPreferredDays || null,
         googleEventId: event.googleEventId,
         isActive: event.isActive,
         createdAt: event.createdAt,

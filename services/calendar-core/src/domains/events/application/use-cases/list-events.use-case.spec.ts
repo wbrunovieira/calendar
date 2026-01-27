@@ -352,4 +352,66 @@ describe('ListEventsUseCase', () => {
       expect(result[0].executions).toEqual([]);
     });
   });
+
+  describe('flexible habit fields', () => {
+    it('should preserve recurrenceType FLEXIBLE in expanded occurrences', async () => {
+      const flexibleHabit = createEvent({
+        eventType: 'HABIT',
+        title: 'Jiu-Jitsu',
+        recurrenceRule: 'FREQ=WEEKLY',
+        recurrenceType: 'FLEXIBLE',
+        weeklyTargetCount: 2,
+        startDate: new Date(2026, 0, 26),
+      });
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([flexibleHabit]);
+
+      const result = await useCase.execute({
+        startDate: '2026-01-26',
+        endDate: '2026-02-01',
+      });
+
+      expect(result.length).toBeGreaterThan(0);
+      expect(result[0].recurrenceType).toBe('FLEXIBLE');
+      expect(result[0].weeklyTargetCount).toBe(2);
+    });
+
+    it('should preserve weeklyPreferredDays in expanded occurrences', async () => {
+      const flexibleHabit = createEvent({
+        eventType: 'HABIT',
+        title: 'Workout',
+        recurrenceRule: 'FREQ=WEEKLY',
+        recurrenceType: 'FLEXIBLE',
+        weeklyTargetCount: 3,
+        weeklyPreferredDays: ['MO', 'WE', 'FR'],
+        startDate: new Date(2026, 0, 26),
+      });
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([flexibleHabit]);
+
+      const result = await useCase.execute({
+        startDate: '2026-01-26',
+        endDate: '2026-02-01',
+      });
+
+      expect(result[0].recurrenceType).toBe('FLEXIBLE');
+      expect(result[0].weeklyTargetCount).toBe(3);
+      expect(result[0].weeklyPreferredDays).toEqual(['MO', 'WE', 'FR']);
+    });
+
+    it('should default recurrenceType to FIXED when not set', async () => {
+      const fixedHabit = createEvent({
+        eventType: 'HABIT',
+        title: 'Daily Reading',
+        recurrenceRule: 'FREQ=DAILY',
+        startDate: new Date(2026, 0, 26),
+      });
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([fixedHabit]);
+
+      const result = await useCase.execute({
+        startDate: '2026-01-26',
+        endDate: '2026-01-26',
+      });
+
+      expect(result[0].recurrenceType).toBe('FIXED');
+    });
+  });
 });
