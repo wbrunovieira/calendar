@@ -59,6 +59,7 @@ func TestTransactionRepositoryCreate(t *testing.T) {
 			nil, // cost_center
 			txn.OccurredOn,
 			nil, // due_on
+			nil, // reminder_on
 			nil, // recurrence_rule
 			nil, // installment_number
 			nil, // installment_total
@@ -101,12 +102,12 @@ func TestTransactionRepositoryGetByID(t *testing.T) {
 	txRows := sqlmock.NewRows([]string{
 		"id", "profile_id", "bank_account_id", "destination_account_id", "category_id", "invoice_id",
 		"type", "status", "amount", "currency", "description", "notes", "cost_center",
-		"occurred_on", "due_on", "recurrence_rule", "installment_number", "installment_total",
+		"occurred_on", "due_on", "reminder_on", "recurrence_rule", "installment_number", "installment_total",
 		"external_id", "created_at", "updated_at",
 	}).AddRow(
 		"tx-123", "profile-1", "account-1", nil, nil, nil,
 		"EXPENSE", "CONFIRMED", 120.0, "BRL", "Conta", nil, nil,
-		now, nil, nil, nil, nil,
+		now, nil, nil, nil, nil, nil,
 		nil, now, now,
 	)
 

@@ -22,6 +22,7 @@ type UpdateTransactionInput struct {
 	CostCenter           *string  `json:"costCenter,omitempty"`
 	OccurredOn           string   `json:"occurredOn"`
 	DueOn                *string  `json:"dueOn,omitempty"`
+	ReminderOn           *string  `json:"reminderOn,omitempty"` // Optional reminder date for alerts
 	RecurrenceRule       *string  `json:"recurrenceRule,omitempty"`
 	InstallmentNumber    *int     `json:"installmentNumber,omitempty"`
 	InstallmentTotal     *int     `json:"installmentTotal,omitempty"`
@@ -122,6 +123,15 @@ func (uc *UpdateTransactionUseCase) Execute(id string, input UpdateTransactionIn
 		dueOn = &d
 	}
 
+	var reminderOn *time.Time
+	if input.ReminderOn != nil {
+		r, err := parseDate(*input.ReminderOn)
+		if err != nil {
+			return nil, ErrInvalidInput
+		}
+		reminderOn = &r
+	}
+
 	// Parse status if provided, otherwise keep existing
 	status := existing.Status
 	if input.Status != nil {
@@ -147,6 +157,7 @@ func (uc *UpdateTransactionUseCase) Execute(id string, input UpdateTransactionIn
 	existing.CostCenter = input.CostCenter
 	existing.OccurredOn = occurredOn
 	existing.DueOn = dueOn
+	existing.ReminderOn = reminderOn
 	existing.RecurrenceRule = input.RecurrenceRule
 	existing.InstallmentNumber = input.InstallmentNumber
 	existing.InstallmentTotal = input.InstallmentTotal

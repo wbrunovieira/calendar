@@ -45,6 +45,7 @@ type Transaction struct {
 	CostCenter           *string    `json:"costCenter,omitempty"`
 	OccurredOn           time.Time  `json:"occurredOn"`
 	DueOn                *time.Time `json:"dueOn,omitempty"`
+	ReminderOn           *time.Time `json:"reminderOn,omitempty"` // Optional reminder date for alerts (10, 5, 1, 0 days before)
 	RecurrenceRule       *string    `json:"recurrenceRule,omitempty"`
 	InstallmentNumber    *int       `json:"installmentNumber,omitempty"`
 	InstallmentTotal     *int       `json:"installmentTotal,omitempty"`
@@ -70,6 +71,7 @@ type CreateParams struct {
 	CostCenter           *string
 	OccurredOn           time.Time
 	DueOn                *time.Time
+	ReminderOn           *time.Time // Optional reminder date for alerts
 	RecurrenceRule       *string
 	InstallmentNumber    *int
 	InstallmentTotal     *int
@@ -130,6 +132,7 @@ func New(params CreateParams) (*Transaction, error) {
 		CostCenter:           cloneString(params.CostCenter),
 		OccurredOn:           params.OccurredOn,
 		DueOn:                cloneTime(params.DueOn),
+		ReminderOn:           cloneTime(params.ReminderOn),
 		RecurrenceRule:       cloneString(params.RecurrenceRule),
 		InstallmentNumber:    cloneInt(params.InstallmentNumber),
 		InstallmentTotal:     cloneInt(params.InstallmentTotal),
@@ -211,6 +214,48 @@ func (t *Transaction) AddTag(tag string) {
 	}
 	t.Tags = append(t.Tags, tag)
 	t.touch()
+}
+
+// SetReminderOn sets or clears the reminder date.
+func (t *Transaction) SetReminderOn(reminderOn *time.Time) {
+	if t == nil {
+		return
+	}
+	t.ReminderOn = cloneTime(reminderOn)
+	t.touch()
+}
+
+// GetReminderDaysUntil returns the number of days until the reminder date.
+// Positive values mean days remaining, negative values mean days overdue.
+// Returns 0 if no reminder is set.
+func (t *Transaction) GetReminderDaysUntil(referenceDate time.Time) int {
+	if t == nil || t.ReminderOn == nil {
+		return 0
+	}
+
+	// Normalize both dates to start of day for accurate calculation
+	reminder := time.Date(t.ReminderOn.Year(), t.ReminderOn.Month(), t.ReminderOn.Day(), 0, 0, 0, 0, time.UTC)
+	reference := time.Date(referenceDate.Year(), referenceDate.Month(), referenceDate.Day(), 0, 0, 0, 0, time.UTC)
+
+	diff := reminder.Sub(reference)
+	return int(diff.Hours() / 24)
+}
+
+// ShouldShowReminderAlert returns true if an alert should be shown for the given days until reminder.
+// Alerts are shown at: 10 days, 5 days, 1 day, on the day (0), and when overdue (negative).
+func ShouldShowReminderAlert(daysUntil int) bool {
+	// Show alert when overdue
+	if daysUntil < 0 {
+		return true
+	}
+	// Show alert on specific days: 10, 5, 1, 0
+	alertDays := []int{10, 5, 1, 0}
+	for _, day := range alertDays {
+		if daysUntil == day {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *Transaction) setSplits(splits []*Split) error {

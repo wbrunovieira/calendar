@@ -57,13 +57,13 @@ func (r *TransactionRepository) Create(txn *transaction.Transaction) (err error)
 		INSERT INTO finance.transactions (
 			id, profile_id, bank_account_id, destination_account_id, category_id, invoice_id,
 			type, status, amount, currency, description, notes, cost_center,
-			occurred_on, due_on, recurrence_rule, installment_number, installment_total,
+			occurred_on, due_on, reminder_on, recurrence_rule, installment_number, installment_total,
 			external_id, created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, $10, $11, $12, $13,
-			$14, $15, $16, $17, $18,
-			$19, $20, $21
+			$14, $15, $16, $17, $18, $19,
+			$20, $21, $22
 		)
 	`
 
@@ -88,6 +88,7 @@ func (r *TransactionRepository) Create(txn *transaction.Transaction) (err error)
 		nullableString(txn.CostCenter),
 		txn.OccurredOn,
 		nullableTime(txn.DueOn),
+		nullableTime(txn.ReminderOn),
 		nullableString(txn.RecurrenceRule),
 		nullableInt(txn.InstallmentNumber),
 		nullableInt(txn.InstallmentTotal),
@@ -144,7 +145,7 @@ func (r *TransactionRepository) GetByID(id string) (*transaction.Transaction, er
 	query := `
 		SELECT id, profile_id, bank_account_id, destination_account_id, category_id, invoice_id,
 			type, status, amount, currency, description, notes, cost_center,
-			occurred_on, due_on, recurrence_rule, installment_number, installment_total,
+			occurred_on, due_on, reminder_on, recurrence_rule, installment_number, installment_total,
 			external_id, created_at, updated_at
 		FROM finance.transactions
 		WHERE id = $1
@@ -171,7 +172,7 @@ func (r *TransactionRepository) List(filter transaction.ListFilter) ([]*transact
 	baseQuery := `
         SELECT id, profile_id, bank_account_id, destination_account_id, category_id, invoice_id,
                type, status, amount, currency, description, notes, cost_center,
-               occurred_on, due_on, recurrence_rule, installment_number, installment_total,
+               occurred_on, due_on, reminder_on, recurrence_rule, installment_number, installment_total,
                external_id, created_at, updated_at
         FROM finance.transactions
         WHERE profile_id = $1`
@@ -250,6 +251,7 @@ func scanTransaction(scanner transactionScanner) (*transaction.Transaction, erro
 		notes             sql.NullString
 		costCenter        sql.NullString
 		dueOn             sql.NullTime
+		reminderOn        sql.NullTime
 		recurrence        sql.NullString
 		installmentNumber sql.NullInt64
 		installmentTotal  sql.NullInt64
@@ -272,6 +274,7 @@ func scanTransaction(scanner transactionScanner) (*transaction.Transaction, erro
 		&costCenter,
 		&tx.OccurredOn,
 		&dueOn,
+		&reminderOn,
 		&recurrence,
 		&installmentNumber,
 		&installmentTotal,
@@ -312,6 +315,10 @@ func scanTransaction(scanner transactionScanner) (*transaction.Transaction, erro
 	if dueOn.Valid {
 		t := dueOn.Time
 		tx.DueOn = &t
+	}
+	if reminderOn.Valid {
+		t := reminderOn.Time
+		tx.ReminderOn = &t
 	}
 	if recurrence.Valid {
 		s := recurrence.String
@@ -372,10 +379,11 @@ func (r *TransactionRepository) Update(txn *transaction.Transaction) (err error)
 			cost_center = $11,
 			occurred_on = $12,
 			due_on = $13,
-			recurrence_rule = $14,
-			installment_number = $15,
-			installment_total = $16,
-			external_id = $17,
+			reminder_on = $14,
+			recurrence_rule = $15,
+			installment_number = $16,
+			installment_total = $17,
+			external_id = $18,
 			updated_at = NOW()
 		WHERE id = $1
 	`
@@ -394,6 +402,7 @@ func (r *TransactionRepository) Update(txn *transaction.Transaction) (err error)
 		nullableString(txn.CostCenter),
 		txn.OccurredOn,
 		nullableTime(txn.DueOn),
+		nullableTime(txn.ReminderOn),
 		nullableString(txn.RecurrenceRule),
 		nullableInt(txn.InstallmentNumber),
 		nullableInt(txn.InstallmentTotal),

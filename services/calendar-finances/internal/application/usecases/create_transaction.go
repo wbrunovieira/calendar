@@ -31,6 +31,7 @@ type CreateTransactionInput struct {
 	CostCenter           *string                       `json:"costCenter,omitempty"`
 	OccurredOn           string                        `json:"occurredOn"`
 	DueOn                *string                       `json:"dueOn,omitempty"`
+	ReminderOn           *string                       `json:"reminderOn,omitempty"` // Optional reminder date for alerts (10, 5, 1, 0 days before)
 	RecurrenceRule       *string                       `json:"recurrenceRule,omitempty"`
 	InstallmentNumber    *int                          `json:"installmentNumber,omitempty"`
 	InstallmentTotal     *int                          `json:"installmentTotal,omitempty"`
@@ -140,6 +141,15 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		dueOn = &d
 	}
 
+	var reminderOn *time.Time
+	if input.ReminderOn != nil {
+		r, err := parseDate(*input.ReminderOn)
+		if err != nil {
+			return nil, ErrInvalidInput
+		}
+		reminderOn = &r
+	}
+
 	splits, err := uc.buildSplits(input.ProfileID, input.Splits)
 	if err != nil {
 		return nil, err
@@ -174,6 +184,7 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		CostCenter:           input.CostCenter,
 		OccurredOn:           occurredOn,
 		DueOn:                dueOn,
+		ReminderOn:           reminderOn,
 		RecurrenceRule:       input.RecurrenceRule,
 		InstallmentNumber:    input.InstallmentNumber,
 		InstallmentTotal:     input.InstallmentTotal,

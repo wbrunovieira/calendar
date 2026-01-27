@@ -106,3 +106,183 @@ func TestAddTag(t *testing.T) {
 		t.Fatalf("expected 1 unique tag, got %d", len(tx.Tags))
 	}
 }
+
+func TestNewTransactionWithReminderOn(t *testing.T) {
+	occurred := time.Date(2025, time.March, 20, 0, 0, 0, 0, time.UTC)
+	reminder := time.Date(2025, time.March, 10, 0, 0, 0, 0, time.UTC)
+
+	tx, err := New(CreateParams{
+		ProfileID:     "profile-1",
+		BankAccountID: "account-1",
+		Type:          TypeIncome,
+		Amount:        700,
+		Currency:      "BRL",
+		Description:   "Devolucao de curso",
+		OccurredOn:    occurred,
+		ReminderOn:    &reminder,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if tx.ReminderOn == nil {
+		t.Fatal("expected ReminderOn to be set")
+	}
+
+	if !tx.ReminderOn.Equal(reminder) {
+		t.Fatalf("expected ReminderOn %v, got %v", reminder, *tx.ReminderOn)
+	}
+}
+
+func TestNewTransactionWithoutReminderOn(t *testing.T) {
+	occurred := time.Date(2025, time.March, 20, 0, 0, 0, 0, time.UTC)
+
+	tx, err := New(CreateParams{
+		ProfileID:     "profile-1",
+		BankAccountID: "account-1",
+		Type:          TypeIncome,
+		Amount:        700,
+		OccurredOn:    occurred,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if tx.ReminderOn != nil {
+		t.Fatal("expected ReminderOn to be nil when not provided")
+	}
+}
+
+func TestSetReminderOn(t *testing.T) {
+	occurred := time.Date(2025, time.March, 20, 0, 0, 0, 0, time.UTC)
+
+	tx, err := New(CreateParams{
+		ProfileID:     "profile-1",
+		BankAccountID: "account-1",
+		Type:          TypeIncome,
+		Amount:        700,
+		OccurredOn:    occurred,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	reminder := time.Date(2025, time.March, 15, 0, 0, 0, 0, time.UTC)
+	tx.SetReminderOn(&reminder)
+
+	if tx.ReminderOn == nil {
+		t.Fatal("expected ReminderOn to be set after SetReminderOn")
+	}
+
+	if !tx.ReminderOn.Equal(reminder) {
+		t.Fatalf("expected ReminderOn %v, got %v", reminder, *tx.ReminderOn)
+	}
+}
+
+func TestClearReminderOn(t *testing.T) {
+	occurred := time.Date(2025, time.March, 20, 0, 0, 0, 0, time.UTC)
+	reminder := time.Date(2025, time.March, 10, 0, 0, 0, 0, time.UTC)
+
+	tx, err := New(CreateParams{
+		ProfileID:     "profile-1",
+		BankAccountID: "account-1",
+		Type:          TypeIncome,
+		Amount:        700,
+		OccurredOn:    occurred,
+		ReminderOn:    &reminder,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	tx.SetReminderOn(nil)
+
+	if tx.ReminderOn != nil {
+		t.Fatal("expected ReminderOn to be nil after clearing")
+	}
+}
+
+func TestGetReminderDaysUntil(t *testing.T) {
+	today := time.Date(2025, time.March, 10, 0, 0, 0, 0, time.UTC)
+	reminder := time.Date(2025, time.March, 20, 0, 0, 0, 0, time.UTC)
+	occurred := time.Date(2025, time.March, 25, 0, 0, 0, 0, time.UTC)
+
+	tx, _ := New(CreateParams{
+		ProfileID:     "profile-1",
+		BankAccountID: "account-1",
+		Type:          TypeIncome,
+		Amount:        700,
+		OccurredOn:    occurred,
+		ReminderOn:    &reminder,
+	})
+
+	days := tx.GetReminderDaysUntil(today)
+	if days != 10 {
+		t.Fatalf("expected 10 days until reminder, got %d", days)
+	}
+}
+
+func TestGetReminderDaysUntilOverdue(t *testing.T) {
+	today := time.Date(2025, time.March, 25, 0, 0, 0, 0, time.UTC)
+	reminder := time.Date(2025, time.March, 20, 0, 0, 0, 0, time.UTC)
+	occurred := time.Date(2025, time.March, 30, 0, 0, 0, 0, time.UTC)
+
+	tx, _ := New(CreateParams{
+		ProfileID:     "profile-1",
+		BankAccountID: "account-1",
+		Type:          TypeIncome,
+		Amount:        700,
+		OccurredOn:    occurred,
+		ReminderOn:    &reminder,
+	})
+
+	days := tx.GetReminderDaysUntil(today)
+	if days != -5 {
+		t.Fatalf("expected -5 days (overdue), got %d", days)
+	}
+}
+
+func TestGetReminderDaysUntilNoReminder(t *testing.T) {
+	today := time.Date(2025, time.March, 10, 0, 0, 0, 0, time.UTC)
+	occurred := time.Date(2025, time.March, 25, 0, 0, 0, 0, time.UTC)
+
+	tx, _ := New(CreateParams{
+		ProfileID:     "profile-1",
+		BankAccountID: "account-1",
+		Type:          TypeIncome,
+		Amount:        700,
+		OccurredOn:    occurred,
+	})
+
+	days := tx.GetReminderDaysUntil(today)
+	if days != 0 {
+		t.Fatalf("expected 0 when no reminder set, got %d", days)
+	}
+}
+
+func TestShouldShowReminderAlert(t *testing.T) {
+	tests := []struct {
+		name       string
+		daysUntil  int
+		shouldShow bool
+	}{
+		{"10 days before", 10, true},
+		{"5 days before", 5, true},
+		{"1 day before", 1, true},
+		{"on the day", 0, true},
+		{"overdue 1 day", -1, true},
+		{"overdue 5 days", -5, true},
+		{"7 days before (not alert day)", 7, false},
+		{"3 days before (not alert day)", 3, false},
+		{"15 days before (too early)", 15, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ShouldShowReminderAlert(tt.daysUntil)
+			if result != tt.shouldShow {
+				t.Errorf("ShouldShowReminderAlert(%d) = %v, want %v", tt.daysUntil, result, tt.shouldShow)
+			}
+		})
+	}
+}

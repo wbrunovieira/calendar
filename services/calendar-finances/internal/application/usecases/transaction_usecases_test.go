@@ -988,3 +988,126 @@ func TestCreateTransactionDefaultStatusSkipsBalanceValidation(t *testing.T) {
 		t.Fatalf("expected default status PLANNED, got %s", tx.Status)
 	}
 }
+
+func TestCreateTransactionWithReminderOn(t *testing.T) {
+	profileID := "profile-1"
+	accountID := "account-1"
+
+	now := time.Now()
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {
+			ID:         profileID,
+			CalendarID: "cal-1",
+			Name:       "Bruno Pessoal",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Mercado Pago",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 0,
+			CurrentBalance: 0,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	reminderOn := "2025-03-10" // 10 days before occurredOn
+	input := CreateTransactionInput{
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		Type:          "INCOME",
+		Amount:        700,
+		Currency:      "BRL",
+		Description:   "Devolucao de curso Vagner Santa Rita",
+		OccurredOn:    "2025-03-20",
+		ReminderOn:    &reminderOn,
+	}
+
+	tx, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if tx.ReminderOn == nil {
+		t.Fatal("expected ReminderOn to be set")
+	}
+
+	expectedReminder := time.Date(2025, time.March, 10, 0, 0, 0, 0, time.UTC)
+	if !tx.ReminderOn.Equal(expectedReminder) {
+		t.Fatalf("expected ReminderOn %v, got %v", expectedReminder, *tx.ReminderOn)
+	}
+}
+
+func TestCreateTransactionWithoutReminderOn(t *testing.T) {
+	profileID := "profile-1"
+	accountID := "account-1"
+
+	now := time.Now()
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {
+			ID:         profileID,
+			CalendarID: "cal-1",
+			Name:       "Test",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Conta",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 1000,
+			CurrentBalance: 1000,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	input := CreateTransactionInput{
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		Type:          "EXPENSE",
+		Amount:        100,
+		Currency:      "BRL",
+		Description:   "Compra sem lembrete",
+		OccurredOn:    "2025-03-20",
+	}
+
+	tx, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if tx.ReminderOn != nil {
+		t.Fatalf("expected ReminderOn to be nil when not provided, got %v", *tx.ReminderOn)
+	}
+}

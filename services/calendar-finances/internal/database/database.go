@@ -371,6 +371,21 @@ func RunMigrations(db *sql.DB) error {
 				ADD COLUMN effective_until DATE;
 			END IF;
 		END $$`,
+
+		// Migration: Add reminder_on to transactions for advance reminder alerts
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'finance'
+				AND table_name = 'transactions'
+				AND column_name = 'reminder_on'
+			) THEN
+				ALTER TABLE finance.transactions
+				ADD COLUMN reminder_on DATE;
+			END IF;
+		END $$`,
+		`CREATE INDEX IF NOT EXISTS idx_transactions_reminder ON finance.transactions(reminder_on) WHERE reminder_on IS NOT NULL`,
 	}
 
 	for i, migration := range migrations {
