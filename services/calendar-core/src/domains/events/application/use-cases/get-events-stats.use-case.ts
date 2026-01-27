@@ -2,6 +2,18 @@ import { Injectable } from '@nestjs/common';
 import { EventRepository } from '../../infrastructure/repositories/event.repository';
 import { RRuleHelper } from '../../domain/utils/rrule-helper';
 
+// Helper to extract date string from Date object or string
+const toDateString = (date: Date | string | undefined | null): string => {
+  if (!date) return '';
+  if (date instanceof Date) {
+    return date.toISOString().split('T')[0];
+  }
+  if (typeof date === 'string') {
+    return date.split('T')[0];
+  }
+  return '';
+};
+
 export interface StatsData {
   // Identificador do grupo (data, categoria, tipo, etc)
   key: string;
@@ -135,7 +147,7 @@ export class GetEventsStatsUseCase {
 
         if (eventDate >= rangeStart && eventDate <= rangeEnd) {
           const execution = event.executions?.find(
-            (exec) => exec.executionDate?.split('T')[0] === dateStr,
+            (exec) => toDateString(exec.executionDate) === dateStr,
           );
 
           occurrences.push({
