@@ -36,6 +36,17 @@ export class UpdateEventUseCase {
     if (dto.description !== undefined) updateData.description = dto.description;
     if (dto.startTime !== undefined) updateData.startTime = dto.startTime;
     if (dto.endTime !== undefined) updateData.endTime = dto.endTime;
+
+    // TODO-specific fields: priority and dueDate
+    if (dto.priority !== undefined) updateData.priority = dto.priority;
+    if (dto.dueDate !== undefined) {
+      if (dto.dueDate === null) {
+        updateData.dueDate = null;
+      } else {
+        const [year, month, day] = dto.dueDate.split('-').map(Number);
+        updateData.dueDate = new Date(year, month - 1, day);
+      }
+    }
     if (dto.startDate !== undefined) {
       // Parse date string as local date, not UTC
       const [year, month, day] = dto.startDate.split('-').map(Number);
