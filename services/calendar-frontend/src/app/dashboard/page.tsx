@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import type { Event, Calendar, HabitStats } from '@/types/calendar';
+import type { Event, Calendar, HabitStats, FlexibleHabitProgress } from '@/types/calendar';
 
 const formatLocalDate = (date: Date) => {
   const year = date.getFullYear();
@@ -48,6 +48,7 @@ const getShortDate = (dateStr: string) => {
 export default function HabitsDashboardPage() {
   const [habits, setHabits] = useState<Event[]>([]);
   const [habitStats, setHabitStats] = useState<HabitStats[]>([]);
+  const [flexibleProgress, setFlexibleProgress] = useState<FlexibleHabitProgress[]>([]);
   const [calendars, setCalendars] = useState<Calendar[]>([]);
   const [selectedCalendarId, setSelectedCalendarId] = useState<string>('');
   const [loading, setLoading] = useState(true);
@@ -61,7 +62,7 @@ export default function HabitsDashboardPage() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [calendarsData, habitsData, statsData] = await Promise.all([
+        const [calendarsData, habitsData, statsData, flexibleData] = await Promise.all([
           api.calendars.list(),
           api.events.listHabits({
             startDate: monthDays[0],
@@ -71,11 +72,15 @@ export default function HabitsDashboardPage() {
           api.events.getHabitsStats(
             selectedCalendarId ? { calendarId: selectedCalendarId } : undefined
           ),
+          api.events.getWeeklyProgress(
+            selectedCalendarId ? { calendarId: selectedCalendarId } : undefined
+          ),
         ]);
 
         setCalendars(calendarsData || []);
         setHabits(habitsData || []);
         setHabitStats(statsData || []);
+        setFlexibleProgress(flexibleData || []);
       } catch (error) {
         console.error('Error fetching data:', error);
       } finally {
@@ -294,9 +299,58 @@ export default function HabitsDashboardPage() {
               </div>
             </div>
 
+            {/* Flexible Habits Weekly Progress */}
+            {flexibleProgress.length > 0 && (
+              <div className="bg-gradient-to-r from-purple-500/20 via-pink-500/20 to-orange-500/20 backdrop-blur-sm rounded-xl p-6 border border-purple-400/30">
+                <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                  <span>🎯</span>
+                  <span>Habitos Flexiveis - Progresso Semanal</span>
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {flexibleProgress.map((habit) => {
+                    const percentage = habit.weekProgress.targetCount > 0
+                      ? Math.round((habit.weekProgress.completedCount / habit.weekProgress.targetCount) * 100)
+                      : 0;
+                    const isGoalMet = habit.weekProgress.isGoalMet;
+
+                    return (
+                      <div
+                        key={habit.habitId}
+                        className={`p-4 rounded-xl ${isGoalMet ? 'bg-emerald-500/20 border border-emerald-400/30' : 'bg-white/10 border border-white/20'}`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium text-white">{habit.habitTitle}</span>
+                          {isGoalMet && <span className="text-emerald-400">✓</span>}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1 h-3 bg-white/10 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full transition-all ${isGoalMet ? 'bg-emerald-500' : 'bg-purple-500'}`}
+                              style={{ width: `${Math.min(percentage, 100)}%` }}
+                            />
+                          </div>
+                          <span className={`text-lg font-bold ${isGoalMet ? 'text-emerald-400' : 'text-white'}`}>
+                            {habit.weekProgress.completedCount}/{habit.weekProgress.targetCount}
+                          </span>
+                        </div>
+                        {habit.weekProgress.completedDates.length > 0 && (
+                          <div className="mt-2 text-xs text-white/50">
+                            Concluido: {habit.weekProgress.completedDates.map(d => {
+                              const [, m, day] = d.split('-');
+                              return `${day}/${m}`;
+                            }).join(', ')}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Weekly Chart */}
             <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20">
-              <h2 className="text-lg font-semibold text-white mb-4">Ultimos 7 Dias</h2>
+              <h2 className="text-lg font-semibold text-white mb-4">Ultimos 7 Dias (Habitos Fixos)</h2>
               <div className="flex items-end justify-between gap-2 h-48">
                 {weeklyData.map((day) => {
                   const percentage = day.total > 0 ? (day.completed / day.total) * 100 : 0;
