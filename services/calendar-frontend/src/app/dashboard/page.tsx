@@ -53,6 +53,7 @@ export default function HabitsDashboardPage() {
   const [calendars, setCalendars] = useState<Calendar[]>([]);
   const [selectedCalendarId, setSelectedCalendarId] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [habitStatsExpanded, setHabitStatsExpanded] = useState(false);
 
   const today = formatLocalDate(new Date());
   const weekDays = useMemo(() => getWeekDays(), []);
@@ -484,34 +485,53 @@ export default function HabitsDashboardPage() {
               </div>
             </div>
 
-            {/* Individual Habit Stats */}
+            {/* Individual Habit Stats - Collapsible */}
             {habitStats.length > 0 && (
-              <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20">
-                <h2 className="text-lg font-semibold text-white mb-4">Por Habito</h2>
-                <div className="space-y-3">
-                  {habitStats.map((stat) => (
-                    <div key={stat.habitId} className="flex items-center justify-between p-3 bg-white/5 rounded-lg">
-                      <div>
-                        <div className="font-medium text-white">{stat.habitTitle}</div>
-                        <div className="text-xs text-white/50">
-                          {stat.totalCompletions} conclusoes totais
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <div className="text-right">
-                          <div className="text-sm text-white/70">{stat.monthlyCompletionRate}%</div>
-                          <div className="text-xs text-white/40">no mes</div>
-                        </div>
-                        {stat.currentStreak > 0 && (
-                          <div className="flex items-center gap-1 px-2 py-1 bg-orange-500/20 rounded-lg">
-                            <span>🔥</span>
-                            <span className="text-orange-400 font-medium">{stat.currentStreak}</span>
+              <div className="bg-white/10 backdrop-blur-sm rounded-xl border border-white/20 overflow-hidden">
+                <button
+                  onClick={() => setHabitStatsExpanded(!habitStatsExpanded)}
+                  className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
+                >
+                  <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                    <span>📊</span>
+                    <span>Por Habito</span>
+                    <span className="text-sm font-normal text-white/50">({habitStats.length})</span>
+                  </h2>
+                  <svg
+                    className={`w-5 h-5 text-white/50 transition-transform ${habitStatsExpanded ? 'rotate-180' : ''}`}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {habitStatsExpanded && (
+                  <div className="p-4 pt-0 space-y-3">
+                    {habitStats.map((stat) => (
+                      <div key={stat.habitId} className="flex items-center justify-between p-3 bg-white/5 rounded-lg">
+                        <div>
+                          <div className="font-medium text-white">{stat.habitTitle}</div>
+                          <div className="text-xs text-white/50">
+                            {stat.totalCompletions} conclusoes totais
                           </div>
-                        )}
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <div className="text-right">
+                            <div className="text-sm text-white/70">{stat.monthlyCompletionRate}%</div>
+                            <div className="text-xs text-white/40">no mes</div>
+                          </div>
+                          {stat.currentStreak > 0 && (
+                            <div className="flex items-center gap-1 px-2 py-1 bg-orange-500/20 rounded-lg">
+                              <span>🔥</span>
+                              <span className="text-orange-400 font-medium">{stat.currentStreak}</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
