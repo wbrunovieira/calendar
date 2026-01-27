@@ -308,10 +308,13 @@ export default function HabitsDashboardPage() {
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {flexibleProgress.map((habit) => {
-                    const percentage = habit.weekProgress.targetCount > 0
-                      ? Math.round((habit.weekProgress.completedCount / habit.weekProgress.targetCount) * 100)
+                    const week = habit.currentWeek;
+                    if (!week) return null;
+
+                    const percentage = week.targetCount > 0
+                      ? Math.round((week.completedCount / week.targetCount) * 100)
                       : 0;
-                    const isGoalMet = habit.weekProgress.isGoalMet;
+                    const isGoalMet = week.isGoalMet;
 
                     return (
                       <div
@@ -330,12 +333,12 @@ export default function HabitsDashboardPage() {
                             />
                           </div>
                           <span className={`text-lg font-bold ${isGoalMet ? 'text-emerald-400' : 'text-white'}`}>
-                            {habit.weekProgress.completedCount}/{habit.weekProgress.targetCount}
+                            {week.completedCount}/{week.targetCount}
                           </span>
                         </div>
-                        {habit.weekProgress.completedDates.length > 0 && (
+                        {week.completedDates && week.completedDates.length > 0 && (
                           <div className="mt-2 text-xs text-white/50">
-                            Concluido: {habit.weekProgress.completedDates.map(d => {
+                            Concluido: {week.completedDates.map(d => {
                               const [, m, day] = d.split('-');
                               return `${day}/${m}`;
                             }).join(', ')}
