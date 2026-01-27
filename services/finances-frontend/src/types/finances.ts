@@ -110,6 +110,7 @@ export interface Transaction {
   costCenter?: string;
   occurredOn: string;
   dueOn?: string;
+  reminderOn?: string;
   recurrenceRule?: string;
   installmentNumber?: number;
   installmentTotal?: number;
@@ -134,6 +135,7 @@ export interface TransactionFormData {
   costCenter?: string;
   occurredOn: string;
   dueOn?: string;
+  reminderOn?: string;
   recurrenceRule?: string;
   installmentNumber?: number;
   installmentTotal?: number;

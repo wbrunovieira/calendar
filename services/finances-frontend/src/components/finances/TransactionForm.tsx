@@ -59,6 +59,7 @@ const defaultForm = (profileId: string, status: TransactionStatus = 'CONFIRMED')
   costCenter: undefined,
   occurredOn: getLocalDateString(),
   dueOn: undefined,
+  reminderOn: undefined,
   recurrenceRule: undefined,
   installmentNumber: undefined,
   installmentTotal: undefined,
@@ -107,6 +108,7 @@ export default function TransactionForm({
           costCenter: editingTransaction.costCenter,
           occurredOn: editingTransaction.occurredOn.slice(0, 10),
           dueOn: editingTransaction.dueOn?.slice(0, 10),
+          reminderOn: editingTransaction.reminderOn?.slice(0, 10),
           recurrenceRule: editingTransaction.recurrenceRule,
           installmentNumber: editingTransaction.installmentNumber,
           installmentTotal: editingTransaction.installmentTotal,
@@ -448,6 +450,29 @@ export default function TransactionForm({
                   />
                 </div>
               </div>
+
+              {/* Reminder field - only show for PLANNED transactions */}
+              {formData.status === 'PLANNED' && (
+                <div>
+                  <label className="block text-white/80 text-sm font-semibold mb-2">
+                    🔔 Lembrar em
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.reminderOn ?? ''}
+                    onChange={(event) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        reminderOn: event.target.value || undefined,
+                      }))
+                    }
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <p className="text-white/50 text-xs mt-1">
+                    Alertas serao exibidos 10, 5, 1 dia antes e no dia do lembrete
+                  </p>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>

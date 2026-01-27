@@ -240,6 +240,26 @@ export default function TodayAlerts({
     }
   };
 
+  // State for dismissed transaction reminders (persisted in session)
+  const [dismissedTxReminders, setDismissedTxReminders] = useState<Set<string>>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = sessionStorage.getItem('dismissedTxReminderAlerts');
+      if (stored) {
+        return new Set(JSON.parse(stored));
+      }
+    }
+    return new Set();
+  });
+
+  const dismissTxReminder = (id: string) => {
+    const newDismissed = new Set(dismissedTxReminders);
+    newDismissed.add(id);
+    setDismissedTxReminders(newDismissed);
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('dismissedTxReminderAlerts', JSON.stringify([...newDismissed]));
+    }
+  };
+
   // Paused transactions with review dates approaching (10, 5, 1, 0 days)
   const reviewReminders = useMemo(() => {
     const alertDays = [10, 5, 1, 0];
@@ -263,11 +283,36 @@ export default function TodayAlerts({
     return results.sort((a, b) => a.daysUntil - b.daysUntil);
   }, [recurringTransactions, today, dismissedReviews]);
 
+  // Transaction reminders with reminderOn dates approaching (10, 5, 1, 0 days) or overdue
+  const transactionReminders = useMemo(() => {
+    const alertDays = [10, 5, 1, 0];
+    const results: { tx: Transaction; daysUntil: number }[] = [];
+
+    transactions.forEach((tx) => {
+      // Only show reminders for PLANNED transactions with reminderOn set
+      if (tx.status !== 'PLANNED' || !tx.reminderOn) return;
+      if (dismissedTxReminders.has(tx.id)) return;
+
+      const reminderDate = extractDateStr(tx.reminderOn);
+      if (!reminderDate) return;
+
+      const daysUntil = -getDaysOverdue(reminderDate, today); // Negative because we want days until, not days since
+
+      // Show alert if within any of our thresholds or if overdue
+      if (alertDays.includes(daysUntil) || daysUntil < 0) {
+        results.push({ tx, daysUntil });
+      }
+    });
+
+    return results.sort((a, b) => a.daysUntil - b.daysUntil);
+  }, [transactions, today, dismissedTxReminders]);
+
   const hasAlerts =
     plannedPending.length > 0 ||
     recurringPending.length > 0 ||
     invoicesPending.length > 0 ||
-    reviewReminders.length > 0;
+    reviewReminders.length > 0 ||
+    transactionReminders.length > 0;
 
   const hasOverdue =
     overdueInvoices.length > 0 ||
@@ -620,6 +665,76 @@ export default function TodayAlerts({
                     >
                       Revisar
                     </Link>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Transaction Reminders - Cyan alert */}
+      {transactionReminders.length > 0 && (
+        <div className="bg-gradient-to-r from-cyan-500/20 via-teal-500/20 to-emerald-500/20 border border-cyan-400/30 rounded-2xl p-4 backdrop-blur-sm">
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-2xl">🔔</span>
+            <div className="flex-1">
+              <h3 className="text-white font-semibold">Lembretes de Lancamentos</h3>
+              <p className="text-white/60 text-sm">
+                {transactionReminders.length} {transactionReminders.length === 1 ? 'lembrete ativo' : 'lembretes ativos'}
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            {transactionReminders.map(({ tx, daysUntil }) => {
+              const getReminderMessage = () => {
+                if (daysUntil < 0) {
+                  const daysOverdue = Math.abs(daysUntil);
+                  return <span className="text-red-400">Lembrete atrasado ha {daysOverdue} {daysOverdue === 1 ? 'dia' : 'dias'}</span>;
+                }
+                if (daysUntil === 0) return <span className="text-amber-400">Lembrete para hoje!</span>;
+                if (daysUntil === 1) return <span className="text-amber-400">Lembrete para amanha</span>;
+                return <span className="text-cyan-300">Lembrete em {daysUntil} dias</span>;
+              };
+
+              return (
+                <div
+                  key={tx.id}
+                  className="flex items-center justify-between bg-white/5 rounded-xl p-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">
+                      {tx.type === 'INCOME' ? '💵' : tx.type === 'TRANSFER' ? '🔄' : '📋'}
+                    </span>
+                    <div>
+                      <p className="text-white text-sm font-medium">{tx.description}</p>
+                      <p className="text-xs">
+                        {getReminderMessage()}
+                        <span className="text-white/50"> • {formatDisplayDate(tx.reminderOn!)} • </span>
+                        <span className={tx.type === 'INCOME' ? 'text-emerald-400' : 'text-red-400'}>
+                          {formatCurrency(tx.amount, tx.currency)}
+                        </span>
+                        {getAccountName(tx.bankAccountId) && <span className="text-white/50"> • {getAccountName(tx.bankAccountId)}</span>}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => dismissTxReminder(tx.id)}
+                      className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white/70 text-xs rounded-lg transition-colors"
+                      title="Ignorar por agora"
+                    >
+                      Ignorar
+                    </button>
+                    {onConfirmTransaction && (
+                      <button
+                        onClick={() => onConfirmTransaction(tx.id)}
+                        className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white text-xs rounded-lg transition-colors"
+                      >
+                        Confirmar
+                      </button>
+                    )}
                   </div>
                 </div>
               );
