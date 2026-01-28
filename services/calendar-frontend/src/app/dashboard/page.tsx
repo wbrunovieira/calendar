@@ -258,7 +258,7 @@ export default function HabitsDashboardPage() {
     };
   }, [todos, today, weekDays]);
 
-  // Events stats grouped by category
+  // Events stats grouped by category and categoryType
   const eventsStats = useMemo(() => {
     // Group events by category
     const byCategory = new Map<string, {
@@ -267,6 +267,14 @@ export default function HabitsDashboardPage() {
       categoryColor?: string;
       total: number;
       completed: number;
+      byType: Map<string, {
+        typeId: string;
+        typeName: string;
+        typeIcon?: string;
+        typeColor?: string;
+        total: number;
+        completed: number;
+      }>;
     }>();
 
     for (const event of events) {
@@ -281,6 +289,7 @@ export default function HabitsDashboardPage() {
           categoryColor,
           total: 0,
           completed: 0,
+          byType: new Map(),
         });
       }
 
@@ -292,11 +301,40 @@ export default function HabitsDashboardPage() {
       if (isCompleted) {
         cat.completed++;
       }
+
+      // Group by categoryType within category
+      const typeId = event.categoryTypeId || 'sem-tipo';
+      const typeName = event.categoryType?.name || 'Sem Tipo';
+      const typeIcon = event.categoryType?.icon;
+      const typeColor = event.categoryType?.color;
+
+      if (!cat.byType.has(typeId)) {
+        cat.byType.set(typeId, {
+          typeId,
+          typeName,
+          typeIcon,
+          typeColor,
+          total: 0,
+          completed: 0,
+        });
+      }
+
+      const typeStats = cat.byType.get(typeId)!;
+      typeStats.total++;
+      if (isCompleted) {
+        typeStats.completed++;
+      }
     }
 
     // Convert to array and sort by total (descending)
     const categories = Array.from(byCategory.values())
       .filter(c => c.total > 0)
+      .map(c => ({
+        ...c,
+        types: Array.from(c.byType.values())
+          .filter(t => t.total > 0)
+          .sort((a, b) => b.total - a.total),
+      }))
       .sort((a, b) => b.total - a.total);
 
     // Total counts
@@ -772,16 +810,18 @@ export default function HabitsDashboardPage() {
                       {weekRange.start.split('-').reverse().slice(0, 2).join('/')} - {weekRange.end.split('-').reverse().slice(0, 2).join('/')}
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div className="space-y-4">
                       {eventsStats.categories.map((cat) => {
                         const percentage = cat.total > 0 ? Math.round((cat.completed / cat.total) * 100) : 0;
                         const isAllDone = percentage === 100;
+                        const hasTypes = cat.types && cat.types.length > 0 && cat.types.some(t => t.typeId !== 'sem-tipo');
 
                         return (
                           <div
                             key={cat.categoryId}
                             className={`p-4 rounded-xl ${isAllDone ? 'bg-emerald-500/20 border border-emerald-400/30' : 'bg-white/10 border border-white/20'}`}
                           >
+                            {/* Category Header */}
                             <div className="flex items-center justify-between mb-2">
                               <div className="flex items-center gap-2">
                                 {cat.categoryColor && (
@@ -792,19 +832,57 @@ export default function HabitsDashboardPage() {
                                 )}
                                 <span className="font-medium text-white">{cat.categoryName}</span>
                               </div>
-                              {isAllDone && <span className="text-emerald-400">✓</span>}
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full transition-all ${isAllDone ? 'bg-emerald-500' : 'bg-cyan-500'}`}
-                                  style={{ width: `${percentage}%` }}
-                                />
+                              <div className="flex items-center gap-2">
+                                {isAllDone && <span className="text-emerald-400">✓</span>}
+                                <span className={`text-lg font-bold ${isAllDone ? 'text-emerald-400' : 'text-white'}`}>
+                                  {cat.completed}/{cat.total}
+                                </span>
                               </div>
-                              <span className={`text-lg font-bold ${isAllDone ? 'text-emerald-400' : 'text-white'}`}>
-                                {cat.completed}/{cat.total}
-                              </span>
                             </div>
+
+                            {/* Progress Bar */}
+                            <div className="h-2 bg-white/10 rounded-full overflow-hidden mb-3">
+                              <div
+                                className={`h-full transition-all ${isAllDone ? 'bg-emerald-500' : 'bg-cyan-500'}`}
+                                style={{ width: `${percentage}%` }}
+                              />
+                            </div>
+
+                            {/* Category Types Breakdown */}
+                            {hasTypes && (
+                              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 pt-2 border-t border-white/10">
+                                {cat.types.filter(t => t.typeId !== 'sem-tipo').map((type) => {
+                                  const typePercentage = type.total > 0 ? Math.round((type.completed / type.total) * 100) : 0;
+                                  const typeAllDone = typePercentage === 100;
+
+                                  return (
+                                    <div
+                                      key={type.typeId}
+                                      className={`p-2 rounded-lg ${typeAllDone ? 'bg-emerald-500/10' : 'bg-white/5'}`}
+                                    >
+                                      <div className="flex items-center gap-1.5 mb-1">
+                                        {type.typeIcon && <span className="text-sm">{type.typeIcon}</span>}
+                                        <span className="text-xs text-white/80 truncate">{type.typeName}</span>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                          <div
+                                            className={`h-full transition-all`}
+                                            style={{
+                                              width: `${typePercentage}%`,
+                                              backgroundColor: type.typeColor || (typeAllDone ? '#10b981' : '#06b6d4'),
+                                            }}
+                                          />
+                                        </div>
+                                        <span className={`text-xs font-semibold ${typeAllDone ? 'text-emerald-400' : 'text-white/70'}`}>
+                                          {type.completed}/{type.total}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
