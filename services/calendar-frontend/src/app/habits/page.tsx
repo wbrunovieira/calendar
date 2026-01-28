@@ -29,6 +29,32 @@ const formatDisplayDate = (dateStr: string) => {
   return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}`;
 };
 
+// Get current week days (Monday to Sunday)
+const getCurrentWeekDays = () => {
+  const today = new Date();
+  const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, ...
+  const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+
+  const days: { date: string; dayCode: string; dayLabel: string; isToday: boolean; isPast: boolean }[] = [];
+  const dayLabels = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'];
+  const dayCodes = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
+
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() + diffToMonday + i);
+    const dateStr = formatLocalDate(d);
+    days.push({
+      date: dateStr,
+      dayCode: dayCodes[i],
+      dayLabel: dayLabels[i],
+      isToday: dateStr === formatLocalDate(today),
+      isPast: d < new Date(today.setHours(0, 0, 0, 0)),
+    });
+  }
+
+  return days;
+};
+
 const getPriorityLabel = (priority?: number) => {
   switch (priority) {
     case 1: return { label: 'Alta', color: 'text-red-400', bg: 'bg-red-500/20' };
@@ -109,6 +135,7 @@ export default function HabitsPage() {
   const [flexibleProgress, setFlexibleProgress] = useState<FlexibleHabitProgress[]>([]);
 
   const today = formatLocalDate(new Date());
+  const currentWeekDays = useMemo(() => getCurrentWeekDays(), []);
 
   // Calculate date range for fetching (last 30 days to next 30 days)
   const dateRange = useMemo(() => {
@@ -180,6 +207,18 @@ export default function HabitsPage() {
       await fetchData();
     } catch (error) {
       console.error('Error toggling habit:', error);
+    }
+  };
+
+  const toggleFlexibleHabitDay = async (habit: Event, dateStr: string, completedDates: string[]) => {
+    const eventId = habit.originalEventId || habit.id;
+    const isCompleted = completedDates.includes(dateStr);
+
+    try {
+      await api.events.toggleExecution(eventId, dateStr, !isCompleted);
+      await fetchData();
+    } catch (error) {
+      console.error('Error toggling flexible habit day:', error);
     }
   };
 
@@ -533,7 +572,7 @@ export default function HabitsPage() {
                 {flexibleHabitsWithProgress.length > 0 && (
                   <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
                     <h2 className="text-lg font-semibold text-white mb-4">Habitos Semanais Flexiveis</h2>
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                       {flexibleHabitsWithProgress.map(habit => {
                         const habitId = habit.originalEventId || habit.id;
                         const progress = habit.progress;
@@ -543,7 +582,8 @@ export default function HabitsPage() {
                         const percentage = Math.min((completed / target) * 100, 100);
                         const isGoalMet = currentWeek?.isGoalMet || completed >= target;
                         const weeklyStreak = progress?.currentStreak || 0;
-                        const isCompletedToday = currentWeek?.completedDates?.includes(today) || false;
+                        const completedDates = currentWeek?.completedDates || [];
+                        const preferredDays = habit.weeklyPreferredDays || [];
 
                         return (
                           <div
@@ -557,27 +597,12 @@ export default function HabitsPage() {
                               isGoalMet ? 'bg-emerald-500/20 border border-emerald-400/30' : 'bg-white/5 hover:bg-white/10'
                             } ${draggedId === habitId ? 'opacity-50' : ''}`}
                           >
+                            {/* Header */}
                             <div className="flex items-center justify-between mb-3">
                               <div className="flex items-center gap-3">
                                 <svg className="w-4 h-4 text-white/30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
                                 </svg>
-                                {/* Toggle button for today */}
-                                <button
-                                  onClick={() => toggleHabitCompletion({ ...habit, occurrenceDate: today })}
-                                  className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
-                                    isCompletedToday
-                                      ? 'bg-emerald-500 border-emerald-500 text-white'
-                                      : 'border-white/40 hover:border-white/60'
-                                  }`}
-                                  title={isCompletedToday ? 'Desmarcar hoje' : 'Marcar como feito hoje'}
-                                >
-                                  {isCompletedToday && (
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                    </svg>
-                                  )}
-                                </button>
                                 <div>
                                   <p className={`font-medium ${isGoalMet ? 'text-emerald-300' : 'text-white'}`}>
                                     {habit.title}
@@ -603,7 +628,7 @@ export default function HabitsPage() {
                                     <span>{weeklyStreak} {weeklyStreak === 1 ? 'semana' : 'semanas'}</span>
                                   </span>
                                 )}
-                                <span className={`text-sm font-medium ${isGoalMet ? 'text-emerald-400' : 'text-white/70'}`}>
+                                <span className={`text-lg font-bold ${isGoalMet ? 'text-emerald-400' : 'text-white'}`}>
                                   {completed}/{target}
                                 </span>
                                 <button
@@ -618,6 +643,40 @@ export default function HabitsPage() {
                               </div>
                             </div>
 
+                            {/* Week Days Grid */}
+                            <div className="flex gap-1 mb-3">
+                              {currentWeekDays.map((day) => {
+                                const isDayCompleted = completedDates.includes(day.date);
+                                const isPreferred = preferredDays.includes(day.dayCode);
+
+                                return (
+                                  <button
+                                    key={day.date}
+                                    onClick={() => toggleFlexibleHabitDay(habit, day.date, completedDates)}
+                                    className={`flex-1 py-2 px-1 rounded-lg text-center transition-all ${
+                                      isDayCompleted
+                                        ? 'bg-emerald-500 text-white'
+                                        : day.isToday
+                                          ? 'bg-purple-500/30 text-white border border-purple-400/50'
+                                          : 'bg-white/10 text-white/70 hover:bg-white/20'
+                                    } ${isPreferred && !isDayCompleted ? 'ring-1 ring-purple-400/50' : ''}`}
+                                    title={`${day.dayLabel} ${day.date.split('-').reverse().slice(0, 2).join('/')}${isPreferred ? ' (preferido)' : ''}`}
+                                  >
+                                    <div className="text-xs font-medium">{day.dayLabel}</div>
+                                    <div className="text-[10px] opacity-70">{day.date.split('-')[2]}</div>
+                                    {isDayCompleted && (
+                                      <svg className="w-4 h-4 mx-auto mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    )}
+                                    {isPreferred && !isDayCompleted && (
+                                      <div className="w-1.5 h-1.5 rounded-full bg-purple-400 mx-auto mt-1" />
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+
                             {/* Progress Bar */}
                             <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
                               <div
@@ -628,26 +687,26 @@ export default function HabitsPage() {
                               />
                             </div>
 
-                            {/* Preferred Days */}
-                            {habit.weeklyPreferredDays && habit.weeklyPreferredDays.length > 0 && (
-                              <div className="mt-2 flex items-center gap-1">
-                                <span className="text-xs text-white/40">Dias preferidos:</span>
-                                <div className="flex gap-1">
-                                  {habit.weeklyPreferredDays.map(day => (
-                                    <span key={day} className="text-xs px-1.5 py-0.5 bg-white/10 rounded text-white/60">
-                                      {day === 'MO' ? 'Seg' : day === 'TU' ? 'Ter' : day === 'WE' ? 'Qua' : day === 'TH' ? 'Qui' : day === 'FR' ? 'Sex' : day === 'SA' ? 'Sab' : 'Dom'}
-                                    </span>
-                                  ))}
-                                </div>
+                            {/* Legend and days remaining */}
+                            <div className="mt-2 flex items-center justify-between text-xs text-white/40">
+                              <div className="flex items-center gap-3">
+                                <span className="flex items-center gap-1">
+                                  <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                                  Concluido
+                                </span>
+                                {preferredDays.length > 0 && (
+                                  <span className="flex items-center gap-1">
+                                    <div className="w-2 h-2 rounded-full bg-purple-400" />
+                                    Preferido
+                                  </span>
+                                )}
                               </div>
-                            )}
-
-                            {/* Days remaining hint for current week */}
-                            {!isGoalMet && currentWeek?.daysRemaining !== undefined && currentWeek.daysRemaining > 0 && (
-                              <p className="text-xs text-white/40 mt-2">
-                                {target - completed} {target - completed === 1 ? 'vez faltando' : 'vezes faltando'} • {currentWeek.daysRemaining} {currentWeek.daysRemaining === 1 ? 'dia restante' : 'dias restantes'} na semana
-                              </p>
-                            )}
+                              {!isGoalMet && currentWeek?.daysRemaining !== undefined && currentWeek.daysRemaining > 0 && (
+                                <span>
+                                  {target - completed} {target - completed === 1 ? 'vez faltando' : 'vezes faltando'} • {currentWeek.daysRemaining} dias
+                                </span>
+                              )}
+                            </div>
                           </div>
                         );
                       })}
