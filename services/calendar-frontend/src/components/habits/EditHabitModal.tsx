@@ -24,6 +24,7 @@ export default function EditHabitModal({
   const [description, setDescription] = useState('');
   const [calendarId, setCalendarId] = useState('');
   const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [startDate, setStartDate] = useState('');
   const [startTime, setStartTime] = useState('09:00');
   const [categoryId, setCategoryId] = useState('');
   const [categoryTypeId, setCategoryTypeId] = useState('');
@@ -56,6 +57,16 @@ export default function EditHabitModal({
       setCategoryId(habit.categoryId || '');
       setCategoryTypeId(habit.categoryTypeId || '');
       setLabelId(habit.labelId || undefined);
+
+      // Set startDate from habit
+      if (habit.startDate) {
+        const dateStr = typeof habit.startDate === 'string'
+          ? habit.startDate.split('T')[0]
+          : new Date(habit.startDate).toISOString().split('T')[0];
+        setStartDate(dateStr);
+      } else {
+        setStartDate('');
+      }
 
       // Set frequency from recurrenceFrequency
       if (habit.recurrenceFrequency) {
@@ -115,6 +126,7 @@ export default function EditHabitModal({
         calendarId,
         title: title.trim(),
         description: description.trim() || null,
+        startDate: startDate || null,
         startTime,
         categoryId: categoryId || null,
         categoryTypeId: categoryTypeId || null,
@@ -217,6 +229,23 @@ export default function EditHabitModal({
               rows={2}
               className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
             />
+          </div>
+
+          {/* Start Date */}
+          <div>
+            <label htmlFor="startDate" className="block text-sm font-medium text-white/70 mb-1">
+              Data de Inicio
+            </label>
+            <input
+              type="date"
+              id="startDate"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+            <p className="text-xs text-white/50 mt-1">
+              O habito aparecera a partir desta data
+            </p>
           </div>
 
           {/* Frequency */}

@@ -48,23 +48,42 @@ const getShortDate = (dateStr: string) => {
 export default function HabitsDashboardPage() {
   const [habits, setHabits] = useState<Event[]>([]);
   const [todos, setTodos] = useState<Event[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
   const [habitStats, setHabitStats] = useState<HabitStats[]>([]);
   const [flexibleProgress, setFlexibleProgress] = useState<FlexibleHabitProgress[]>([]);
   const [calendars, setCalendars] = useState<Calendar[]>([]);
   const [selectedCalendarId, setSelectedCalendarId] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [habitStatsExpanded, setHabitStatsExpanded] = useState(false);
+  const [eventsExpanded, setEventsExpanded] = useState(true);
 
   const today = formatLocalDate(new Date());
   const weekDays = useMemo(() => getWeekDays(), []);
   const monthDays = useMemo(() => getMonthDays(), []);
+
+  // Get week start (Monday) and end (Sunday)
+  const getWeekRange = () => {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diffToMonday);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    return {
+      start: formatLocalDate(monday),
+      end: formatLocalDate(sunday),
+    };
+  };
+
+  const weekRange = useMemo(() => getWeekRange(), []);
 
   // Fetch data
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [calendarsData, habitsData, todosData, statsData, flexibleData] = await Promise.all([
+        const [calendarsData, habitsData, todosData, eventsData, statsData, flexibleData] = await Promise.all([
           api.calendars.list(),
           api.events.listHabits({
             startDate: monthDays[0],
@@ -72,6 +91,11 @@ export default function HabitsDashboardPage() {
             ...(selectedCalendarId && { calendarId: selectedCalendarId }),
           }),
           api.events.listTodos({
+            ...(selectedCalendarId && { calendarId: selectedCalendarId }),
+          }),
+          api.events.listCalendarEvents({
+            startDate: weekRange.start,
+            endDate: weekRange.end,
             ...(selectedCalendarId && { calendarId: selectedCalendarId }),
           }),
           api.events.getHabitsStats(
@@ -85,6 +109,7 @@ export default function HabitsDashboardPage() {
         setCalendars(calendarsData || []);
         setHabits(habitsData || []);
         setTodos(todosData || []);
+        setEvents(eventsData || []);
         setHabitStats(statsData || []);
         setFlexibleProgress(flexibleData || []);
       } catch (error) {
@@ -95,7 +120,7 @@ export default function HabitsDashboardPage() {
     };
 
     fetchData();
-  }, [selectedCalendarId, today, monthDays]);
+  }, [selectedCalendarId, today, monthDays, weekRange.start, weekRange.end]);
 
   // Calculate daily completions for the week
   const weeklyData = useMemo(() => {
@@ -232,6 +257,58 @@ export default function HabitsDashboardPage() {
       dueThisWeek,
     };
   }, [todos, today, weekDays]);
+
+  // Events stats grouped by category
+  const eventsStats = useMemo(() => {
+    // Group events by category
+    const byCategory = new Map<string, {
+      categoryId: string;
+      categoryName: string;
+      categoryColor?: string;
+      total: number;
+      completed: number;
+    }>();
+
+    for (const event of events) {
+      const categoryId = event.categoryId || 'sem-categoria';
+      const categoryName = event.category?.name || 'Sem Categoria';
+      const categoryColor = event.category?.color;
+
+      if (!byCategory.has(categoryId)) {
+        byCategory.set(categoryId, {
+          categoryId,
+          categoryName,
+          categoryColor,
+          total: 0,
+          completed: 0,
+        });
+      }
+
+      const cat = byCategory.get(categoryId)!;
+      cat.total++;
+
+      // Check if completed
+      const isCompleted = event.executions?.some(e => e.completed);
+      if (isCompleted) {
+        cat.completed++;
+      }
+    }
+
+    // Convert to array and sort by total (descending)
+    const categories = Array.from(byCategory.values())
+      .filter(c => c.total > 0)
+      .sort((a, b) => b.total - a.total);
+
+    // Total counts
+    const total = events.length;
+    const completed = events.filter(e => e.executions?.some(ex => ex.completed)).length;
+
+    return {
+      total,
+      completed,
+      categories,
+    };
+  }, [events]);
 
   // Get color based on percentage
   const getBarColor = (completed: number, total: number) => {
@@ -664,6 +741,78 @@ export default function HabitsDashboardPage() {
                 </div>
               )}
             </div>
+
+            {/* Events Section - This Week */}
+            {eventsStats.total > 0 && (
+              <div className="bg-gradient-to-r from-cyan-500/20 via-teal-500/20 to-emerald-500/20 backdrop-blur-sm rounded-xl border border-cyan-400/30 overflow-hidden">
+                <button
+                  onClick={() => setEventsExpanded(!eventsExpanded)}
+                  className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
+                >
+                  <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                    <span>📆</span>
+                    <span>Eventos da Semana</span>
+                    <span className="text-sm font-normal text-white/50">
+                      ({eventsStats.completed}/{eventsStats.total})
+                    </span>
+                  </h2>
+                  <svg
+                    className={`w-5 h-5 text-white/50 transition-transform ${eventsExpanded ? 'rotate-180' : ''}`}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                {eventsExpanded && (
+                  <div className="p-4 pt-0">
+                    <div className="text-xs text-white/50 mb-4">
+                      {weekRange.start.split('-').reverse().slice(0, 2).join('/')} - {weekRange.end.split('-').reverse().slice(0, 2).join('/')}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {eventsStats.categories.map((cat) => {
+                        const percentage = cat.total > 0 ? Math.round((cat.completed / cat.total) * 100) : 0;
+                        const isAllDone = percentage === 100;
+
+                        return (
+                          <div
+                            key={cat.categoryId}
+                            className={`p-4 rounded-xl ${isAllDone ? 'bg-emerald-500/20 border border-emerald-400/30' : 'bg-white/10 border border-white/20'}`}
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                {cat.categoryColor && (
+                                  <div
+                                    className="w-3 h-3 rounded-full"
+                                    style={{ backgroundColor: cat.categoryColor }}
+                                  />
+                                )}
+                                <span className="font-medium text-white">{cat.categoryName}</span>
+                              </div>
+                              {isAllDone && <span className="text-emerald-400">✓</span>}
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full transition-all ${isAllDone ? 'bg-emerald-500' : 'bg-cyan-500'}`}
+                                  style={{ width: `${percentage}%` }}
+                                />
+                              </div>
+                              <span className={`text-lg font-bold ${isAllDone ? 'text-emerald-400' : 'text-white'}`}>
+                                {cat.completed}/{cat.total}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Links */}
             <div className="flex justify-center gap-4">

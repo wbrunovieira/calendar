@@ -107,6 +107,9 @@ export const api = {
     listTodos: (params?: Omit<ListEventsParams, 'eventType'>) => {
       return api.events.list({ ...params, eventType: 'TODO' });
     },
+    listCalendarEvents: (params?: Omit<ListEventsParams, 'eventType'>) => {
+      return api.events.list({ ...params, eventType: 'EVENT' });
+    },
     create: (data: Record<string, unknown>) =>
       fetchAPI<Event>('/events', {
         method: 'POST',
