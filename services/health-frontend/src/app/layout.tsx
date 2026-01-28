@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Finanças - Calendar App",
-  description: "Gestão financeira completa: contas, transações, investimentos e relatórios",
+  title: "Health - Calendar App",
+  description: "Treinos, atividades e performance: musculacao, Wim Hof, HIIT e mais",
   icons: {
     icon: [
       { url: '/favicon.svg', type: 'image/svg+xml' },
