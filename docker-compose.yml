@@ -36,6 +36,22 @@ services:
       - calendar-network
     restart: unless-stopped
 
+  calendar-health:
+    build:
+      context: ./services/calendar-health
+      dockerfile: Dockerfile
+    container_name: calendar-health
+    ports:
+      - "3336:3336"
+    environment:
+      - PORT=3336
+      - DATABASE_URL=postgres://calendar:calendar123@postgres:5432/calendar_db?sslmode=disable
+    depends_on:
+      - postgres
+    networks:
+      - calendar-network
+    restart: unless-stopped
+
   postgres:
     image: postgres:15-alpine
     container_name: calendar-postgres
