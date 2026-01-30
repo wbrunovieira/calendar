@@ -11,7 +11,7 @@ export class EventExecution {
   constructor(props: any) {
     this.id = props.id;
     this.eventId = props.eventId;
-    this.executionDate = props.executionDate;
+    this.executionDate = props.occurrenceDate || props.executionDate;
     this.completed = props.completed;
     this.completedAt = props.completedAt || undefined;
     this.notes = props.notes || undefined;

@@ -415,6 +415,35 @@ describe('GetWeeklyProgressUseCase', () => {
       expect(result[0].currentWeek.daysRemaining).toBe(1); // Just Sunday left
     });
 
+    it('should handle UTC dates correctly without timezone offset issues', async () => {
+      // This test exposes a bug where UTC dates like "2026-01-30T00:00:00.000Z"
+      // were being converted to local time, causing them to appear as the previous day
+      // in timezones west of UTC (e.g., America/Sao_Paulo = UTC-3)
+      vi.setSystemTime(new Date(2025, 0, 23)); // Thursday, Jan 23, 2025
+
+      const habit = createFlexibleHabit();
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([habit]);
+
+      // Simulate execution with ISO string date (as returned from database/Prisma)
+      // The date "2025-01-21" should stay as "2025-01-21" regardless of timezone
+      const execution = new EventExecution({
+        id: 'exec-utc',
+        eventId: 'habit-1',
+        occurrenceDate: new Date('2025-01-21T00:00:00.000Z'), // UTC midnight
+        completed: true,
+        completedAt: new Date('2025-01-21T12:00:00.000Z'),
+        createdAt: new Date('2025-01-21T12:00:00.000Z'),
+        updatedAt: new Date('2025-01-21T12:00:00.000Z'),
+      });
+      vi.mocked(mockExecutionRepository.findByEventId!).mockResolvedValue([execution]);
+
+      const result = await useCase.execute({});
+
+      // The completed date should be "2025-01-21", NOT "2025-01-20"
+      expect(result[0].currentWeek.completedDates).toContain('2025-01-21');
+      expect(result[0].currentWeek.completedDates).not.toContain('2025-01-20');
+    });
+
     it('should handle multiple flexible habits', async () => {
       const jiujitsu = createFlexibleHabit({
         id: 'habit-jj',

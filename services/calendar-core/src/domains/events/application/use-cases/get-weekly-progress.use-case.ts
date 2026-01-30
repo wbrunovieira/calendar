@@ -28,9 +28,19 @@ export interface GetWeeklyProgressInput {
 }
 
 /**
- * Formats a Date object to YYYY-MM-DD string
+ * Formats a Date object to YYYY-MM-DD string using UTC to avoid timezone issues
  */
 function formatDate(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Formats a Date object to YYYY-MM-DD string using local time (for "today" calculations)
+ */
+function formatLocalDate(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
@@ -38,7 +48,7 @@ function formatDate(date: Date): string {
 }
 
 /**
- * Gets the Monday of the week containing the given date
+ * Gets the Monday of the week containing the given date (local time)
  */
 function getWeekStart(date: Date): Date {
   const d = new Date(date);
@@ -46,6 +56,19 @@ function getWeekStart(date: Date): Date {
   const day = d.getDay();
   const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
   return new Date(d.setDate(diff));
+}
+
+/**
+ * Gets the Monday of the week containing the given date (UTC)
+ * Used for execution dates from the database which are stored in UTC
+ */
+function getWeekStartUTC(date: Date): Date {
+  const d = new Date(date);
+  d.setUTCHours(0, 0, 0, 0);
+  const day = d.getUTCDay();
+  const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+  d.setUTCDate(diff);
+  return d;
 }
 
 /**
@@ -111,7 +134,8 @@ export class GetWeeklyProgressUseCase {
 
       for (const exec of completedExecutions) {
         const execDate = new Date(exec.executionDate);
-        const weekStart = getWeekStart(execDate);
+        // Use UTC methods since execution dates are stored in UTC
+        const weekStart = getWeekStartUTC(execDate);
         const weekStartStr = formatDate(weekStart);
 
         if (!weekMap.has(weekStartStr)) {
@@ -121,7 +145,8 @@ export class GetWeeklyProgressUseCase {
       }
 
       // Build current week progress
-      const currentWeekStartStr = formatDate(currentWeekStart);
+      // Use local time for current week calculation since "today" is local
+      const currentWeekStartStr = formatLocalDate(currentWeekStart);
       const currentWeekDates = weekMap.get(currentWeekStartStr) || [];
       const currentWeekProgress: WeekProgress = {
         weekStartDate: currentWeekStartStr,
