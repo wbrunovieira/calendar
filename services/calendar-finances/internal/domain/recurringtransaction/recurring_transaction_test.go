@@ -658,3 +658,245 @@ func TestCalculateNextOccurrence_WhenReferenceDateAfterStartOn(t *testing.T) {
 		t.Fatalf("expected next occurrence %v, got %v", expectedNext, calculatedNext)
 	}
 }
+
+// =============================================================================
+// February Day Handling Tests (TDD)
+// =============================================================================
+
+func TestCalculateNextOccurrence_February_Day30_NonLeapYear(t *testing.T) {
+	// Given: A monthly recurring transaction on day 30
+	// When: Next month is February 2026 (non-leap year, 28 days)
+	// Then: Next occurrence should be February 28, 2026
+
+	startOn := time.Date(2026, time.January, 30, 0, 0, 0, 0, time.UTC)
+	nextOccurrence := time.Date(2026, time.January, 30, 0, 0, 0, 0, time.UTC)
+
+	rt, err := New(CreateParams{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         800.00,
+		Description:    "Residencial Mae",
+		RecurrenceRule: "FREQ=MONTHLY;BYMONTHDAY=30",
+		StartOn:        startOn,
+		NextOccurrence: nextOccurrence,
+		Status:         StatusActive,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Reference date is January 31, 2026 (day 30 has passed)
+	referenceDate := time.Date(2026, time.January, 31, 0, 0, 0, 0, time.UTC)
+	calculatedNext := rt.CalculateNextOccurrence(referenceDate)
+
+	// Expected: February 28, 2026 (last day of Feb in non-leap year)
+	expectedNext := time.Date(2026, time.February, 28, 0, 0, 0, 0, time.UTC)
+
+	if !calculatedNext.Equal(expectedNext) {
+		t.Fatalf("expected next occurrence %v, got %v", expectedNext, calculatedNext)
+	}
+}
+
+func TestCalculateNextOccurrence_February_Day31_NonLeapYear(t *testing.T) {
+	// Given: A monthly recurring transaction on day 31
+	// When: Next month is February 2026 (non-leap year, 28 days)
+	// Then: Next occurrence should be February 28, 2026
+
+	startOn := time.Date(2026, time.January, 31, 0, 0, 0, 0, time.UTC)
+	nextOccurrence := time.Date(2026, time.January, 31, 0, 0, 0, 0, time.UTC)
+
+	rt, err := New(CreateParams{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         500.00,
+		Description:    "End of Month Payment",
+		RecurrenceRule: "FREQ=MONTHLY;BYMONTHDAY=31",
+		StartOn:        startOn,
+		NextOccurrence: nextOccurrence,
+		Status:         StatusActive,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Reference date is February 1, 2026 (Jan 31 has passed)
+	referenceDate := time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC)
+	calculatedNext := rt.CalculateNextOccurrence(referenceDate)
+
+	// Expected: February 28, 2026 (last day of Feb in non-leap year)
+	expectedNext := time.Date(2026, time.February, 28, 0, 0, 0, 0, time.UTC)
+
+	if !calculatedNext.Equal(expectedNext) {
+		t.Fatalf("expected next occurrence %v, got %v", expectedNext, calculatedNext)
+	}
+}
+
+func TestCalculateNextOccurrence_February_Day29_NonLeapYear(t *testing.T) {
+	// Given: A monthly recurring transaction on day 29
+	// When: Next month is February 2026 (non-leap year, 28 days)
+	// Then: Next occurrence should be February 28, 2026
+
+	startOn := time.Date(2026, time.January, 29, 0, 0, 0, 0, time.UTC)
+	nextOccurrence := time.Date(2026, time.January, 29, 0, 0, 0, 0, time.UTC)
+
+	rt, err := New(CreateParams{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         300.00,
+		Description:    "Day 29 Payment",
+		RecurrenceRule: "FREQ=MONTHLY;BYMONTHDAY=29",
+		StartOn:        startOn,
+		NextOccurrence: nextOccurrence,
+		Status:         StatusActive,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Reference date is January 30, 2026 (day 29 has passed)
+	referenceDate := time.Date(2026, time.January, 30, 0, 0, 0, 0, time.UTC)
+	calculatedNext := rt.CalculateNextOccurrence(referenceDate)
+
+	// Expected: February 28, 2026 (last day of Feb in non-leap year)
+	expectedNext := time.Date(2026, time.February, 28, 0, 0, 0, 0, time.UTC)
+
+	if !calculatedNext.Equal(expectedNext) {
+		t.Fatalf("expected next occurrence %v, got %v", expectedNext, calculatedNext)
+	}
+}
+
+func TestCalculateNextOccurrence_February_Day30_LeapYear(t *testing.T) {
+	// Given: A monthly recurring transaction on day 30
+	// When: Next month is February 2028 (leap year, 29 days)
+	// Then: Next occurrence should be February 29, 2028
+
+	startOn := time.Date(2028, time.January, 30, 0, 0, 0, 0, time.UTC)
+	nextOccurrence := time.Date(2028, time.January, 30, 0, 0, 0, 0, time.UTC)
+
+	rt, err := New(CreateParams{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         800.00,
+		Description:    "Residencial Mae",
+		RecurrenceRule: "FREQ=MONTHLY;BYMONTHDAY=30",
+		StartOn:        startOn,
+		NextOccurrence: nextOccurrence,
+		Status:         StatusActive,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Reference date is January 31, 2028 (day 30 has passed)
+	referenceDate := time.Date(2028, time.January, 31, 0, 0, 0, 0, time.UTC)
+	calculatedNext := rt.CalculateNextOccurrence(referenceDate)
+
+	// Expected: February 29, 2028 (last day of Feb in leap year)
+	expectedNext := time.Date(2028, time.February, 29, 0, 0, 0, 0, time.UTC)
+
+	if !calculatedNext.Equal(expectedNext) {
+		t.Fatalf("expected next occurrence %v, got %v", expectedNext, calculatedNext)
+	}
+}
+
+func TestCalculateNextOccurrence_February_Day31_LeapYear(t *testing.T) {
+	// Given: A monthly recurring transaction on day 31
+	// When: Next month is February 2028 (leap year, 29 days)
+	// Then: Next occurrence should be February 29, 2028
+
+	startOn := time.Date(2028, time.January, 31, 0, 0, 0, 0, time.UTC)
+	nextOccurrence := time.Date(2028, time.January, 31, 0, 0, 0, 0, time.UTC)
+
+	rt, err := New(CreateParams{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         500.00,
+		Description:    "End of Month Payment",
+		RecurrenceRule: "FREQ=MONTHLY;BYMONTHDAY=31",
+		StartOn:        startOn,
+		NextOccurrence: nextOccurrence,
+		Status:         StatusActive,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Reference date is February 1, 2028 (Jan 31 has passed)
+	referenceDate := time.Date(2028, time.February, 1, 0, 0, 0, 0, time.UTC)
+	calculatedNext := rt.CalculateNextOccurrence(referenceDate)
+
+	// Expected: February 29, 2028 (last day of Feb in leap year)
+	expectedNext := time.Date(2028, time.February, 29, 0, 0, 0, 0, time.UTC)
+
+	if !calculatedNext.Equal(expectedNext) {
+		t.Fatalf("expected next occurrence %v, got %v", expectedNext, calculatedNext)
+	}
+}
+
+func TestCalculateNextOccurrence_February_Day29_LeapYear(t *testing.T) {
+	// Given: A monthly recurring transaction on day 29
+	// When: Next month is February 2028 (leap year, 29 days)
+	// Then: Next occurrence should be February 29, 2028
+
+	startOn := time.Date(2028, time.January, 29, 0, 0, 0, 0, time.UTC)
+	nextOccurrence := time.Date(2028, time.January, 29, 0, 0, 0, 0, time.UTC)
+
+	rt, err := New(CreateParams{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         300.00,
+		Description:    "Day 29 Payment",
+		RecurrenceRule: "FREQ=MONTHLY;BYMONTHDAY=29",
+		StartOn:        startOn,
+		NextOccurrence: nextOccurrence,
+		Status:         StatusActive,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Reference date is January 30, 2028 (day 29 has passed)
+	referenceDate := time.Date(2028, time.January, 30, 0, 0, 0, 0, time.UTC)
+	calculatedNext := rt.CalculateNextOccurrence(referenceDate)
+
+	// Expected: February 29, 2028 (day 29 exists in leap year)
+	expectedNext := time.Date(2028, time.February, 29, 0, 0, 0, 0, time.UTC)
+
+	if !calculatedNext.Equal(expectedNext) {
+		t.Fatalf("expected next occurrence %v, got %v", expectedNext, calculatedNext)
+	}
+}
+
+func TestCalculateNextOccurrence_OtherShortMonths_Day31(t *testing.T) {
+	// Given: A monthly recurring transaction on day 31
+	// When: Next month is April (30 days)
+	// Then: Next occurrence should be April 30
+
+	startOn := time.Date(2026, time.March, 31, 0, 0, 0, 0, time.UTC)
+	nextOccurrence := time.Date(2026, time.March, 31, 0, 0, 0, 0, time.UTC)
+
+	rt, err := New(CreateParams{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         500.00,
+		Description:    "End of Month Payment",
+		RecurrenceRule: "FREQ=MONTHLY;BYMONTHDAY=31",
+		StartOn:        startOn,
+		NextOccurrence: nextOccurrence,
+		Status:         StatusActive,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Reference date is April 1, 2026 (March 31 has passed)
+	referenceDate := time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC)
+	calculatedNext := rt.CalculateNextOccurrence(referenceDate)
+
+	// Expected: April 30, 2026 (last day of April)
+	expectedNext := time.Date(2026, time.April, 30, 0, 0, 0, 0, time.UTC)
+
+	if !calculatedNext.Equal(expectedNext) {
+		t.Fatalf("expected next occurrence %v, got %v", expectedNext, calculatedNext)
+	}
+}

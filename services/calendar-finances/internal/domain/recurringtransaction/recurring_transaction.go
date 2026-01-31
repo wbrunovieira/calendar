@@ -224,8 +224,9 @@ func (r *RecurringTransaction) calculateNextMonthly(referenceDate time.Time, day
 	year := referenceDate.Year()
 	month := referenceDate.Month()
 
-	// Create a date for the target day in the current month
-	candidate := time.Date(year, month, dayOfMonth, 0, 0, 0, 0, time.UTC)
+	// Create a date for the target day in the current month, clamped to last day of month
+	clampedDay := clampDayToMonth(year, month, dayOfMonth)
+	candidate := time.Date(year, month, clampedDay, 0, 0, 0, 0, time.UTC)
 
 	// If the candidate is after the reference date, that's our next occurrence
 	if candidate.After(referenceDate) {
@@ -240,7 +241,34 @@ func (r *RecurringTransaction) calculateNextMonthly(referenceDate time.Time, day
 		nextYear++
 	}
 
-	return time.Date(nextYear, nextMonth, dayOfMonth, 0, 0, 0, 0, time.UTC)
+	// Clamp the day to the last day of the next month if needed
+	clampedDay = clampDayToMonth(nextYear, nextMonth, dayOfMonth)
+	return time.Date(nextYear, nextMonth, clampedDay, 0, 0, 0, 0, time.UTC)
+}
+
+// clampDayToMonth returns the day clamped to the last day of the given month.
+// For example, day 31 in February becomes 28 (or 29 in leap years).
+func clampDayToMonth(year int, month time.Month, day int) int {
+	// Get the last day of the month by going to the first of next month and subtracting a day
+	lastDay := daysInMonth(year, month)
+	if day > lastDay {
+		return lastDay
+	}
+	return day
+}
+
+// daysInMonth returns the number of days in the given month.
+func daysInMonth(year int, month time.Month) int {
+	// Create date for first day of next month, then subtract one day
+	// to get the last day of the current month
+	nextMonth := month + 1
+	nextYear := year
+	if nextMonth > 12 {
+		nextMonth = 1
+		nextYear++
+	}
+	lastDayOfMonth := time.Date(nextYear, nextMonth, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, -1)
+	return lastDayOfMonth.Day()
 }
 
 func parseRecurrenceRule(rule string) map[string]string {
