@@ -182,6 +182,12 @@ func (r *RecurringTransaction) CalculateNextOccurrence(referenceDate time.Time) 
 		next = r.calculateNextMonthly(referenceDate, dayOfMonth)
 	}
 
+	// Check if next occurrence is before start date
+	// If startOn is in the future, that's the earliest possible next occurrence
+	if next.Before(r.StartOn) {
+		next = r.StartOn
+	}
+
 	// Check if next occurrence is after end date
 	if r.EndOn != nil && !r.EndOn.IsZero() && next.After(*r.EndOn) {
 		return time.Time{}

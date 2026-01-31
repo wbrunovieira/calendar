@@ -590,3 +590,71 @@ func TestUpdate(t *testing.T) {
 		t.Fatalf("expected ReviewOn %v, got %v", reviewOn, rt.ReviewOn)
 	}
 }
+
+func TestCalculateNextOccurrence_ShouldNotReturnDateBeforeStartOn(t *testing.T) {
+	// Given: A recurring transaction that starts on March 10, 2026
+	// When: Today is January 31, 2026 (before startOn)
+	// Then: Next occurrence should be March 10, 2026 (not February 10)
+
+	startOn := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC)
+	nextOccurrence := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC)
+
+	rt, err := New(CreateParams{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         87.90,
+		Description:    "CapCut",
+		RecurrenceRule: "FREQ=MONTHLY;BYMONTHDAY=10",
+		StartOn:        startOn,
+		NextOccurrence: nextOccurrence,
+		Status:         StatusActive,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Reference date is January 31, 2026 (before startOn)
+	referenceDate := time.Date(2026, time.January, 31, 0, 0, 0, 0, time.UTC)
+	calculatedNext := rt.CalculateNextOccurrence(referenceDate)
+
+	// The next occurrence should be March 10, not February 10
+	expectedNext := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC)
+
+	if !calculatedNext.Equal(expectedNext) {
+		t.Fatalf("expected next occurrence %v, got %v", expectedNext, calculatedNext)
+	}
+}
+
+func TestCalculateNextOccurrence_WhenReferenceDateAfterStartOn(t *testing.T) {
+	// Given: A recurring transaction that starts on January 10, 2026
+	// When: Today is January 31, 2026 (after startOn, after day 10)
+	// Then: Next occurrence should be February 10, 2026
+
+	startOn := time.Date(2026, time.January, 10, 0, 0, 0, 0, time.UTC)
+	nextOccurrence := time.Date(2026, time.January, 10, 0, 0, 0, 0, time.UTC)
+
+	rt, err := New(CreateParams{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         100.00,
+		Description:    "Test",
+		RecurrenceRule: "FREQ=MONTHLY;BYMONTHDAY=10",
+		StartOn:        startOn,
+		NextOccurrence: nextOccurrence,
+		Status:         StatusActive,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Reference date is January 31, 2026 (after startOn and after day 10)
+	referenceDate := time.Date(2026, time.January, 31, 0, 0, 0, 0, time.UTC)
+	calculatedNext := rt.CalculateNextOccurrence(referenceDate)
+
+	// The next occurrence should be February 10
+	expectedNext := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
+
+	if !calculatedNext.Equal(expectedNext) {
+		t.Fatalf("expected next occurrence %v, got %v", expectedNext, calculatedNext)
+	}
+}
