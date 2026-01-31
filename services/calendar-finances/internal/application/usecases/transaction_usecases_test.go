@@ -320,6 +320,8 @@ func TestCreateTransactionUseCaseCreditLimitExceeded(t *testing.T) {
 
 	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
 	confirmedStatus := "CONFIRMED"
+	// Use today's date so balance validation runs (historical dates skip validation)
+	today := time.Now().Format("2006-01-02")
 	input := CreateTransactionInput{
 		ProfileID:     profileID,
 		BankAccountID: accountID,
@@ -327,7 +329,7 @@ func TestCreateTransactionUseCaseCreditLimitExceeded(t *testing.T) {
 		Amount:        400,
 		Currency:      "BRL",
 		Description:   "Compra",
-		OccurredOn:    "2025-02-01",
+		OccurredOn:    today,
 		Status:        &confirmedStatus, // Balance validation only runs for CONFIRMED transactions
 	}
 
@@ -906,8 +908,9 @@ func TestCreateTransactionConfirmedValidatesBalance(t *testing.T) {
 
 	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
 
-	// CONFIRMED status should validate balance
+	// CONFIRMED status should validate balance (use today's date, historical dates skip validation)
 	confirmedStatus := "CONFIRMED"
+	today := time.Now().Format("2006-01-02")
 	input := CreateTransactionInput{
 		ProfileID:     profileID,
 		BankAccountID: accountID,
@@ -916,7 +919,7 @@ func TestCreateTransactionConfirmedValidatesBalance(t *testing.T) {
 		Amount:        1000, // More than current balance of 100
 		Currency:      "BRL",
 		Description:   "Compra grande",
-		OccurredOn:    "2026-01-06",
+		OccurredOn:    today,
 	}
 
 	_, err := useCase.Execute(input)
@@ -1109,5 +1112,217 @@ func TestCreateTransactionWithoutReminderOn(t *testing.T) {
 
 	if tx.ReminderOn != nil {
 		t.Fatalf("expected ReminderOn to be nil when not provided, got %v", *tx.ReminderOn)
+	}
+}
+
+// =============================================================================
+// Historical Transaction Balance Validation Tests (TDD)
+// =============================================================================
+
+func TestCreateTransaction_HistoricalConfirmed_ShouldSkipBalanceValidation(t *testing.T) {
+	// Given: An account with R$100 balance
+	// When: Creating a CONFIRMED expense of R$800 for a past date (yesterday)
+	// Then: Should succeed without balance validation (historical transaction)
+
+	profileID := "profile-1"
+	accountID := "account-1"
+
+	now := time.Now()
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {
+			ID:         profileID,
+			CalendarID: "cal-1",
+			Name:       "Test",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	// Account with only R$100
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Mercado Pago",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 100,
+			CurrentBalance: 100,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	// Yesterday's date (historical)
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	confirmedStatus := "CONFIRMED"
+
+	input := CreateTransactionInput{
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        800, // More than current balance of 100
+		Currency:      "BRL",
+		Description:   "Residencial Mae",
+		OccurredOn:    yesterday,
+	}
+
+	tx, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("Historical CONFIRMED transaction should skip balance validation, got error: %v", err)
+	}
+
+	if tx.Status != transaction.StatusConfirmed {
+		t.Fatalf("expected status CONFIRMED, got %s", tx.Status)
+	}
+
+	if tx.Amount != 800 {
+		t.Fatalf("expected amount 800, got %.2f", tx.Amount)
+	}
+}
+
+func TestCreateTransaction_TodayConfirmed_ShouldValidateBalance(t *testing.T) {
+	// Given: An account with R$100 balance
+	// When: Creating a CONFIRMED expense of R$800 for today
+	// Then: Should fail with insufficient balance (current/future transaction)
+
+	profileID := "profile-1"
+	accountID := "account-1"
+
+	now := time.Now()
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {
+			ID:         profileID,
+			CalendarID: "cal-1",
+			Name:       "Test",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	// Account with only R$100
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Mercado Pago",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 100,
+			CurrentBalance: 100,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	// Today's date
+	today := time.Now().Format("2006-01-02")
+	confirmedStatus := "CONFIRMED"
+
+	input := CreateTransactionInput{
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        800, // More than current balance of 100
+		Currency:      "BRL",
+		Description:   "Compra grande",
+		OccurredOn:    today,
+	}
+
+	_, err := useCase.Execute(input)
+	if err == nil {
+		t.Fatal("Today's CONFIRMED transaction should validate balance, expected error")
+	}
+
+	if !errors.Is(err, ErrInsufficientBalance) {
+		t.Fatalf("expected ErrInsufficientBalance, got %v", err)
+	}
+}
+
+func TestCreateTransaction_FutureConfirmed_ShouldValidateBalance(t *testing.T) {
+	// Given: An account with R$100 balance
+	// When: Creating a CONFIRMED expense of R$800 for tomorrow
+	// Then: Should fail with insufficient balance (future transaction)
+
+	profileID := "profile-1"
+	accountID := "account-1"
+
+	now := time.Now()
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {
+			ID:         profileID,
+			CalendarID: "cal-1",
+			Name:       "Test",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	// Account with only R$100
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Mercado Pago",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 100,
+			CurrentBalance: 100,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	// Tomorrow's date
+	tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+	confirmedStatus := "CONFIRMED"
+
+	input := CreateTransactionInput{
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        800, // More than current balance of 100
+		Currency:      "BRL",
+		Description:   "Compra futura",
+		OccurredOn:    tomorrow,
+	}
+
+	_, err := useCase.Execute(input)
+	if err == nil {
+		t.Fatal("Future CONFIRMED transaction should validate balance, expected error")
+	}
+
+	if !errors.Is(err, ErrInsufficientBalance) {
+		t.Fatalf("expected ErrInsufficientBalance, got %v", err)
 	}
 }

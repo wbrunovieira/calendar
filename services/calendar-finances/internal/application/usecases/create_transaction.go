@@ -119,17 +119,19 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		destinationAccountID = &destination.ID
 	}
 
-	// Only validate balance for CONFIRMED transactions (not PLANNED)
-	isPlanned := input.Status == nil || strings.ToUpper(*input.Status) == string(transaction.StatusPlanned)
-	if !isPlanned {
-		if err := validateBalances(account, typeValue, input.Amount); err != nil {
-			return nil, err
-		}
-	}
-
 	occurredOn, err := parseDate(input.OccurredOn)
 	if err != nil {
 		return nil, ErrInvalidInput
+	}
+
+	// Only validate balance for CONFIRMED transactions that are not historical
+	// Historical transactions (date < today) already happened, so balance validation doesn't apply
+	isPlanned := input.Status == nil || strings.ToUpper(*input.Status) == string(transaction.StatusPlanned)
+	isHistorical := isHistoricalDate(occurredOn)
+	if !isPlanned && !isHistorical {
+		if err := validateBalances(account, typeValue, input.Amount); err != nil {
+			return nil, err
+		}
 	}
 
 	var dueOn *time.Time
@@ -355,4 +357,12 @@ func parseDate(value string) (time.Time, error) {
 		}
 	}
 	return time.Time{}, ErrInvalidInput
+}
+
+// isHistoricalDate checks if the given date is before today.
+// Historical transactions (past dates) should skip balance validation
+// since they already happened.
+func isHistoricalDate(date time.Time) bool {
+	today := time.Now().Truncate(24 * time.Hour)
+	return date.Before(today)
 }
