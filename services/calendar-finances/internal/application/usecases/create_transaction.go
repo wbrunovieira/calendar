@@ -213,6 +213,13 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		return nil, err
 	}
 
+	// Update bank account balance for CONFIRMED transactions
+	if txn.Status == transaction.StatusConfirmed {
+		if err := uc.updateAccountBalance(account, typeValue, input.Amount); err != nil {
+			return nil, err
+		}
+	}
+
 	// Update invoice amount if this is a credit card expense
 	if inv != nil {
 		if err := inv.AddAmount(input.Amount); err == nil {
@@ -221,6 +228,22 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 	}
 
 	return txn, nil
+}
+
+// updateAccountBalance updates the bank account balance based on transaction type
+func (uc *CreateTransactionUseCase) updateAccountBalance(account *bankaccount.BankAccount, txType transaction.Type, amount float64) error {
+	switch txType {
+	case transaction.TypeExpense:
+		account.CurrentBalance -= amount
+	case transaction.TypeIncome:
+		account.CurrentBalance += amount
+	case transaction.TypeTransfer:
+		// For transfers, decrease source account balance
+		// (destination account handled separately if needed)
+		account.CurrentBalance -= amount
+	}
+	account.UpdatedAt = time.Now()
+	return uc.accountRepo.Update(account)
 }
 
 // getOrCreateInvoiceForDate gets or creates the appropriate invoice for a transaction date

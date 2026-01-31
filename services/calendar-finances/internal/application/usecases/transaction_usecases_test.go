@@ -31,7 +31,9 @@ func (f *fakeProfileRepo) FindByID(id string) (*profile.Profile, error) {
 }
 
 type fakeAccountRepo struct {
-	accounts map[string]*bankaccount.BankAccount
+	accounts      map[string]*bankaccount.BankAccount
+	updateCalled  bool
+	lastUpdatedID string
 }
 
 func (f *fakeAccountRepo) Create(*bankaccount.BankAccount) error { return nil }
@@ -39,8 +41,16 @@ func (f *fakeAccountRepo) FindByProfileID(string) ([]*bankaccount.BankAccount, e
 	return nil, nil
 }
 func (f *fakeAccountRepo) FindAll() ([]*bankaccount.BankAccount, error) { return nil, nil }
-func (f *fakeAccountRepo) Update(*bankaccount.BankAccount) error        { return nil }
-func (f *fakeAccountRepo) Delete(string) error                          { return nil }
+func (f *fakeAccountRepo) Update(acc *bankaccount.BankAccount) error {
+	f.updateCalled = true
+	f.lastUpdatedID = acc.ID
+	// Update the account in the map to reflect the change
+	if f.accounts != nil {
+		f.accounts[acc.ID] = acc
+	}
+	return nil
+}
+func (f *fakeAccountRepo) Delete(string) error { return nil }
 func (f *fakeAccountRepo) FindByID(id string) (*bankaccount.BankAccount, error) {
 	if acc, ok := f.accounts[id]; ok {
 		return acc, nil
@@ -1324,5 +1334,230 @@ func TestCreateTransaction_FutureConfirmed_ShouldValidateBalance(t *testing.T) {
 
 	if !errors.Is(err, ErrInsufficientBalance) {
 		t.Fatalf("expected ErrInsufficientBalance, got %v", err)
+	}
+}
+
+// =============================================================================
+// Balance Update Tests (TDD)
+// =============================================================================
+
+func TestCreateTransaction_ConfirmedExpense_ShouldDecreaseBalance(t *testing.T) {
+	// Given: An account with R$1000 balance
+	// When: Creating a CONFIRMED expense of R$300
+	// Then: Account balance should decrease to R$700
+
+	profileID := "profile-1"
+	accountID := "account-1"
+
+	now := time.Now()
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {
+			ID:         profileID,
+			CalendarID: "cal-1",
+			Name:       "Test",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Mercado Pago",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 1000,
+			CurrentBalance: 1000,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	confirmedStatus := "CONFIRMED"
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+
+	input := CreateTransactionInput{
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        300,
+		Currency:      "BRL",
+		Description:   "Compra",
+		OccurredOn:    yesterday,
+	}
+
+	_, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify the account was updated
+	if !accountRepo.updateCalled {
+		t.Fatal("expected accountRepo.Update to be called")
+	}
+
+	// Verify the balance was decreased
+	account := accountRepo.accounts[accountID]
+	expectedBalance := 700.0 // 1000 - 300
+	if account.CurrentBalance != expectedBalance {
+		t.Fatalf("expected balance %.2f, got %.2f", expectedBalance, account.CurrentBalance)
+	}
+}
+
+func TestCreateTransaction_ConfirmedIncome_ShouldIncreaseBalance(t *testing.T) {
+	// Given: An account with R$500 balance
+	// When: Creating a CONFIRMED income of R$1000
+	// Then: Account balance should increase to R$1500
+
+	profileID := "profile-1"
+	accountID := "account-1"
+
+	now := time.Now()
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {
+			ID:         profileID,
+			CalendarID: "cal-1",
+			Name:       "Test",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Mercado Pago",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 500,
+			CurrentBalance: 500,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	confirmedStatus := "CONFIRMED"
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+
+	input := CreateTransactionInput{
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		Type:          "INCOME",
+		Status:        &confirmedStatus,
+		Amount:        1000,
+		Currency:      "BRL",
+		Description:   "Salario",
+		OccurredOn:    yesterday,
+	}
+
+	_, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify the account was updated
+	if !accountRepo.updateCalled {
+		t.Fatal("expected accountRepo.Update to be called")
+	}
+
+	// Verify the balance was increased
+	account := accountRepo.accounts[accountID]
+	expectedBalance := 1500.0 // 500 + 1000
+	if account.CurrentBalance != expectedBalance {
+		t.Fatalf("expected balance %.2f, got %.2f", expectedBalance, account.CurrentBalance)
+	}
+}
+
+func TestCreateTransaction_PlannedTransaction_ShouldNotUpdateBalance(t *testing.T) {
+	// Given: An account with R$1000 balance
+	// When: Creating a PLANNED expense of R$500
+	// Then: Account balance should remain R$1000 (no update)
+
+	profileID := "profile-1"
+	accountID := "account-1"
+
+	now := time.Now()
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {
+			ID:         profileID,
+			CalendarID: "cal-1",
+			Name:       "Test",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Mercado Pago",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 1000,
+			CurrentBalance: 1000,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	plannedStatus := "PLANNED"
+	tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+
+	input := CreateTransactionInput{
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		Type:          "EXPENSE",
+		Status:        &plannedStatus,
+		Amount:        500,
+		Currency:      "BRL",
+		Description:   "Compra futura",
+		OccurredOn:    tomorrow,
+	}
+
+	_, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify the account was NOT updated (PLANNED transactions don't affect balance)
+	if accountRepo.updateCalled {
+		t.Fatal("expected accountRepo.Update NOT to be called for PLANNED transactions")
+	}
+
+	// Verify the balance remains unchanged
+	account := accountRepo.accounts[accountID]
+	if account.CurrentBalance != 1000 {
+		t.Fatalf("expected balance 1000, got %.2f", account.CurrentBalance)
 	}
 }
