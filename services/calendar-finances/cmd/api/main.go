@@ -120,7 +120,8 @@ func main() {
 	getInvoiceUC := usecases.NewGetInvoiceUseCase(invoiceRepo, transactionRepo)
 	getCurrentInvoiceUC := usecases.NewGetCurrentInvoiceUseCase(invoiceRepo, bankAccountRepo, transactionRepo)
 	closeInvoiceUC := usecases.NewCloseInvoiceUseCase(invoiceRepo)
-	payInvoiceUC := usecases.NewPayInvoiceUseCase(invoiceRepo)
+	// PayInvoiceUseCaseV2: Creates payment transaction on linked checking account when invoice is paid
+	payInvoiceUC := usecases.NewPayInvoiceUseCaseV2(invoiceRepo, bankAccountRepo, transactionRepo)
 	addAmountToInvoiceUC := usecases.NewAddAmountToInvoiceUseCase(invoiceRepo)
 	recalculateInvoiceUC := usecases.NewRecalculateInvoiceAmountUseCase(invoiceRepo, transactionRepo)
 	invoiceHandler := httpHandlers.NewInvoiceHandlers(

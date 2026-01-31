@@ -1561,3 +1561,178 @@ func TestCreateTransaction_PlannedTransaction_ShouldNotUpdateBalance(t *testing.
 		t.Fatalf("expected balance 1000, got %.2f", account.CurrentBalance)
 	}
 }
+
+// =============================================================================
+// Credit Card Balance Tests (TDD)
+// =============================================================================
+
+func TestCreateTransaction_CreditCardExpense_ShouldNotUpdateBalance(t *testing.T) {
+	// Given: A credit card with R$0 balance and R$2000 limit
+	// When: Creating a CONFIRMED expense of R$500 on the credit card
+	// Then: Credit card balance should remain R$0 (no balance update for credit cards)
+	//       Only the invoice amount should be updated
+
+	profileID := "profile-1"
+	creditCardID := "cc-1"
+	checkingID := "checking-1"
+
+	now := time.Now()
+	closingDay := 9
+	dueDay := 14
+
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {
+			ID:         profileID,
+			CalendarID: "cal-1",
+			Name:       "Bruno Pessoal",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	limit := 2000.0
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		creditCardID: {
+			ID:              creditCardID,
+			ProfileID:       profileID,
+			Name:            "Cartão Mercado Pago",
+			Type:            bankaccount.AccountTypeCreditCard,
+			InitialBalance:  0,
+			CurrentBalance:  0,
+			Currency:        "BRL",
+			IsActive:        true,
+			CreditLimit:     &limit,
+			ClosingDay:      &closingDay,
+			DueDay:          &dueDay,
+			LinkedAccountID: &checkingID,
+			CreatedAt:       now,
+			UpdatedAt:       now,
+		},
+		checkingID: {
+			ID:             checkingID,
+			ProfileID:      profileID,
+			Name:           "Mercado Pago",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 1000,
+			CurrentBalance: 1000,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	confirmedStatus := "CONFIRMED"
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+
+	input := CreateTransactionInput{
+		ProfileID:     profileID,
+		BankAccountID: creditCardID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        500,
+		Currency:      "BRL",
+		Description:   "Compra no cartão",
+		OccurredOn:    yesterday,
+	}
+
+	_, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify the credit card balance was NOT updated
+	creditCard := accountRepo.accounts[creditCardID]
+	if creditCard.CurrentBalance != 0 {
+		t.Fatalf("Credit card balance should remain 0, got %.2f", creditCard.CurrentBalance)
+	}
+
+	// Verify the checking account balance was also NOT updated (payment hasn't happened yet)
+	checking := accountRepo.accounts[checkingID]
+	if checking.CurrentBalance != 1000 {
+		t.Fatalf("Checking account balance should remain 1000, got %.2f", checking.CurrentBalance)
+	}
+}
+
+func TestCreateTransaction_CreditCardIncome_ShouldNotUpdateBalance(t *testing.T) {
+	// Given: A credit card
+	// When: Creating a CONFIRMED income (refund) on the credit card
+	// Then: Credit card balance should remain unchanged
+
+	profileID := "profile-1"
+	creditCardID := "cc-1"
+
+	now := time.Now()
+	closingDay := 9
+	dueDay := 14
+
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {
+			ID:         profileID,
+			CalendarID: "cal-1",
+			Name:       "Test",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	limit := 2000.0
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		creditCardID: {
+			ID:             creditCardID,
+			ProfileID:      profileID,
+			Name:           "Cartão",
+			Type:           bankaccount.AccountTypeCreditCard,
+			InitialBalance: 0,
+			CurrentBalance: 0,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreditLimit:    &limit,
+			ClosingDay:     &closingDay,
+			DueDay:         &dueDay,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	confirmedStatus := "CONFIRMED"
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+
+	input := CreateTransactionInput{
+		ProfileID:     profileID,
+		BankAccountID: creditCardID,
+		Type:          "INCOME",
+		Status:        &confirmedStatus,
+		Amount:        100,
+		Currency:      "BRL",
+		Description:   "Estorno",
+		OccurredOn:    yesterday,
+	}
+
+	_, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify the credit card balance was NOT updated
+	creditCard := accountRepo.accounts[creditCardID]
+	if creditCard.CurrentBalance != 0 {
+		t.Fatalf("Credit card balance should remain 0, got %.2f", creditCard.CurrentBalance)
+	}
+}

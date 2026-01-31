@@ -743,26 +743,26 @@ func TestInvoiceContainsDate(t *testing.T) {
 // Test: Invoice with different closing/due day configurations
 func TestInvoiceWithDifferentConfigurations(t *testing.T) {
 	testCases := []struct {
-		name            string
-		closingDay      int
-		dueDay          int
-		txDate          string
+		name             string
+		closingDay       int
+		dueDay           int
+		txDate           string
 		expectedRefMonth time.Month
 		expectedDueMonth time.Month
 	}{
 		{
-			name:            "Due day after closing day (same month)",
-			closingDay:      9,
-			dueDay:          14,
-			txDate:          "2026-01-05",
+			name:             "Due day after closing day (same month)",
+			closingDay:       9,
+			dueDay:           14,
+			txDate:           "2026-01-05",
 			expectedRefMonth: time.January,
 			expectedDueMonth: time.January,
 		},
 		{
-			name:            "Due day before closing day (next month)",
-			closingDay:      25,
-			dueDay:          5,
-			txDate:          "2026-01-20",
+			name:             "Due day before closing day (next month)",
+			closingDay:       25,
+			dueDay:           5,
+			txDate:           "2026-01-20",
 			expectedRefMonth: time.January,
 			expectedDueMonth: time.February,
 		},
@@ -806,5 +806,183 @@ func TestInvoiceWithDifferentConfigurations(t *testing.T) {
 				t.Errorf("expected due month %s, got %s", tc.expectedDueMonth, inv.DueDate.Month())
 			}
 		})
+	}
+}
+
+// =============================================================================
+// Pay Invoice Tests (TDD)
+// =============================================================================
+
+func TestPayInvoice_ShouldCreateTransactionOnLinkedCheckingAccount(t *testing.T) {
+	// Given: A credit card with a linked checking account and an open invoice of R$500
+	// When: Paying the invoice
+	// Then: A transaction should be created on the linked checking account
+	//       And the checking account balance should decrease
+
+	f := newTestFixtures()
+
+	// Link credit card to checking account
+	card := f.accountRepo.accounts[f.cardID]
+	card.LinkedAccountID = &f.checkingID
+
+	// Create an invoice with some amount
+	inv, _ := invoice.New(invoice.CreateParams{
+		BankAccountID: f.cardID,
+		ClosingDay:    f.closingDay,
+		DueDay:        f.dueDay,
+		ReferenceDate: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	})
+	inv.Amount = 500.00
+	f.invoiceRepo.Create(inv)
+
+	// Create PayInvoice use case with all dependencies
+	useCase := NewPayInvoiceUseCaseV2(f.invoiceRepo, f.accountRepo, f.txRepo)
+
+	input := PayInvoiceInput{
+		InvoiceID:  inv.ID,
+		PaidAmount: 500.00,
+		PaidAt:     "2026-01-14",
+	}
+
+	paidInv, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Invoice should be marked as paid
+	if paidInv.Status != invoice.StatusPaid {
+		t.Errorf("expected invoice status PAID, got %s", paidInv.Status)
+	}
+
+	// A transaction should be created on the checking account
+	if len(f.txRepo.transactions) != 1 {
+		t.Fatalf("expected 1 transaction created, got %d", len(f.txRepo.transactions))
+	}
+
+	paymentTx := f.txRepo.transactions[0]
+
+	// Transaction should be on the checking account, not the credit card
+	if paymentTx.BankAccountID != f.checkingID {
+		t.Errorf("expected transaction on checking account %s, got %s", f.checkingID, paymentTx.BankAccountID)
+	}
+
+	// Transaction should be an expense
+	if paymentTx.Type != transaction.TypeExpense {
+		t.Errorf("expected EXPENSE transaction, got %s", paymentTx.Type)
+	}
+
+	// Transaction amount should match invoice amount
+	if paymentTx.Amount != 500.00 {
+		t.Errorf("expected amount 500.00, got %.2f", paymentTx.Amount)
+	}
+
+	// Transaction should be CONFIRMED
+	if paymentTx.Status != transaction.StatusConfirmed {
+		t.Errorf("expected CONFIRMED status, got %s", paymentTx.Status)
+	}
+
+	// Description should mention the card name
+	expectedDesc := "Pagamento fatura Cartão Mercado Pago"
+	if paymentTx.Description != expectedDesc {
+		t.Errorf("expected description '%s', got '%s'", expectedDesc, paymentTx.Description)
+	}
+
+	// Checking account balance should decrease
+	checking := f.accountRepo.accounts[f.checkingID]
+	expectedBalance := 10000.0 - 500.0 // Initial 10000 - invoice 500
+	if checking.CurrentBalance != expectedBalance {
+		t.Errorf("expected checking balance %.2f, got %.2f", expectedBalance, checking.CurrentBalance)
+	}
+}
+
+func TestPayInvoice_NoLinkedAccount_ShouldOnlyMarkAsPaid(t *testing.T) {
+	// Given: A credit card WITHOUT a linked checking account
+	// When: Paying the invoice
+	// Then: Invoice should be marked as paid
+	//       But no transaction should be created
+
+	f := newTestFixtures()
+
+	// Card has NO linked account
+	card := f.accountRepo.accounts[f.cardID]
+	card.LinkedAccountID = nil
+
+	// Create an invoice
+	inv, _ := invoice.New(invoice.CreateParams{
+		BankAccountID: f.cardID,
+		ClosingDay:    f.closingDay,
+		DueDay:        f.dueDay,
+		ReferenceDate: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	})
+	inv.Amount = 300.00
+	f.invoiceRepo.Create(inv)
+
+	useCase := NewPayInvoiceUseCaseV2(f.invoiceRepo, f.accountRepo, f.txRepo)
+
+	input := PayInvoiceInput{
+		InvoiceID:  inv.ID,
+		PaidAmount: 300.00,
+		PaidAt:     "2026-01-14",
+	}
+
+	paidInv, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Invoice should be marked as paid
+	if paidInv.Status != invoice.StatusPaid {
+		t.Errorf("expected invoice status PAID, got %s", paidInv.Status)
+	}
+
+	// No transaction should be created (no linked account)
+	if len(f.txRepo.transactions) != 0 {
+		t.Errorf("expected no transactions created, got %d", len(f.txRepo.transactions))
+	}
+}
+
+func TestPayInvoice_PartialPayment_ShouldCreateTransactionWithPaidAmount(t *testing.T) {
+	// Given: An invoice of R$1000
+	// When: Paying R$500 (partial payment)
+	// Then: Transaction should be created for R$500
+
+	f := newTestFixtures()
+
+	card := f.accountRepo.accounts[f.cardID]
+	card.LinkedAccountID = &f.checkingID
+
+	inv, _ := invoice.New(invoice.CreateParams{
+		BankAccountID: f.cardID,
+		ClosingDay:    f.closingDay,
+		DueDay:        f.dueDay,
+		ReferenceDate: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	})
+	inv.Amount = 1000.00
+	f.invoiceRepo.Create(inv)
+
+	useCase := NewPayInvoiceUseCaseV2(f.invoiceRepo, f.accountRepo, f.txRepo)
+
+	input := PayInvoiceInput{
+		InvoiceID:  inv.ID,
+		PaidAmount: 500.00, // Partial payment
+		PaidAt:     "2026-01-14",
+	}
+
+	_, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Transaction amount should be the paid amount, not invoice amount
+	paymentTx := f.txRepo.transactions[0]
+	if paymentTx.Amount != 500.00 {
+		t.Errorf("expected amount 500.00 (paid amount), got %.2f", paymentTx.Amount)
+	}
+
+	// Checking account should decrease by paid amount
+	checking := f.accountRepo.accounts[f.checkingID]
+	expectedBalance := 10000.0 - 500.0
+	if checking.CurrentBalance != expectedBalance {
+		t.Errorf("expected checking balance %.2f, got %.2f", expectedBalance, checking.CurrentBalance)
 	}
 }

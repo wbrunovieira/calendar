@@ -5,8 +5,15 @@ import (
 	"net/http"
 
 	"github.com/brunovieira/calendar-finances/internal/application/usecases"
+	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
 	"github.com/gorilla/mux"
 )
+
+// PayInvoiceExecutor is an interface for pay invoice use cases
+// Both PayInvoiceUseCase and PayInvoiceUseCaseV2 implement this interface
+type PayInvoiceExecutor interface {
+	Execute(input usecases.PayInvoiceInput) (*invoice.Invoice, error)
+}
 
 type InvoiceHandlers struct {
 	createUC         *usecases.CreateInvoiceUseCase
@@ -14,7 +21,7 @@ type InvoiceHandlers struct {
 	getUC            *usecases.GetInvoiceUseCase
 	getCurrentUC     *usecases.GetCurrentInvoiceUseCase
 	closeUC          *usecases.CloseInvoiceUseCase
-	payUC            *usecases.PayInvoiceUseCase
+	payUC            PayInvoiceExecutor
 	addAmountUC      *usecases.AddAmountToInvoiceUseCase
 	recalculateUC    *usecases.RecalculateInvoiceAmountUseCase
 }
@@ -25,7 +32,7 @@ func NewInvoiceHandlers(
 	getUC *usecases.GetInvoiceUseCase,
 	getCurrentUC *usecases.GetCurrentInvoiceUseCase,
 	closeUC *usecases.CloseInvoiceUseCase,
-	payUC *usecases.PayInvoiceUseCase,
+	payUC PayInvoiceExecutor,
 	addAmountUC *usecases.AddAmountToInvoiceUseCase,
 	recalculateUC *usecases.RecalculateInvoiceAmountUseCase,
 ) *InvoiceHandlers {

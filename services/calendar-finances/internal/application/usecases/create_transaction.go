@@ -214,7 +214,9 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 	}
 
 	// Update bank account balance for CONFIRMED transactions
-	if txn.Status == transaction.StatusConfirmed {
+	// NOTE: Credit card transactions do NOT update balance - the balance is only
+	// affected when the invoice is paid (via PayInvoiceUseCaseV2)
+	if txn.Status == transaction.StatusConfirmed && account.Type != bankaccount.AccountTypeCreditCard {
 		if err := uc.updateAccountBalance(account, typeValue, input.Amount); err != nil {
 			return nil, err
 		}

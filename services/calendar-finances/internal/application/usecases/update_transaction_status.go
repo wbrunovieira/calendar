@@ -91,6 +91,8 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 }
 
 // updateBalanceOnStatusChange updates the bank account balance when transaction status changes
+// NOTE: Credit card transactions do NOT update balance - the balance is only
+// affected when the invoice is paid (via PayInvoiceUseCaseV2)
 func (uc *UpdateTransactionStatusUseCase) updateBalanceOnStatusChange(tx *transaction.Transaction, oldStatus, newStatus transaction.Status) error {
 	if uc.accountRepo == nil {
 		return nil
@@ -99,6 +101,11 @@ func (uc *UpdateTransactionStatusUseCase) updateBalanceOnStatusChange(tx *transa
 	account, err := uc.accountRepo.FindByID(tx.BankAccountID)
 	if err != nil {
 		return err
+	}
+
+	// Credit card transactions don't affect balance - only invoice payment does
+	if account.Type == bankaccount.AccountTypeCreditCard {
+		return nil
 	}
 
 	// Calculate balance change based on status transition

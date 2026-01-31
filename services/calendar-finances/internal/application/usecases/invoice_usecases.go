@@ -436,3 +436,84 @@ func parseYearMonth(value string) (time.Time, error) {
 	}
 	return t, nil
 }
+
+// PayInvoiceUseCaseV2 marks an invoice as paid and creates a payment transaction
+// on the linked checking account
+type PayInvoiceUseCaseV2 struct {
+	invoiceRepo     invoice.Repository
+	accountRepo     bankaccount.Repository
+	transactionRepo transactionPkg.Repository
+}
+
+func NewPayInvoiceUseCaseV2(
+	invoiceRepo invoice.Repository,
+	accountRepo bankaccount.Repository,
+	transactionRepo transactionPkg.Repository,
+) *PayInvoiceUseCaseV2 {
+	return &PayInvoiceUseCaseV2{
+		invoiceRepo:     invoiceRepo,
+		accountRepo:     accountRepo,
+		transactionRepo: transactionRepo,
+	}
+}
+
+func (uc *PayInvoiceUseCaseV2) Execute(input PayInvoiceInput) (*invoice.Invoice, error) {
+	inv, err := uc.invoiceRepo.FindByID(input.InvoiceID)
+	if err != nil {
+		return nil, ErrInvoiceNotFound
+	}
+
+	paidAt, err := parseDate(input.PaidAt)
+	if err != nil {
+		return nil, ErrInvalidInput
+	}
+
+	if err := inv.Pay(input.PaidAmount, paidAt); err != nil {
+		return nil, ErrInvoiceAlreadyPaid
+	}
+
+	if err := uc.invoiceRepo.Update(inv); err != nil {
+		return nil, err
+	}
+
+	// Get the credit card to find the linked checking account
+	creditCard, err := uc.accountRepo.FindByID(inv.BankAccountID)
+	if err != nil {
+		return inv, nil // Invoice is paid, but couldn't find card - return success
+	}
+
+	// If the credit card has a linked checking account, create a payment transaction
+	if creditCard.LinkedAccountID != nil && *creditCard.LinkedAccountID != "" {
+		linkedAccount, err := uc.accountRepo.FindByID(*creditCard.LinkedAccountID)
+		if err != nil {
+			return inv, nil // Invoice is paid, but couldn't find linked account - return success
+		}
+
+		// Create payment transaction on the linked checking account
+		paymentTx, err := transactionPkg.New(transactionPkg.CreateParams{
+			ProfileID:     linkedAccount.ProfileID,
+			BankAccountID: linkedAccount.ID,
+			Type:          transactionPkg.TypeExpense,
+			Amount:        input.PaidAmount,
+			Currency:      linkedAccount.Currency,
+			Description:   "Pagamento fatura " + creditCard.Name,
+			OccurredOn:    paidAt,
+		})
+		if err != nil {
+			return inv, nil // Invoice is paid, but couldn't create transaction - return success
+		}
+
+		paymentTx.Status = transactionPkg.StatusConfirmed
+
+		if err := uc.transactionRepo.Create(paymentTx); err != nil {
+			return inv, nil // Invoice is paid, but couldn't save transaction - return success
+		}
+
+		// Update the linked checking account balance
+		linkedAccount.CurrentBalance -= input.PaidAmount
+		linkedAccount.UpdatedAt = time.Now()
+		_ = uc.accountRepo.Update(linkedAccount)
+	}
+
+	return inv, nil
+}
