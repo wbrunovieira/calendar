@@ -50,7 +50,7 @@ export interface EventExecution {
   notes?: string;
 }
 
-export type EventType = 'EVENT' | 'HABIT' | 'TODO';
+export type EventType = 'EVENT' | 'HABIT' | 'TODO' | 'REMINDER';
 
 export interface Event {
   id: string;
@@ -86,6 +86,8 @@ export interface Event {
   recurrenceType?: 'FIXED' | 'FLEXIBLE';
   weeklyTargetCount?: number; // Target times per week (e.g., 2)
   weeklyPreferredDays?: string[]; // Preferred days ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
+  // Reminder fields
+  reminderDaysBefore?: number[]; // Days before to remind (e.g., [7, 3, 1, 0])
 }
 
 export interface HabitStats {

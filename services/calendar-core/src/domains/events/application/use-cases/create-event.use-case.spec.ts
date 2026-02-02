@@ -256,4 +256,72 @@ describe('CreateEventUseCase', () => {
       expect(result.categoryId).toBe('category-456');
     });
   });
+
+  describe('REMINDER eventType handling', () => {
+    it('should create REMINDER event type', async () => {
+      vi.mocked(mockEventRepository.create!).mockImplementation(async (event) => event);
+
+      const result = await useCase.execute({
+        ...baseEventDto,
+        eventType: 'REMINDER',
+      });
+
+      expect(result.eventType).toBe('REMINDER');
+    });
+
+    it('should set reminderDaysBefore to null by default', async () => {
+      vi.mocked(mockEventRepository.create!).mockImplementation(async (event) => event);
+
+      const result = await useCase.execute(baseEventDto);
+
+      expect(result.reminderDaysBefore).toBeNull();
+    });
+
+    it('should set reminderDaysBefore for REMINDER', async () => {
+      vi.mocked(mockEventRepository.create!).mockImplementation(async (event) => event);
+
+      const result = await useCase.execute({
+        ...baseEventDto,
+        eventType: 'REMINDER',
+        reminderDaysBefore: [7, 3, 1, 0],
+      });
+
+      expect(result.eventType).toBe('REMINDER');
+      expect(result.reminderDaysBefore).toEqual([7, 3, 1, 0]);
+    });
+
+    it('should create REMINDER with priority', async () => {
+      vi.mocked(mockEventRepository.create!).mockImplementation(async (event) => event);
+
+      const result = await useCase.execute({
+        ...baseEventDto,
+        eventType: 'REMINDER',
+        priority: 1,
+        reminderDaysBefore: [3, 1],
+      });
+
+      expect(result.eventType).toBe('REMINDER');
+      expect(result.priority).toBe(1);
+      expect(result.reminderDaysBefore).toEqual([3, 1]);
+    });
+
+    it('should create complete REMINDER with all fields', async () => {
+      vi.mocked(mockEventRepository.create!).mockImplementation(async (event) => event);
+
+      const result = await useCase.execute({
+        ...baseEventDto,
+        eventType: 'REMINDER',
+        priority: 2,
+        reminderDaysBefore: [7, 3, 1, 0],
+        description: 'Cobrar depoimento do cliente',
+        categoryId: 'category-456',
+      });
+
+      expect(result.eventType).toBe('REMINDER');
+      expect(result.priority).toBe(2);
+      expect(result.reminderDaysBefore).toEqual([7, 3, 1, 0]);
+      expect(result.description).toBe('Cobrar depoimento do cliente');
+      expect(result.categoryId).toBe('category-456');
+    });
+  });
 });

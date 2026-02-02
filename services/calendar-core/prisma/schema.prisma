@@ -158,6 +158,9 @@ model Event {
   // Para TODOs: data de vencimento
   dueDate               DateTime? @map("due_date") @db.Date
 
+  // Para REMINDERs: dias de antecedência para lembrar (ex: [7, 3, 1, 0] = 7 dias antes, 3 dias antes, etc)
+  reminderDaysBefore    Int[]     @map("reminder_days_before")
+
   // Ordem de exibição para drag and drop
   displayOrder          Int       @default(0) @map("display_order")
 

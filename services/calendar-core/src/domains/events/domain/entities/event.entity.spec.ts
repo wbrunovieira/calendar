@@ -79,6 +79,50 @@ describe('Event Entity', () => {
       expect(lowPriority.priority).toBe(3);
     });
 
+    // REMINDER eventType tests
+    it('should create a REMINDER event type', () => {
+      const event = Event.create({
+        ...baseEventData,
+        eventType: 'REMINDER',
+      });
+
+      expect(event.eventType).toBe('REMINDER');
+      expect(event.reminderDaysBefore).toBeNull();
+    });
+
+    it('should create a REMINDER with reminderDaysBefore', () => {
+      const event = Event.create({
+        ...baseEventData,
+        eventType: 'REMINDER',
+        reminderDaysBefore: [3, 1, 0],
+      });
+
+      expect(event.eventType).toBe('REMINDER');
+      expect(event.reminderDaysBefore).toEqual([3, 1, 0]);
+    });
+
+    it('should create a REMINDER with priority', () => {
+      const event = Event.create({
+        ...baseEventData,
+        eventType: 'REMINDER',
+        priority: 1,
+        reminderDaysBefore: [7, 3, 1],
+      });
+
+      expect(event.eventType).toBe('REMINDER');
+      expect(event.priority).toBe(1);
+      expect(event.reminderDaysBefore).toEqual([7, 3, 1]);
+    });
+
+    it('should default reminderDaysBefore to null for non-REMINDER types', () => {
+      const event = Event.create({
+        ...baseEventData,
+        eventType: 'EVENT',
+      });
+
+      expect(event.reminderDaysBefore).toBeNull();
+    });
+
     it('should set null for undefined optional fields', () => {
       const event = Event.create(baseEventData);
 

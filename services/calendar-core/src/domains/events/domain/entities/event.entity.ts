@@ -29,6 +29,9 @@ export class Event {
   // Para TODOs: data de vencimento
   dueDate?: Date | null;
 
+  // Para REMINDERs: dias de antecedência para lembrar (ex: [7, 3, 1, 0] = 7 dias antes, 3 dias antes, etc)
+  reminderDaysBefore?: number[] | null;
+
   // Hábitos semanais flexíveis
   recurrenceType?: string | null; // "FIXED" | "FLEXIBLE"
   weeklyTargetCount?: number | null; // Meta semanal (ex: 2 vezes por semana)
@@ -61,6 +64,7 @@ export class Event {
     eventType?: string;
     priority?: number | null;
     dueDate?: Date | null;
+    reminderDaysBefore?: number[] | null;
     recurrenceType?: string | null;
     weeklyTargetCount?: number | null;
     weeklyPreferredDays?: string[];
@@ -83,6 +87,7 @@ export class Event {
       eventType: data.eventType || 'EVENT',
       priority: data.priority || null,
       dueDate: data.dueDate || null,
+      reminderDaysBefore: data.reminderDaysBefore || null,
       recurrenceType: data.recurrenceType || null,
       weeklyTargetCount: data.weeklyTargetCount || null,
       weeklyPreferredDays: data.weeklyPreferredDays || [],

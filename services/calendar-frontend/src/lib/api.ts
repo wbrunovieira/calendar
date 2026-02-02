@@ -44,7 +44,7 @@ interface ListEventsParams {
   search?: string;
   startDate?: string; // YYYY-MM-DD
   endDate?: string;   // YYYY-MM-DD
-  eventType?: 'EVENT' | 'HABIT' | 'TODO';
+  eventType?: 'EVENT' | 'HABIT' | 'TODO' | 'REMINDER';
 }
 
 export interface EventExecution {
@@ -109,6 +109,9 @@ export const api = {
     },
     listCalendarEvents: (params?: Omit<ListEventsParams, 'eventType'>) => {
       return api.events.list({ ...params, eventType: 'EVENT' });
+    },
+    listReminders: (params?: Omit<ListEventsParams, 'eventType'>) => {
+      return api.events.list({ ...params, eventType: 'REMINDER' });
     },
     create: (data: Record<string, unknown>) =>
       fetchAPI<Event>('/events', {

@@ -100,6 +100,7 @@ export class CreateEventUseCase {
       eventType: dto.eventType || 'EVENT',
       priority: dto.priority || null,
       dueDate,
+      reminderDaysBefore: dto.reminderDaysBefore || null,
       recurrenceType,
       weeklyTargetCount,
       weeklyPreferredDays,

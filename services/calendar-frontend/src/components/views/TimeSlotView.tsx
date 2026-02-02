@@ -17,6 +17,7 @@ import TimeSlotDayColumn from '../timeslot/TimeSlotDayColumn';
 import TimeSlotSummaryStats from '../timeslot/TimeSlotSummaryStats';
 import DayViewHabitsSection from '../timeslot/DayViewHabitsSection';
 import DayViewTasksSection from '../timeslot/DayViewTasksSection';
+import DayViewRemindersSection from '../timeslot/DayViewRemindersSection';
 import EditTodoModal from '../habits/EditTodoModal';
 
 interface TimeSlotViewProps {
@@ -300,10 +301,11 @@ export function TimeSlotView({
           })}
         </div>
 
-        {/* Today's Habits Section - only show in single day view */}
+        {/* Today's Habits, Reminders and Tasks Sections - only show in single day view */}
         {isSingleDay && (
           <>
             <DayViewHabitsSection date={days[0]} onHabitToggled={onEventUpdate} />
+            <DayViewRemindersSection date={days[0]} onReminderToggled={onEventUpdate} />
             <DayViewTasksSection
               date={days[0]}
               onTaskToggled={onEventUpdate}

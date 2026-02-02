@@ -82,10 +82,10 @@ export class UpdateEventDto {
   @IsString()
   occurrenceDate?: string; // The specific date of the occurrence being edited
 
-  // Tipo de evento: EVENT (compromisso), HABIT (habito), TODO (tarefa)
+  // Tipo de evento: EVENT (compromisso), HABIT (habito), TODO (tarefa), REMINDER (lembrete)
   @IsOptional()
   @IsString()
-  @IsIn(['EVENT', 'HABIT', 'TODO'])
+  @IsIn(['EVENT', 'HABIT', 'TODO', 'REMINDER'])
   eventType?: string;
 
   // Para TODOs: prioridade (1=alta, 2=media, 3=baixa)
@@ -99,4 +99,10 @@ export class UpdateEventDto {
   @IsOptional()
   @IsString()
   dueDate?: string;
+
+  // Para REMINDERs: dias de antecedência para lembrar (ex: [7, 3, 1, 0] = 7 dias antes, 3 dias antes, etc)
+  @IsOptional()
+  @IsArray()
+  @IsNumber({}, { each: true })
+  reminderDaysBefore?: number[];
 }
