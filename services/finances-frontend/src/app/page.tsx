@@ -35,12 +35,22 @@ const formatLocalDate = (date: Date) => {
   return `${year}-${month}-${day}`;
 };
 
+// Get current month's first and last day
+const getCurrentMonthRange = () => {
+  const now = new Date();
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return {
+    from: formatLocalDate(firstDay),
+    to: formatLocalDate(lastDay),
+  };
+};
+
 const defaultFilters: TransactionFilters = {
   bankAccountId: null,
   type: 'ALL',
   status: 'ALL',
-  from: undefined,
-  to: undefined,
+  ...getCurrentMonthRange(),
 };
 
 export default function FinancesPage() {

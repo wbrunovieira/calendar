@@ -41,8 +41,8 @@ func (h *TransactionHandlers) List(w http.ResponseWriter, r *http.Request) {
 	bankAccountID := r.URL.Query().Get("bankAccountId")
 	status := r.URL.Query().Get("status")
 	typeValue := r.URL.Query().Get("type")
-	from := r.URL.Query().Get("from")
-	to := r.URL.Query().Get("to")
+	occurredFrom := r.URL.Query().Get("occurredFrom")
+	occurredTo := r.URL.Query().Get("occurredTo")
 
 	var bankAccountPtr, statusPtr, typePtr, fromPtr, toPtr *string
 	if bankAccountID != "" {
@@ -54,11 +54,11 @@ func (h *TransactionHandlers) List(w http.ResponseWriter, r *http.Request) {
 	if typeValue != "" {
 		typePtr = &typeValue
 	}
-	if from != "" {
-		fromPtr = &from
+	if occurredFrom != "" {
+		fromPtr = &occurredFrom
 	}
-	if to != "" {
-		toPtr = &to
+	if occurredTo != "" {
+		toPtr = &occurredTo
 	}
 
 	transactions, err := h.listUseCase.Execute(usecases.ListTransactionsInput{
