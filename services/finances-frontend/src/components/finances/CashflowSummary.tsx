@@ -15,7 +15,15 @@ const formatCurrency = (value: number, currency = 'BRL') =>
     minimumFractionDigits: 2,
   }).format(value);
 
+const getCurrentMonthYear = () => {
+  const now = new Date();
+  const month = now.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
+  const year = now.getFullYear();
+  return `${month.charAt(0).toUpperCase() + month.slice(1)}/${year}`;
+};
+
 export default function CashflowSummary({ transactions, accounts, currentInvoices = {} }: CashflowSummaryProps) {
+  const currentPeriod = getCurrentMonthYear();
   const confirmedIncomeTransactions = transactions.filter(
     (transaction) => transaction.status === 'CONFIRMED' && transaction.type === 'INCOME',
   );
@@ -65,6 +73,7 @@ export default function CashflowSummary({ transactions, accounts, currentInvoice
         <div className="flex items-center gap-2 mb-2">
           <span className="text-lg">⬆️</span>
           <span className="text-white/70 text-sm">Entradas</span>
+          <span className="text-white/40 text-xs ml-auto">{currentPeriod}</span>
         </div>
         <div className="text-2xl font-bold text-emerald-400">
           {formatCurrency(confirmedIncome)}
@@ -79,6 +88,7 @@ export default function CashflowSummary({ transactions, accounts, currentInvoice
         <div className="flex items-center gap-2 mb-2">
           <span className="text-lg">⬇️</span>
           <span className="text-white/70 text-sm">Saidas</span>
+          <span className="text-white/40 text-xs ml-auto">{currentPeriod}</span>
         </div>
         <div className="text-2xl font-bold text-rose-400">
           {formatCurrency(confirmedExpense)}
