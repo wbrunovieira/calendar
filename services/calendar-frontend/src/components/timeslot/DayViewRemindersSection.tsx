@@ -12,6 +12,7 @@ import { api } from '@/lib/api';
 import { formatDateToString } from '@/utils/calendar/dateHelpers';
 import { calendars } from '@/data/calendars';
 import type { Event } from '@/types/calendar';
+import CreateReminderModal from '@/components/reminders/CreateReminderModal';
 
 interface DayViewRemindersSectionProps {
   date: Date;
@@ -61,6 +62,7 @@ export default function DayViewRemindersSection({ date, onReminderToggled }: Day
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(true);
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   const dateString = formatDateToString(date);
 
@@ -171,11 +173,6 @@ export default function DayViewRemindersSection({ date, onReminderToggled }: Day
   const pendingCount = reminders.filter(r => !completedIds.has(r.id)).length;
   const totalCount = reminders.length;
 
-  // Don't render if no reminders
-  if (!loading && reminders.length === 0) {
-    return null;
-  }
-
   const renderReminderItem = (reminder: Event) => {
     const isCompleted = completedIds.has(reminder.id);
     const isToggling = toggling === reminder.id;
@@ -257,16 +254,17 @@ export default function DayViewRemindersSection({ date, onReminderToggled }: Day
   };
 
   return (
+    <>
     <div className="mt-4 bg-gradient-to-br from-amber-900/20 to-orange-900/20 rounded-xl border border-amber-500/20 overflow-hidden shadow-lg">
-      {/* Header - Clickable to expand/collapse */}
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full px-4 py-3 border-b border-amber-500/20 flex items-center justify-between bg-amber-500/10 hover:bg-amber-500/20 transition-colors duration-200"
-      >
-        <div className="flex items-center gap-2">
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-amber-500/20 flex items-center justify-between bg-amber-500/10">
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+        >
           <span className="text-lg">🔔</span>
           <span className="text-white font-medium">Lembretes</span>
-        </div>
+        </button>
         <div className="flex items-center gap-3">
           {!loading && totalCount > 0 && (
             <div className="flex items-center gap-2">
@@ -278,19 +276,34 @@ export default function DayViewRemindersSection({ date, onReminderToggled }: Day
               )}
             </div>
           )}
-          {/* Chevron icon with rotation animation */}
-          <svg
-            className={`w-5 h-5 text-white/60 transition-transform duration-300 ease-in-out ${
-              isExpanded ? 'rotate-180' : 'rotate-0'
-            }`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+          {/* Add button */}
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="w-7 h-7 rounded-lg bg-amber-600 hover:bg-amber-700 text-white flex items-center justify-center transition-colors"
+            title="Criar lembrete"
           >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
+          {/* Chevron icon with rotation animation */}
+          <button
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="p-1 hover:bg-white/10 rounded transition-colors"
+          >
+            <svg
+              className={`w-5 h-5 text-white/60 transition-transform duration-300 ease-in-out ${
+                isExpanded ? 'rotate-180' : 'rotate-0'
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
         </div>
-      </button>
+      </div>
 
       {/* Collapsible Content with smooth animation */}
       <div
@@ -304,6 +317,10 @@ export default function DayViewRemindersSection({ date, onReminderToggled }: Day
             <div className="flex items-center justify-center py-6">
               <div className="w-6 h-6 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
             </div>
+          ) : totalCount === 0 ? (
+            <p className="text-white/40 text-sm text-center py-4">
+              Nenhum lembrete para hoje
+            </p>
           ) : hasMultipleProfiles ? (
             // Grouped by profile
             <div className="space-y-4">
@@ -343,5 +360,17 @@ export default function DayViewRemindersSection({ date, onReminderToggled }: Day
         </div>
       </div>
     </div>
+
+    {/* Create Reminder Modal */}
+    <CreateReminderModal
+      isOpen={showCreateModal}
+      onClose={() => setShowCreateModal(false)}
+      onCreated={() => {
+        fetchReminders();
+        if (onReminderToggled) onReminderToggled();
+      }}
+      calendars={calendars}
+    />
+    </>
   );
 }
