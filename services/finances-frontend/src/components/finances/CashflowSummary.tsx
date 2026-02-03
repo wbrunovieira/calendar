@@ -104,12 +104,24 @@ export default function CashflowSummary({ transactions, accounts, currentInvoice
           <span className="text-lg">🏦</span>
           <span className="text-white/70 text-sm">Disponivel</span>
         </div>
-        <div className={`text-2xl font-bold ${availableBalance >= 0 ? 'text-white' : 'text-rose-400'}`}>
-          {formatCurrency(availableBalance)}
+        <div className="space-y-1 mb-2">
+          {regularAccounts.map((acc) => (
+            <div key={acc.id} className="flex justify-between text-sm">
+              <span className="text-white/60 truncate mr-2">{acc.name}</span>
+              <span className={acc.currentBalance >= 0 ? 'text-white/80' : 'text-rose-400'}>
+                {formatCurrency(acc.currentBalance)}
+              </span>
+            </div>
+          ))}
         </div>
-        <p className="text-white/50 text-xs mt-1">
-          {regularAccounts.length} {regularAccounts.length === 1 ? 'conta' : 'contas'}
-        </p>
+        <div className="border-t border-white/10 pt-2">
+          <div className="flex justify-between">
+            <span className="text-white/70 text-sm font-medium">Total</span>
+            <span className={`text-lg font-bold ${availableBalance >= 0 ? 'text-white' : 'text-rose-400'}`}>
+              {formatCurrency(availableBalance)}
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* Cartoes de Credito */}

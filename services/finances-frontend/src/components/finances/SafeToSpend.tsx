@@ -17,9 +17,8 @@ interface Props {
 
 export default function SafeToSpend({ accounts, transactions }: Props) {
   // Available balance from regular accounts (checking, savings, cash) - not credit cards or investments
-  const availableBalance = accounts
-    .filter((acc) => acc.type !== 'CREDIT_CARD' && acc.type !== 'INVESTMENT')
-    .reduce((sum, acc) => sum + acc.currentBalance, 0);
+  const regularAccounts = accounts.filter((acc) => acc.type !== 'CREDIT_CARD' && acc.type !== 'INVESTMENT');
+  const availableBalance = regularAccounts.reduce((sum, acc) => sum + acc.currentBalance, 0);
 
   // Get current month expenses (confirmed)
   const now = new Date();
@@ -63,14 +62,25 @@ export default function SafeToSpend({ accounts, transactions }: Props) {
   return (
     <div className="grid gap-4 sm:grid-cols-3">
       <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-        <p className="text-white/60 text-sm">Saldo disponivel</p>
-        <p className={`text-2xl font-bold ${remaining < 0 ? 'text-rose-200' : 'text-white'}`}>
-          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(remaining)}
-        </p>
-        <p className="text-white/40 text-xs mt-1">
-          +{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(monthIncome)} entradas /
-          -{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(monthExpenses)} saidas
-        </p>
+        <p className="text-white/60 text-sm mb-2">Saldo disponivel</p>
+        <div className="space-y-1 mb-2">
+          {regularAccounts.map((acc) => (
+            <div key={acc.id} className="flex justify-between text-sm">
+              <span className="text-white/50 truncate mr-2">{acc.name}</span>
+              <span className={acc.currentBalance >= 0 ? 'text-white/70' : 'text-rose-300'}>
+                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(acc.currentBalance)}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className="border-t border-white/10 pt-2">
+          <div className="flex justify-between items-baseline">
+            <span className="text-white/60 text-sm">Total</span>
+            <span className={`text-xl font-bold ${remaining < 0 ? 'text-rose-200' : 'text-white'}`}>
+              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(remaining)}
+            </span>
+          </div>
+        </div>
       </div>
       <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
         <p className="text-white/60 text-sm">Safe-to-spend diario</p>
