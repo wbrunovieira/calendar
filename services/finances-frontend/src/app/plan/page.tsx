@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import AppLayout from '@/components/layout/AppLayout';
+import AppLayout, { ProfileTheme } from '@/components/layout/AppLayout';
 import TransactionForm from '@/components/finances/TransactionForm';
 import type { Profile, BankAccount, RecurringTransaction, BudgetSummaryItem, Category, Transaction, TransactionFormData } from '@/types/finances';
 
@@ -400,8 +400,11 @@ export default function PlanPage() {
     };
   }, [forecast.totals, plannedTransactions]);
 
+  const selectedProfile = profiles.find((p) => p.id === selectedProfileId);
+  const profileTheme: ProfileTheme = selectedProfile?.type === 'BUSINESS' ? 'business' : 'personal';
+
   return (
-    <AppLayout>
+    <AppLayout profileTheme={profileTheme} profileName={selectedProfile?.name}>
       <div className="py-6 space-y-6">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold text-white">Planejamento</h2>

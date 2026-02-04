@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import Link from 'next/link';
-import AppLayout from '@/components/layout/AppLayout';
+import AppLayout, { ProfileTheme } from '@/components/layout/AppLayout';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import type { Profile, RecurringTransaction, Transaction, Category, BudgetSummaryItem } from '@/types/finances';
 
@@ -175,8 +175,11 @@ export default function VisaoMensalPage() {
     }
   };
 
+  const selectedProfile = profiles.find((p) => p.id === selectedProfileId);
+  const profileTheme: ProfileTheme = selectedProfile?.type === 'BUSINESS' ? 'business' : 'personal';
+
   return (
-    <AppLayout>
+    <AppLayout profileTheme={profileTheme} profileName={selectedProfile?.name}>
       <div className="py-6 space-y-6">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold text-white">Visao Mensal</h2>

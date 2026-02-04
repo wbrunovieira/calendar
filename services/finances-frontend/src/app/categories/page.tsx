@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import AppLayout from '@/components/layout/AppLayout';
+import AppLayout, { ProfileTheme } from '@/components/layout/AppLayout';
 import type { Profile, Category, CategoryType } from '@/types/finances';
 
 const API_BASE = 'http://localhost:3335/api/v1';
@@ -249,8 +249,11 @@ export default function CategoriesPage() {
     return icon?.label.split(' ')[0] || '📦';
   };
 
+  const selectedProfile = profiles.find((p) => p.id === selectedProfileId);
+  const profileTheme: ProfileTheme = selectedProfile?.type === 'BUSINESS' ? 'business' : 'personal';
+
   return (
-    <AppLayout>
+    <AppLayout profileTheme={profileTheme} profileName={selectedProfile?.name}>
       <div className="py-6 space-y-6">
         <div className="flex items-center justify-between">
           <div>

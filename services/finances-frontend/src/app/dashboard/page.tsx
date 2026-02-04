@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import AppLayout from '@/components/layout/AppLayout';
+import AppLayout, { ProfileTheme } from '@/components/layout/AppLayout';
 import type { Profile, Category, Transaction, BankAccount } from '@/types/finances';
 import {
   PieChart,
@@ -269,7 +269,8 @@ export default function DashboardPage() {
       }));
   }, [filteredTransactions, categories]);
 
-  const _selectedProfile = profiles.find((p) => p.id === selectedProfileId);
+  const selectedProfile = profiles.find((p) => p.id === selectedProfileId);
+  const profileTheme: ProfileTheme = selectedProfile?.type === 'BUSINESS' ? 'business' : 'personal';
 
   const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string }>; label?: string }) => {
     if (active && payload && payload.length) {
@@ -288,7 +289,7 @@ export default function DashboardPage() {
   };
 
   return (
-    <AppLayout>
+    <AppLayout profileTheme={profileTheme} profileName={selectedProfile?.name}>
       <div className="py-6 space-y-6">
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">

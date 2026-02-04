@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import AppLayout from '@/components/layout/AppLayout';
+import AppLayout, { ProfileTheme } from '@/components/layout/AppLayout';
 import type { Profile, RecurringTransaction, BankAccount, Category, TransactionType } from '@/types/finances';
 
 const API_BASE = 'http://localhost:3335/api/v1';
@@ -363,8 +363,10 @@ export default function RecurringPage() {
     return 'Mensal';
   };
 
+  const profileTheme: ProfileTheme = selectedProfile?.type === 'BUSINESS' ? 'business' : 'personal';
+
   return (
-    <AppLayout>
+    <AppLayout profileTheme={profileTheme} profileName={selectedProfile?.name}>
       <div className="py-6 space-y-6">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold text-white">Transacoes Recorrentes</h2>

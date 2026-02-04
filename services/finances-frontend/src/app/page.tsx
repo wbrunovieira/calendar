@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import AppLayout from '@/components/layout/AppLayout';
+import AppLayout, { ProfileTheme } from '@/components/layout/AppLayout';
 import BankAccountModal from '@/components/finances/BankAccountModal';
 import TransactionForm from '@/components/finances/TransactionForm';
 import TransactionsTable from '@/components/finances/TransactionsTable';
@@ -545,6 +545,9 @@ export default function FinancesPage() {
     ? profiles.find((profile) => profile.id === selectedProfileId)
     : null;
 
+  // Determine profile theme based on profile type
+  const profileTheme: ProfileTheme = selectedProfile?.type === 'BUSINESS' ? 'business' : 'personal';
+
   // Handle search result selection
   const handleSearchSelectTransaction = useCallback((id: string) => {
     const tx = transactions.find((t) => t.id === id);
@@ -599,7 +602,7 @@ export default function FinancesPage() {
   }, [selectedProfileId, filteredAccounts, transactionFilters, fetchTransactions]);
 
   return (
-    <AppLayout>
+    <AppLayout profileTheme={profileTheme} profileName={selectedProfile?.name}>
       <div className="py-10 space-y-8">
         {/* Global Search */}
         <div className="mb-10">
@@ -633,7 +636,11 @@ export default function FinancesPage() {
           </div>
           <button
             onClick={openTransactionModal}
-            className="flex items-center gap-2 px-5 py-2 rounded-xl bg-emerald-500/80 hover:bg-emerald-500 text-white font-semibold border border-emerald-400/40 transition-colors"
+            className={`flex items-center gap-2 px-5 py-2 rounded-xl text-white font-semibold transition-colors ${
+              profileTheme === 'business'
+                ? 'bg-amber-500/80 hover:bg-amber-500 border border-amber-400/40'
+                : 'bg-emerald-500/80 hover:bg-emerald-500 border border-emerald-400/40'
+            }`}
           >
             <span>➕</span>
             <span>Novo lançamento</span>
@@ -656,18 +663,21 @@ export default function FinancesPage() {
                   <div className="flex flex-wrap gap-2">
                     {profiles.map((profile) => {
                       const isSelected = selectedProfileId === profile.id;
+                      const isBusinessProfile = profile.type === 'BUSINESS';
                       return (
                         <button
                           key={profile.id}
                           onClick={() => setSelectedProfileId(profile.id)}
-                          className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-colors ${
+                          className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-200 ${
                             isSelected
-                              ? 'bg-white/20 text-white border border-white/40'
-                              : 'bg-white/5 text-white/60 hover:bg-white/10'
+                              ? isBusinessProfile
+                                ? 'bg-amber-500/20 text-amber-200 border border-amber-400/40'
+                                : 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/40'
+                              : 'bg-white/5 text-white/60 hover:bg-white/10 border border-transparent'
                           }`}
                         >
                           <span className="text-lg">
-                            {profile.type === 'PERSONAL' ? '👤' : '🏢'}
+                            {isBusinessProfile ? '🏢' : '👤'}
                           </span>
                           <span className="text-sm font-semibold">{profile.name}</span>
                         </button>
