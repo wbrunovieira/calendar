@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import AppLayout, { ProfileTheme } from '@/components/layout/AppLayout';
+import AppLayout, { useProfile } from '@/components/layout/AppLayout';
 import TransactionForm from '@/components/finances/TransactionForm';
-import type { Profile, BankAccount, RecurringTransaction, BudgetSummaryItem, Category, Transaction, TransactionFormData } from '@/types/finances';
+import type { BankAccount, RecurringTransaction, BudgetSummaryItem, Category, Transaction, TransactionFormData } from '@/types/finances';
 
 const API_BASE = 'http://localhost:3335/api/v1';
 
@@ -22,8 +22,9 @@ interface ForecastItem {
 }
 
 export default function PlanPage() {
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
+  // Use shared profile context
+  const { profiles, selectedProfileId } = useProfile();
+
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [recurrings, setRecurrings] = useState<RecurringTransaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -52,19 +53,6 @@ export default function PlanPage() {
     return { startDate: start, endDate: end };
   }, [range]);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch(`${API_BASE}/profiles`);
-        const data = await res.json();
-        const list: Profile[] = data.data || [];
-        setProfiles(list);
-        if (list.length > 0) setSelectedProfileId(list[0].id);
-      } catch (e) {
-        console.warn('Erro ao carregar perfis', e);
-      }
-    })();
-  }, []);
 
   const loadData = useCallback(async () => {
     if (!selectedProfileId) return;
@@ -400,11 +388,9 @@ export default function PlanPage() {
     };
   }, [forecast.totals, plannedTransactions]);
 
-  const selectedProfile = profiles.find((p) => p.id === selectedProfileId);
-  const profileTheme: ProfileTheme = selectedProfile?.type === 'BUSINESS' ? 'business' : 'personal';
 
   return (
-    <AppLayout profileTheme={profileTheme} profileName={selectedProfile?.name}>
+    <AppLayout>
       <div className="py-6 space-y-6">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold text-white">Planejamento</h2>
@@ -412,21 +398,7 @@ export default function PlanPage() {
         </div>
 
         <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-white/70 text-sm">Perfil:</span>
-              <div className="flex flex-wrap gap-2">
-                {profiles.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => setSelectedProfileId(p.id)}
-                    className={`px-3 py-1.5 rounded-xl border ${selectedProfileId === p.id ? 'bg-white/20 text-white border-white/40' : 'bg-white/5 text-white/60 hover:bg-white/10 border-white/15'}`}
-                  >
-                    {p.name}
-                  </button>
-                ))}
-              </div>
-            </div>
+          <div className="flex flex-wrap items-center justify-end gap-3">
             <div className="flex items-center gap-2">
               <span className="text-white/70 text-sm">Horizonte:</span>
               <button

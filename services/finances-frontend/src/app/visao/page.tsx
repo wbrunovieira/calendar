@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import Link from 'next/link';
-import AppLayout, { ProfileTheme } from '@/components/layout/AppLayout';
+import AppLayout from '@/components/layout/AppLayout';
+import { useProfile } from '@/contexts/ProfileContext';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-import type { Profile, RecurringTransaction, Transaction, Category, BudgetSummaryItem } from '@/types/finances';
+import type { RecurringTransaction, Transaction, Category, BudgetSummaryItem } from '@/types/finances';
 
 const CHART_COLORS = [
   '#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6',
@@ -23,8 +24,7 @@ interface MonthData {
 }
 
 export default function VisaoMensalPage() {
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
+  const { selectedProfileId } = useProfile();
   const [basePeriod, setBasePeriod] = useState<string>(() => new Date().toISOString().slice(0, 7));
   const [categories, setCategories] = useState<Category[]>([]);
   const [recurrings, setRecurrings] = useState<RecurringTransaction[]>([]);
@@ -48,22 +48,6 @@ export default function VisaoMensalPage() {
 
     return periods;
   }, [basePeriod, viewMode]);
-
-  // Load profiles on mount
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch(`${API_BASE}/profiles`);
-        const data = await res.json();
-        const list: Profile[] = data.data || [];
-        setProfiles(list);
-        const defaultProfile = list.find((p) => p.name === 'Bruno Pessoal') || list[0];
-        if (defaultProfile) setSelectedProfileId(defaultProfile.id);
-      } catch (e) {
-        console.warn('Erro ao carregar perfis', e);
-      }
-    })();
-  }, []);
 
   // Load categories and recurrings (profile-based, period-independent)
   useEffect(() => {
@@ -175,72 +159,47 @@ export default function VisaoMensalPage() {
     }
   };
 
-  const selectedProfile = profiles.find((p) => p.id === selectedProfileId);
-  const profileTheme: ProfileTheme = selectedProfile?.type === 'BUSINESS' ? 'business' : 'personal';
 
   return (
-    <AppLayout profileTheme={profileTheme} profileName={selectedProfile?.name}>
+    <AppLayout>
       <div className="py-6 space-y-6">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold text-white">Visao Mensal</h2>
           <Link href="/" className="text-sm text-white/70 hover:text-white underline">← Voltar</Link>
         </div>
 
-        {/* Profile, Period, and View Mode Selector */}
+        {/* Period and View Mode Selector */}
         <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <p className="text-white/70 text-sm">Perfil:</p>
+            <div className="flex items-center gap-2">
+              <label className="text-white/70 text-sm">Inicio:</label>
+              <input
+                type="month"
+                value={basePeriod}
+                onChange={(e) => setBasePeriod(e.target.value)}
+                className="bg-white/10 border border-white/20 text-white rounded-lg px-3 py-1.5 text-sm"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <p className="text-white/70 text-sm">Visualizar:</p>
               <div className="flex flex-wrap gap-2">
-                {profiles.map((profile) => {
-                  const isSelected = selectedProfileId === profile.id;
+                {([1, 2, 3, 6, 12] as ViewMode[]).map((mode) => {
+                  const label = mode === 1 ? '1 mes' : mode === 12 ? '1 ano' : `${mode} meses`;
                   return (
                     <button
-                      key={profile.id}
-                      onClick={() => setSelectedProfileId(profile.id)}
-                      className={`px-3 py-1.5 rounded-xl border transition-colors ${
-                        isSelected ? 'bg-white/20 text-white border-white/40' : 'bg-white/5 text-white/60 hover:bg-white/10 border-white/15'
+                      key={mode}
+                      onClick={() => setViewMode(mode)}
+                      className={`px-3 py-1.5 rounded-xl border transition-colors text-sm ${
+                        viewMode === mode
+                          ? 'bg-blue-500/30 text-blue-300 border-blue-500/50'
+                          : 'bg-white/5 text-white/60 hover:bg-white/10 border-white/15'
                       }`}
                     >
-                      {profile.name}
+                      {label}
                     </button>
                   );
                 })}
               </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <label className="text-white/70 text-sm">Inicio:</label>
-                <input
-                  type="month"
-                  value={basePeriod}
-                  onChange={(e) => setBasePeriod(e.target.value)}
-                  className="bg-white/10 border border-white/20 text-white rounded-lg px-3 py-1.5 text-sm"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* View Mode Selector */}
-          <div className="flex items-center gap-2 mt-4 pt-4 border-t border-white/10">
-            <p className="text-white/70 text-sm">Visualizar:</p>
-            <div className="flex flex-wrap gap-2">
-              {([1, 2, 3, 6, 12] as ViewMode[]).map((mode) => {
-                const label = mode === 1 ? '1 mes' : mode === 12 ? '1 ano' : `${mode} meses`;
-                return (
-                  <button
-                    key={mode}
-                    onClick={() => setViewMode(mode)}
-                    className={`px-3 py-1.5 rounded-xl border transition-colors text-sm ${
-                      viewMode === mode
-                        ? 'bg-blue-500/30 text-blue-300 border-blue-500/50'
-                        : 'bg-white/5 text-white/60 hover:bg-white/10 border-white/15'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
             </div>
           </div>
         </div>

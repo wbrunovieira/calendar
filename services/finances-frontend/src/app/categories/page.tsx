@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import AppLayout, { ProfileTheme } from '@/components/layout/AppLayout';
-import type { Profile, Category, CategoryType } from '@/types/finances';
+import AppLayout from '@/components/layout/AppLayout';
+import { useProfile } from '@/contexts/ProfileContext';
+import type { Category, CategoryType } from '@/types/finances';
 
 const API_BASE = 'http://localhost:3335/api/v1';
 
@@ -50,8 +51,7 @@ const CATEGORY_ICONS = [
 ];
 
 export default function CategoriesPage() {
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
+  const { selectedProfileId } = useProfile();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,20 +70,6 @@ export default function CategoriesPage() {
 
   // Filter state
   const [filterType, setFilterType] = useState<CategoryType | 'ALL'>('ALL');
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch(`${API_BASE}/profiles`);
-        const data = await res.json();
-        const list: Profile[] = data.data || [];
-        setProfiles(list);
-        if (list.length > 0) setSelectedProfileId(list[0].id);
-      } catch (e) {
-        console.warn('Erro ao carregar perfis', e);
-      }
-    })();
-  }, []);
 
   const loadCategories = useCallback(async () => {
     if (!selectedProfileId) return;
@@ -249,11 +235,9 @@ export default function CategoriesPage() {
     return icon?.label.split(' ')[0] || '📦';
   };
 
-  const selectedProfile = profiles.find((p) => p.id === selectedProfileId);
-  const profileTheme: ProfileTheme = selectedProfile?.type === 'BUSINESS' ? 'business' : 'personal';
 
   return (
-    <AppLayout profileTheme={profileTheme} profileName={selectedProfile?.name}>
+    <AppLayout>
       <div className="py-6 space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -265,34 +249,14 @@ export default function CategoriesPage() {
           </Link>
         </div>
 
-        {/* Profile selector */}
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-white/70 text-sm">Perfil:</span>
-              <div className="flex flex-wrap gap-2">
-                {profiles.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => setSelectedProfileId(p.id)}
-                    className={`px-3 py-1.5 rounded-xl border transition-colors ${
-                      selectedProfileId === p.id
-                        ? 'bg-emerald-500/30 border-emerald-400/50 text-emerald-200'
-                        : 'bg-white/5 text-white/60 hover:bg-white/10 border-white/15'
-                    }`}
-                  >
-                    {p.type === 'PERSONAL' ? '👤' : '🏢'} {p.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <button
-              onClick={() => openCreateModal(null)}
-              className="px-4 py-2 bg-emerald-500/80 hover:bg-emerald-500 text-white rounded-lg font-semibold border border-emerald-400/40 transition-colors"
-            >
-              + Nova Categoria
-            </button>
-          </div>
+        {/* Actions */}
+        <div className="flex justify-end">
+          <button
+            onClick={() => openCreateModal(null)}
+            className="px-4 py-2 bg-emerald-500/80 hover:bg-emerald-500 text-white rounded-lg font-semibold border border-emerald-400/40 transition-colors"
+          >
+            + Nova Categoria
+          </button>
         </div>
 
         {/* Type filter */}

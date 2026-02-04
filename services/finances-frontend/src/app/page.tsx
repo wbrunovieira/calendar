@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import AppLayout, { ProfileTheme } from '@/components/layout/AppLayout';
+import AppLayout, { useProfile } from '@/components/layout/AppLayout';
 import BankAccountModal from '@/components/finances/BankAccountModal';
 import TransactionForm from '@/components/finances/TransactionForm';
 import TransactionsTable from '@/components/finances/TransactionsTable';
@@ -13,7 +13,6 @@ import InvestmentAccountInfo from '@/components/finances/InvestmentAccountInfo';
 import GlobalSearch from '@/components/finances/GlobalSearch';
 import TodayAlerts from '@/components/finances/TodayAlerts';
 import type {
-  Profile,
   BankAccount,
   Category,
   Transaction,
@@ -54,8 +53,9 @@ const defaultFilters: TransactionFilters = {
 };
 
 export default function FinancesPage() {
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [profilesLoading, setProfilesLoading] = useState(true);
+  // Use shared profile context
+  const { profiles, selectedProfileId, selectedProfile, isLoading: profilesLoading } = useProfile();
+
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [_budgetSummary, setBudgetSummary] = useState<BudgetSummaryItem[]>([]);
@@ -63,7 +63,6 @@ export default function FinancesPage() {
   const [transactionsLoading, setTransactionsLoading] = useState(false);
   const [transactionsError, setTransactionsError] = useState<'NOT_IMPLEMENTED' | 'GENERIC' | null>(null);
   const [transactionFilters, setTransactionFilters] = useState<TransactionFilters>({ ...defaultFilters });
-  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
 
   const [isBankAccountModalOpen, setIsBankAccountModalOpen] = useState(false);
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
@@ -86,30 +85,8 @@ export default function FinancesPage() {
   );
 
   useEffect(() => {
-    fetchProfiles();
     fetchBankAccounts();
   }, []);
-
-  useEffect(() => {
-    if (profiles.length > 0 && !selectedProfileId) {
-      // Default to "Bruno Pessoal" profile, fallback to first
-      const defaultProfile = profiles.find((p) => p.name === 'Bruno Pessoal') || profiles[0];
-      setSelectedProfileId(defaultProfile.id);
-    }
-  }, [profiles, selectedProfileId]);
-
-  const fetchProfiles = async () => {
-    try {
-      setProfilesLoading(true);
-      const response = await fetch(`${API_BASE}/profiles`);
-      const data = await response.json();
-      setProfiles(data.data || []);
-    } catch (error) {
-      console.error('Erro ao carregar perfis:', error);
-    } finally {
-      setProfilesLoading(false);
-    }
-  };
 
   const fetchBankAccounts = async () => {
     try {
@@ -541,12 +518,6 @@ export default function FinancesPage() {
     setIsTransactionModalOpen(true);
   };
 
-  const selectedProfile = selectedProfileId
-    ? profiles.find((profile) => profile.id === selectedProfileId)
-    : null;
-
-  // Determine profile theme based on profile type
-  const profileTheme: ProfileTheme = selectedProfile?.type === 'BUSINESS' ? 'business' : 'personal';
 
   // Handle search result selection
   const handleSearchSelectTransaction = useCallback((id: string) => {
@@ -602,7 +573,7 @@ export default function FinancesPage() {
   }, [selectedProfileId, filteredAccounts, transactionFilters, fetchTransactions]);
 
   return (
-    <AppLayout profileTheme={profileTheme} profileName={selectedProfile?.name}>
+    <AppLayout>
       <div className="py-10 space-y-8">
         {/* Global Search */}
         <div className="mb-10">
@@ -637,7 +608,7 @@ export default function FinancesPage() {
           <button
             onClick={openTransactionModal}
             className={`flex items-center gap-2 px-5 py-2 rounded-xl text-white font-semibold transition-colors ${
-              profileTheme === 'business'
+              selectedProfile?.type === 'BUSINESS'
                 ? 'bg-amber-500/80 hover:bg-amber-500 border border-amber-400/40'
                 : 'bg-emerald-500/80 hover:bg-emerald-500 border border-emerald-400/40'
             }`}
@@ -656,39 +627,7 @@ export default function FinancesPage() {
               <div className="bg-white/10 border border-white/10 rounded-2xl p-8 text-center text-white/70">
                 Cadastre um perfil financeiro para começar a registrar lançamentos.
               </div>
-            ) : (
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-white/70 text-sm">Visualizando dados de:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {profiles.map((profile) => {
-                      const isSelected = selectedProfileId === profile.id;
-                      const isBusinessProfile = profile.type === 'BUSINESS';
-                      return (
-                        <button
-                          key={profile.id}
-                          onClick={() => setSelectedProfileId(profile.id)}
-                          className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-200 ${
-                            isSelected
-                              ? isBusinessProfile
-                                ? 'bg-amber-500/20 text-amber-200 border border-amber-400/40'
-                                : 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/40'
-                              : 'bg-white/5 text-white/60 hover:bg-white/10 border border-transparent'
-                          }`}
-                        >
-                          <span className="text-lg">
-                            {isBusinessProfile ? '🏢' : '👤'}
-                          </span>
-                          <span className="text-sm font-semibold">{profile.name}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {selectedProfile && (
+            ) : selectedProfile && (
               <>
                 <SafeToSpend accounts={filteredAccounts} transactions={transactions} />
                 <CashflowSummary transactions={transactions} accounts={filteredAccounts} currentInvoices={currentInvoices} />

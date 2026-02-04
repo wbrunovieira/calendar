@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import AppLayout, { ProfileTheme } from '@/components/layout/AppLayout';
-import type { Profile, BudgetTarget, BudgetSummaryItem, Category, RecurringTransaction, Transaction } from '@/types/finances';
+import AppLayout, { useProfile } from '@/components/layout/AppLayout';
+import type { BudgetTarget, BudgetSummaryItem, Category, RecurringTransaction, Transaction } from '@/types/finances';
 
 const API_BASE = 'http://localhost:3335/api/v1';
 
@@ -56,8 +56,9 @@ const calculatePaceMetrics = (period: string, spent: number, budget: number, pen
 };
 
 export default function BudgetsPage() {
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
+  // Use shared profile context
+  const { selectedProfileId, selectedProfile } = useProfile();
+
   const [period, setPeriod] = useState<string>(() => new Date().toISOString().slice(0, 7));
   const [targets, setTargets] = useState<BudgetTarget[]>([]);
   const [summary, setSummary] = useState<BudgetSummaryItem[]>([]);
@@ -69,25 +70,6 @@ export default function BudgetsPage() {
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
   const [form, setForm] = useState<{ categoryId: string; period: string; amount: string; notes: string; isRecurring: boolean }>({ categoryId: '', period, amount: '', notes: '', isRecurring: true });
   const [editingId, setEditingId] = useState<string | null>(null);
-
-  const selectedProfile = useMemo(
-    () => profiles.find((p) => p.id === selectedProfileId) || null,
-    [profiles, selectedProfileId],
-  );
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch(`${API_BASE}/profiles`);
-        const data = await res.json();
-        const list: Profile[] = data.data || [];
-        setProfiles(list);
-        if (list.length > 0) setSelectedProfileId(list[0].id);
-      } catch (e) {
-        console.warn('Erro ao carregar perfis', e);
-      }
-    })();
-  }, []);
 
   useEffect(() => {
     if (!selectedProfileId) return;
@@ -295,10 +277,9 @@ export default function BudgetsPage() {
     }
   };
 
-  const profileTheme: ProfileTheme = selectedProfile?.type === 'BUSINESS' ? 'business' : 'personal';
 
   return (
-    <AppLayout profileTheme={profileTheme} profileName={selectedProfile?.name}>
+    <AppLayout>
       <div className="py-6 space-y-6">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold text-white">Orçamentos por Categoria</h2>
@@ -306,26 +287,7 @@ export default function BudgetsPage() {
         </div>
 
         <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <p className="text-white/70 text-sm">Perfil:</p>
-              <div className="flex flex-wrap gap-2">
-                {profiles.map((profile) => {
-                  const isSelected = selectedProfileId === profile.id;
-                  return (
-                    <button
-                      key={profile.id}
-                      onClick={() => setSelectedProfileId(profile.id)}
-                      className={`px-3 py-1.5 rounded-xl border transition-colors ${
-                        isSelected ? 'bg-white/20 text-white border-white/40' : 'bg-white/5 text-white/60 hover:bg-white/10 border-white/15'
-                      }`}
-                    >
-                      {profile.name}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+          <div className="flex flex-wrap items-center justify-end gap-3">
             <div className="flex items-center gap-2">
               <label className="text-white/70 text-sm">Período:</label>
               <input

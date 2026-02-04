@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import AppLayout, { ProfileTheme } from '@/components/layout/AppLayout';
-import type { Profile, RecurringTransaction, BankAccount, Category, TransactionType } from '@/types/finances';
+import AppLayout, { useProfile } from '@/components/layout/AppLayout';
+import type { RecurringTransaction, BankAccount, Category, TransactionType } from '@/types/finances';
 
 const API_BASE = 'http://localhost:3335/api/v1';
 
@@ -57,8 +57,9 @@ const defaultForm = (): FormData => ({
 });
 
 export default function RecurringPage() {
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
+  // Use shared profile context
+  const { selectedProfileId, selectedProfile } = useProfile();
+
   const [items, setItems] = useState<RecurringTransaction[]>([]);
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -77,11 +78,6 @@ export default function RecurringPage() {
   const [pausingItem, setPausingItem] = useState<RecurringTransaction | null>(null);
   const [reviewOnDate, setReviewOnDate] = useState('');
 
-  const selectedProfile = useMemo(
-    () => profiles.find((p) => p.id === selectedProfileId) || null,
-    [profiles, selectedProfileId],
-  );
-
   const filteredAccounts = useMemo(
     () => accounts.filter((a) => a.profileId === selectedProfileId),
     [accounts, selectedProfileId],
@@ -91,20 +87,6 @@ export default function RecurringPage() {
     () => categories.filter((c) => c.type === formData.type),
     [categories, formData.type],
   );
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch(`${API_BASE}/profiles`);
-        const data = await res.json();
-        const list: Profile[] = data.data || [];
-        setProfiles(list);
-        if (list.length > 0) setSelectedProfileId(list[0].id);
-      } catch (e) {
-        console.warn('Erro ao carregar perfis', e);
-      }
-    })();
-  }, []);
 
   const loadRecurring = useCallback(async () => {
     if (!selectedProfileId) return;
@@ -363,43 +345,22 @@ export default function RecurringPage() {
     return 'Mensal';
   };
 
-  const profileTheme: ProfileTheme = selectedProfile?.type === 'BUSINESS' ? 'business' : 'personal';
 
   return (
-    <AppLayout profileTheme={profileTheme} profileName={selectedProfile?.name}>
+    <AppLayout>
       <div className="py-6 space-y-6">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold text-white">Transacoes Recorrentes</h2>
           <Link href="/" className="text-sm text-white/70 hover:text-white underline">← Voltar</Link>
         </div>
 
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-white/70 text-sm">Perfil:</span>
-              <div className="flex flex-wrap gap-2">
-                {profiles.map((profile) => (
-                  <button
-                    key={profile.id}
-                    onClick={() => setSelectedProfileId(profile.id)}
-                    className={`px-3 py-1.5 rounded-xl border transition-colors ${
-                      selectedProfileId === profile.id
-                        ? 'bg-white/20 text-white border-white/40'
-                        : 'bg-white/5 text-white/60 hover:bg-white/10 border-white/15'
-                    }`}
-                  >
-                    {profile.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <button
-              onClick={openCreateModal}
-              className="px-4 py-2 bg-emerald-500/80 hover:bg-emerald-500 text-white rounded-lg font-semibold border border-emerald-400/40 transition-colors"
-            >
-              + Nova Recorrente
-            </button>
-          </div>
+        <div className="flex justify-end">
+          <button
+            onClick={openCreateModal}
+            className="px-4 py-2 bg-emerald-500/80 hover:bg-emerald-500 text-white rounded-lg font-semibold border border-emerald-400/40 transition-colors"
+          >
+            + Nova Recorrente
+          </button>
         </div>
 
         <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
