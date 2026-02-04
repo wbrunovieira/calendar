@@ -22,11 +22,11 @@ interface DayViewRemindersSectionProps {
 const getPriorityInfo = (priority?: number) => {
   switch (priority) {
     case 1:
-      return { label: 'Alta', color: 'text-red-400', bg: 'bg-red-500/20', border: 'border-red-500/30' };
+      return { label: 'Urgente', color: 'text-red-400', bg: 'bg-red-500/20', border: 'border-red-500/30' };
     case 2:
-      return { label: 'Media', color: 'text-yellow-400', bg: 'bg-yellow-500/20', border: 'border-yellow-500/30' };
+      return { label: 'Importante', color: 'text-yellow-400', bg: 'bg-yellow-500/20', border: 'border-yellow-500/30' };
     case 3:
-      return { label: 'Baixa', color: 'text-blue-400', bg: 'bg-blue-500/20', border: 'border-blue-500/30' };
+      return { label: 'Normal', color: 'text-blue-400', bg: 'bg-blue-500/20', border: 'border-blue-500/30' };
     default:
       return null;
   }
@@ -54,6 +54,22 @@ const getReminderStatus = (startDate: string, todayString: string, _reminderDays
     return { label: 'Amanha', color: 'text-orange-400', icon: 'soon' };
   }
   return { label: `${daysUntil} dias`, color: 'text-blue-400', icon: 'calendar' };
+};
+
+const getNextReminderDay = (startDate: string, todayString: string, reminderDaysBefore?: number[]): string | null => {
+  if (!reminderDaysBefore || reminderDaysBefore.length === 0) return null;
+
+  const cleanDate = startDate.includes('T') ? startDate.split('T')[0] : startDate;
+  const daysUntil = getDaysUntil(cleanDate, todayString);
+
+  // Find the next reminder day after today
+  const sortedDays = [...reminderDaysBefore].sort((a, b) => b - a); // descending
+  const nextDay = sortedDays.find(d => d < daysUntil && d > 0);
+
+  if (nextDay === 1) return 'amanhã';
+  if (nextDay) return `em ${nextDay} dias`;
+  if (daysUntil > 0) return 'no dia do evento';
+  return null;
 };
 
 export default function DayViewRemindersSection({ date, onReminderToggled }: DayViewRemindersSectionProps) {
@@ -180,11 +196,12 @@ export default function DayViewRemindersSection({ date, onReminderToggled }: Day
     const status = getReminderStatus(reminder.startDate, dateString, reminder.reminderDaysBefore);
     const reminderDate = reminder.startDate?.split('T')[0];
     const isForToday = reminderDate === dateString;
+    const nextReminder = getNextReminderDay(reminder.startDate, dateString, reminder.reminderDaysBefore);
 
     return (
       <li key={reminder.id}>
         <div
-          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${
+          className={`w-full flex items-start gap-3 px-3 py-3 rounded-lg transition-all duration-200 ${
             isCompleted
               ? 'bg-green-500/20 border border-green-500/30'
               : isForToday
@@ -193,61 +210,74 @@ export default function DayViewRemindersSection({ date, onReminderToggled }: Day
           }`}
         >
           {/* Bell icon */}
-          <span className="text-lg flex-shrink-0">
+          <span className="text-lg flex-shrink-0 mt-0.5">
             {isCompleted ? '✅' : isForToday ? '🔔' : '⏰'}
           </span>
-
-          {/* Checkbox */}
-          <button
-            onClick={() => handleToggle(reminder)}
-            disabled={isToggling}
-            className={`w-5 h-5 rounded-md border-2 flex-shrink-0 flex items-center justify-center transition-all duration-200 ${
-              isCompleted
-                ? 'bg-green-500 border-green-500'
-                : 'border-white/40 hover:border-white/60'
-            }`}
-          >
-            {isToggling ? (
-              <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : isCompleted ? (
-              <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-              </svg>
-            ) : null}
-          </button>
 
           {/* Title and info */}
           <div className="flex-1 min-w-0">
             <span
-              className={`block text-sm font-medium truncate ${
+              className={`block text-sm font-medium ${
                 isCompleted ? 'text-white/60 line-through' : 'text-white'
               }`}
             >
               {reminder.title}
             </span>
-            <div className="flex items-center gap-2 mt-0.5">
+            {reminder.description && (
+              <span className="text-white/50 text-xs block mt-0.5">
+                {reminder.description}
+              </span>
+            )}
+            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
               {priority && (
-                <span className={`text-xs ${priority.color}`}>
-                  {priority.label}
+                <span className={`text-xs px-1.5 py-0.5 rounded ${priority.bg} ${priority.color} ${priority.border} border`}>
+                  ⚡ {priority.label}
                 </span>
               )}
               {!isCompleted && (
-                <span className={`text-xs ${status.color}`}>
-                  {status.label}
-                </span>
-              )}
-              {reminder.description && (
-                <span className="text-white/40 text-xs truncate max-w-[150px]">
-                  {reminder.description}
+                <span className={`text-xs font-medium ${status.color}`}>
+                  📅 {status.label}
                 </span>
               )}
             </div>
+            {/* Show next reminder info when marked as seen */}
+            {isCompleted && nextReminder && (
+              <span className="text-white/40 text-xs block mt-1">
+                Lembrarei novamente {nextReminder}
+              </span>
+            )}
           </div>
 
-          {/* Completed indicator */}
-          {isCompleted && (
-            <span className="text-green-400 text-xs font-medium">Visto</span>
-          )}
+          {/* Action button */}
+          <div className="flex-shrink-0">
+            {isToggling ? (
+              <div className="w-16 h-8 flex items-center justify-center">
+                <div className="w-4 h-4 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
+              </div>
+            ) : isCompleted ? (
+              <button
+                onClick={() => handleToggle(reminder)}
+                className="px-3 py-1.5 text-xs font-medium text-white/60 bg-white/10 hover:bg-white/20 rounded-lg transition-colors flex items-center gap-1"
+                title="Marcar como não visto"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                </svg>
+                Desfazer
+              </button>
+            ) : (
+              <button
+                onClick={() => handleToggle(reminder)}
+                className="px-3 py-1.5 text-xs font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+                title="Marcar como visto - o lembrete aparecerá novamente nos próximos dias configurados"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Já vi
+              </button>
+            )}
+          </div>
         </div>
       </li>
     );

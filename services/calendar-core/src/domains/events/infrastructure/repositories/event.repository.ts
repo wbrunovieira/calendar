@@ -141,7 +141,7 @@ export class EventRepository {
         eventType: event.eventType,
         priority: event.priority,
         dueDate: event.dueDate,
-        reminderDaysBefore: event.reminderDaysBefore,
+        reminderDaysBefore: event.reminderDaysBefore ?? undefined,
         recurrenceType: event.recurrenceType,
         weeklyTargetCount: event.weeklyTargetCount,
         weeklyPreferredDays: event.weeklyPreferredDays,
