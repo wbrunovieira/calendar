@@ -69,7 +69,7 @@
         (crontab -l 2>/dev/null; echo "# Daily health check at noon BRT (15:00 UTC)"; echo "0 15 * * * {{ app_dir }}/scripts/health-check.sh >> /var/log/health-check.log 2>&1") | crontab -
 
     - name: Verify crontab
-      raw: crontab -l 2>/dev/null | grep health-check || echo "WARN: cron not found"
+      raw: "crontab -l 2>/dev/null | grep health-check || echo 'WARN: cron not found'"
       changed_when: false
 
     # ── Test run ────────────────────────────────────────────────
