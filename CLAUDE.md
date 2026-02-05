@@ -111,12 +111,27 @@ LLM observability platform for tracing and monitoring AI agent executions. Acces
 
 **Internal communication:** Containers use internal Docker hostnames (e.g., `http://langfuse-web:3000`, `http://langfuse-minio:9000`), not localhost.
 
+### n8n (Workflow Automation)
+
+External n8n server available for workflow automation. **Not part of docker-compose** — runs independently.
+
+**Role:** Thin orchestration layer — handles scheduling, webhook routing and notification delivery only. Never contains business logic, LLM prompts or data analysis.
+
+| Use case | How |
+|----------|-----|
+| **Cron scheduling** | n8n triggers calendar-agents endpoints on schedule (e.g., daily briefing at 7h, weekly review on Mondays) |
+| **Messaging webhooks** | n8n receives Telegram/WhatsApp webhooks via native nodes, extracts text + chat_id, forwards to `POST /agents/parse` on calendar-agents |
+| **Notification delivery** | calendar-agents produces notifications via API, n8n consumes and delivers to the right channel (Telegram, email, WhatsApp, SMS) |
+
+**Design principle:** `n8n = when to run + where to deliver` / `calendar-agents = what to do + how to decide`
+
 ### Key Integrations
 - Google Calendar API (OAuth2)
 - Linear API for project task tracking
 - Mercado Pago API for financial transactions
 - Nubank data import (CSV/OFX)
 - Langfuse (LLM tracing and observability)
+- n8n (cron scheduling, webhook routing, notification delivery)
 
 ## Development Commands
 
