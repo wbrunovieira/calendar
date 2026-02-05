@@ -1,0 +1,103 @@
+---
+# Setup daily health check cron on production server
+# Usage: ansible-playbook playbooks/setup-health-check.yml
+#
+# Prerequisites:
+#   - Evolution API credentials in .env (EVOLUTION_API_URL, EVOLUTION_API_KEY)
+#   - jq installed on server
+- name: Setup Daily Health Check
+  hosts: calendar_server
+  gather_facts: false
+
+  tasks:
+    # ── Pull latest code (gets the script) ─────────────────────
+    - name: Pull latest code
+      raw: cd {{ app_dir }} && git pull origin {{ git_branch }} 2>&1
+      register: git_result
+
+    - name: Show git changes
+      raw: echo "{{ git_result.stdout_lines | default(['no output']) | join('\n') }}"
+      changed_when: false
+
+    # ── Ensure dependencies ─────────────────────────────────────
+    - name: Ensure jq is installed
+      raw: which jq || (apt-get update -qq && apt-get install -y -qq jq)
+      changed_when: false
+
+    # ── Add WHATSAPP_NOTIFY_NUMBER to .env if missing ───────────
+    - name: Check if WHATSAPP_NOTIFY_NUMBER in .env
+      raw: grep -c 'WHATSAPP_NOTIFY_NUMBER' {{ app_dir }}/.env 2>/dev/null || echo "0"
+      register: notify_check
+      changed_when: false
+
+    - name: Add WHATSAPP_NOTIFY_NUMBER to .env
+      raw: |
+        echo "" >> {{ app_dir }}/.env
+        echo "# Health Check — WhatsApp notification" >> {{ app_dir }}/.env
+        echo "WHATSAPP_NOTIFY_NUMBER=5511982864581" >> {{ app_dir }}/.env
+        echo "WHATSAPP_NOTIFY_NUMBER added to .env"
+      when: "'0' in notify_check.stdout"
+
+    # ── Make script executable ──────────────────────────────────
+    - name: Ensure health-check.sh is executable
+      raw: chmod +x {{ app_dir }}/scripts/health-check.sh
+
+    # ── Create log files ────────────────────────────────────────
+    - name: Ensure log files exist
+      raw: touch /var/log/health-check.log /var/log/health-check-failed.log
+      changed_when: false
+
+    # ── Setup logrotate ─────────────────────────────────────────
+    - name: Create logrotate config for health-check
+      raw: |
+        cat > /etc/logrotate.d/health-check << 'EOF'
+        /var/log/health-check.log /var/log/health-check-failed.log {
+            weekly
+            rotate 4
+            compress
+            missingok
+            notifempty
+        }
+        EOF
+
+    # ── Setup crontab ───────────────────────────────────────────
+    - name: Remove old health-check cron if any
+      raw: crontab -l 2>/dev/null | grep -v 'health-check' | crontab - 2>/dev/null || true
+
+    - name: Add health-check cron (noon Brazil time)
+      raw: |
+        (crontab -l 2>/dev/null; echo "# Daily health check at noon BRT (15:00 UTC)"; echo "0 15 * * * {{ app_dir }}/scripts/health-check.sh >> /var/log/health-check.log 2>&1") | crontab -
+
+    - name: Verify crontab
+      raw: crontab -l 2>/dev/null | grep health-check || echo "WARN: cron not found"
+      changed_when: false
+
+    # ── Test run ────────────────────────────────────────────────
+    - name: Run health check (test)
+      raw: |
+        cd {{ app_dir }} && bash scripts/health-check.sh 2>&1
+      register: test_run
+      ignore_errors: true
+
+    - name: Show health check output
+      raw: echo "{{ test_run.stdout_lines | default(['no output']) | join('\n') }}"
+      changed_when: false
+
+    # ── Summary ─────────────────────────────────────────────────
+    - name: Setup summary
+      raw: |
+        echo "=========================================="
+        echo "  Health Check Cron Setup Complete"
+        echo "=========================================="
+        echo ""
+        echo "Schedule: Daily at 12:00 BRT (15:00 UTC)"
+        echo "Script:   {{ app_dir }}/scripts/health-check.sh"
+        echo "Logs:     /var/log/health-check.log"
+        echo "Failures: /var/log/health-check-failed.log"
+        echo ""
+        NOTIFY=$(grep 'WHATSAPP_NOTIFY_NUMBER' {{ app_dir }}/.env 2>/dev/null | tail -1 | cut -d= -f2)
+        echo "WhatsApp: ${NOTIFY:-NOT SET}"
+        echo ""
+        echo "Manual:   {{ app_dir }}/scripts/health-check.sh"
+        echo "=========================================="
+      changed_when: false
