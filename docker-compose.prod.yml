@@ -128,7 +128,7 @@ services:
       context: ./services/finances-frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: https://calendar-finances.wbdigitalsolutions.com
+        NEXT_PUBLIC_API_URL: https://calendar-finances.wbdigitalsolutions.com/api/v1
     container_name: finances-frontend
     ports:
       - "127.0.0.1:3003:3003"
@@ -316,6 +316,7 @@ services:
       - "127.0.0.1:3100:3000"
     environment:
       NODE_ENV: production
+      NODE_OPTIONS: "--max-old-space-size=512"
       DATABASE_URL: postgresql://${LANGFUSE_POSTGRES_USER:-langfuse}:${LANGFUSE_POSTGRES_PASSWORD}@langfuse-postgres:5432/${LANGFUSE_POSTGRES_DB:-langfuse_db}
       NEXTAUTH_URL: https://calendar-langfuse.wbdigitalsolutions.com
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET}
@@ -358,7 +359,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 400M
+          memory: 700M
 
   langfuse-worker:
     image: langfuse/langfuse-worker:3
@@ -400,7 +401,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 250M
+          memory: 400M
 
 volumes:
   postgres_data:
