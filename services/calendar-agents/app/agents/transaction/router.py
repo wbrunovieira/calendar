@@ -3,6 +3,7 @@ from __future__ import annotations
 from pydantic import BaseModel
 from fastapi import APIRouter
 
+from app.agents.transaction.evaluator import evaluate_trace
 from app.agents.transaction.graph import build_transaction_graph
 from app.agents.transaction.nodes import langfuse
 from app.config import settings
@@ -60,6 +61,10 @@ async def handle_transaction(req: TransactionRequest):
 
     status = "error" if result.get("error") else "created"
     reply = result.get("reply", "Erro desconhecido")
+
+    # Run LLM-as-judge evaluation
+    if trace and result.get("parsed"):
+        await evaluate_trace(trace, req.text, result["parsed"])
 
     # Finalize trace
     if trace:
