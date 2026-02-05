@@ -20,6 +20,9 @@ async function bootstrap() {
       'http://localhost:3010',
       'http://192.168.0.17:3000',
       'http://192.168.0.17:3003',
+      'https://calendar.wbdigitalsolutions.com',
+      'https://finances.wbdigitalsolutions.com',
+      'https://health.wbdigitalsolutions.com',
     ],
     credentials: true,
   });
