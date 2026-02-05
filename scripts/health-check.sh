@@ -274,13 +274,12 @@ check_security() {
     # Failed SSH attempts (last 24h)
     SSH_FAILS=0
     if [[ -f /var/log/auth.log ]]; then
-        YESTERDAY=$(date -d '24 hours ago' '+%b %e' 2>/dev/null || date '+%b %e')
-        SSH_FAILS=$(grep "Failed password" /var/log/auth.log 2>/dev/null | wc -l)
+        SSH_FAILS=$(grep -c "Failed password" /var/log/auth.log 2>/dev/null || echo "0")
     fi
 
     if [[ "$SSH_FAILS" -gt 100 ]]; then
         add_warning "SSH: ${SSH_FAILS} tentativas de login falhas"
-        TOP_ATTACKERS=$(grep "Failed password" /var/log/auth.log 2>/dev/null | grep -oP 'from \K[0-9.]+' | sort | uniq -c | sort -rn | head -3 | awk '{printf "%s (%sx), ", $2, $1}' | sed 's/, $//')
+        TOP_ATTACKERS=$(grep "Failed password" /var/log/auth.log 2>/dev/null | grep -oP 'from \K[0-9.]+' | sort | uniq -c | sort -rn | head -3 | awk '{printf "%s (%sx), ", $2, $1}' | sed 's/, $//' || echo "?")
         SECURITY_LINES="${SECURITY_LINES}
 SSH: ${SSH_FAILS} tentativas falhas — top: ${TOP_ATTACKERS}"
     elif [[ "$SSH_FAILS" -gt 0 ]]; then
@@ -294,21 +293,14 @@ SSH: nenhuma tentativa falha"
     # Unexpected exposed ports (Docker bypasses UFW)
     # Expected on 0.0.0.0: 22 (SSH), 80 (HTTP), 443 (HTTPS)
     EXPOSED_PORTS=""
-    while read -r port; do
-        [[ -z "$port" ]] && continue
-        case "$port" in
-            22|80|443) ;; # expected
-            *) EXPOSED_PORTS="${EXPOSED_PORTS} ${port}" ;;
-        esac
-    done <<< "$(ss -tlnp 2>/dev/null | grep '0.0.0.0:' | grep -oP '0\.0\.0\.0:\K[0-9]+' | sort -un)"
-    # Also check wildcard (*:port)
+    ALL_EXPOSED=$(ss -tlnp 2>/dev/null | grep -E '0\.0\.0\.0:|^\*:' | grep -oP '(?:0\.0\.0\.0|\*):\K[0-9]+' | sort -un || true)
     while read -r port; do
         [[ -z "$port" ]] && continue
         case "$port" in
             22|80|443) ;;
             *) EXPOSED_PORTS="${EXPOSED_PORTS} ${port}" ;;
         esac
-    done <<< "$(ss -tlnp 2>/dev/null | grep '\*:' | grep -oP '\*:\K[0-9]+' | sort -un)"
+    done <<< "$ALL_EXPOSED"
 
     if [[ -n "$EXPOSED_PORTS" ]]; then
         add_warning "Portas expostas alem de 22/80/443:${EXPOSED_PORTS}"
@@ -320,9 +312,8 @@ Portas: apenas 22/80/443 abertas"
     fi
 
     # Recent logins (non-local)
-    RECENT_LOGINS=$(last -5 -i 2>/dev/null | grep -v "reboot\|wtmp\|^$" | head -3)
-    if [[ -n "$RECENT_LOGINS" ]]; then
-        LOGIN_IPS=$(last -i 2>/dev/null | grep -v "reboot\|wtmp\|^$" | awk '{print $3}' | sort -u | head -5 | tr '\n' ', ' | sed 's/,$//')
+    LOGIN_IPS=$(last -i 2>/dev/null | grep -v "reboot\|wtmp\|^$" | awk '{print $3}' | sort -u | head -5 | tr '\n' ', ' | sed 's/,$//' || true)
+    if [[ -n "$LOGIN_IPS" ]]; then
         SECURITY_LINES="${SECURITY_LINES}
 Logins recentes: ${LOGIN_IPS}"
     fi
