@@ -14,7 +14,7 @@ services:
       - "127.0.0.1:3334:3334"
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://${DB_USER:-calendar}:${DB_PASSWORD:-calendar123}@postgres:5432/${DB_NAME:-calendar_db}
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
       - PORT=3334
       - TZ=America/Sao_Paulo
     depends_on:
@@ -37,7 +37,7 @@ services:
       - "127.0.0.1:3335:3335"
     environment:
       - PORT=3335
-      - DATABASE_URL=postgres://${DB_USER:-calendar}:${DB_PASSWORD:-calendar123}@postgres:5432/${DB_NAME:-calendar_db}?sslmode=disable
+      - DATABASE_URL=postgres://${DB_USER:-calendar}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-calendar_db}?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
@@ -58,7 +58,7 @@ services:
       - "127.0.0.1:3336:3336"
     environment:
       - PORT=3336
-      - DATABASE_URL=postgres://${DB_USER:-calendar}:${DB_PASSWORD:-calendar123}@postgres:5432/${DB_NAME:-calendar_db}?sslmode=disable
+      - DATABASE_URL=postgres://${DB_USER:-calendar}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-calendar_db}?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
@@ -176,7 +176,7 @@ services:
       - "127.0.0.1:5435:5432"
     environment:
       - POSTGRES_USER=${DB_USER:-calendar}
-      - POSTGRES_PASSWORD=${DB_PASSWORD:-calendar123}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
       - POSTGRES_DB=${DB_NAME:-calendar_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -202,7 +202,7 @@ services:
       - "127.0.0.1:5436:5432"
     environment:
       POSTGRES_USER: ${LANGFUSE_POSTGRES_USER:-langfuse}
-      POSTGRES_PASSWORD: ${LANGFUSE_POSTGRES_PASSWORD:-langfuse123}
+      POSTGRES_PASSWORD: ${LANGFUSE_POSTGRES_PASSWORD}
       POSTGRES_DB: ${LANGFUSE_POSTGRES_DB:-langfuse_db}
     volumes:
       - langfuse_postgres_data:/var/lib/postgresql/data
@@ -227,7 +227,7 @@ services:
       - "127.0.0.1:9002:9000"
     environment:
       CLICKHOUSE_USER: ${LANGFUSE_CLICKHOUSE_USER:-langfuse}
-      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-langfuse123}
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD}
     volumes:
       - langfuse_clickhouse_data:/var/lib/clickhouse
       - langfuse_clickhouse_logs:/var/log/clickhouse-server
@@ -253,7 +253,7 @@ services:
       - "127.0.0.1:9091:9001"
     environment:
       MINIO_ROOT_USER: ${LANGFUSE_S3_ACCESS_KEY:-langfuse}
-      MINIO_ROOT_PASSWORD: ${LANGFUSE_S3_SECRET_KEY:-langfuse123}
+      MINIO_ROOT_PASSWORD: ${LANGFUSE_S3_SECRET_KEY}
     volumes:
       - langfuse_minio_data:/data
     command: server /data --console-address ":9001"
@@ -282,7 +282,7 @@ services:
         echo "Bucket $${BUCKET_NAME} ready"
     environment:
       MINIO_ROOT_USER: ${LANGFUSE_S3_ACCESS_KEY:-langfuse}
-      MINIO_ROOT_PASSWORD: ${LANGFUSE_S3_SECRET_KEY:-langfuse123}
+      MINIO_ROOT_PASSWORD: ${LANGFUSE_S3_SECRET_KEY}
       BUCKET_NAME: ${LANGFUSE_S3_BUCKET:-langfuse}
     depends_on:
       langfuse-minio:
@@ -316,7 +316,7 @@ services:
       - "127.0.0.1:3100:3000"
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${LANGFUSE_POSTGRES_USER:-langfuse}:${LANGFUSE_POSTGRES_PASSWORD:-langfuse123}@langfuse-postgres:5432/${LANGFUSE_POSTGRES_DB:-langfuse_db}
+      DATABASE_URL: postgresql://${LANGFUSE_POSTGRES_USER:-langfuse}:${LANGFUSE_POSTGRES_PASSWORD}@langfuse-postgres:5432/${LANGFUSE_POSTGRES_DB:-langfuse_db}
       NEXTAUTH_URL: https://calendar-langfuse.wbdigitalsolutions.com
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET}
       SALT: ${LANGFUSE_SALT}
@@ -324,12 +324,12 @@ services:
       CLICKHOUSE_URL: http://langfuse-clickhouse:8123
       CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
       CLICKHOUSE_USER: ${LANGFUSE_CLICKHOUSE_USER:-langfuse}
-      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-langfuse123}
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD}
       LANGFUSE_S3_EVENT_UPLOAD_ENABLED: "true"
       LANGFUSE_S3_EVENT_UPLOAD_BUCKET: ${LANGFUSE_S3_BUCKET:-langfuse}
       LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
       LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_S3_ACCESS_KEY:-langfuse}
-      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_S3_SECRET_KEY:-langfuse123}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_S3_SECRET_KEY}
       LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
       LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
       REDIS_HOST: langfuse-redis
@@ -367,18 +367,18 @@ services:
       - "127.0.0.1:3030:3030"
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${LANGFUSE_POSTGRES_USER:-langfuse}:${LANGFUSE_POSTGRES_PASSWORD:-langfuse123}@langfuse-postgres:5432/${LANGFUSE_POSTGRES_DB:-langfuse_db}
+      DATABASE_URL: postgresql://${LANGFUSE_POSTGRES_USER:-langfuse}:${LANGFUSE_POSTGRES_PASSWORD}@langfuse-postgres:5432/${LANGFUSE_POSTGRES_DB:-langfuse_db}
       SALT: ${LANGFUSE_SALT}
       ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY}
       CLICKHOUSE_URL: http://langfuse-clickhouse:8123
       CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
       CLICKHOUSE_USER: ${LANGFUSE_CLICKHOUSE_USER:-langfuse}
-      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-langfuse123}
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD}
       LANGFUSE_S3_EVENT_UPLOAD_ENABLED: "true"
       LANGFUSE_S3_EVENT_UPLOAD_BUCKET: ${LANGFUSE_S3_BUCKET:-langfuse}
       LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
       LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_S3_ACCESS_KEY:-langfuse}
-      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_S3_SECRET_KEY:-langfuse123}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_S3_SECRET_KEY}
       LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
       LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
       REDIS_HOST: langfuse-redis
