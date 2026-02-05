@@ -755,7 +755,179 @@ Lógica de regras + timing + anti-spam. Foundation para mobile app futuro.
 
 ---
 
-## Priorização atualizada (todos os 19 agentes)
+## 20. Messaging Gateway Agent (Telegram / WhatsApp / SMS)
+
+**Trigger:** Webhook recebido de plataforma de mensageria
+
+O usuário envia uma mensagem de texto pelo Telegram (ou WhatsApp, SMS) e o agente interpreta, cria o lançamento no backend correto e responde com confirmação — tudo sem abrir o app.
+
+### O problema
+Lançar uma despesa ou criar um evento requer abrir o app, navegar até o formulário, preencher campos. Na prática, o usuário esquece de registrar gastos pequenos e eventos rápidos porque a fricção é alta demais. Uma mensagem de texto é o input mais rápido que existe.
+
+### Arquitetura
+
+```
+[Telegram/WhatsApp]
+    → Webhook (POST /webhooks/telegram ou /webhooks/whatsapp)
+    → Messaging Gateway Agent
+        → Identifica usuário (chat_id → profileId/calendarId)
+        → Delega para Natural Language Creator (Agent 2)
+        → Recebe resultado estruturado
+        → Responde no mesmo canal com confirmação
+```
+
+O Messaging Gateway é uma **camada fina** sobre o Natural Language Creator — não duplica lógica de parsing, apenas gerencia o canal de comunicação.
+
+### Fluxo detalhado
+
+```
+Usuário (Telegram): "Almoco 32 nubank"
+
+Gateway Agent:
+  1. Recebe webhook com chat_id + texto
+  2. Resolve chat_id → profileId (tabela de binding)
+  3. Passa texto para Agent 2 (NL Creator)
+  4. Agent 2 retorna:
+     {
+       "domain": "finances",
+       "action": "create_transaction",
+       "data": {
+         "type": "EXPENSE",
+         "status": "CONFIRMED",
+         "description": "Almoço",
+         "amount": 32.00,
+         "bankAccount": "Nubank" (resolved by name),
+         "category": "Alimentação" (auto-categorized)
+       }
+     }
+  5. Executa POST /transactions no calendar-finances
+  6. Responde no Telegram:
+     "✓ Despesa registrada: Almoço R$ 32,00 (Nubank → Alimentação)"
+```
+
+### Exemplos de mensagens suportadas
+
+| Mensagem | Ação | Resposta |
+|----------|------|----------|
+| "almoco 32 nubank" | Cria EXPENSE R$ 32 no Nubank | "✓ Almoço R$ 32,00 (Nubank → Alimentação)" |
+| "uber 18.50" | Cria EXPENSE R$ 18,50 (conta default) | "✓ Uber R$ 18,50 (Itaú → Transporte)" |
+| "salario 8000" | Cria INCOME R$ 8.000 | "✓ Salário R$ 8.000,00 (Itaú → Renda)" |
+| "reuniao joao amanha 14h" | Cria EVENT no calendar-core | "✓ Reunião com João — amanhã 14:00" |
+| "paguei internet" | Confirma recurring transaction "Internet" | "✓ Internet R$ 120,00 marcada como paga" |
+| "quanto gastei hoje" | Consulta (delega para Agent 18) | "Hoje: R$ 87,50 em 3 transações" |
+| "streak" | Consulta habits/stats | "Meditação: 23 dias 🔥 / Exercício: 8 dias" |
+| "saldo" | Consulta bank-accounts | "Itaú: R$ 4.520 / Nubank: fatura R$ 1.230" |
+| "/undo" | Desfaz último lançamento | "↩ Desfeito: Uber R$ 18,50" |
+| "/resumo" | Daily Briefing condensado (Agent 1) | Resumo do dia em texto |
+
+### Funcionalidades do canal
+
+#### 20.1 Binding de usuário
+- Primeiro acesso: usuário envia `/start` no Telegram
+- Bot responde com link de autenticação (JWT temporário)
+- Após auth, persiste `chat_id → userId/profileId/calendarId`
+- Suporte a múltiplos perfis: `/perfil pessoal` ou `/perfil business`
+
+#### 20.2 Confirmação inline
+Para lançamentos ambíguos, o bot pergunta antes de criar:
+```
+Usuário: "50 reais"
+Bot: "R$ 50,00 — é uma despesa? Qual conta?"
+     [Nubank] [Itaú] [Cancelar]
+```
+No Telegram: usa InlineKeyboard. No WhatsApp: usa botões ou resposta numérica.
+
+#### 20.3 Modo rápido vs. modo completo
+- **Rápido** (default): mínimo de campos, auto-resolve o resto
+  - "uber 18" → EXPENSE, CONFIRMED, conta default, categoria auto
+- **Completo**: quando o usuário quer especificar tudo
+  - "uber 18 nubank transporte cartao" → conta Nubank, categoria Transporte, via cartão de crédito
+
+#### 20.4 Contexto de conversa
+Mantém contexto das últimas mensagens para follow-ups:
+```
+Usuário: "almoco 45"
+Bot: "✓ Almoço R$ 45,00 (Nubank → Alimentação)"
+Usuário: "foi no ifood"
+Bot: "✓ Atualizado: Almoço → Alimentação > Delivery"
+```
+
+#### 20.5 Comandos especiais
+
+| Comando | Ação |
+|---------|------|
+| `/start` | Inicia binding com o sistema |
+| `/perfil` | Troca perfil ativo (pessoal/business) |
+| `/conta` | Define conta default para lançamentos rápidos |
+| `/resumo` | Daily Briefing condensado |
+| `/saldo` | Saldos de todas as contas |
+| `/streak` | Status dos streaks de hábitos |
+| `/undo` | Desfaz último lançamento |
+| `/help` | Lista de comandos e exemplos |
+
+### Plataformas
+
+#### Telegram (prioridade 1)
+- Bot API nativa, gratuita, sem aprovação
+- InlineKeyboard para confirmações
+- Suporte a grupos (family finance)
+- Webhook direto para FastAPI
+
+#### WhatsApp (prioridade 2)
+- WhatsApp Business API (via Twilio ou Meta Cloud API)
+- Requer aprovação de template para mensagens proativas
+- Botões limitados (máx 3)
+- Custo por mensagem após 24h window
+
+#### SMS (prioridade 3)
+- Via Twilio
+- Sem botões, apenas texto
+- Útil como fallback
+- Custo por mensagem
+
+### Implementação no calendar-agents
+
+```
+services/calendar-agents/
+└── app/
+    ├── webhooks/
+    │   ├── telegram.py      # POST /webhooks/telegram (webhook handler)
+    │   └── whatsapp.py      # POST /webhooks/whatsapp (futuro)
+    ├── messaging/
+    │   ├── gateway.py        # Messaging Gateway Agent (orquestrador)
+    │   ├── binding.py        # User ↔ chat_id binding
+    │   ├── context.py        # Conversation context (últimas N mensagens)
+    │   └── responder.py      # Formata respostas para cada plataforma
+    └── graph.py              # LangGraph: inclui nó de messaging no grafo
+```
+
+### Integração com outros agentes
+
+O Messaging Gateway não é um agente isolado — é um **canal de entrada** para todos os outros:
+
+| Mensagem | Agente delegado |
+|----------|----------------|
+| "almoco 32 nubank" | Agent 2 (NL Creator) |
+| "quanto gastei hoje" | Agent 18 (Conversational Report) |
+| "/resumo" | Agent 1 (Daily Briefing) |
+| "streak" | Agent 3 (Habit Coach) |
+| "consigo juntar 5000 ate junho?" | Agent 10 (Financial Forecast) |
+| "score" | Agent 17 (Gamification) |
+
+E é também o **canal de saída** para notificações proativas:
+
+| Agente | Notificação via Telegram |
+|--------|--------------------------|
+| Agent 19 (Proactive Notifications) | "Fatura Nubank vence amanhã: R$ 2.340" |
+| Agent 3 (Habit Coach) | "Streak de meditação em risco — 2 dias sem completar" |
+| Agent 4 (Financial Guardian) | "Alimentação 40% acima da média este mês" |
+
+### Complexidade: Média
+Webhook handler + thin layer sobre Agent 2. A complexidade real está nos agentes delegados. Telegram Bot API é simples e bem documentada.
+
+---
+
+## Priorização atualizada (todos os 20 agentes)
 
 ### Fase 1 — Foundation (valor imediato, baixa complexidade)
 | # | Agent | Valor | Complexidade |
@@ -773,6 +945,7 @@ Lógica de regras + timing + anti-spam. Foundation para mobile app futuro.
 | 10 | Financial Forecast | Alto | Média |
 | 17 | Gamification & Scoring | Médio | Média |
 | 19 | Proactive Notifications | Alto | Média |
+| 20 | Messaging Gateway (Telegram) | Alto | Média |
 
 ### Fase 3 — Advanced Analytics
 | # | Agent | Valor | Complexidade |
