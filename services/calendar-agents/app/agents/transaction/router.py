@@ -21,9 +21,20 @@ def _get_graph():
 
 
 class TransactionRequest(BaseModel):
-    phone: str
-    text: str
+    phone: str | None = None
+    text: str | None = None
+    # Aliases for n8n/Evolution integration
+    sender: str | None = None
+    message: str | None = None
     profile_id: str | None = None
+
+    @property
+    def resolved_phone(self) -> str:
+        return self.phone or self.sender or ""
+
+    @property
+    def resolved_text(self) -> str:
+        return self.text or self.message or ""
 
 
 class TransactionResponse(BaseModel):
@@ -35,6 +46,16 @@ class TransactionResponse(BaseModel):
 
 @router.post("/transaction", response_model=TransactionResponse)
 async def handle_transaction(req: TransactionRequest):
+    phone = req.resolved_phone
+    text = req.resolved_text
+
+    if not text:
+        return TransactionResponse(
+            status="error",
+            reply="Mensagem vazia. Envie algo como: 'almoco 32 nubank'",
+            error="empty_message",
+        )
+
     profile_id = req.profile_id or settings.finance_personal_profile_id
 
     if not profile_id:
@@ -47,14 +68,14 @@ async def handle_transaction(req: TransactionRequest):
     # Create Langfuse trace for this request
     trace = langfuse.trace(
         name="transaction-agent",
-        input={"phone": req.phone, "text": req.text},
+        input={"phone": phone, "text": text},
         metadata={"profile_id": profile_id},
     ) if langfuse.enabled else None
 
     graph = _get_graph()
     result = await graph.ainvoke({
-        "phone": req.phone,
-        "raw_text": req.text,
+        "phone": phone,
+        "raw_text": text,
         "profile_id": profile_id,
         "_trace": trace,
     })
@@ -64,7 +85,7 @@ async def handle_transaction(req: TransactionRequest):
 
     # Run LLM-as-judge evaluation
     if trace and result.get("parsed"):
-        await evaluate_trace(trace, req.text, result["parsed"])
+        await evaluate_trace(trace, text, result["parsed"])
 
     # Finalize trace
     if trace:
