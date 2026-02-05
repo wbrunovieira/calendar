@@ -1,0 +1,373 @@
+---
+# Setup Authelia auth gateway in production
+# Usage: ansible-playbook playbooks/setup-authelia.yml
+# Prerequisites: DNS A record for auth.wbdigitalsolutions.com → 45.90.123.190
+- name: Setup Authelia Auth Gateway
+  hosts: calendar_server
+  gather_facts: false
+
+  tasks:
+    # ── Pull latest code ─────────────────────────────────────
+    - name: Pull latest code
+      raw: cd {{ app_dir }} && git pull origin {{ git_branch }} 2>&1
+      register: git_result
+
+    - name: Show git changes
+      raw: echo "{{ git_result.stdout_lines | default(['no output']) | join('\n') }}"
+      changed_when: false
+
+    # ── Generate AUTHELIA secrets ────────────────────────────
+    - name: Check if AUTHELIA secrets already in .env
+      raw: grep -c 'AUTHELIA_JWT_SECRET' {{ app_dir }}/.env 2>/dev/null || echo "0"
+      register: authelia_env_check
+      changed_when: false
+
+    - name: Generate and append AUTHELIA secrets to .env
+      raw: |
+        JWT=$(openssl rand -hex 32)
+        SESSION=$(openssl rand -hex 32)
+        STORAGE=$(openssl rand -hex 32)
+        cat >> {{ app_dir }}/.env << EOF
+
+        # Authelia
+        AUTHELIA_JWT_SECRET=${JWT}
+        AUTHELIA_SESSION_SECRET=${SESSION}
+        AUTHELIA_STORAGE_ENCRYPTION_KEY=${STORAGE}
+        EOF
+        echo "AUTHELIA secrets added to .env"
+      when: "'0' in authelia_env_check.stdout"
+
+    # ── Create users_database.yml on server ──────────────────
+    - name: Create Authelia users database
+      raw: |
+        cat > {{ app_dir }}/config/authelia/users_database.yml << 'EOF'
+        ---
+        users:
+          bruno:
+            disabled: false
+            displayname: "Bruno Vieira"
+            password: "$2b$12$TyM6.GBFQO0gxANlmldmTOLUW2YXTA8wG24tTwZ/AdFOHkG4GFS7G"
+            email: wbrunovieira77@gmail.com
+            groups:
+              - admins
+        EOF
+
+    - name: Ensure authelia assets directory exists
+      raw: mkdir -p {{ app_dir }}/config/authelia/assets
+      changed_when: false
+
+    # ── Start Authelia container ─────────────────────────────
+    - name: Start authelia container
+      raw: |
+        cd {{ app_dir }} && docker compose -f {{ compose_file }} up -d authelia 2>&1
+      register: authelia_start
+
+    - name: Show authelia start output
+      raw: echo "{{ (authelia_start.stdout_lines | default(['no output']))[-10:] | join('\n') }}"
+      changed_when: false
+
+    - name: Wait for Authelia to be ready
+      raw: |
+        for i in $(seq 1 15); do
+          STATUS=$(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:9092/api/health 2>/dev/null || echo "000")
+          if [ "$STATUS" = "200" ]; then
+            echo "Authelia is ready (attempt $i)"
+            exit 0
+          fi
+          echo "Waiting for Authelia... attempt $i ($STATUS)"
+          sleep 2
+        done
+        echo "WARNING: Authelia may not be ready yet"
+      changed_when: false
+
+    # ── Create Nginx snippets (production) ───────────────────
+    - name: Ensure snippets directory exists
+      raw: mkdir -p /etc/nginx/snippets
+      changed_when: false
+
+    - name: Create authelia-location snippet
+      raw: |
+        cat > /etc/nginx/snippets/authelia-location.conf << 'EOF'
+        location /authelia {
+            internal;
+            proxy_pass http://127.0.0.1:9092/api/authz/auth-request;
+
+            proxy_set_header X-Original-Method $request_method;
+            proxy_set_header X-Original-URL $scheme://$http_host$request_uri;
+            proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header Content-Length "";
+            proxy_set_header Connection "";
+
+            proxy_pass_request_body off;
+            proxy_connect_timeout 5s;
+            proxy_read_timeout 5s;
+            proxy_send_timeout 5s;
+        }
+        EOF
+
+    - name: Create authelia-authrequest snippet
+      raw: |
+        cat > /etc/nginx/snippets/authelia-authrequest.conf << 'EOF'
+        auth_request /authelia;
+        auth_request_set $target_url $scheme://$http_host$request_uri;
+        auth_request_set $user $upstream_http_remote_user;
+        auth_request_set $groups $upstream_http_remote_groups;
+        auth_request_set $name $upstream_http_remote_name;
+        auth_request_set $email $upstream_http_remote_email;
+
+        error_page 401 =302 https://auth.wbdigitalsolutions.com/?rd=$target_url;
+
+        proxy_set_header Remote-User $user;
+        proxy_set_header Remote-Groups $groups;
+        proxy_set_header Remote-Name $name;
+        proxy_set_header Remote-Email $email;
+        EOF
+
+    # ── Backup existing Nginx configs ────────────────────────
+    - name: Backup existing frontend Nginx configs
+      raw: |
+        BACKUP_DIR="/etc/nginx/backups/$(date +%Y%m%d_%H%M%S)"
+        mkdir -p $BACKUP_DIR
+        for conf in calendar finances health calendar-langfuse; do
+          FILE="/etc/nginx/sites-available/${conf}.wbdigitalsolutions.com.conf"
+          [ -f "$FILE" ] && cp "$FILE" "$BACKUP_DIR/"
+        done
+        echo "Backed up to $BACKUP_DIR"
+      changed_when: false
+
+    # ── Create auth.wbdigitalsolutions.com Nginx config ──────
+    - name: Create auth portal Nginx config (HTTP for certbot)
+      raw: |
+        cat > /etc/nginx/sites-available/auth.wbdigitalsolutions.com.conf << 'CONFEOF'
+        server {
+            listen 80;
+            server_name auth.wbdigitalsolutions.com;
+
+            location / {
+                proxy_pass http://127.0.0.1:9092;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+        }
+        CONFEOF
+
+    - name: Enable auth portal site
+      raw: ln -sf /etc/nginx/sites-available/auth.wbdigitalsolutions.com.conf /etc/nginx/sites-enabled/
+
+    # ── Update protected frontend configs (with auth) ────────
+
+    - name: Update calendar frontend config (with auth)
+      raw: |
+        cat > /etc/nginx/sites-available/calendar.wbdigitalsolutions.com.conf << 'CONFEOF'
+        server {
+            listen 80;
+            server_name calendar.wbdigitalsolutions.com;
+            return 301 https://$host$request_uri;
+        }
+        server {
+            listen 443 ssl;
+            server_name calendar.wbdigitalsolutions.com;
+
+            ssl_certificate /etc/letsencrypt/live/calendar.wbdigitalsolutions.com/fullchain.pem;
+            ssl_certificate_key /etc/letsencrypt/live/calendar.wbdigitalsolutions.com/privkey.pem;
+            include /etc/letsencrypt/options-ssl-nginx.conf;
+            ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+            include /etc/nginx/snippets/authelia-location.conf;
+
+            location / {
+                include /etc/nginx/snippets/authelia-authrequest.conf;
+                proxy_pass http://127.0.0.1:3001;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+        }
+        CONFEOF
+
+    - name: Update finances frontend config (with auth)
+      raw: |
+        cat > /etc/nginx/sites-available/finances.wbdigitalsolutions.com.conf << 'CONFEOF'
+        server {
+            listen 80;
+            server_name finances.wbdigitalsolutions.com;
+            return 301 https://$host$request_uri;
+        }
+        server {
+            listen 443 ssl;
+            server_name finances.wbdigitalsolutions.com;
+
+            ssl_certificate /etc/letsencrypt/live/finances.wbdigitalsolutions.com/fullchain.pem;
+            ssl_certificate_key /etc/letsencrypt/live/finances.wbdigitalsolutions.com/privkey.pem;
+            include /etc/letsencrypt/options-ssl-nginx.conf;
+            ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+            include /etc/nginx/snippets/authelia-location.conf;
+
+            location / {
+                include /etc/nginx/snippets/authelia-authrequest.conf;
+                proxy_pass http://127.0.0.1:3003;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+        }
+        CONFEOF
+
+    - name: Update health frontend config (with auth)
+      raw: |
+        cat > /etc/nginx/sites-available/health.wbdigitalsolutions.com.conf << 'CONFEOF'
+        server {
+            listen 80;
+            server_name health.wbdigitalsolutions.com;
+            return 301 https://$host$request_uri;
+        }
+        server {
+            listen 443 ssl;
+            server_name health.wbdigitalsolutions.com;
+
+            ssl_certificate /etc/letsencrypt/live/health.wbdigitalsolutions.com/fullchain.pem;
+            ssl_certificate_key /etc/letsencrypt/live/health.wbdigitalsolutions.com/privkey.pem;
+            include /etc/letsencrypt/options-ssl-nginx.conf;
+            ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+            include /etc/nginx/snippets/authelia-location.conf;
+
+            location / {
+                include /etc/nginx/snippets/authelia-authrequest.conf;
+                proxy_pass http://127.0.0.1:3004;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+        }
+        CONFEOF
+
+    - name: Update Langfuse config (with auth)
+      raw: |
+        cat > /etc/nginx/sites-available/calendar-langfuse.wbdigitalsolutions.com.conf << 'CONFEOF'
+        server {
+            listen 80;
+            server_name calendar-langfuse.wbdigitalsolutions.com;
+            return 301 https://$host$request_uri;
+        }
+        server {
+            listen 443 ssl;
+            server_name calendar-langfuse.wbdigitalsolutions.com;
+
+            ssl_certificate /etc/letsencrypt/live/calendar-langfuse.wbdigitalsolutions.com/fullchain.pem;
+            ssl_certificate_key /etc/letsencrypt/live/calendar-langfuse.wbdigitalsolutions.com/privkey.pem;
+            include /etc/letsencrypt/options-ssl-nginx.conf;
+            ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+            include /etc/nginx/snippets/authelia-location.conf;
+
+            location / {
+                include /etc/nginx/snippets/authelia-authrequest.conf;
+                proxy_pass http://127.0.0.1:3100;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+        }
+        CONFEOF
+
+    # ── Test and reload Nginx ────────────────────────────────
+    - name: Test Nginx configuration
+      raw: nginx -t 2>&1
+      register: nginx_test
+
+    - name: Show Nginx test result
+      raw: "echo '{{ nginx_test.stdout | default('') }}{{ nginx_test.stderr | default('') }}'"
+      changed_when: false
+
+    - name: Reload Nginx
+      raw: systemctl reload nginx
+
+    # ── SSL cert for auth subdomain ──────────────────────────
+    - name: Check DNS for auth.wbdigitalsolutions.com
+      raw: |
+        RESOLVED=$(dig +short auth.wbdigitalsolutions.com A 2>/dev/null || echo "UNRESOLVED")
+        echo "auth.wbdigitalsolutions.com → ${RESOLVED:-UNRESOLVED}"
+      changed_when: false
+
+    - name: Obtain SSL cert for auth.wbdigitalsolutions.com
+      raw: |
+        certbot --nginx -d auth.wbdigitalsolutions.com --non-interactive --agree-tos -m {{ certbot_email }} 2>&1
+      register: cert_auth
+      ignore_errors: true
+
+    - name: Show SSL cert result
+      raw: echo "{{ cert_auth.stdout_lines | default(['no output']) | join('\n') }}"
+      changed_when: false
+
+    - name: Reload Nginx after SSL
+      raw: systemctl reload nginx
+      ignore_errors: true
+
+    # ── Final verification ───────────────────────────────────
+    - name: Verify Authelia health
+      raw: |
+        echo "Authelia (direct):  $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:9092/api/health || echo 'DOWN')"
+        echo "Auth portal (HTTPS): $(curl -sf -o /dev/null -w '%{http_code}' -L https://auth.wbdigitalsolutions.com/ || echo 'DOWN')"
+      changed_when: false
+
+    - name: Verify protected frontends redirect to login
+      raw: |
+        for domain in calendar.wbdigitalsolutions.com finances.wbdigitalsolutions.com health.wbdigitalsolutions.com calendar-langfuse.wbdigitalsolutions.com; do
+          STATUS=$(curl -sf -o /dev/null -w '%{http_code}' https://$domain/ 2>/dev/null || echo "FAIL")
+          echo "  $domain → $STATUS (expect 302)"
+        done
+      changed_when: false
+
+    - name: Verify APIs still accessible (bypass)
+      raw: |
+        echo "calendar-api:  $(curl -sf -o /dev/null -w '%{http_code}' https://calendar-api.wbdigitalsolutions.com/ || echo 'DOWN')"
+        echo "finances-api:  $(curl -sf -o /dev/null -w '%{http_code}' https://calendar-finances.wbdigitalsolutions.com/api/v1/health || echo 'DOWN')"
+        echo "health-api:    $(curl -sf -o /dev/null -w '%{http_code}' https://calendar-health.wbdigitalsolutions.com/api/v1/health || echo 'DOWN')"
+        echo "agents-api:    $(curl -sf -o /dev/null -w '%{http_code}' https://calendar-agents.wbdigitalsolutions.com/health || echo 'DOWN')"
+      changed_when: false
+
+    - name: Authelia setup summary
+      raw: |
+        echo "=========================================="
+        echo "  Authelia Auth Gateway Setup Complete"
+        echo "=========================================="
+        echo ""
+        echo "Login: https://auth.wbdigitalsolutions.com"
+        echo "User:  bruno"
+        echo ""
+        echo "Protected:"
+        echo "  - https://calendar.wbdigitalsolutions.com"
+        echo "  - https://finances.wbdigitalsolutions.com"
+        echo "  - https://health.wbdigitalsolutions.com"
+        echo "  - https://calendar-langfuse.wbdigitalsolutions.com"
+        echo ""
+        echo "Bypass (APIs):"
+        echo "  - https://calendar-api.wbdigitalsolutions.com"
+        echo "  - https://calendar-finances.wbdigitalsolutions.com"
+        echo "  - https://calendar-health.wbdigitalsolutions.com"
+        echo "  - https://calendar-agents.wbdigitalsolutions.com"
+        echo "=========================================="
+      changed_when: false

@@ -403,12 +403,37 @@ services:
         limits:
           memory: 400M
 
+  # ── Auth Gateway (Authelia) ─────────────────────────────────
+
+  authelia:
+    image: authelia/authelia:latest
+    container_name: authelia
+    ports:
+      - "127.0.0.1:9092:9091"
+    volumes:
+      - ./config/authelia/configuration.prod.yml:/config/configuration.yml:ro
+      - ./config/authelia/users_database.yml:/config/users_database.yml:ro
+      - ./config/authelia/assets:/config/assets:ro
+      - authelia_data:/data
+    environment:
+      AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET: ${AUTHELIA_JWT_SECRET}
+      AUTHELIA_SESSION_SECRET: ${AUTHELIA_SESSION_SECRET}
+      AUTHELIA_STORAGE_ENCRYPTION_KEY: ${AUTHELIA_STORAGE_ENCRYPTION_KEY}
+    networks:
+      - calendar-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 50M
+
 volumes:
   postgres_data:
   langfuse_postgres_data:
   langfuse_clickhouse_data:
   langfuse_clickhouse_logs:
   langfuse_minio_data:
+  authelia_data:
 
 networks:
   calendar-network:

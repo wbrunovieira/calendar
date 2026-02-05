@@ -34,6 +34,9 @@ domains:
   langfuse:
     name: calendar-langfuse.wbdigitalsolutions.com
     port: 3100
+  auth:
+    name: auth.wbdigitalsolutions.com
+    port: 9092
 
 # Database (app)
 db_user: calendar

@@ -88,6 +88,11 @@
 
         # Finance
         FINANCE_PERSONAL_PROFILE_ID={{ vault_finance_personal_profile_id }}
+
+        # Authelia
+        AUTHELIA_JWT_SECRET={{ vault_authelia_jwt_secret }}
+        AUTHELIA_SESSION_SECRET={{ vault_authelia_session_secret }}
+        AUTHELIA_STORAGE_ENCRYPTION_KEY={{ vault_authelia_storage_encryption_key }}
         ENVEOF
       no_log: true
 
@@ -165,6 +170,11 @@
 
     - name: Health check — langfuse
       raw: curl -sf http://127.0.0.1:3100/api/public/health || echo "WARN langfuse not responding"
+      changed_when: false
+      ignore_errors: true
+
+    - name: Health check — authelia
+      raw: curl -sf http://127.0.0.1:9092/api/health || echo "WARN authelia not responding"
       changed_when: false
       ignore_errors: true
 

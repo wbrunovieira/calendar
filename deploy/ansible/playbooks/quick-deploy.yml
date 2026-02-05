@@ -53,6 +53,7 @@
         echo "finances-frontend: $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3003/ || echo 'DOWN')"
         echo "health-frontend:   $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3004/ || echo 'DOWN')"
         echo "langfuse:          $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3100/api/public/health || echo 'DOWN')"
+        echo "authelia:          $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:9092/api/health || echo 'DOWN')"
       changed_when: false
 
     - name: Show container status
