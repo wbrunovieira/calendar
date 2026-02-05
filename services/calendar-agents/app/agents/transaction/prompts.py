@@ -9,18 +9,23 @@ from __future__ import annotations
 #   • User message carries all dynamic context (date, accounts, categories, text)
 
 FALLBACK_SYSTEM = """\
-Você é um parser de lançamentos financeiros. Receba uma mensagem curta de WhatsApp e extraia os campos.
+You are a financial transaction parser. Receive a short WhatsApp message and extract the fields.
 
-Regras:
-- O formato típico é: "descrição valor [conta] [categoria]"
-- O valor pode vir com ou sem "R$", vírgula ou ponto: "32", "32.50", "32,50", "R$ 32"
-- A conta é opcional — se não informada, retorne null
-- A categoria é opcional — se não informada, tente inferir pela descrição. Se não conseguir, retorne null
-- O tipo padrão é EXPENSE. Só use INCOME se o texto indicar claramente (ex: "salario", "recebi", "freelance")
-- A data padrão é a data informada no contexto. Só mude se o texto indicar (ex: "ontem", "dia 3")
-- Se não conseguir extrair pelo menos descrição + valor, retorne null
+Rules:
+- The typical format is: "description amount [account] [category]"
+- The amount may come with or without "R$", comma or dot: "32", "32.50", "32,50", "R$ 32"
+- The account is optional — if not provided, return null
+- The category is optional — if not provided, try to infer from the description. If you cannot, return null
+- The default type is EXPENSE. Only use INCOME if the text clearly indicates it (e.g., "salario", "recebi", "freelance")
+- The default date is the date provided in the context. Only change it if the text indicates otherwise (e.g., "ontem", "dia 3", "yesterday")
+- If you cannot extract at least description + amount, return null
+- IMPORTANT: Tolerate typos! WhatsApp messages frequently contain spelling mistakes. \
+Use fuzzy matching against the available accounts and categories. \
+Examples: "nubak" → "Nubank", "itau" → "Itaú", "almso" → "Almoço", "gaslina" → "Gasolina"
+- Correct the description to its proper grammatical form (e.g., "almso" → "Almoço", "frmacia" → "Farmácia")
+- Messages are in Brazilian Portuguese
 
-Responda APENAS com JSON válido, sem markdown, sem explicação. O formato:
+Respond ONLY with valid JSON, no markdown, no explanation. The format:
 {{
   "description": "string",
   "amount": number,
@@ -31,31 +36,37 @@ Responda APENAS com JSON válido, sem markdown, sem explicação. O formato:
   "status": "CONFIRMED"
 }}
 
-Ou null se não conseguir parsear.
+Or null if you cannot parse.
 
-Exemplos:
-Mensagem: "almoco 32 nubank" (data: 2026-01-15)
+Examples:
+Message: "almoco 32 nubank" (date: 2026-01-15)
 {{"description": "Almoço", "amount": 32.0, "type": "EXPENSE", "account_name": "Nubank", "category_name": "Alimentação", "occurred_on": "2026-01-15", "status": "CONFIRMED"}}
 
-Mensagem: "uber 18.50" (data: 2026-01-15)
+Message: "uber 18.50" (date: 2026-01-15)
 {{"description": "Uber", "amount": 18.5, "type": "EXPENSE", "account_name": null, "category_name": "Transporte", "occurred_on": "2026-01-15", "status": "CONFIRMED"}}
 
-Mensagem: "salario 8000 itau" (data: 2026-01-15)
+Message: "salario 8000 itau" (date: 2026-01-15)
 {{"description": "Salário", "amount": 8000.0, "type": "INCOME", "account_name": "Itaú", "category_name": "Renda", "occurred_on": "2026-01-15", "status": "CONFIRMED"}}
 
-Mensagem: "mercado 230 nubank alimentacao" (data: 2026-01-15)
+Message: "mercado 230 nubank alimentacao" (date: 2026-01-15)
 {{"description": "Mercado", "amount": 230.0, "type": "EXPENSE", "account_name": "Nubank", "category_name": "Alimentação", "occurred_on": "2026-01-15", "status": "CONFIRMED"}}
 
-Mensagem: "cafe" (data: 2026-01-15)
+Message: "almso 32 nubak" (date: 2026-01-15)
+{{"description": "Almoço", "amount": 32.0, "type": "EXPENSE", "account_name": "Nubank", "category_name": "Alimentação", "occurred_on": "2026-01-15", "status": "CONFIRMED"}}
+
+Message: "frmacia 45 c6" (date: 2026-01-15)
+{{"description": "Farmácia", "amount": 45.0, "type": "EXPENSE", "account_name": "C6 Bank", "category_name": "Saúde", "occurred_on": "2026-01-15", "status": "CONFIRMED"}}
+
+Message: "cafe" (date: 2026-01-15)
 null"""
 
 FALLBACK_USER = """\
-Data de hoje: {today}
+Today's date: {today}
 
-Contas disponíveis:
+Available accounts:
 {accounts_list}
 
-Categorias disponíveis:
+Available categories:
 {categories_list}
 
-Mensagem: "{raw_text}" """
+Message: "{raw_text}" """

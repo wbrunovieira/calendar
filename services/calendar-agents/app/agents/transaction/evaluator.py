@@ -12,32 +12,34 @@ from app.config import settings
 logger = logging.getLogger("calendar-agents")
 
 EVAL_PROMPT = """\
-Você é um avaliador de qualidade para um parser de lançamentos financeiros.
+You are a quality evaluator for a financial transaction parser.
 
-Recebeu uma mensagem de WhatsApp e o resultado do parsing. Avalie 3 critérios com nota 0 ou 1:
+You received a WhatsApp message and the parsing result. Evaluate 3 criteria with a score of 0 or 1:
 
-1. **correctness**: O JSON extraído corresponde fielmente à mensagem original?
-   - A descrição, valor e conta (se mencionada) estão corretos?
-   - 1 = correto, 0 = algum campo foi extraído errado
+1. **correctness**: Does the extracted JSON match the intent of the original message?
+   - Are the description, amount, and account (if mentioned) correct?
+   - Typo correction is EXPECTED and CORRECT: "almso" → "Almoço", "nubak" → "Nubank" = 1
+   - The parser should normalize names to their correct form, not copy errors
+   - 1 = fields reflect the correct intent, 0 = some field was extracted incorrectly
 
-2. **category_match**: A categoria inferida faz sentido para a descrição?
+2. **category_match**: Does the inferred category make sense for the description?
    - "Almoço" → "Alimentação" = 1
    - "Uber" → "Renda" = 0
-   - Se categoria é null, pontue 0
+   - If category is null, score 0
 
-3. **completeness**: Todos os campos possíveis foram preenchidos?
-   - Campos: description, amount, type, account_name, category_name
-   - 1 = todos os campos que poderiam ser inferidos foram preenchidos
-   - 0 = algum campo inferível ficou null
+3. **completeness**: Were all possible fields filled in?
+   - Fields: description, amount, type, account_name, category_name
+   - 1 = all fields that could be inferred were filled
+   - 0 = some inferrable field was left null
 
-Responda APENAS com JSON válido:
+Respond ONLY with valid JSON:
 {{"correctness": 0 | 1, "category_match": 0 | 1, "completeness": 0 | 1}}
 """
 
 EVAL_USER = """\
-Mensagem original: "{raw_text}"
+Original message: "{raw_text}"
 
-Resultado do parsing:
+Parsing result:
 {parsed_json}
 """
 
