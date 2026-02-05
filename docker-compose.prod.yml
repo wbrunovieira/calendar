@@ -243,7 +243,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 1G
 
   langfuse-minio:
     image: cgr.dev/chainguard/minio
