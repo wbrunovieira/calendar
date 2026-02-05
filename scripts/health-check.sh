@@ -40,7 +40,7 @@ EXPECTED_CONTAINERS=(
     calendar-finances
     calendar-health
     calendar-agents
-    postgres
+    calendar-postgres
     langfuse-web
     langfuse-worker
     langfuse-postgres
@@ -53,8 +53,8 @@ EXPECTED_CONTAINERS=(
 # Endpoints: "label|url|expected_http_code"
 ENDPOINTS=(
     "Calendar API|https://calendar-api.wbdigitalsolutions.com/|200"
-    "Finances API|https://calendar-finances.wbdigitalsolutions.com/api/v1/health|200"
-    "Health API|https://calendar-health.wbdigitalsolutions.com/api/v1/health|200"
+    "Finances API|https://calendar-finances.wbdigitalsolutions.com/|200"
+    "Health API|https://calendar-health.wbdigitalsolutions.com/|200"
     "Agents API|https://calendar-agents.wbdigitalsolutions.com/health|200"
     "Calendar UI|https://calendar.wbdigitalsolutions.com/|302"
     "Finances UI|https://finances.wbdigitalsolutions.com/|302"
@@ -229,7 +229,7 @@ check_ssl() {
 
 # ── 5. Database Checks ────────────────────────────────────────
 check_databases() {
-    CAL_DB_SIZE=$(docker exec postgres psql -U calendar -d calendar_db -t -c \
+    CAL_DB_SIZE=$(docker exec calendar-postgres psql -U calendar -d calendar_db -t -c \
         "SELECT pg_size_pretty(pg_database_size('calendar_db'));" 2>/dev/null | xargs || echo "ERRO")
 
     LF_DB_SIZE=$(docker exec langfuse-postgres psql -U langfuse -d langfuse_db -t -c \
