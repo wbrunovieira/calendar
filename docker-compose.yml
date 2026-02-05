@@ -170,9 +170,9 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgresql://${LANGFUSE_POSTGRES_USER:-langfuse}:${LANGFUSE_POSTGRES_PASSWORD:-langfuse123}@langfuse-postgres:5432/${LANGFUSE_POSTGRES_DB:-langfuse_db}
       NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:-http://localhost:3100}
-      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-mysecret-changeme}
-      SALT: ${LANGFUSE_SALT:-mysalt-changeme}
-      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-c5e2a577861c868e3e32bb89a0d28c717761474e9f993837ed7510512d15fd55}
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET}
+      SALT: ${LANGFUSE_SALT}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY}
       CLICKHOUSE_URL: http://langfuse-clickhouse:8123
       CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
       CLICKHOUSE_USER: ${LANGFUSE_CLICKHOUSE_USER:-langfuse}
@@ -214,8 +214,8 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://${LANGFUSE_POSTGRES_USER:-langfuse}:${LANGFUSE_POSTGRES_PASSWORD:-langfuse123}@langfuse-postgres:5432/${LANGFUSE_POSTGRES_DB:-langfuse_db}
-      SALT: ${LANGFUSE_SALT:-mysalt-changeme}
-      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-c5e2a577861c868e3e32bb89a0d28c717761474e9f993837ed7510512d15fd55}
+      SALT: ${LANGFUSE_SALT}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY}
       CLICKHOUSE_URL: http://langfuse-clickhouse:8123
       CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
       CLICKHOUSE_USER: ${LANGFUSE_CLICKHOUSE_USER:-langfuse}
