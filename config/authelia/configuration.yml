@@ -1,0 +1,69 @@
+---
+theme: light
+
+server:
+  address: 'tcp://0.0.0.0:9091'
+  asset_path: /config/assets
+
+log:
+  level: info
+
+totp:
+  disable: false
+  issuer: WB Digital
+
+webauthn:
+  disable: true
+
+duo_api:
+  disable: true
+
+authentication_backend:
+  file:
+    path: /config/users_database.yml
+    password:
+      algorithm: bcrypt
+      bcrypt:
+        cost: 12
+
+# Local dev domains — production overrides via AUTHELIA_* env vars
+access_control:
+  default_policy: one_factor
+  rules:
+    - domain: 'auth.app.localhost'
+      policy: bypass
+    - domain:
+        - 'calendar-api.app.localhost'
+        - 'finances-api.app.localhost'
+        - 'health-api.app.localhost'
+        - 'agents-api.app.localhost'
+      policy: bypass
+    - domain:
+        - 'calendar.app.localhost'
+        - 'finances.app.localhost'
+        - 'health.app.localhost'
+        - 'langfuse.app.localhost'
+      policy: one_factor
+
+session:
+  name: authelia_session
+  cookies:
+    - domain: 'app.localhost'
+      authelia_url: 'https://auth.app.localhost'
+      default_redirection_url: 'https://calendar.app.localhost'
+      expiration: 12h
+      inactivity: 4h
+      remember_me: 30d
+
+storage:
+  local:
+    path: /data/db.sqlite3
+
+notifier:
+  filesystem:
+    filename: /data/notification.txt
+
+regulation:
+  max_retries: 5
+  find_time: 2m
+  ban_time: 5m

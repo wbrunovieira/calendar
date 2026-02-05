@@ -41,7 +41,7 @@ func main() {
 
 	// CORS configuration
 	c := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:3000", "http://localhost:3004", "https://health.wbdigitalsolutions.com"},
+		AllowedOrigins:   []string{"http://localhost:3000", "http://localhost:3004", "https://health.wbdigitalsolutions.com", "https://health.app.localhost"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Content-Type", "Authorization"},
 		AllowCredentials: true,

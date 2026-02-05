@@ -23,6 +23,9 @@ async function bootstrap() {
       'https://calendar.wbdigitalsolutions.com',
       'https://finances.wbdigitalsolutions.com',
       'https://health.wbdigitalsolutions.com',
+      'https://calendar.app.localhost',
+      'https://finances.app.localhost',
+      'https://health.app.localhost',
     ],
     credentials: true,
   });

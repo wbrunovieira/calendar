@@ -201,7 +201,7 @@ func main() {
 
 	// CORS configuration
 	corsHandler := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:3000", "http://localhost:3002", "http://localhost:3003", "https://finances.wbdigitalsolutions.com", "https://calendar.wbdigitalsolutions.com"},
+		AllowedOrigins:   []string{"http://localhost:3000", "http://localhost:3002", "http://localhost:3003", "https://finances.wbdigitalsolutions.com", "https://calendar.wbdigitalsolutions.com", "https://finances.app.localhost", "https://calendar.app.localhost"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Content-Type", "Authorization"},
 		AllowCredentials: true,

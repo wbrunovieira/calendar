@@ -141,5 +141,11 @@ vite.config.ts.timestamp-*
 # Ansible vault (contains production secrets)
 deploy/ansible/inventory/group_vars/all/vault.yml
 
+# Local SSL certificates (mkcert)
+config/certs/
+
+# Authelia user database (contains password hashes)
+config/authelia/users_database.yml
+
 # Added by ggshield
 .cache_ggshield
