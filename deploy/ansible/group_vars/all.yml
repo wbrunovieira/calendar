@@ -1,7 +1,7 @@
 # Application
 app_name: calendar
 app_dir: /opt/calendar
-git_repo: git@github.com:wbrunovieira/calendar.git
+git_repo: https://github.com/wbrunovieira/calendar.git
 git_branch: main
 compose_file: docker-compose.prod.yml
 
