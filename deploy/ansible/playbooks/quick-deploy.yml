@@ -20,9 +20,10 @@
         cd {{ app_dir }} && docker compose -f {{ compose_file }} up -d --build 2>&1
       register: compose_result
 
-    - name: Show compose output
-      raw: echo "{{ compose_result.stdout_lines | default(['no output']) | join('\n') }}"
+    - name: Show compose output (last 20 lines)
+      raw: echo "{{ (compose_result.stdout_lines | default(['no output']))[-20:] | join('\n') }}"
       changed_when: false
+      ignore_errors: true
 
     - name: Wait for containers to stabilize
       raw: sleep 20

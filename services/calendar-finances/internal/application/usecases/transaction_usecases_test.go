@@ -127,7 +127,15 @@ func (f *fakeTransactionRepo) Update(tx *transaction.Transaction) error {
 func (f *fakeTransactionRepo) UpdateStatus(string, transaction.Status, time.Time, *string) error {
 	return nil
 }
-func (f *fakeTransactionRepo) Delete(string) error { return nil }
+func (f *fakeTransactionRepo) Delete(id string) error {
+	for i, tx := range f.created {
+		if tx.ID == id {
+			f.created = append(f.created[:i], f.created[i+1:]...)
+			return nil
+		}
+	}
+	return errors.New("not found")
+}
 
 func (f *fakeTransactionRepo) SumByCategories(profileID string, categoryIDs []string, from, to time.Time) (map[string]float64, error) {
 	result := make(map[string]float64)
@@ -1734,5 +1742,343 @@ func TestCreateTransaction_CreditCardIncome_ShouldNotUpdateBalance(t *testing.T)
 	creditCard := accountRepo.accounts[creditCardID]
 	if creditCard.CurrentBalance != 0 {
 		t.Fatalf("Credit card balance should remain 0, got %.2f", creditCard.CurrentBalance)
+	}
+}
+
+// ── Delete Transaction tests ────────────────────────────────────────
+
+func TestDeleteTransaction_ConfirmedExpense_ShouldRestoreBalance(t *testing.T) {
+	// Given: An account with R$1000, a confirmed expense of R$300 was created (balance = R$700)
+	// When: Deleting the transaction
+	// Then: Balance should be restored to R$1000
+
+	profileID := "profile-1"
+	accountID := "account-1"
+
+	now := time.Now()
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {
+			ID:         profileID,
+			CalendarID: "cal-1",
+			Name:       "Test",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Nubank",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 1000,
+			CurrentBalance: 1000,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	// Create a confirmed expense
+	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	confirmedStatus := "CONFIRMED"
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+
+	txn, err := createUC.Execute(CreateTransactionInput{
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        300,
+		Currency:      "BRL",
+		Description:   "Cafe",
+		OccurredOn:    yesterday,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating transaction: %v", err)
+	}
+
+	// Verify balance decreased to 700
+	account := accountRepo.accounts[accountID]
+	if account.CurrentBalance != 700 {
+		t.Fatalf("expected balance 700 after expense, got %.2f", account.CurrentBalance)
+	}
+
+	// Reset tracking
+	accountRepo.updateCalled = false
+
+	// Delete the transaction
+	deleteUC := NewDeleteTransactionUseCase(txRepo, accountRepo)
+	err = deleteUC.Execute(txn.ID)
+	if err != nil {
+		t.Fatalf("unexpected error deleting transaction: %v", err)
+	}
+
+	// Verify balance was restored to 1000
+	account = accountRepo.accounts[accountID]
+	if account.CurrentBalance != 1000 {
+		t.Fatalf("expected balance 1000 after delete, got %.2f", account.CurrentBalance)
+	}
+
+	if !accountRepo.updateCalled {
+		t.Fatal("expected accountRepo.Update to be called on delete")
+	}
+}
+
+func TestDeleteTransaction_ConfirmedIncome_ShouldReverseBalance(t *testing.T) {
+	// Given: An account with R$500, a confirmed income of R$1000 was created (balance = R$1500)
+	// When: Deleting the transaction
+	// Then: Balance should be restored to R$500
+
+	profileID := "profile-1"
+	accountID := "account-1"
+
+	now := time.Now()
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {
+			ID:         profileID,
+			CalendarID: "cal-1",
+			Name:       "Test",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Nubank",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 500,
+			CurrentBalance: 500,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	confirmedStatus := "CONFIRMED"
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+
+	txn, err := createUC.Execute(CreateTransactionInput{
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		Type:          "INCOME",
+		Status:        &confirmedStatus,
+		Amount:        1000,
+		Currency:      "BRL",
+		Description:   "Salario",
+		OccurredOn:    yesterday,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating transaction: %v", err)
+	}
+
+	if accountRepo.accounts[accountID].CurrentBalance != 1500 {
+		t.Fatalf("expected balance 1500 after income, got %.2f", accountRepo.accounts[accountID].CurrentBalance)
+	}
+
+	accountRepo.updateCalled = false
+
+	deleteUC := NewDeleteTransactionUseCase(txRepo, accountRepo)
+	err = deleteUC.Execute(txn.ID)
+	if err != nil {
+		t.Fatalf("unexpected error deleting transaction: %v", err)
+	}
+
+	account := accountRepo.accounts[accountID]
+	if account.CurrentBalance != 500 {
+		t.Fatalf("expected balance 500 after delete, got %.2f", account.CurrentBalance)
+	}
+}
+
+func TestDeleteTransaction_PlannedTransaction_ShouldNotChangeBalance(t *testing.T) {
+	// Given: An account with R$1000, a PLANNED expense of R$300 (balance stays R$1000)
+	// When: Deleting the transaction
+	// Then: Balance should remain R$1000, accountRepo.Update should NOT be called
+
+	profileID := "profile-1"
+	accountID := "account-1"
+
+	now := time.Now()
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {
+			ID:         profileID,
+			CalendarID: "cal-1",
+			Name:       "Test",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Nubank",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 1000,
+			CurrentBalance: 1000,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+
+	// PLANNED is the default status (no Status field passed)
+	txn, err := createUC.Execute(CreateTransactionInput{
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		Type:          "EXPENSE",
+		Amount:        300,
+		Currency:      "BRL",
+		Description:   "Compra futura",
+		OccurredOn:    yesterday,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating transaction: %v", err)
+	}
+
+	// Balance should not change for planned
+	if accountRepo.accounts[accountID].CurrentBalance != 1000 {
+		t.Fatalf("expected balance 1000 for planned, got %.2f", accountRepo.accounts[accountID].CurrentBalance)
+	}
+
+	accountRepo.updateCalled = false
+
+	deleteUC := NewDeleteTransactionUseCase(txRepo, accountRepo)
+	err = deleteUC.Execute(txn.ID)
+	if err != nil {
+		t.Fatalf("unexpected error deleting transaction: %v", err)
+	}
+
+	// Balance should remain 1000
+	if accountRepo.accounts[accountID].CurrentBalance != 1000 {
+		t.Fatalf("expected balance 1000 after delete, got %.2f", accountRepo.accounts[accountID].CurrentBalance)
+	}
+
+	// accountRepo.Update should NOT be called for planned transactions
+	if accountRepo.updateCalled {
+		t.Fatal("accountRepo.Update should not be called when deleting a PLANNED transaction")
+	}
+}
+
+func TestDeleteTransaction_CreditCard_ShouldNotChangeBalance(t *testing.T) {
+	// Given: A credit card account, a confirmed expense was created
+	// When: Deleting the transaction
+	// Then: Balance should NOT change (credit cards don't update balance)
+
+	profileID := "profile-1"
+	creditCardID := "cc-1"
+
+	now := time.Now()
+	closingDay := 5
+	dueDay := 15
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {
+			ID:         profileID,
+			CalendarID: "cal-1",
+			Name:       "Test",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		creditCardID: {
+			ID:             creditCardID,
+			ProfileID:      profileID,
+			Name:           "Cartão Nubank",
+			Type:           bankaccount.AccountTypeCreditCard,
+			InitialBalance: 0,
+			CurrentBalance: 0,
+			Currency:       "BRL",
+			IsActive:       true,
+			ClosingDay:     &closingDay,
+			DueDay:         &dueDay,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	confirmedStatus := "CONFIRMED"
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+
+	txn, err := createUC.Execute(CreateTransactionInput{
+		ProfileID:     profileID,
+		BankAccountID: creditCardID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        200,
+		Currency:      "BRL",
+		Description:   "Compra cartao",
+		OccurredOn:    yesterday,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating transaction: %v", err)
+	}
+
+	accountRepo.updateCalled = false
+
+	deleteUC := NewDeleteTransactionUseCase(txRepo, accountRepo)
+	err = deleteUC.Execute(txn.ID)
+	if err != nil {
+		t.Fatalf("unexpected error deleting transaction: %v", err)
+	}
+
+	// Credit card balance should remain 0
+	cc := accountRepo.accounts[creditCardID]
+	if cc.CurrentBalance != 0 {
+		t.Fatalf("expected credit card balance 0, got %.2f", cc.CurrentBalance)
+	}
+
+	if accountRepo.updateCalled {
+		t.Fatal("accountRepo.Update should not be called for credit card transactions")
+	}
+}
+
+func TestDeleteTransaction_NotFound_ShouldReturnError(t *testing.T) {
+	txRepo := &fakeTransactionRepo{}
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{}}
+
+	deleteUC := NewDeleteTransactionUseCase(txRepo, accountRepo)
+	err := deleteUC.Execute("non-existent-id")
+
+	if err == nil {
+		t.Fatal("expected error when deleting non-existent transaction")
 	}
 }

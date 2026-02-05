@@ -104,7 +104,7 @@ func main() {
 	getTransactionUC := usecases.NewGetTransactionUseCase(transactionRepo)
 	updateTransactionUC := usecases.NewUpdateTransactionUseCase(bankAccountRepo, categoryRepo, transactionRepo)
 	updateTransactionStatusUC := usecases.NewUpdateTransactionStatusUseCase(transactionRepo, bankAccountRepo)
-	deleteTransactionUC := usecases.NewDeleteTransactionUseCase(transactionRepo)
+	deleteTransactionUC := usecases.NewDeleteTransactionUseCase(transactionRepo, bankAccountRepo)
 	transactionHandler := httpHandlers.NewTransactionHandlers(
 		createTransactionUC,
 		listTransactionsUC,
