@@ -1,0 +1,31 @@
+# Encrypt this file with: ansible-vault encrypt vault.yml
+# Edit with: ansible-vault edit vault.yml
+
+# App database
+vault_db_password: "CHANGE_ME_strong_password"
+
+# Langfuse database
+vault_langfuse_postgres_password: "CHANGE_ME_strong_password"
+
+# Langfuse secrets (generate with: openssl rand -hex 32)
+vault_langfuse_nextauth_secret: "CHANGE_ME_openssl_rand_hex_32"
+vault_langfuse_salt: "CHANGE_ME_openssl_rand_hex_32"
+vault_langfuse_encryption_key: "CHANGE_ME_openssl_rand_hex_32"
+
+# Langfuse API keys (create project in Langfuse UI after deploy)
+vault_langfuse_public_key: "pk-lf-CHANGE_ME"
+vault_langfuse_secret_key: "sk-lf-CHANGE_ME"
+
+# Langfuse ClickHouse
+vault_langfuse_clickhouse_user: "langfuse"
+vault_langfuse_clickhouse_password: "CHANGE_ME_strong_password"
+
+# Langfuse S3 (MinIO)
+vault_langfuse_s3_access_key: "langfuse"
+vault_langfuse_s3_secret_key: "CHANGE_ME_strong_password"
+
+# DeepSeek LLM
+vault_deepseek_api_key: "sk-CHANGE_ME"
+
+# Finance
+vault_finance_personal_profile_id: "CHANGE_ME_uuid"

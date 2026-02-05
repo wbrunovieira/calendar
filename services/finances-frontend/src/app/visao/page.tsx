@@ -5,6 +5,7 @@ import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
 import { useProfile } from '@/contexts/ProfileContext';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import { API_BASE } from '@/lib/api';
 import type { RecurringTransaction, Transaction, Category, BudgetSummaryItem } from '@/types/finances';
 
 const CHART_COLORS = [
@@ -12,8 +13,6 @@ const CHART_COLORS = [
   '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1',
   '#14b8a6', '#a855f7', '#eab308', '#22c55e', '#0ea5e9'
 ];
-
-const API_BASE = 'http://localhost:3335/api/v1';
 
 type ViewMode = 1 | 2 | 3 | 6 | 12;
 

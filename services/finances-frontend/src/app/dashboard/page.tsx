@@ -21,8 +21,7 @@ import {
   AreaChart,
   Area,
 } from 'recharts';
-
-const API_BASE = 'http://localhost:3335/api/v1';
+import { API_BASE } from '@/lib/api';
 
 const COLORS = [
   '#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444',

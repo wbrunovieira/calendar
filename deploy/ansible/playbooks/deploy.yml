@@ -1,0 +1,186 @@
+---
+# Full deployment playbook (first time setup)
+# Usage: ansible-playbook playbooks/deploy.yml --ask-vault-pass
+- name: Deploy Calendar to production
+  hosts: calendar_server
+  gather_facts: false
+
+  pre_tasks:
+    - name: Display deployment info
+      raw: echo "Starting Calendar deployment to $(hostname) at $(date)"
+      changed_when: false
+
+  tasks:
+    # ── Prerequisites ──────────────────────────────────────────
+    - name: Check Docker is installed
+      raw: docker --version
+      changed_when: false
+
+    - name: Check Docker Compose is installed
+      raw: docker compose version
+      changed_when: false
+
+    - name: Check Git is installed
+      raw: git --version
+      changed_when: false
+
+    # ── Application directory ──────────────────────────────────
+    - name: Create application directory
+      raw: mkdir -p {{ app_dir }}
+      changed_when: false
+
+    - name: Check if repo exists
+      raw: test -d {{ app_dir }}/.git && echo "exists" || echo "missing"
+      register: repo_check
+      changed_when: false
+
+    - name: Clone repository
+      raw: |
+        cd /opt && git clone {{ git_repo }} calendar
+      when: "'missing' in repo_check.stdout"
+
+    - name: Pull latest code
+      raw: |
+        cd {{ app_dir }} && git fetch origin && git reset --hard origin/{{ git_branch }}
+      when: "'exists' in repo_check.stdout"
+
+    # ── ClickHouse config ──────────────────────────────────────
+    - name: Create ClickHouse config directory
+      raw: mkdir -p {{ app_dir }}/config/clickhouse
+      changed_when: false
+
+    # ── Environment file ───────────────────────────────────────
+    - name: Create production .env file
+      raw: |
+        cat > {{ app_dir }}/.env << 'ENVEOF'
+        # App Database
+        DB_USER={{ db_user }}
+        DB_PASSWORD={{ vault_db_password }}
+        DB_NAME={{ db_name }}
+
+        # Langfuse Postgres
+        LANGFUSE_POSTGRES_USER={{ langfuse_postgres_user }}
+        LANGFUSE_POSTGRES_PASSWORD={{ vault_langfuse_postgres_password }}
+        LANGFUSE_POSTGRES_DB={{ langfuse_postgres_db }}
+
+        # Langfuse secrets
+        LANGFUSE_NEXTAUTH_SECRET={{ vault_langfuse_nextauth_secret }}
+        LANGFUSE_SALT={{ vault_langfuse_salt }}
+        LANGFUSE_ENCRYPTION_KEY={{ vault_langfuse_encryption_key }}
+
+        # Langfuse ClickHouse
+        LANGFUSE_CLICKHOUSE_USER={{ vault_langfuse_clickhouse_user }}
+        LANGFUSE_CLICKHOUSE_PASSWORD={{ vault_langfuse_clickhouse_password }}
+
+        # Langfuse S3 (MinIO)
+        LANGFUSE_S3_ACCESS_KEY={{ vault_langfuse_s3_access_key }}
+        LANGFUSE_S3_SECRET_KEY={{ vault_langfuse_s3_secret_key }}
+        LANGFUSE_S3_BUCKET=langfuse
+
+        # Langfuse API Keys
+        LANGFUSE_PUBLIC_KEY={{ vault_langfuse_public_key }}
+        LANGFUSE_SECRET_KEY={{ vault_langfuse_secret_key }}
+
+        # DeepSeek LLM
+        DEEPSEEK_API_KEY={{ vault_deepseek_api_key }}
+        DEEPSEEK_BASE_URL=https://api.deepseek.com
+        DEEPSEEK_MODEL=deepseek-chat
+
+        # Finance
+        FINANCE_PERSONAL_PROFILE_ID={{ vault_finance_personal_profile_id }}
+        ENVEOF
+      no_log: true
+
+    # ── Build and start containers ─────────────────────────────
+    - name: Build and start all containers
+      raw: |
+        cd {{ app_dir }} && docker compose -f {{ compose_file }} up -d --build 2>&1
+      register: compose_result
+
+    - name: Show compose output
+      raw: echo "{{ compose_result.stdout_lines | default(['no output']) | join('\n') }}"
+      changed_when: false
+
+    - name: Wait for containers to stabilize
+      raw: sleep 30
+      changed_when: false
+
+    # ── Database migrations ────────────────────────────────────
+    - name: Run Prisma migrations
+      raw: |
+        cd {{ app_dir }} && docker compose -f {{ compose_file }} exec -T calendar-core npx prisma migrate deploy 2>&1
+      register: migrate_result
+      ignore_errors: true
+
+    - name: Show migration output
+      raw: echo "{{ migrate_result.stdout_lines | default(['no output']) | join('\n') }}"
+      changed_when: false
+      when: migrate_result is defined
+
+    # ── Health checks ──────────────────────────────────────────
+    - name: Check all containers are running
+      raw: |
+        cd {{ app_dir }} && docker compose -f {{ compose_file }} ps --format json 2>/dev/null || docker compose -f {{ compose_file }} ps
+      register: ps_result
+      changed_when: false
+
+    - name: Show container status
+      raw: echo "{{ ps_result.stdout_lines | default(['no output']) | join('\n') }}"
+      changed_when: false
+
+    - name: Health check — calendar-core
+      raw: curl -sf http://127.0.0.1:3334/ || echo "WARN calendar-core not responding"
+      changed_when: false
+      ignore_errors: true
+
+    - name: Health check — calendar-finances
+      raw: curl -sf http://127.0.0.1:3335/api/v1/health || echo "WARN calendar-finances not responding"
+      changed_when: false
+      ignore_errors: true
+
+    - name: Health check — calendar-health
+      raw: curl -sf http://127.0.0.1:3336/api/v1/health || echo "WARN calendar-health not responding"
+      changed_when: false
+      ignore_errors: true
+
+    - name: Health check — calendar-agents
+      raw: curl -sf http://127.0.0.1:3337/health || echo "WARN calendar-agents not responding"
+      changed_when: false
+      ignore_errors: true
+
+    - name: Health check — calendar-frontend
+      raw: curl -sf http://127.0.0.1:3001/ || echo "WARN calendar-frontend not responding"
+      changed_when: false
+      ignore_errors: true
+
+    - name: Health check — finances-frontend
+      raw: curl -sf http://127.0.0.1:3003/ || echo "WARN finances-frontend not responding"
+      changed_when: false
+      ignore_errors: true
+
+    - name: Health check — health-frontend
+      raw: curl -sf http://127.0.0.1:3004/ || echo "WARN health-frontend not responding"
+      changed_when: false
+      ignore_errors: true
+
+    - name: Health check — langfuse
+      raw: curl -sf http://127.0.0.1:3100/api/public/health || echo "WARN langfuse not responding"
+      changed_when: false
+      ignore_errors: true
+
+  post_tasks:
+    - name: Deployment summary
+      raw: |
+        echo "=========================================="
+        echo "  Calendar Deployment Complete"
+        echo "=========================================="
+        echo ""
+        echo "Containers:"
+        cd {{ app_dir }} && docker compose -f {{ compose_file }} ps --format "table {% raw %}{{.Name}}\t{{.Status}}{% endraw %}" 2>/dev/null || docker compose -f {{ compose_file }} ps
+        echo ""
+        echo "Next steps:"
+        echo "  1. Configure DNS (8 A records → 45.90.123.190)"
+        echo "  2. Run: ansible-playbook playbooks/setup-nginx-ssl.yml"
+        echo "  3. Run: ansible-playbook playbooks/sync-data.yml"
+        echo "=========================================="
+      changed_when: false

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { API_BASE } from '@/lib/api';
 import type {
   BankAccount,
   Category,
@@ -79,7 +80,6 @@ export default function TransactionForm({
   profiles,
   editingTransaction,
 }: TransactionFormProps) {
-  const API_BASE = 'http://localhost:3335/api/v1';
   const [formData, setFormData] = useState<TransactionFormData>(() => defaultForm(defaultProfileId));
   const [tagsInput, setTagsInput] = useState('');
   const [selectedProfileId, setSelectedProfileId] = useState<string>(defaultProfileId);

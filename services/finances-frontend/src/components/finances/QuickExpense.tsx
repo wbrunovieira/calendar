@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { API_BASE } from '@/lib/api';
 import type { BankAccount, Category, TransactionFormData } from '@/types/finances';
 
 interface QuickExpenseProps {
@@ -21,7 +22,6 @@ const getLocalDateString = () => {
 };
 
 export default function QuickExpense({ accounts, categories = [], defaultProfileId, profiles, onSave }: QuickExpenseProps) {
-  const API_BASE = 'http://localhost:3335/api/v1';
   const [selectedProfileId, setSelectedProfileId] = useState<string>(defaultProfileId);
   const [localCategories, setLocalCategories] = useState<Category[]>(categories);
   const expenseCategories = useMemo(() => localCategories.filter((c) => c.type === 'EXPENSE'), [localCategories]);

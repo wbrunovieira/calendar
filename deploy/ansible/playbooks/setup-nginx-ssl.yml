@@ -1,0 +1,272 @@
+---
+# Setup Nginx reverse proxy + SSL for all 8 subdomains
+# Usage: ansible-playbook playbooks/setup-nginx-ssl.yml
+# Prerequisites: DNS A records must already point to the server
+- name: Setup Nginx and SSL for Calendar
+  hosts: calendar_server
+  gather_facts: false
+
+  tasks:
+    # ── Check Nginx ────────────────────────────────────────────
+    - name: Check Nginx is installed
+      raw: nginx -v 2>&1
+      changed_when: false
+
+    - name: Check Certbot is installed
+      raw: certbot --version 2>&1
+      changed_when: false
+
+    # ── Create Nginx configs (HTTP only, for Certbot) ──────────
+    - name: Create Nginx config for calendar-frontend
+      raw: |
+        cat > /etc/nginx/sites-available/calendar.wbdigitalsolutions.com.conf << 'EOF'
+        server {
+            listen 80;
+            server_name calendar.wbdigitalsolutions.com;
+
+            location / {
+                proxy_pass http://127.0.0.1:3001;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+        }
+        EOF
+
+    - name: Create Nginx config for finances-frontend
+      raw: |
+        cat > /etc/nginx/sites-available/finances.wbdigitalsolutions.com.conf << 'EOF'
+        server {
+            listen 80;
+            server_name finances.wbdigitalsolutions.com;
+
+            location / {
+                proxy_pass http://127.0.0.1:3003;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+        }
+        EOF
+
+    - name: Create Nginx config for health-frontend
+      raw: |
+        cat > /etc/nginx/sites-available/health.wbdigitalsolutions.com.conf << 'EOF'
+        server {
+            listen 80;
+            server_name health.wbdigitalsolutions.com;
+
+            location / {
+                proxy_pass http://127.0.0.1:3004;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+        }
+        EOF
+
+    - name: Create Nginx config for calendar-api
+      raw: |
+        cat > /etc/nginx/sites-available/calendar-api.wbdigitalsolutions.com.conf << 'EOF'
+        server {
+            listen 80;
+            server_name calendar-api.wbdigitalsolutions.com;
+
+            location / {
+                proxy_pass http://127.0.0.1:3334;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+        }
+        EOF
+
+    - name: Create Nginx config for calendar-finances API
+      raw: |
+        cat > /etc/nginx/sites-available/calendar-finances.wbdigitalsolutions.com.conf << 'EOF'
+        server {
+            listen 80;
+            server_name calendar-finances.wbdigitalsolutions.com;
+
+            location / {
+                proxy_pass http://127.0.0.1:3335;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+        }
+        EOF
+
+    - name: Create Nginx config for calendar-health API
+      raw: |
+        cat > /etc/nginx/sites-available/calendar-health.wbdigitalsolutions.com.conf << 'EOF'
+        server {
+            listen 80;
+            server_name calendar-health.wbdigitalsolutions.com;
+
+            location / {
+                proxy_pass http://127.0.0.1:3336;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+        }
+        EOF
+
+    - name: Create Nginx config for calendar-agents API
+      raw: |
+        cat > /etc/nginx/sites-available/calendar-agents.wbdigitalsolutions.com.conf << 'EOF'
+        server {
+            listen 80;
+            server_name calendar-agents.wbdigitalsolutions.com;
+
+            location / {
+                proxy_pass http://127.0.0.1:3337;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+        }
+        EOF
+
+    - name: Create Nginx config for Langfuse
+      raw: |
+        cat > /etc/nginx/sites-available/calendar-langfuse.wbdigitalsolutions.com.conf << 'EOF'
+        server {
+            listen 80;
+            server_name calendar-langfuse.wbdigitalsolutions.com;
+
+            location / {
+                proxy_pass http://127.0.0.1:3100;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+        }
+        EOF
+
+    # ── Enable sites ───────────────────────────────────────────
+    - name: Enable all Nginx sites
+      raw: |
+        for conf in \
+          calendar.wbdigitalsolutions.com.conf \
+          finances.wbdigitalsolutions.com.conf \
+          health.wbdigitalsolutions.com.conf \
+          calendar-api.wbdigitalsolutions.com.conf \
+          calendar-finances.wbdigitalsolutions.com.conf \
+          calendar-health.wbdigitalsolutions.com.conf \
+          calendar-agents.wbdigitalsolutions.com.conf \
+          calendar-langfuse.wbdigitalsolutions.com.conf; do
+          ln -sf /etc/nginx/sites-available/$conf /etc/nginx/sites-enabled/$conf
+        done
+
+    - name: Test Nginx configuration
+      raw: nginx -t 2>&1
+      register: nginx_test
+
+    - name: Reload Nginx
+      raw: systemctl reload nginx
+      when: "'successful' in nginx_test.stderr | default('')"
+
+    # ── SSL certificates ───────────────────────────────────────
+    - name: Obtain SSL certificate for calendar.wbdigitalsolutions.com
+      raw: |
+        certbot --nginx -d calendar.wbdigitalsolutions.com --non-interactive --agree-tos -m {{ certbot_email }} 2>&1
+      register: cert_calendar
+      ignore_errors: true
+
+    - name: Obtain SSL certificate for finances.wbdigitalsolutions.com
+      raw: |
+        certbot --nginx -d finances.wbdigitalsolutions.com --non-interactive --agree-tos -m {{ certbot_email }} 2>&1
+      register: cert_finances
+      ignore_errors: true
+
+    - name: Obtain SSL certificate for health.wbdigitalsolutions.com
+      raw: |
+        certbot --nginx -d health.wbdigitalsolutions.com --non-interactive --agree-tos -m {{ certbot_email }} 2>&1
+      register: cert_health
+      ignore_errors: true
+
+    - name: Obtain SSL certificate for calendar-api.wbdigitalsolutions.com
+      raw: |
+        certbot --nginx -d calendar-api.wbdigitalsolutions.com --non-interactive --agree-tos -m {{ certbot_email }} 2>&1
+      register: cert_api
+      ignore_errors: true
+
+    - name: Obtain SSL certificate for calendar-finances.wbdigitalsolutions.com
+      raw: |
+        certbot --nginx -d calendar-finances.wbdigitalsolutions.com --non-interactive --agree-tos -m {{ certbot_email }} 2>&1
+      register: cert_finances_api
+      ignore_errors: true
+
+    - name: Obtain SSL certificate for calendar-health.wbdigitalsolutions.com
+      raw: |
+        certbot --nginx -d calendar-health.wbdigitalsolutions.com --non-interactive --agree-tos -m {{ certbot_email }} 2>&1
+      register: cert_health_api
+      ignore_errors: true
+
+    - name: Obtain SSL certificate for calendar-agents.wbdigitalsolutions.com
+      raw: |
+        certbot --nginx -d calendar-agents.wbdigitalsolutions.com --non-interactive --agree-tos -m {{ certbot_email }} 2>&1
+      register: cert_agents
+      ignore_errors: true
+
+    - name: Obtain SSL certificate for calendar-langfuse.wbdigitalsolutions.com
+      raw: |
+        certbot --nginx -d calendar-langfuse.wbdigitalsolutions.com --non-interactive --agree-tos -m {{ certbot_email }} 2>&1
+      register: cert_langfuse
+      ignore_errors: true
+
+    # ── Verify SSL ─────────────────────────────────────────────
+    - name: Verify SSL for all domains
+      raw: |
+        echo "SSL verification:"
+        for domain in \
+          calendar.wbdigitalsolutions.com \
+          finances.wbdigitalsolutions.com \
+          health.wbdigitalsolutions.com \
+          calendar-api.wbdigitalsolutions.com \
+          calendar-finances.wbdigitalsolutions.com \
+          calendar-health.wbdigitalsolutions.com \
+          calendar-agents.wbdigitalsolutions.com \
+          calendar-langfuse.wbdigitalsolutions.com; do
+          STATUS=$(curl -sf -o /dev/null -w '%{http_code}' https://$domain/ || echo "FAIL")
+          echo "  https://$domain → $STATUS"
+        done
+      changed_when: false
+
+    - name: Final Nginx test
+      raw: nginx -t 2>&1
+      changed_when: false

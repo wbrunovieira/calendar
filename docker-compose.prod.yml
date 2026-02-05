@@ -1,0 +1,414 @@
+# Production Docker Compose — Calendar Project
+# All ports bound to 127.0.0.1 (Nginx reverse-proxies externally)
+# Usage: docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  # ── Application backends ────────────────────────────────────
+
+  calendar-core:
+    build:
+      context: ./services/calendar-core
+      dockerfile: Dockerfile
+    container_name: calendar-core
+    ports:
+      - "127.0.0.1:3334:3334"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://${DB_USER:-calendar}:${DB_PASSWORD:-calendar123}@postgres:5432/${DB_NAME:-calendar_db}
+      - PORT=3334
+      - TZ=America/Sao_Paulo
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - calendar-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 350M
+
+  calendar-finances:
+    build:
+      context: ./services/calendar-finances
+      dockerfile: Dockerfile
+    container_name: calendar-finances
+    ports:
+      - "127.0.0.1:3335:3335"
+    environment:
+      - PORT=3335
+      - DATABASE_URL=postgres://${DB_USER:-calendar}:${DB_PASSWORD:-calendar123}@postgres:5432/${DB_NAME:-calendar_db}?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - calendar-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 50M
+
+  calendar-health:
+    build:
+      context: ./services/calendar-health
+      dockerfile: Dockerfile
+    container_name: calendar-health
+    ports:
+      - "127.0.0.1:3336:3336"
+    environment:
+      - PORT=3336
+      - DATABASE_URL=postgres://${DB_USER:-calendar}:${DB_PASSWORD:-calendar123}@postgres:5432/${DB_NAME:-calendar_db}?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - calendar-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 30M
+
+  calendar-agents:
+    build:
+      context: ./services/calendar-agents
+      dockerfile: Dockerfile
+    container_name: calendar-agents
+    ports:
+      - "127.0.0.1:3337:3337"
+    environment:
+      - PORT=3337
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_HOST=http://langfuse-web:3000
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      - DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-deepseek-chat}
+      - FINANCE_PERSONAL_PROFILE_ID=${FINANCE_PERSONAL_PROFILE_ID}
+      - FINANCES_BASE_URL=http://calendar-finances:3335
+    depends_on:
+      langfuse-web:
+        condition: service_healthy
+    networks:
+      - calendar-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 200M
+
+  # ── Application frontends ───────────────────────────────────
+
+  calendar-frontend:
+    build:
+      context: ./services/calendar-frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://calendar-api.wbdigitalsolutions.com
+    container_name: calendar-frontend
+    ports:
+      - "127.0.0.1:3001:3001"
+    environment:
+      - NODE_ENV=production
+      - TZ=America/Sao_Paulo
+    depends_on:
+      - calendar-core
+    networks:
+      - calendar-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 200M
+
+  finances-frontend:
+    build:
+      context: ./services/finances-frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://calendar-finances.wbdigitalsolutions.com
+    container_name: finances-frontend
+    ports:
+      - "127.0.0.1:3003:3003"
+    environment:
+      - NODE_ENV=production
+      - TZ=America/Sao_Paulo
+    depends_on:
+      - calendar-finances
+    networks:
+      - calendar-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 150M
+
+  health-frontend:
+    build:
+      context: ./services/health-frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://calendar-health.wbdigitalsolutions.com
+    container_name: health-frontend
+    ports:
+      - "127.0.0.1:3004:3004"
+    environment:
+      - NODE_ENV=production
+      - TZ=America/Sao_Paulo
+    depends_on:
+      - calendar-health
+    networks:
+      - calendar-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 150M
+
+  # ── Database ────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: calendar-postgres
+    ports:
+      - "127.0.0.1:5435:5432"
+    environment:
+      - POSTGRES_USER=${DB_USER:-calendar}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-calendar123}
+      - POSTGRES_DB=${DB_NAME:-calendar_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - calendar-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 100M
+
+  # ── Langfuse v3 ─────────────────────────────────────────────
+
+  langfuse-postgres:
+    image: postgres:17-alpine
+    container_name: langfuse-postgres
+    ports:
+      - "127.0.0.1:5436:5432"
+    environment:
+      POSTGRES_USER: ${LANGFUSE_POSTGRES_USER:-langfuse}
+      POSTGRES_PASSWORD: ${LANGFUSE_POSTGRES_PASSWORD:-langfuse123}
+      POSTGRES_DB: ${LANGFUSE_POSTGRES_DB:-langfuse_db}
+    volumes:
+      - langfuse_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - calendar-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 150M
+
+  langfuse-clickhouse:
+    image: clickhouse/clickhouse-server
+    container_name: langfuse-clickhouse
+    ports:
+      - "127.0.0.1:8124:8123"
+      - "127.0.0.1:9002:9000"
+    environment:
+      CLICKHOUSE_USER: ${LANGFUSE_CLICKHOUSE_USER:-langfuse}
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-langfuse123}
+    volumes:
+      - langfuse_clickhouse_data:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+      - ./config/clickhouse/clickhouse-config.xml:/etc/clickhouse-server/config.d/langfuse.xml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - calendar-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  langfuse-minio:
+    image: cgr.dev/chainguard/minio
+    container_name: langfuse-minio
+    ports:
+      - "127.0.0.1:9090:9000"
+      - "127.0.0.1:9091:9001"
+    environment:
+      MINIO_ROOT_USER: ${LANGFUSE_S3_ACCESS_KEY:-langfuse}
+      MINIO_ROOT_PASSWORD: ${LANGFUSE_S3_SECRET_KEY:-langfuse123}
+    volumes:
+      - langfuse_minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - calendar-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 150M
+
+  langfuse-minio-init:
+    image: cgr.dev/chainguard/minio
+    container_name: langfuse-minio-init
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        mc alias set myminio http://langfuse-minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD}
+        mc mb --ignore-existing myminio/$${BUCKET_NAME}
+        echo "Bucket $${BUCKET_NAME} ready"
+    environment:
+      MINIO_ROOT_USER: ${LANGFUSE_S3_ACCESS_KEY:-langfuse}
+      MINIO_ROOT_PASSWORD: ${LANGFUSE_S3_SECRET_KEY:-langfuse123}
+      BUCKET_NAME: ${LANGFUSE_S3_BUCKET:-langfuse}
+    depends_on:
+      langfuse-minio:
+        condition: service_healthy
+    networks:
+      - calendar-network
+    restart: "no"
+
+  langfuse-redis:
+    image: redis:7
+    container_name: langfuse-redis
+    ports:
+      - "127.0.0.1:6382:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - calendar-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 50M
+
+  langfuse-web:
+    image: langfuse/langfuse:3
+    container_name: langfuse-web
+    ports:
+      - "127.0.0.1:3100:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${LANGFUSE_POSTGRES_USER:-langfuse}:${LANGFUSE_POSTGRES_PASSWORD:-langfuse123}@langfuse-postgres:5432/${LANGFUSE_POSTGRES_DB:-langfuse_db}
+      NEXTAUTH_URL: https://calendar-langfuse.wbdigitalsolutions.com
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET}
+      SALT: ${LANGFUSE_SALT}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY}
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
+      CLICKHOUSE_USER: ${LANGFUSE_CLICKHOUSE_USER:-langfuse}
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-langfuse123}
+      LANGFUSE_S3_EVENT_UPLOAD_ENABLED: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: ${LANGFUSE_S3_BUCKET:-langfuse}
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_S3_ACCESS_KEY:-langfuse}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_S3_SECRET_KEY:-langfuse123}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: "6379"
+      REDIS_AUTH: ""
+    depends_on:
+      langfuse-postgres:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+      langfuse-minio-init:
+        condition: service_completed_successfully
+      langfuse-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://$(hostname):3000/api/public/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      start_period: 60s
+      retries: 10
+    networks:
+      - calendar-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 400M
+
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    container_name: langfuse-worker
+    ports:
+      - "127.0.0.1:3030:3030"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${LANGFUSE_POSTGRES_USER:-langfuse}:${LANGFUSE_POSTGRES_PASSWORD:-langfuse123}@langfuse-postgres:5432/${LANGFUSE_POSTGRES_DB:-langfuse_db}
+      SALT: ${LANGFUSE_SALT}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY}
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
+      CLICKHOUSE_USER: ${LANGFUSE_CLICKHOUSE_USER:-langfuse}
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-langfuse123}
+      LANGFUSE_S3_EVENT_UPLOAD_ENABLED: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: ${LANGFUSE_S3_BUCKET:-langfuse}
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_S3_ACCESS_KEY:-langfuse}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_S3_SECRET_KEY:-langfuse123}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: "6379"
+      REDIS_AUTH: ""
+      PORT: "3030"
+    depends_on:
+      langfuse-postgres:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+    networks:
+      - calendar-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 250M
+
+volumes:
+  postgres_data:
+  langfuse_postgres_data:
+  langfuse_clickhouse_data:
+  langfuse_clickhouse_logs:
+  langfuse_minio_data:
+
+networks:
+  calendar-network:
+    driver: bridge

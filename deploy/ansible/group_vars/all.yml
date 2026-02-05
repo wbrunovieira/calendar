@@ -1,0 +1,46 @@
+# Application
+app_name: calendar
+app_dir: /opt/calendar
+git_repo: git@github.com:wbrunovieira/calendar.git
+git_branch: main
+compose_file: docker-compose.prod.yml
+
+# SSL
+certbot_email: wbrunovieira77@gmail.com
+
+# Domains (8 subdomains)
+domains:
+  calendar_frontend:
+    name: calendar.wbdigitalsolutions.com
+    port: 3001
+  finances_frontend:
+    name: finances.wbdigitalsolutions.com
+    port: 3003
+  health_frontend:
+    name: health.wbdigitalsolutions.com
+    port: 3004
+  calendar_api:
+    name: calendar-api.wbdigitalsolutions.com
+    port: 3334
+  finances_api:
+    name: calendar-finances.wbdigitalsolutions.com
+    port: 3335
+  health_api:
+    name: calendar-health.wbdigitalsolutions.com
+    port: 3336
+  agents_api:
+    name: calendar-agents.wbdigitalsolutions.com
+    port: 3337
+  langfuse:
+    name: calendar-langfuse.wbdigitalsolutions.com
+    port: 3100
+
+# Database (app)
+db_user: calendar
+db_name: calendar_db
+# db_password: set in vault.yml
+
+# Langfuse database
+langfuse_postgres_user: langfuse
+langfuse_postgres_db: langfuse_db
+# langfuse_postgres_password: set in vault.yml

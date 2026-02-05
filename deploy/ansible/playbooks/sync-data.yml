@@ -1,0 +1,88 @@
+---
+# Sync local database to production server
+# Usage: ansible-playbook playbooks/sync-data.yml
+# This copies the calendar_db from a local dump to the server's PostgreSQL container.
+#
+# Prerequisites:
+#   1. Create local dump first:
+#      docker compose exec postgres pg_dump -U calendar -Fc calendar_db > /tmp/calendar_db.dump
+#   2. Run this playbook
+- name: Sync database to production
+  hosts: calendar_server
+  gather_facts: false
+
+  vars:
+    local_dump: /tmp/calendar_db.dump
+    remote_dump: /tmp/calendar_db.dump
+
+  tasks:
+    - name: Check local dump exists
+      raw: test -f {{ local_dump }} && echo "exists" || echo "missing"
+      delegate_to: localhost
+      register: dump_check
+      changed_when: false
+
+    - name: Fail if dump not found
+      fail:
+        msg: |
+          Local dump not found at {{ local_dump }}.
+          Create it first:
+            docker compose exec postgres pg_dump -U calendar -Fc calendar_db > {{ local_dump }}
+      when: "'missing' in dump_check.stdout"
+
+    - name: Upload dump to server
+      raw: scp {{ local_dump }} root@{{ ansible_host }}:{{ remote_dump }}
+      delegate_to: localhost
+
+    - name: Copy dump into postgres container
+      raw: docker cp {{ remote_dump }} calendar-postgres:{{ remote_dump }}
+
+    - name: Restore database
+      raw: |
+        docker exec calendar-postgres pg_restore \
+          -U {{ db_user }} \
+          -d {{ db_name }} \
+          --clean \
+          --if-exists \
+          --no-owner \
+          --no-privileges \
+          {{ remote_dump }} 2>&1 || true
+      register: restore_result
+
+    - name: Show restore output
+      raw: echo "{{ restore_result.stdout_lines | default(['no output']) | join('\n') }}"
+      changed_when: false
+
+    - name: Verify data — count tables
+      raw: |
+        docker exec calendar-postgres psql -U {{ db_user }} -d {{ db_name }} -c "
+          SELECT schemaname, tablename, n_tup_ins as rows
+          FROM pg_stat_user_tables
+          ORDER BY schemaname, tablename;" 2>&1
+      changed_when: false
+
+    - name: Cleanup dump from server
+      raw: rm -f {{ remote_dump }}
+      changed_when: false
+
+    - name: Cleanup dump from container
+      raw: docker exec calendar-postgres rm -f {{ remote_dump }}
+      changed_when: false
+      ignore_errors: true
+
+    - name: Restart application containers (pick up new data)
+      raw: |
+        cd {{ app_dir }} && docker compose -f {{ compose_file }} restart calendar-core calendar-finances calendar-health calendar-agents 2>&1
+      register: restart_result
+
+    - name: Wait for restart
+      raw: sleep 15
+      changed_when: false
+
+    - name: Health check after restore
+      raw: |
+        echo "Post-restore health:"
+        echo "  calendar-core:     $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3334/ || echo 'DOWN')"
+        echo "  calendar-finances: $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3335/api/v1/health || echo 'DOWN')"
+        echo "  calendar-health:   $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3336/api/v1/health || echo 'DOWN')"
+      changed_when: false

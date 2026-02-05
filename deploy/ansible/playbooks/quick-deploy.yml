@@ -1,0 +1,60 @@
+---
+# Quick deploy: git pull → rebuild → restart
+# Usage: ansible-playbook playbooks/quick-deploy.yml
+- name: Quick deploy Calendar
+  hosts: calendar_server
+  gather_facts: false
+
+  tasks:
+    - name: Pull latest code
+      raw: |
+        cd {{ app_dir }} && git pull origin {{ git_branch }} 2>&1
+      register: git_result
+
+    - name: Show git changes
+      raw: echo "{{ git_result.stdout_lines | default(['no output']) | join('\n') }}"
+      changed_when: false
+
+    - name: Rebuild and restart containers
+      raw: |
+        cd {{ app_dir }} && docker compose -f {{ compose_file }} up -d --build 2>&1
+      register: compose_result
+
+    - name: Show compose output
+      raw: echo "{{ compose_result.stdout_lines | default(['no output']) | join('\n') }}"
+      changed_when: false
+
+    - name: Wait for containers to stabilize
+      raw: sleep 20
+      changed_when: false
+
+    - name: Check for pending Prisma migrations
+      raw: |
+        cd {{ app_dir }} && docker compose -f {{ compose_file }} exec -T calendar-core npx prisma migrate status 2>&1
+      register: migrate_status
+      changed_when: false
+      ignore_errors: true
+
+    - name: Run Prisma migrations if pending
+      raw: |
+        cd {{ app_dir }} && docker compose -f {{ compose_file }} exec -T calendar-core npx prisma migrate deploy 2>&1
+      when: "'pending' in migrate_status.stdout | default('')"
+      register: migrate_result
+      ignore_errors: true
+
+    - name: Health check — all services
+      raw: |
+        echo "calendar-core:     $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3334/ || echo 'DOWN')"
+        echo "calendar-finances: $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3335/api/v1/health || echo 'DOWN')"
+        echo "calendar-health:   $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3336/api/v1/health || echo 'DOWN')"
+        echo "calendar-agents:   $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3337/health || echo 'DOWN')"
+        echo "calendar-frontend: $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3001/ || echo 'DOWN')"
+        echo "finances-frontend: $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3003/ || echo 'DOWN')"
+        echo "health-frontend:   $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3004/ || echo 'DOWN')"
+        echo "langfuse:          $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3100/api/public/health || echo 'DOWN')"
+      changed_when: false
+
+    - name: Show container status
+      raw: |
+        cd {{ app_dir }} && docker compose -f {{ compose_file }} ps --format "table {% raw %}{{.Name}}\t{{.Status}}{% endraw %}" 2>/dev/null || docker compose -f {{ compose_file }} ps
+      changed_when: false

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
 import ProfileModal from '@/components/finances/ProfileModal';
 import BankAccountModal from '@/components/finances/BankAccountModal';
+import { API_BASE } from '@/lib/api';
 import type { Profile, BankAccount } from '@/types/finances';
 
 interface Calendar {
@@ -12,8 +13,6 @@ interface Calendar {
   name: string;
   email: string | null;
 }
-
-const API_BASE = 'http://localhost:3335/api/v1';
 
 export default function ConfiguracoesPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);

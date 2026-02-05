@@ -22,9 +22,7 @@ import type {
   Invoice,
   RecurringTransaction,
 } from '@/types/finances';
-
-
-const API_BASE = 'http://localhost:3335/api/v1';
+import { API_BASE } from '@/lib/api';
 
 // Format date to YYYY-MM-DD without timezone conversion
 const formatLocalDate = (date: Date) => {

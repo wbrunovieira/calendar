@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { API_BASE } from '@/lib/api';
 
 interface Transaction {
   id: string;
@@ -52,8 +53,6 @@ interface GlobalSearchProps {
   onSelectTransaction?: (id: string) => void;
   onSelectRecurring?: (id: string) => void;
 }
-
-const API_BASE = 'http://localhost:3335/api/v1';
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);

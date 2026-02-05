@@ -8,7 +8,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langfuse import Langfuse
 
-from app.agents.transaction.prompts import SYSTEM_PROMPT, USER_PROMPT
+from app.agents.transaction.prompts import FALLBACK_SYSTEM, FALLBACK_USER
 from app.agents.transaction.state import TransactionState
 from app.clients import finances
 from app.config import settings
@@ -21,6 +21,53 @@ langfuse = Langfuse(
     host=settings.langfuse_host,
     enabled=bool(settings.langfuse_public_key and settings.langfuse_secret_key),
 )
+
+# ── Prompt helpers ───────────────────────────────────────────
+
+_prompt_cache: dict | None = None
+
+
+def _get_langfuse_prompt() -> list[dict] | None:
+    """Fetch prompt from Langfuse with in-memory cache. Returns None on failure."""
+    global _prompt_cache
+    if _prompt_cache is not None:
+        return _prompt_cache
+    if not langfuse.enabled:
+        return None
+    try:
+        prompt = langfuse.get_prompt("transaction-parser", type="chat", label="production")
+        _prompt_cache = prompt
+        logger.info("Loaded prompt 'transaction-parser' v%s from Langfuse", prompt.version)
+        return prompt
+    except Exception:
+        logger.warning("Failed to fetch prompt from Langfuse, using local fallback")
+        return None
+
+
+def _build_messages(
+    raw_text: str, today: str, accounts_list: str, categories_list: str,
+) -> tuple[str, str, dict | None]:
+    """Build system + user messages. Returns (system, user, langfuse_prompt_or_None)."""
+    prompt = _get_langfuse_prompt()
+    if prompt is not None:
+        compiled = prompt.compile(
+            today=today,
+            accounts_list=accounts_list,
+            categories_list=categories_list,
+            raw_text=raw_text,
+        )
+        system = compiled[0]["content"]
+        user = compiled[1]["content"]
+        return system, user, prompt
+    # Local fallback — same structure, no Langfuse link
+    system = FALLBACK_SYSTEM
+    user = FALLBACK_USER.format(
+        today=today,
+        accounts_list=accounts_list,
+        categories_list=categories_list,
+        raw_text=raw_text,
+    )
+    return system, user, None
 
 
 async def load_context(state: TransactionState) -> dict:
@@ -67,19 +114,23 @@ async def parse_message(state: TransactionState) -> dict:
 
     today = date.today().isoformat()
 
-    system = SYSTEM_PROMPT.format(
+    system, user, lf_prompt = _build_messages(
+        raw_text=state["raw_text"],
         today=today,
         accounts_list=accounts_list,
         categories_list=categories_list,
     )
-    user = USER_PROMPT.format(raw_text=state["raw_text"])
 
-    generation = trace.generation(
-        name="parse_message",
-        model=settings.deepseek_model,
-        input=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-        metadata={"prompt_version": "v1"},
-    ) if trace else None
+    gen_kwargs: dict = {
+        "name": "parse_message",
+        "model": settings.deepseek_model,
+        "input": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        "metadata": {"prompt_source": "langfuse" if lf_prompt else "local"},
+    }
+    if lf_prompt is not None:
+        gen_kwargs["prompt"] = lf_prompt
+
+    generation = trace.generation(**gen_kwargs) if trace else None
 
     llm = ChatOpenAI(
         api_key=settings.deepseek_api_key,

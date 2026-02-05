@@ -3,9 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import AppLayout, { useProfile } from '@/components/layout/AppLayout';
+import { API_BASE } from '@/lib/api';
 import type { BudgetTarget, BudgetSummaryItem, Category, RecurringTransaction, Transaction } from '@/types/finances';
-
-const API_BASE = 'http://localhost:3335/api/v1';
 
 // Parse date without timezone conversion
 const parseLocalDate = (value: string) => {

@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import { API_BASE } from '@/lib/api';
 
 export interface Profile {
   id: string;
@@ -18,7 +19,6 @@ interface ProfileContextType {
 
 const ProfileContext = createContext<ProfileContextType | undefined>(undefined);
 
-const API_BASE = 'http://localhost:3335/api/v1';
 const STORAGE_KEY = 'finances_selected_profile_id';
 
 export function ProfileProvider({ children }: { children: ReactNode }) {

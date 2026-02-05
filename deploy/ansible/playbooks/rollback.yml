@@ -1,0 +1,57 @@
+---
+# Rollback to a previous commit
+# Usage: ansible-playbook playbooks/rollback.yml -e "commits=1"
+#   commits: number of commits to go back (default: 1)
+- name: Rollback Calendar deployment
+  hosts: calendar_server
+  gather_facts: false
+
+  vars:
+    commits: 1
+
+  tasks:
+    - name: Show current commit
+      raw: |
+        cd {{ app_dir }} && git log --oneline -3
+      register: before_log
+      changed_when: false
+
+    - name: Show current commit info
+      raw: echo "{{ before_log.stdout_lines | default(['no output']) | join('\n') }}"
+      changed_when: false
+
+    - name: Rollback git by {{ commits }} commit(s)
+      raw: |
+        cd {{ app_dir }} && git reset --hard HEAD~{{ commits }} 2>&1
+      register: rollback_result
+
+    - name: Show rollback result
+      raw: echo "{{ rollback_result.stdout_lines | default(['no output']) | join('\n') }}"
+      changed_when: false
+
+    - name: Rebuild and restart containers
+      raw: |
+        cd {{ app_dir }} && docker compose -f {{ compose_file }} up -d --build 2>&1
+      register: compose_result
+
+    - name: Wait for containers to stabilize
+      raw: sleep 25
+      changed_when: false
+
+    - name: Health check after rollback
+      raw: |
+        echo "Post-rollback health:"
+        echo "  calendar-core:     $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3334/ || echo 'DOWN')"
+        echo "  calendar-finances: $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3335/api/v1/health || echo 'DOWN')"
+        echo "  calendar-health:   $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3336/api/v1/health || echo 'DOWN')"
+        echo "  calendar-agents:   $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3337/health || echo 'DOWN')"
+        echo "  calendar-frontend: $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3001/ || echo 'DOWN')"
+        echo "  finances-frontend: $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3003/ || echo 'DOWN')"
+        echo "  health-frontend:   $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3004/ || echo 'DOWN')"
+        echo "  langfuse:          $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3100/api/public/health || echo 'DOWN')"
+      changed_when: false
+
+    - name: Show current commit after rollback
+      raw: |
+        cd {{ app_dir }} && git log --oneline -3
+      changed_when: false

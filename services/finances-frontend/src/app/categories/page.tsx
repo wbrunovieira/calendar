@@ -4,9 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
 import { useProfile } from '@/contexts/ProfileContext';
+import { API_BASE } from '@/lib/api';
 import type { Category, CategoryType } from '@/types/finances';
-
-const API_BASE = 'http://localhost:3335/api/v1';
 
 interface CategoryFormData {
   name: string;
