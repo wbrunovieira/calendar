@@ -26,12 +26,23 @@ cd services/finances-frontend && npm install && npm run dev
 - **calendar-frontend** (Next.js 15.5 + React 19): Calendar web interface on port 3000 - Runs locally
 - **calendar-finances** (Go 1.23 + Gorilla Mux): Financial service on port 3335 - Runs in Docker
 - **finances-frontend** (Next.js 15.5): Financial dashboard on port 3003 - Runs locally
+- **calendar-agents** (Python 3.12 + FastAPI + LangGraph): AI agent service on port 3337 - Runs in Docker
 - **postgres** (PostgreSQL 15): Database on port 5433 (host) / 5432 (container)
 
+#### Langfuse v3 (Observability Stack)
+- **langfuse-web** (Langfuse 3): Dashboard UI on port 3100
+- **langfuse-worker** (Langfuse Worker 3): Background job processor on port 3030 (localhost only)
+- **langfuse-postgres** (PostgreSQL 17): Langfuse database on port 5434 (localhost only)
+- **langfuse-clickhouse** (ClickHouse): Analytics engine on port 8123/9001 (localhost only)
+- **langfuse-minio** (MinIO): S3-compatible object storage on port 9090 (API) / 9091 (console, localhost only)
+- **langfuse-redis** (Redis 7): Queue/cache on port 6379 (localhost only)
+
 ### Key Design Decisions
-- **No Redis**: Single-user personal project uses in-memory cache and PostgreSQL-based queues
+- **No Redis for calendar**: Single-user personal project uses in-memory cache and PostgreSQL-based queues (Redis is only used by Langfuse)
 - **Separate finance schema**: `finance.*` tables isolated from `public.*` calendar tables
+- **Separate Langfuse PostgreSQL**: Dedicated database to avoid migration conflicts with calendar-postgres
 - **Frontends run locally**: Better DX with faster hot-reload outside Docker
+- **Secrets via .env**: Langfuse sensitive keys (`LANGFUSE_ENCRYPTION_KEY`, `LANGFUSE_NEXTAUTH_SECRET`, `LANGFUSE_SALT`) have no defaults in docker-compose.yml — must be set in `.env`
 
 ### Domain-Driven Design (calendar-core)
 
@@ -72,11 +83,40 @@ Located in `services/calendar-finances/internal/`:
 
 **Design Decision:** Only recurring bills appear on calendar; all financial analysis happens in dedicated dashboard.
 
+### AI Agents Module (calendar-agents)
+
+Located in `services/calendar-agents/`:
+
+```
+services/calendar-agents/
+├── Dockerfile              # Multi-stage (builder + runtime), non-root user
+├── requirements.txt        # fastapi, uvicorn, langgraph, langchain-core, langfuse, httpx
+├── .env.example
+└── app/
+    ├── __init__.py
+    ├── main.py             # FastAPI + lifespan (imports/compiles graph at startup, no execution)
+    ├── health.py           # GET /health (liveness) + GET /health?deep=1 (readiness with graph execution)
+    └── graph.py            # StateGraph ping-pong (build_graph + verify_graph)
+```
+
+**Health Endpoints:**
+- `GET /health` — liveness check, reports if LangGraph compiled successfully
+- `GET /health?deep=1` — readiness check, executes the ping-pong graph and returns result
+
+### Langfuse v3 (Observability)
+
+LLM observability platform for tracing and monitoring AI agent executions. Accessible at `http://localhost:3100`.
+
+**Infrastructure:** 6 containers (web, worker, postgres, clickhouse, minio, redis) all on `calendar-network`. ClickHouse uses a custom Keeper config (`config/clickhouse/clickhouse-config.xml`) for `ReplicatedMergeTree` support.
+
+**Internal communication:** Containers use internal Docker hostnames (e.g., `http://langfuse-web:3000`, `http://langfuse-minio:9000`), not localhost.
+
 ### Key Integrations
 - Google Calendar API (OAuth2)
 - Linear API for project task tracking
 - Mercado Pago API for financial transactions
 - Nubank data import (CSV/OFX)
+- Langfuse (LLM tracing and observability)
 
 ## Development Commands
 
@@ -108,6 +148,14 @@ docker-compose exec calendar-finances go test -v ./...                 # Verbose
 docker-compose exec calendar-finances go test ./internal/domain/...    # Specific package
 docker-compose exec calendar-finances go test -cover ./...             # Coverage
 docker-compose exec calendar-finances go build -o bin/api cmd/api/main.go  # Build
+```
+
+### calendar-agents (Python) - Runs in Docker
+```bash
+docker-compose logs -f calendar-agents                         # View logs
+curl http://localhost:3337/health                              # Liveness check
+curl http://localhost:3337/health?deep=1                       # Deep check (executes graph)
+docker-compose exec calendar-agents pip install <package>      # Install package
 ```
 
 ### Frontends - Run locally
@@ -169,6 +217,10 @@ Schema prefix: `finance.`
 All prefixed with `/api/v1`:
 - `/profiles`, `/bank-accounts`, `/transactions`, `/recurring-transactions`, `/budgets`, `/categories`
 
+### calendar-agents
+- `GET /health` — liveness (reports LangGraph availability)
+- `GET /health?deep=1` — readiness (executes ping-pong graph)
+
 ## Testing
 
 ### Frameworks
@@ -196,3 +248,6 @@ Copy `.env.example` to `.env` and configure:
 - Linear API key
 - Mercado Pago access token
 - JWT secret
+- Langfuse secrets (**required**, no defaults): `LANGFUSE_ENCRYPTION_KEY`, `LANGFUSE_NEXTAUTH_SECRET`, `LANGFUSE_SALT` — generate with `openssl rand -hex 32`
+- Langfuse API keys (for calendar-agents): `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` — create in Langfuse UI at http://localhost:3100
+- LLM provider key: `OPENAI_API_KEY`
