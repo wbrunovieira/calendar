@@ -54,7 +54,7 @@ EXPECTED_CONTAINERS=(
 ENDPOINTS=(
     "Calendar API|https://calendar-api.wbdigitalsolutions.com/|200"
     "Finances API|https://calendar-finances.wbdigitalsolutions.com/|200"
-    "Health API|https://calendar-health.wbdigitalsolutions.com/|200"
+    "Health API|https://calendar-health.wbdigitalsolutions.com/api/v1/health|200"
     "Agents API|https://calendar-agents.wbdigitalsolutions.com/health|200"
     "Calendar UI|https://calendar.wbdigitalsolutions.com/|302"
     "Finances UI|https://finances.wbdigitalsolutions.com/|302"
@@ -177,7 +177,7 @@ check_endpoints() {
 
     for entry in "${ENDPOINTS[@]}"; do
         IFS='|' read -r label url expected <<< "$entry"
-        CODE=$(curl -sf -o /dev/null -w '%{http_code}' --max-time 10 "$url" 2>/dev/null || echo "000")
+        CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$url" 2>/dev/null || echo "000")
 
         if [[ "$CODE" == "$expected" ]]; then
             EP_OK=$((EP_OK + 1))
