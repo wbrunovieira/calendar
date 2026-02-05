@@ -274,7 +274,8 @@ check_security() {
     # Failed SSH attempts (last 24h)
     SSH_FAILS=0
     if [[ -f /var/log/auth.log ]]; then
-        SSH_FAILS=$(grep -c "Failed password" /var/log/auth.log 2>/dev/null || echo "0")
+        SSH_FAILS=$(grep "Failed password" /var/log/auth.log 2>/dev/null | wc -l || true)
+        SSH_FAILS=$((SSH_FAILS + 0))  # ensure numeric
     fi
 
     if [[ "$SSH_FAILS" -gt 100 ]]; then
