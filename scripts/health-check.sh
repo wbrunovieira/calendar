@@ -102,15 +102,18 @@ collect_host() {
     DISK_USED=$(echo "$DISK_LINE" | awk '{gsub("G",""); print $3}')
     DISK_PCT=$(echo "$DISK_LINE" | awk '{gsub("%",""); print $5}')
 
-    [[ "$RAM_PCT" -ge 90 ]] && add_alert "RAM: ${RAM_USED_GB}/${RAM_TOTAL_GB} GB (${RAM_PCT}%)"
-    [[ "$RAM_PCT" -ge 80 && "$RAM_PCT" -lt 90 ]] && add_warning "RAM: ${RAM_USED_GB}/${RAM_TOTAL_GB} GB (${RAM_PCT}%)"
-    [[ "$DISK_PCT" -ge 85 ]] && add_alert "Disco: ${DISK_USED}/${DISK_TOTAL} GB (${DISK_PCT}%)"
-    [[ "$DISK_PCT" -ge 75 && "$DISK_PCT" -lt 85 ]] && add_warning "Disco: ${DISK_USED}/${DISK_TOTAL} GB (${DISK_PCT}%)"
+    [[ "$RAM_PCT" -ge 90 ]] && add_alert "Memoria quase cheia: ${RAM_PCT}%"
+    [[ "$RAM_PCT" -ge 80 && "$RAM_PCT" -lt 90 ]] && add_warning "Memoria alta: ${RAM_PCT}%"
+    [[ "$DISK_PCT" -ge 85 ]] && add_alert "Disco quase cheio: ${DISK_PCT}%"
+    [[ "$DISK_PCT" -ge 75 && "$DISK_PCT" -lt 85 ]] && add_warning "Disco acima de 75%: ${DISK_PCT}%"
 
-    HOST_SECTION="CPU: ${LOAD}
-RAM: ${RAM_USED_GB}/${RAM_TOTAL_GB} GB (${RAM_PCT}%)
-Disco: ${DISK_USED}/${DISK_TOTAL} GB (${DISK_PCT}%)
-Uptime: ${UPTIME_DAYS} dias"
+    # CPU load as % of total cores (6)
+    CPU_1MIN=$(awk '{printf "%.0f", ($1/6)*100}' /proc/loadavg 2>/dev/null || echo "?")
+
+    HOST_SECTION="Processador: ${CPU_1MIN}% usado
+Memoria: ${RAM_USED_GB} de ${RAM_TOTAL_GB} GB (${RAM_PCT}%)
+Disco: ${DISK_USED} de ${DISK_TOTAL} GB (${DISK_PCT}%)
+Ligado ha: ${UPTIME_DAYS} dias"
 }
 
 # ── 2. Docker Containers ─────────────────────────────────────
@@ -147,25 +150,25 @@ collect_containers() {
                     LOCAL_PCT=$(awk "BEGIN {printf \"%.0f\", $MEM_USED_MB/$MEM_LIMIT_MB*100}")
 
                     if [[ "$LOCAL_PCT" -ge 90 ]]; then
-                        add_alert "${name}: ${MEM_USED_MB}/${MEM_LIMIT_MB} MB (${LOCAL_PCT}%)"
+                        add_alert "${name}: memoria ${LOCAL_PCT}% (${MEM_USED_MB}/${MEM_LIMIT_MB} MB)"
                     elif [[ "$LOCAL_PCT" -ge 80 ]]; then
-                        add_warning "${name}: ${MEM_USED_MB}/${MEM_LIMIT_MB} MB (${LOCAL_PCT}%)"
+                        add_warning "${name}: memoria ${LOCAL_PCT}% (${MEM_USED_MB}/${MEM_LIMIT_MB} MB)"
                     fi
                 fi
             fi
 
-            [[ "$RESTARTS" -gt 0 ]] && add_warning "${name}: ${RESTARTS} restarts"
+            [[ "$RESTARTS" -gt 0 ]] && add_warning "${name}: reiniciou ${RESTARTS}x"
         else
-            add_alert "${name}: ${STATUS}"
+            add_alert "${name}: parado (${STATUS})"
             CONTAINER_ISSUES="${CONTAINER_ISSUES}
   - ${name}: ${STATUS}"
         fi
     done
 
     if [[ "$RUNNING" -eq "$TOTAL" ]]; then
-        CONTAINER_SECTION="Containers: ${RUNNING}/${TOTAL} running"
+        CONTAINER_SECTION="Servicos: ${RUNNING}/${TOTAL} rodando"
     else
-        CONTAINER_SECTION="Containers: ${RUNNING}/${TOTAL} running${CONTAINER_ISSUES}"
+        CONTAINER_SECTION="Servicos: ${RUNNING}/${TOTAL} rodando${CONTAINER_ISSUES}"
     fi
 }
 
@@ -182,16 +185,16 @@ check_endpoints() {
         if [[ "$CODE" == "$expected" ]]; then
             EP_OK=$((EP_OK + 1))
         else
-            add_alert "${label}: HTTP ${CODE} (esperado ${expected})"
+            add_alert "${label}: fora do ar (HTTP ${CODE})"
             EP_ISSUES="${EP_ISSUES}
   - ${label}: ${CODE}"
         fi
     done
 
     if [[ "$EP_OK" -eq "$EP_TOTAL" ]]; then
-        ENDPOINT_SECTION="Endpoints: ${EP_OK}/${EP_TOTAL} OK"
+        ENDPOINT_SECTION="Sites: ${EP_OK}/${EP_TOTAL} respondendo"
     else
-        ENDPOINT_SECTION="Endpoints: ${EP_OK}/${EP_TOTAL} OK${EP_ISSUES}"
+        ENDPOINT_SECTION="Sites: ${EP_OK}/${EP_TOTAL} respondendo${EP_ISSUES}"
     fi
 }
 
@@ -211,19 +214,19 @@ check_ssl() {
             [[ "$DAYS_LEFT" -lt "$SSL_MIN_DAYS" ]] && SSL_MIN_DAYS=$DAYS_LEFT
 
             if [[ "$DAYS_LEFT" -lt 7 ]]; then
-                add_alert "SSL ${domain}: ${DAYS_LEFT} dias"
+                add_alert "Certificado ${domain}: vence em ${DAYS_LEFT} dias!"
             elif [[ "$DAYS_LEFT" -lt 14 ]]; then
-                add_warning "SSL ${domain}: ${DAYS_LEFT} dias"
+                add_warning "Certificado ${domain}: vence em ${DAYS_LEFT} dias"
             fi
         else
-            add_warning "SSL ${domain}: falha ao verificar"
+            add_warning "Certificado ${domain}: nao consegui verificar"
         fi
     done
 
     if [[ "$SSL_MIN_DAYS" -lt 999 ]]; then
-        SSL_SECTION="SSL: min ${SSL_MIN_DAYS} dias"
+        SSL_SECTION="Certificados: renovam em ${SSL_MIN_DAYS} dias"
     else
-        SSL_SECTION="SSL: n/a"
+        SSL_SECTION="Certificados: nao verificado"
     fi
 }
 
@@ -235,10 +238,10 @@ check_databases() {
     LF_DB_SIZE=$(docker exec langfuse-postgres psql -U langfuse -d langfuse_db -t -c \
         "SELECT pg_size_pretty(pg_database_size('langfuse_db'));" 2>/dev/null | xargs || echo "ERRO")
 
-    [[ "$CAL_DB_SIZE" == "ERRO" ]] && add_alert "Calendar DB: conexao falhou"
-    [[ "$LF_DB_SIZE" == "ERRO" ]] && add_alert "Langfuse DB: conexao falhou"
+    [[ "$CAL_DB_SIZE" == "ERRO" ]] && add_alert "Banco Calendar: sem conexao"
+    [[ "$LF_DB_SIZE" == "ERRO" ]] && add_alert "Banco Langfuse: sem conexao"
 
-    DB_SECTION="DB: calendar ${CAL_DB_SIZE} | langfuse ${LF_DB_SIZE}"
+    DB_SECTION="Bancos: Calendar ${CAL_DB_SIZE} | Langfuse ${LF_DB_SIZE}"
 }
 
 # ── 6. Format Message ─────────────────────────────────────────
@@ -247,9 +250,9 @@ format_message() {
     local has_warnings=${#WARNINGS[@]}
 
     if [[ "$has_alerts" -gt 0 ]]; then
-        HEADER="Server Health — ALERTA — ${NOW}"
+        HEADER="Servidor WB — PROBLEMAS — ${NOW}"
     else
-        HEADER="Server Health — ${NOW}"
+        HEADER="Servidor WB — ${NOW}"
     fi
 
     MSG="${HEADER}
@@ -287,7 +290,7 @@ AVISOS:"
     if [[ "$has_alerts" -eq 0 && "$has_warnings" -eq 0 ]]; then
         MSG="${MSG}
 
-Tudo OK"
+Tudo certo!"
     fi
 }
 
