@@ -244,7 +244,93 @@ check_databases() {
     DB_SECTION="Bancos: Calendar ${CAL_DB_SIZE} | Langfuse ${LF_DB_SIZE}"
 }
 
-# ── 6. Format Message ─────────────────────────────────────────
+# ── 6. Security Checks ────────────────────────────────────────
+check_security() {
+    SECURITY_LINES=""
+
+    # fail2ban status
+    if command -v fail2ban-client &>/dev/null; then
+        TOTAL_BANNED=0
+        JAIL_DETAILS=""
+        while read -r jail; do
+            jail=$(echo "$jail" | xargs)
+            [[ -z "$jail" ]] && continue
+            BANNED=$(fail2ban-client status "$jail" 2>/dev/null | grep "Currently banned" | awk '{print $NF}')
+            BANNED=${BANNED:-0}
+            TOTAL_BANNED=$((TOTAL_BANNED + BANNED))
+            [[ "$BANNED" -gt 0 ]] && JAIL_DETAILS="${JAIL_DETAILS} ${jail}=${BANNED}"
+        done <<< "$(fail2ban-client status 2>/dev/null | grep 'Jail list' | sed 's/.*://' | tr ',' '\n')"
+
+        if [[ "$TOTAL_BANNED" -gt 0 ]]; then
+            SECURITY_LINES="fail2ban: ${TOTAL_BANNED} IPs bloqueados (${JAIL_DETAILS# })"
+        else
+            SECURITY_LINES="fail2ban: nenhum IP bloqueado"
+        fi
+    else
+        SECURITY_LINES="fail2ban: nao instalado"
+        add_warning "fail2ban nao esta instalado"
+    fi
+
+    # Failed SSH attempts (last 24h)
+    SSH_FAILS=0
+    if [[ -f /var/log/auth.log ]]; then
+        YESTERDAY=$(date -d '24 hours ago' '+%b %e' 2>/dev/null || date '+%b %e')
+        SSH_FAILS=$(grep "Failed password" /var/log/auth.log 2>/dev/null | wc -l)
+    fi
+
+    if [[ "$SSH_FAILS" -gt 100 ]]; then
+        add_warning "SSH: ${SSH_FAILS} tentativas de login falhas"
+        TOP_ATTACKERS=$(grep "Failed password" /var/log/auth.log 2>/dev/null | grep -oP 'from \K[0-9.]+' | sort | uniq -c | sort -rn | head -3 | awk '{printf "%s (%sx), ", $2, $1}' | sed 's/, $//')
+        SECURITY_LINES="${SECURITY_LINES}
+SSH: ${SSH_FAILS} tentativas falhas — top: ${TOP_ATTACKERS}"
+    elif [[ "$SSH_FAILS" -gt 0 ]]; then
+        SECURITY_LINES="${SECURITY_LINES}
+SSH: ${SSH_FAILS} tentativas falhas (normal)"
+    else
+        SECURITY_LINES="${SECURITY_LINES}
+SSH: nenhuma tentativa falha"
+    fi
+
+    # Unexpected exposed ports (Docker bypasses UFW)
+    # Expected on 0.0.0.0: 22 (SSH), 80 (HTTP), 443 (HTTPS)
+    EXPOSED_PORTS=""
+    while read -r port; do
+        [[ -z "$port" ]] && continue
+        case "$port" in
+            22|80|443) ;; # expected
+            *) EXPOSED_PORTS="${EXPOSED_PORTS} ${port}" ;;
+        esac
+    done <<< "$(ss -tlnp 2>/dev/null | grep '0.0.0.0:' | grep -oP '0\.0\.0\.0:\K[0-9]+' | sort -un)"
+    # Also check wildcard (*:port)
+    while read -r port; do
+        [[ -z "$port" ]] && continue
+        case "$port" in
+            22|80|443) ;;
+            *) EXPOSED_PORTS="${EXPOSED_PORTS} ${port}" ;;
+        esac
+    done <<< "$(ss -tlnp 2>/dev/null | grep '\*:' | grep -oP '\*:\K[0-9]+' | sort -un)"
+
+    if [[ -n "$EXPOSED_PORTS" ]]; then
+        add_warning "Portas expostas alem de 22/80/443:${EXPOSED_PORTS}"
+        SECURITY_LINES="${SECURITY_LINES}
+Portas expostas:${EXPOSED_PORTS} (alem de 22/80/443)"
+    else
+        SECURITY_LINES="${SECURITY_LINES}
+Portas: apenas 22/80/443 abertas"
+    fi
+
+    # Recent logins (non-local)
+    RECENT_LOGINS=$(last -5 -i 2>/dev/null | grep -v "reboot\|wtmp\|^$" | head -3)
+    if [[ -n "$RECENT_LOGINS" ]]; then
+        LOGIN_IPS=$(last -i 2>/dev/null | grep -v "reboot\|wtmp\|^$" | awk '{print $3}' | sort -u | head -5 | tr '\n' ', ' | sed 's/,$//')
+        SECURITY_LINES="${SECURITY_LINES}
+Logins recentes: ${LOGIN_IPS}"
+    fi
+
+    SECURITY_SECTION="$SECURITY_LINES"
+}
+
+# ── 7. Format Message ─────────────────────────────────────────
 format_message() {
     local has_alerts=${#ALERTS[@]}
     local has_warnings=${#WARNINGS[@]}
@@ -265,7 +351,9 @@ ${ENDPOINT_SECTION}
 
 ${SSL_SECTION}
 
-${DB_SECTION}"
+${DB_SECTION}
+
+${SECURITY_SECTION}"
 
     if [[ "$has_alerts" -gt 0 ]]; then
         MSG="${MSG}
@@ -385,6 +473,7 @@ main() {
     check_endpoints
     check_ssl
     check_databases
+    check_security
     format_message
 
     # Always log locally
