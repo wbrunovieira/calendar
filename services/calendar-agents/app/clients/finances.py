@@ -27,5 +27,7 @@ async def get_categories(profile_id: str, category_type: str | None = None) -> l
 async def create_transaction(payload: dict) -> dict:
     async with httpx.AsyncClient(base_url=settings.finances_base_url, timeout=10) as client:
         resp = await client.post("/api/v1/transactions", json=payload)
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            error_body = resp.text.strip()
+            raise RuntimeError(error_body or f"HTTP {resp.status_code}")
         return resp.json()
