@@ -502,7 +502,113 @@ Já existentes e necessários:
 
 ---
 
-## 10. Verificação
+## 10. Testes
+
+### Estrutura de testes
+
+```
+services/calendar-agents/tests/
+├── conftest.py                          # Fixtures compartilhadas (fake accounts, categories, profiles)
+├── unit/
+│   ├── test_nodes.py                    # Testes unitários de cada node isolado
+│   ├── test_prompts.py                  # Valida formatação dos prompts
+│   └── test_format_reply.py             # Formatação de valores BRL, edge cases
+├── integration/
+│   ├── test_graph.py                    # Graph completo com LLM mockado
+│   ├── test_finances_client.py          # Client httpx contra calendar-finances real
+│   └── test_langfuse_tracing.py         # Verifica que traces são criados corretamente
+└── e2e/
+    ├── test_transaction_endpoint.py     # POST /agents/transaction com serviços reais
+    └── test_whatsapp_flow.py            # Envia mensagem no grupo e valida resposta
+```
+
+### Unitários (`tests/unit/`)
+
+Testam cada função isoladamente com mocks. Sem rede, sem LLM, sem banco.
+
+| Teste | O que valida |
+|-------|-------------|
+| `test_load_context_success` | Retorna accounts e categories quando API responde ok |
+| `test_load_context_api_error` | Retorna error e reply quando API falha |
+| `test_parse_message_valid` | LLM retorna JSON válido → parsed preenchido |
+| `test_parse_message_null` | LLM retorna "null" → error parse_failed |
+| `test_parse_message_invalid_json` | LLM retorna texto inválido → error parse_failed |
+| `test_resolve_entities_match` | account_name "Nubank" → encontra ID correto |
+| `test_resolve_entities_not_found` | account_name "Bradesco" → error account_not_found com lista de contas |
+| `test_resolve_entities_no_account` | account_name null → bank_account_id null |
+| `test_resolve_entities_category_not_found` | category_name não existe → category_id null (sem erro) |
+| `test_create_transaction_success` | Monta payload correto e retorna transaction |
+| `test_create_transaction_no_account` | Sem bank_account_id → error account_required |
+| `test_create_transaction_api_error` | API retorna erro → error api_error |
+| `test_format_reply_expense` | "✓ Almoço R$ 32,00 (Nubank → Alimentação)" |
+| `test_format_reply_no_category` | "✓ Uber R$ 18,50 (Nubank)" |
+| `test_format_reply_large_amount` | "✓ Salário R$ 8.000,00 (Itaú → Renda)" |
+| `test_prompt_formatting` | Verifica que placeholders {today}, {accounts_list}, {categories_list} são preenchidos |
+
+**Mocks:**
+- `finances.get_bank_accounts` / `finances.get_categories` / `finances.create_transaction` → `unittest.mock.AsyncMock`
+- `ChatOpenAI.ainvoke` → retorna `AIMessage(content=json.dumps(...))` fixo
+
+### Integração (`tests/integration/`)
+
+Testam componentes conectados. LLM mockado, mas calendar-finances real (Docker).
+
+| Teste | O que valida |
+|-------|-------------|
+| `test_graph_full_success` | Graph completo: input → load_context → parse → resolve → create → format_reply |
+| `test_graph_parse_failure` | Graph para em parse_message quando LLM retorna null |
+| `test_graph_account_not_found` | Graph para em resolve_entities quando conta não existe |
+| `test_finances_client_accounts` | `get_bank_accounts` retorna dados reais do profile de teste |
+| `test_finances_client_categories` | `get_categories` retorna dados reais do profile de teste |
+| `test_finances_client_create` | `create_transaction` cria transação real e retorna ID |
+| `test_langfuse_trace_created` | Após execução, trace existe no Langfuse com spans corretos |
+
+**Pré-requisitos:** `docker compose up -d calendar-finances postgres`
+
+### E2E (`tests/e2e/`)
+
+Testam o fluxo completo com serviços reais (inclusive LLM).
+
+| Teste | O que valida |
+|-------|-------------|
+| `test_endpoint_success` | POST /agents/transaction → status "created", transaction com ID válido |
+| `test_endpoint_missing_profile` | POST sem profile_id e sem env → error missing_profile |
+| `test_endpoint_invalid_text` | POST com text "bom dia" → error parse_failed |
+| `test_whatsapp_send_and_read` | Envia msg no grupo via Evolution → lê mensagem → valida resposta |
+
+**Pré-requisitos:** Todos os serviços rodando + chave DeepSeek válida
+
+### Dependências de teste
+
+Adicionar ao `requirements.txt` (ou `requirements-dev.txt`):
+```
+pytest>=8.0,<9
+pytest-asyncio>=0.24,<1
+httpx  # já existe — usado como test client via `httpx.ASGITransport`
+```
+
+### Comandos
+
+```bash
+# Unitários (sem Docker)
+docker compose exec calendar-agents python -m pytest tests/unit/ -v
+
+# Integração (com calendar-finances rodando)
+docker compose exec calendar-agents python -m pytest tests/integration/ -v
+
+# E2E (todos os serviços + LLM)
+docker compose exec calendar-agents python -m pytest tests/e2e/ -v
+
+# Todos
+docker compose exec calendar-agents python -m pytest tests/ -v
+
+# Com coverage
+docker compose exec calendar-agents python -m pytest tests/ --cov=app --cov-report=term-missing
+```
+
+---
+
+## 11. Verificação manual
 
 ```bash
 # 1. Rebuild calendar-agents

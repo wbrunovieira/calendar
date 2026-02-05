@@ -31,5 +31,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="calendar-agents", lifespan=lifespan)
 
 from app.health import router as health_router  # noqa: E402
+from app.agents.transaction.router import router as transaction_router  # noqa: E402
 
 app.include_router(health_router)
+app.include_router(transaction_router)
