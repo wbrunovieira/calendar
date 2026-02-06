@@ -26,7 +26,7 @@
       changed_when: false
 
     - name: Check rclone is installed
-      raw: which rclone && rclone listremotes 2>/dev/null || echo "WARN: rclone not configured"
+      raw: "which rclone && rclone listremotes 2>/dev/null || echo 'WARN: rclone not configured'"
       register: rclone_check
       changed_when: false
 
@@ -65,7 +65,7 @@
         (crontab -l 2>/dev/null; echo "# Daily backup at 4am BRT (07:00 UTC)"; echo "0 7 * * * {{ app_dir }}/scripts/backup.sh >> /var/log/calendar-backup.log 2>&1") | crontab -
 
     - name: Verify crontab
-      raw: "crontab -l 2>/dev/null | grep backup || echo 'WARN: cron not found'"
+      raw: "crontab -l 2>/dev/null | grep backup || echo 'WARN cron not found'"
       register: cron_verify
       changed_when: false
 
