@@ -42,6 +42,7 @@ access_control:
         - 'finances.wbdigitalsolutions.com'
         - 'health.wbdigitalsolutions.com'
         - 'calendar-langfuse.wbdigitalsolutions.com'
+        - 'projects.wbdigitalsolutions.com'
       policy: one_factor
 
 session:
