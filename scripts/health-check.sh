@@ -382,9 +382,10 @@ send_whatsapp() {
         return 1
     fi
 
+    local escaped_msg
+    escaped_msg=$(printf '%s' "$MSG" | sed 's/\\/\\\\/g; s/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
     local payload
-    payload=$(jq -n --arg number "$WHATSAPP_NOTIFY_NUMBER" --arg text "$MSG" \
-        '{number: $number, text: $text}')
+    payload=$(printf '{"number":"%s","text":"%s"}' "$WHATSAPP_NOTIFY_NUMBER" "$escaped_msg")
 
     local attempt=1
     SEND_ERROR=""

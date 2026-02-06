@@ -45,9 +45,10 @@ log() {
 notify_whatsapp() {
     local msg="$1"
     [[ -z "$EVOLUTION_API_URL" || -z "$EVOLUTION_API_KEY" ]] && return 0
+    local escaped_msg
+    escaped_msg=$(printf '%s' "$msg" | sed 's/\\/\\\\/g; s/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
     local payload
-    payload=$(jq -n --arg number "$WHATSAPP_NOTIFY_NUMBER" --arg text "$msg" \
-        '{number: $number, text: $text}')
+    payload=$(printf '{"number":"%s","text":"%s"}' "$WHATSAPP_NOTIFY_NUMBER" "$escaped_msg")
     curl -s -o /dev/null --max-time 10 \
         -X POST "${EVOLUTION_API_URL}/message/sendText/${EVOLUTION_INSTANCE}" \
         -H "apikey: ${EVOLUTION_API_KEY}" \
