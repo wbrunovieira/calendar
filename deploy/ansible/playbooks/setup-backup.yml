@@ -1,0 +1,119 @@
+---
+# Setup daily backup cron on production server
+# Usage: ansible-playbook playbooks/setup-backup.yml
+#
+# Prerequisites:
+#   - rclone configured with "gdrive:" remote on server
+#   - Evolution API credentials in .env (for error notifications)
+#   - jq installed on server
+- name: Setup Daily Backup
+  hosts: calendar_server
+  gather_facts: false
+
+  tasks:
+    # ── Pull latest code (gets the script) ─────────────────────
+    - name: Pull latest code
+      raw: cd {{ app_dir }} && git pull origin {{ git_branch }} 2>&1
+      register: git_result
+
+    - name: Show git changes
+      raw: echo "{{ git_result.stdout_lines | default(['no output']) | join('\n') }}"
+      changed_when: false
+
+    # ── Ensure dependencies ─────────────────────────────────────
+    - name: Ensure jq is installed
+      raw: which jq || (apt-get update -qq && apt-get install -y -qq jq)
+      changed_when: false
+
+    - name: Check rclone is installed
+      raw: which rclone && rclone listremotes 2>/dev/null || echo "WARN: rclone not configured"
+      register: rclone_check
+      changed_when: false
+
+    # ── Create directories and log files ─────────────────────────
+    - name: Create backup directory
+      raw: mkdir -p /opt/backups/calendar
+      changed_when: false
+
+    - name: Ensure log file exists
+      raw: touch /var/log/calendar-backup.log
+      changed_when: false
+
+    # ── Make script executable ──────────────────────────────────
+    - name: Ensure backup.sh is executable
+      raw: chmod +x {{ app_dir }}/scripts/backup.sh
+
+    # ── Setup logrotate ─────────────────────────────────────────
+    - name: Create logrotate config for backup
+      raw: |
+        cat > /etc/logrotate.d/calendar-backup << 'EOF'
+        /var/log/calendar-backup.log {
+            weekly
+            rotate 4
+            compress
+            missingok
+            notifempty
+        }
+        EOF
+
+    # ── Setup crontab ───────────────────────────────────────────
+    - name: Remove old backup cron if any
+      raw: crontab -l 2>/dev/null | grep -v 'backup.sh' | crontab - 2>/dev/null || true
+
+    - name: Add backup cron (4am BRT = 7am UTC)
+      raw: |
+        (crontab -l 2>/dev/null; echo "# Daily backup at 4am BRT (07:00 UTC)"; echo "0 7 * * * {{ app_dir }}/scripts/backup.sh >> /var/log/calendar-backup.log 2>&1") | crontab -
+
+    - name: Verify crontab
+      raw: "crontab -l 2>/dev/null | grep backup || echo 'WARN: cron not found'"
+      register: cron_verify
+      changed_when: false
+
+    - name: Show crontab
+      raw: echo "{{ cron_verify.stdout_lines | default(['no output']) | join('\n') }}"
+      changed_when: false
+
+    # ── Test run ────────────────────────────────────────────────
+    - name: Run backup (test)
+      raw: |
+        cd {{ app_dir }} && bash scripts/backup.sh 2>&1
+      register: test_run
+      ignore_errors: true
+
+    - name: Show backup output
+      raw: echo "{{ test_run.stdout_lines | default(['no output']) | join('\n') }}"
+      changed_when: false
+
+    # ── Verify Google Drive upload ──────────────────────────────
+    - name: Check Google Drive contents
+      raw: rclone ls gdrive:backups/calendar/ 2>/dev/null | tail -5 || echo "Could not list Google Drive"
+      register: gdrive_check
+      changed_when: false
+
+    - name: Show Google Drive contents
+      raw: echo "{{ gdrive_check.stdout_lines | default(['no output']) | join('\n') }}"
+      changed_when: false
+
+    # ── Summary ─────────────────────────────────────────────────
+    - name: Setup summary
+      raw: |
+        echo "=========================================="
+        echo "  Backup Cron Setup Complete"
+        echo "=========================================="
+        echo ""
+        echo "Schedule: Daily at 04:00 BRT (07:00 UTC)"
+        echo "Script:   {{ app_dir }}/scripts/backup.sh"
+        echo "Logs:     /var/log/calendar-backup.log"
+        echo "Local:    /opt/backups/calendar/"
+        echo "Remote:   gdrive:backups/calendar/"
+        echo "Retain:   7 days"
+        echo ""
+        echo "Databases:"
+        echo "  - calendar-postgres (calendar_db)"
+        echo "  - langfuse-postgres (langfuse_db)"
+        echo ""
+        echo "Also backs up: .env, nginx configs, authelia config"
+        echo ""
+        echo "Manual:   {{ app_dir }}/scripts/backup.sh"
+        echo "=========================================="
+      changed_when: false
