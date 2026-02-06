@@ -356,7 +356,7 @@
         echo "calendar-api:  $(curl -sf -o /dev/null -w '%{http_code}' https://calendar-api.wbdigitalsolutions.com/ || echo 'DOWN')"
         echo "finances-api:  $(curl -sf -o /dev/null -w '%{http_code}' https://calendar-finances.wbdigitalsolutions.com/api/v1/health || echo 'DOWN')"
         echo "health-api:    $(curl -sf -o /dev/null -w '%{http_code}' https://calendar-health.wbdigitalsolutions.com/api/v1/health || echo 'DOWN')"
-        echo "agents-api:    $(curl -sf -o /dev/null -w '%{http_code}' https://calendar-agents.wbdigitalsolutions.com/health || echo 'DOWN')"
+        echo "agents-api:    $(curl -sf -o /dev/null -w '%{http_code}' https://agents.wbdigitalsolutions.com/health || echo 'DOWN')"
       changed_when: false
 
     - name: Authelia setup summary
@@ -378,6 +378,6 @@
         echo "  - https://calendar-api.wbdigitalsolutions.com"
         echo "  - https://calendar-finances.wbdigitalsolutions.com"
         echo "  - https://calendar-health.wbdigitalsolutions.com"
-        echo "  - https://calendar-agents.wbdigitalsolutions.com"
+        echo "  - https://agents.wbdigitalsolutions.com"
         echo "=========================================="
       changed_when: false

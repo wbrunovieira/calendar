@@ -35,7 +35,7 @@ access_control:
         - 'calendar-api.wbdigitalsolutions.com'
         - 'calendar-finances.wbdigitalsolutions.com'
         - 'calendar-health.wbdigitalsolutions.com'
-        - 'calendar-agents.wbdigitalsolutions.com'
+        - 'agents.wbdigitalsolutions.com'
       policy: bypass
     - domain:
         - 'calendar.wbdigitalsolutions.com'

@@ -52,11 +52,11 @@ services:
       - calendar-network
     restart: unless-stopped
 
-  calendar-agents:
+  agents:
     build:
-      context: ./services/calendar-agents
+      context: ./services/agents
       dockerfile: Dockerfile
-    container_name: calendar-agents
+    container_name: agents
     ports:
       - "3337:3337"
     environment:

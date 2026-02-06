@@ -7,13 +7,13 @@ and records everything in Langfuse for comparison.
 
 Usage:
     # From Docker (recommended)
-    docker compose exec calendar-agents python -m app.agents.transaction.experiments
+    docker compose exec agents python -m app.agents.transaction.experiments
 
     # Seed dataset only (no run)
-    docker compose exec calendar-agents python -m app.agents.transaction.experiments --seed-only
+    docker compose exec agents python -m app.agents.transaction.experiments --seed-only
 
     # Run experiment with a custom name
-    docker compose exec calendar-agents python -m app.agents.transaction.experiments --run-name "prompt-v2"
+    docker compose exec agents python -m app.agents.transaction.experiments --run-name "prompt-v2"
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from app.agents.transaction.evaluator import EVAL_PROMPT, EVAL_USER
 from app.agents.transaction.nodes import langfuse, _build_messages
 from app.config import settings
 
-logger = logging.getLogger("calendar-agents")
+logger = logging.getLogger("agents")
 
 # ── Test dataset ─────────────────────────────────────────────
 

@@ -38,7 +38,7 @@ N8N_API_KEY=
 WHATSAPP_GROUP_JID=120363424817003115@g.us
 ```
 
-### `docker-compose.yml` — service `calendar-agents`
+### `docker-compose.yml` — service `agents`
 ```yaml
 - EVOLUTION_API_URL=${EVOLUTION_API_URL:-}
 - EVOLUTION_API_KEY=${EVOLUTION_API_KEY:-}
@@ -53,7 +53,7 @@ WHATSAPP_GROUP_JID=120363424817003115@g.us
 
 ## 1.1. Evolution API — Rotas utilizadas
 
-A Evolution API é o gateway WhatsApp. O calendar-agents **não** chama diretamente — o n8n faz o routing. Documentação aqui para referência do fluxo n8n.
+A Evolution API é o gateway WhatsApp. O agents **não** chama diretamente — o n8n faz o routing. Documentação aqui para referência do fluxo n8n.
 
 ### Autenticação
 Header obrigatório em todas as rotas:
@@ -170,7 +170,7 @@ O WhatsApp é de uso pessoal. Para evitar que mensagens do dia a dia ativem o ag
 2. Filtra: `event == "MESSAGES_UPSERT"` e `fromMe == false`
 3. **Filtra grupo:** `data.key.remoteJid == WHATSAPP_GROUP_JID` (descarta tudo que não for do grupo Financeiro)
 4. Extrai `phone` (do `participant` no payload de grupo) e `text` (`message.conversation`)
-5. POST para `http://calendar-agents:3337/agents/transaction` com `{ phone, text, profile_id }`
+5. POST para `http://agents:3337/agents/transaction` com `{ phone, text, profile_id }`
 6. Recebe resposta com `reply`
 7. Envia `reply` no grupo via `POST /message/sendText/{instance}` com `number: WHATSAPP_GROUP_JID`
 
@@ -182,21 +182,21 @@ O WhatsApp é de uso pessoal. Para evitar que mensagens do dia a dia ativem o ag
 Grupo "Financeiro" (WhatsApp)
     → Evolution API (webhook automático)
     → n8n (filtra: grupo == WHATSAPP_GROUP_JID, fromMe == false)
-        → POST http://calendar-agents:3337/agents/transaction
+        → POST http://agents:3337/agents/transaction
           Body: { "phone": "5511999999999", "text": "almoco 32 nubank" }
         ← Response: { "reply": "✓ Almoço R$ 32,00 (Nubank → Alimentação)" }
         → n8n envia reply no grupo via Evolution sendText API
 ```
 
 - Mensagens pessoais (`@s.whatsapp.net`) são **ignoradas** pelo filtro no n8n
-- O calendar-agents **não** fala direto com Evolution/WhatsApp — n8n faz o routing
+- O agents **não** fala direto com Evolution/WhatsApp — n8n faz o routing
 - Respostas do agent são enviadas de volta **no grupo**, não em conversa privada
 
 ---
 
 ## 3. Input/Output do endpoint
 
-### Request (n8n → calendar-agents)
+### Request (n8n → agents)
 
 ```
 POST /agents/transaction
@@ -213,7 +213,7 @@ Content-Type: application/json
 
 `profile_id` pode ser resolvido no n8n (binding phone → profile) ou no agent (lookup por phone). Fase 1: vem fixo do n8n.
 
-### Response (calendar-agents → n8n)
+### Response (agents → n8n)
 
 **Sucesso:**
 ```json
@@ -457,7 +457,7 @@ trace.update(output={"reply": reply, "status": status})
 ### Criar
 
 ```
-services/calendar-agents/app/
+services/agents/app/
 ├── agents/
 │   ├── __init__.py
 │   └── transaction/
@@ -476,10 +476,10 @@ services/calendar-agents/app/
 
 | Arquivo | Mudança |
 |---------|---------|
-| `services/calendar-agents/app/main.py` | Importar e incluir `transaction_router` |
-| `services/calendar-agents/requirements.txt` | Adicionar `langchain-openai` |
-| `services/calendar-agents/.env.example` | Adicionar variáveis Evolution/n8n |
-| `docker-compose.yml` | Adicionar env vars Evolution/n8n no service calendar-agents |
+| `services/agents/app/main.py` | Importar e incluir `transaction_router` |
+| `services/agents/requirements.txt` | Adicionar `langchain-openai` |
+| `services/agents/.env.example` | Adicionar variáveis Evolution/n8n |
+| `docker-compose.yml` | Adicionar env vars Evolution/n8n no service agents |
 | `.env` | Adicionar credenciais reais |
 | `.env.example` (raiz) | Adicionar placeholders Evolution/n8n |
 
@@ -507,7 +507,7 @@ Já existentes e necessários:
 ### Estrutura de testes
 
 ```
-services/calendar-agents/tests/
+services/agents/tests/
 ├── conftest.py                          # Fixtures compartilhadas (fake accounts, categories, profiles)
 ├── unit/
 │   ├── test_nodes.py                    # Testes unitários de cada node isolado
@@ -591,19 +591,19 @@ httpx  # já existe — usado como test client via `httpx.ASGITransport`
 
 ```bash
 # Unitários (sem Docker)
-docker compose exec calendar-agents python -m pytest tests/unit/ -v
+docker compose exec agents python -m pytest tests/unit/ -v
 
 # Integração (com calendar-finances rodando)
-docker compose exec calendar-agents python -m pytest tests/integration/ -v
+docker compose exec agents python -m pytest tests/integration/ -v
 
 # E2E (todos os serviços + LLM)
-docker compose exec calendar-agents python -m pytest tests/e2e/ -v
+docker compose exec agents python -m pytest tests/e2e/ -v
 
 # Todos
-docker compose exec calendar-agents python -m pytest tests/ -v
+docker compose exec agents python -m pytest tests/ -v
 
 # Com coverage
-docker compose exec calendar-agents python -m pytest tests/ --cov=app --cov-report=term-missing
+docker compose exec agents python -m pytest tests/ --cov=app --cov-report=term-missing
 ```
 
 ---
@@ -611,8 +611,8 @@ docker compose exec calendar-agents python -m pytest tests/ --cov=app --cov-repo
 ## 11. Verificação manual
 
 ```bash
-# 1. Rebuild calendar-agents
-docker compose up -d --build calendar-agents
+# 1. Rebuild agents
+docker compose up -d --build agents
 
 # 2. Health check
 curl http://localhost:3337/health

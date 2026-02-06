@@ -48,7 +48,7 @@
         echo "calendar-core:     $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3334/ || echo 'DOWN')"
         echo "calendar-finances: $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3335/api/v1/health || echo 'DOWN')"
         echo "calendar-health:   $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3336/api/v1/health || echo 'DOWN')"
-        echo "calendar-agents:   $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3337/health || echo 'DOWN')"
+        echo "agents:             $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3337/health || echo 'DOWN')"
         echo "calendar-frontend: $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3001/ || echo 'DOWN')"
         echo "finances-frontend: $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3003/ || echo 'DOWN')"
         echo "health-frontend:   $(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:3004/ || echo 'DOWN')"

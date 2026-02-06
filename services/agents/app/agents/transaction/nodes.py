@@ -13,7 +13,7 @@ from app.agents.transaction.state import TransactionState
 from app.clients import finances
 from app.config import settings
 
-logger = logging.getLogger("calendar-agents")
+logger = logging.getLogger("agents")
 
 langfuse = Langfuse(
     public_key=settings.langfuse_public_key,

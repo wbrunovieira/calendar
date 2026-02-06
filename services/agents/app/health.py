@@ -16,13 +16,13 @@ async def health(request: Request, deep: int | None = Query(default=None)):
         messages = verify_graph(compiled_graph)
         return {
             "status": "healthy",
-            "service": "calendar-agents",
+            "service": "agents",
             "langgraph": "verified",
             "graph_result": messages,
         }
 
     return {
         "status": "healthy",
-        "service": "calendar-agents",
+        "service": "agents",
         "langgraph": "available" if langgraph_available else "unavailable",
     }

@@ -148,8 +148,8 @@
       changed_when: false
       ignore_errors: true
 
-    - name: Health check — calendar-agents
-      raw: curl -sf http://127.0.0.1:3337/health || echo "WARN calendar-agents not responding"
+    - name: Health check — agents
+      raw: "curl -sf http://127.0.0.1:3337/health || echo 'WARN agents not responding'"
       changed_when: false
       ignore_errors: true
 

@@ -72,7 +72,7 @@
 
     - name: Restart application containers (pick up new data)
       raw: |
-        cd {{ app_dir }} && docker compose -f {{ compose_file }} restart calendar-core calendar-finances calendar-health calendar-agents 2>&1
+        cd {{ app_dir }} && docker compose -f {{ compose_file }} restart calendar-core calendar-finances calendar-health agents 2>&1
       register: restart_result
 
     - name: Wait for restart

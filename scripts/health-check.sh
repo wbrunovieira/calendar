@@ -39,7 +39,7 @@ EXPECTED_CONTAINERS=(
     health-frontend
     calendar-finances
     calendar-health
-    calendar-agents
+    agents
     calendar-postgres
     langfuse-web
     langfuse-worker
@@ -55,7 +55,7 @@ ENDPOINTS=(
     "Calendar API|https://calendar-api.wbdigitalsolutions.com/|200"
     "Finances API|https://calendar-finances.wbdigitalsolutions.com/|200"
     "Health API|https://calendar-health.wbdigitalsolutions.com/api/v1/health|200"
-    "Agents API|https://calendar-agents.wbdigitalsolutions.com/health|200"
+    "Agents API|https://agents.wbdigitalsolutions.com/health|200"
     "Calendar UI|https://calendar.wbdigitalsolutions.com/|302"
     "Finances UI|https://finances.wbdigitalsolutions.com/|302"
     "Health UI|https://health.wbdigitalsolutions.com/|302"
@@ -71,7 +71,7 @@ SSL_DOMAINS=(
     calendar-api.wbdigitalsolutions.com
     calendar-finances.wbdigitalsolutions.com
     calendar-health.wbdigitalsolutions.com
-    calendar-agents.wbdigitalsolutions.com
+    agents.wbdigitalsolutions.com
     calendar-langfuse.wbdigitalsolutions.com
     auth.wbdigitalsolutions.com
 )

@@ -9,7 +9,7 @@ from fastapi import FastAPI
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s: %(message)s")
-logger = logging.getLogger("calendar-agents")
+logger = logging.getLogger("agents")
 
 
 @asynccontextmanager
@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="calendar-agents", lifespan=lifespan)
+app = FastAPI(title="agents", lifespan=lifespan)
 
 from app.health import router as health_router  # noqa: E402
 from app.agents.transaction.router import router as transaction_router  # noqa: E402

@@ -29,7 +29,7 @@ domains:
     name: calendar-health.wbdigitalsolutions.com
     port: 3336
   agents_api:
-    name: calendar-agents.wbdigitalsolutions.com
+    name: agents.wbdigitalsolutions.com
     port: 3337
   langfuse:
     name: calendar-langfuse.wbdigitalsolutions.com

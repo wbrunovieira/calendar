@@ -9,7 +9,7 @@ from langchain_openai import ChatOpenAI
 from app.agents.transaction.nodes import langfuse
 from app.config import settings
 
-logger = logging.getLogger("calendar-agents")
+logger = logging.getLogger("agents")
 
 EVAL_PROMPT = """\
 You are a quality evaluator for a financial transaction parser.

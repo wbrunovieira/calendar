@@ -1,6 +1,6 @@
-# calendar-agents — Roadmap de Agentes AI
+# agents — Roadmap de Agentes AI
 
-> Documento de ideias para agentes ativos no `calendar-agents` (Python/FastAPI/LangGraph).
+> Documento de ideias para agentes ativos no `agents` (Python/FastAPI/LangGraph).
 > Cada agente consome dados dos backends existentes (calendar-core, calendar-finances, calendar-health)
 > e usa LLM + LangGraph para gerar insights, automações e ações proativas.
 > Todas as execuções são rastreadas via Langfuse.
@@ -885,10 +885,10 @@ Bot: "✓ Atualizado: Almoço → Alimentação > Delivery"
 - Útil como fallback
 - Custo por mensagem
 
-### Implementação no calendar-agents
+### Implementação no agents
 
 ```
-services/calendar-agents/
+services/agents/
 └── app/
     ├── webhooks/
     │   ├── telegram.py      # POST /webhooks/telegram (webhook handler)

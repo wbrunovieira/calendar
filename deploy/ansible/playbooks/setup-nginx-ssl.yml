@@ -137,12 +137,12 @@
         }
         EOF
 
-    - name: Create Nginx config for calendar-agents API
+    - name: Create Nginx config for agents API
       raw: |
-        cat > /etc/nginx/sites-available/calendar-agents.wbdigitalsolutions.com.conf << 'EOF'
+        cat > /etc/nginx/sites-available/agents.wbdigitalsolutions.com.conf << 'EOF'
         server {
             listen 80;
-            server_name calendar-agents.wbdigitalsolutions.com;
+            server_name agents.wbdigitalsolutions.com;
 
             location / {
                 proxy_pass http://127.0.0.1:3337;
@@ -187,7 +187,7 @@
           calendar-api.wbdigitalsolutions.com.conf \
           calendar-finances.wbdigitalsolutions.com.conf \
           calendar-health.wbdigitalsolutions.com.conf \
-          calendar-agents.wbdigitalsolutions.com.conf \
+          agents.wbdigitalsolutions.com.conf \
           calendar-langfuse.wbdigitalsolutions.com.conf; do
           ln -sf /etc/nginx/sites-available/$conf /etc/nginx/sites-enabled/$conf
         done
@@ -237,9 +237,9 @@
       register: cert_health_api
       ignore_errors: true
 
-    - name: Obtain SSL certificate for calendar-agents.wbdigitalsolutions.com
+    - name: Obtain SSL certificate for agents API
       raw: |
-        certbot --nginx -d calendar-agents.wbdigitalsolutions.com --non-interactive --agree-tos -m {{ certbot_email }} 2>&1
+        certbot --nginx -d agents.wbdigitalsolutions.com --non-interactive --agree-tos -m {{ certbot_email }} 2>&1
       register: cert_agents
       ignore_errors: true
 
@@ -260,7 +260,7 @@
           calendar-api.wbdigitalsolutions.com \
           calendar-finances.wbdigitalsolutions.com \
           calendar-health.wbdigitalsolutions.com \
-          calendar-agents.wbdigitalsolutions.com \
+          agents.wbdigitalsolutions.com \
           calendar-langfuse.wbdigitalsolutions.com; do
           STATUS=$(curl -sf -o /dev/null -w '%{http_code}' https://$domain/ || echo "FAIL")
           echo "  https://$domain → $STATUS"

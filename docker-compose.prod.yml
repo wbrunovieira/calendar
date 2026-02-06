@@ -70,11 +70,11 @@ services:
         limits:
           memory: 30M
 
-  calendar-agents:
+  agents:
     build:
-      context: ./services/calendar-agents
+      context: ./services/agents
       dockerfile: Dockerfile
-    container_name: calendar-agents
+    container_name: agents
     ports:
       - "127.0.0.1:3337:3337"
     environment:
