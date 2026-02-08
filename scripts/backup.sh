@@ -85,6 +85,29 @@ main() {
         fi
     done
 
+    # Backup SQLite databases (file-based)
+    SQLITE_DBS=(
+        "projects|/opt/wb-project-manager/data/prod.db"
+    )
+    for entry in "${SQLITE_DBS[@]}"; do
+        IFS='|' read -r label dbpath <<< "$entry"
+        log "Banco ${label} (SQLite)..."
+        if [[ -f "$dbpath" ]]; then
+            # Use sqlite3 backup if available, otherwise just copy
+            if command -v sqlite3 &>/dev/null; then
+                sqlite3 "$dbpath" ".backup '${TEMP_DIR}/${label}.sqlite'" 2>/dev/null
+            else
+                cp "$dbpath" "${TEMP_DIR}/${label}.sqlite"
+            fi
+            DUMP_SIZE=$(du -h "${TEMP_DIR}/${label}.sqlite" | cut -f1)
+            log "  ${label}: ${DUMP_SIZE}"
+            DB_SIZES="${DB_SIZES}${label}: ${DUMP_SIZE}, "
+        else
+            log "  ERRO: ${label} — arquivo nao encontrado: ${dbpath}"
+            ERRORS="${ERRORS}${label}, "
+        fi
+    done
+
     # Backup .env (sem secrets no nome do arquivo)
     if [[ -f "${APP_DIR}/.env" ]]; then
         cp "${APP_DIR}/.env" "${TEMP_DIR}/env.backup"

@@ -48,6 +48,7 @@ EXPECTED_CONTAINERS=(
     langfuse-minio
     langfuse-redis
     authelia
+    wb-project-manager
 )
 
 # Endpoints: "label|url|expected_http_code"
@@ -61,6 +62,7 @@ ENDPOINTS=(
     "Health UI|https://health.wbdigitalsolutions.com/|302"
     "Langfuse|https://calendar-langfuse.wbdigitalsolutions.com/|302"
     "Authelia|http://127.0.0.1:9092/api/health|200"
+    "Projects|https://projects.wbdigitalsolutions.com/|302"
 )
 
 # SSL domains to check
@@ -74,6 +76,7 @@ SSL_DOMAINS=(
     agents.wbdigitalsolutions.com
     calendar-langfuse.wbdigitalsolutions.com
     auth.wbdigitalsolutions.com
+    projects.wbdigitalsolutions.com
 )
 
 # ── Helpers ───────────────────────────────────────────────────
@@ -238,10 +241,19 @@ check_databases() {
     LF_DB_SIZE=$(docker exec langfuse-postgres psql -U langfuse -d langfuse_db -t -c \
         "SELECT pg_size_pretty(pg_database_size('langfuse_db'));" 2>/dev/null | xargs || echo "ERRO")
 
+    # Projects SQLite
+    PROJ_DB_PATH="/opt/wb-project-manager/data/prod.db"
+    if [[ -f "$PROJ_DB_PATH" ]]; then
+        PROJ_DB_SIZE=$(du -h "$PROJ_DB_PATH" | cut -f1)
+    else
+        PROJ_DB_SIZE="ERRO"
+    fi
+
     [[ "$CAL_DB_SIZE" == "ERRO" ]] && add_alert "Banco Calendar: sem conexao"
     [[ "$LF_DB_SIZE" == "ERRO" ]] && add_alert "Banco Langfuse: sem conexao"
+    [[ "$PROJ_DB_SIZE" == "ERRO" ]] && add_alert "Banco Projects: arquivo nao encontrado"
 
-    DB_SECTION="Bancos: Calendar ${CAL_DB_SIZE} | Langfuse ${LF_DB_SIZE}"
+    DB_SECTION="Bancos: Calendar ${CAL_DB_SIZE} | Langfuse ${LF_DB_SIZE} | Projects ${PROJ_DB_SIZE}"
 }
 
 # ── 6. Security Checks ────────────────────────────────────────
