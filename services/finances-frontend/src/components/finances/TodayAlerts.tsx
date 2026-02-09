@@ -69,7 +69,6 @@ export default function TodayAlerts({
   recurringTransactions,
   invoices,
   accounts,
-  categories,
   onPayInvoice,
   onConfirmTransaction,
   onConfirmRecurring,

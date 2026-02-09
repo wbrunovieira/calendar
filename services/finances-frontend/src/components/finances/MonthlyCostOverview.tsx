@@ -10,7 +10,7 @@ interface MonthlyCostOverviewProps {
   accounts: BankAccount[];
 }
 
-export default function MonthlyCostOverview({ profileId, categories, accounts }: MonthlyCostOverviewProps) {
+export default function MonthlyCostOverview({ profileId, categories }: MonthlyCostOverviewProps) {
   const [recurrings, setRecurrings] = useState<RecurringTransaction[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [budgetSummary, setBudgetSummary] = useState<BudgetSummaryItem[]>([]);
@@ -122,12 +122,12 @@ export default function MonthlyCostOverview({ profileId, categories, accounts }:
     });
 
     return items;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recurrings, budgetCategoryIds, categories]);
 
   // Separate recurring into those covered by budget and those not
-  const { recurringInBudget, recurringOutsideBudget } = useMemo(() => {
+  const { recurringOutsideBudget } = useMemo(() => {
     return {
-      recurringInBudget: recurringForecast.filter((r) => r.inBudget),
       recurringOutsideBudget: recurringForecast.filter((r) => !r.inBudget),
     };
   }, [recurringForecast]);

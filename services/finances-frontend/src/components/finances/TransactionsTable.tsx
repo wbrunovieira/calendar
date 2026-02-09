@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type {
   BankAccount,
   Category,
@@ -91,9 +91,9 @@ export default function TransactionsTable({
   }, [transactions, currentPage, pageSize]);
 
   // Reset to page 1 when filters change (transactions array changes)
-  useMemo(() => {
+  useEffect(() => {
     setCurrentPage(1);
-  }, [transactions.length, filters]);
+  }, [transactions.length]);
 
   const handleFilterChange = (partial: Partial<TransactionFilters>) => {
     setCurrentPage(1);

@@ -56,7 +56,7 @@ export default function FinancesPage() {
 
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [_budgetSummary, setBudgetSummary] = useState<BudgetSummaryItem[]>([]);
+  const [, setBudgetSummary] = useState<BudgetSummaryItem[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [transactionsLoading, setTransactionsLoading] = useState(false);
   const [transactionsError, setTransactionsError] = useState<'NOT_IMPLEMENTED' | 'GENERIC' | null>(null);

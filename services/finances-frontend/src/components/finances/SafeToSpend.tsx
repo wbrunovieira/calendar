@@ -2,55 +2,19 @@
 
 import type { BankAccount, Transaction } from '@/types/finances';
 
-// Format date to YYYY-MM-DD without timezone conversion
-const formatLocalDate = (date: Date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
 interface Props {
   accounts: BankAccount[];
   transactions: Transaction[];
 }
 
-export default function SafeToSpend({ accounts, transactions }: Props) {
+export default function SafeToSpend({ accounts }: Props) {
   // Available balance from regular accounts (checking, savings, cash) - not credit cards or investments
   const regularAccounts = accounts.filter((acc) => acc.type !== 'CREDIT_CARD' && acc.type !== 'INVESTMENT');
   const availableBalance = regularAccounts.reduce((sum, acc) => sum + acc.currentBalance, 0);
 
-  // Get current month expenses (confirmed)
   const now = new Date();
-  const monthStart = formatLocalDate(new Date(now.getFullYear(), now.getMonth(), 1));
-  const monthEnd = formatLocalDate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
-
-  const monthExpenses = transactions
-    .filter((tx) => {
-      const date = tx.occurredOn.slice(0, 10);
-      return (
-        tx.type === 'EXPENSE' &&
-        tx.status === 'CONFIRMED' &&
-        date >= monthStart &&
-        date <= monthEnd
-      );
-    })
-    .reduce((sum, tx) => sum + tx.amount, 0);
-
-  const monthIncome = transactions
-    .filter((tx) => {
-      const date = tx.occurredOn.slice(0, 10);
-      return (
-        tx.type === 'INCOME' &&
-        tx.status === 'CONFIRMED' &&
-        date >= monthStart &&
-        date <= monthEnd
-      );
-    })
-    .reduce((sum, tx) => sum + tx.amount, 0);
 
   // Remaining = Available balance (already reflects past transactions)
-  // But we show monthly context
   const remaining = availableBalance;
 
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();

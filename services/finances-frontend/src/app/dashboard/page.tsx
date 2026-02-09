@@ -167,10 +167,6 @@ export default function DashboardPage() {
     expenseTx.forEach((tx) => {
       const category = categories.find((c) => c.id === tx.categoryId);
       const parentId = category?.parentId || category?.id || 'sem-categoria';
-      const parent = category?.parentId
-        ? categories.find((c) => c.id === category.parentId)
-        : category;
-
       if (!byParent[parentId]) {
         byParent[parentId] = { total: 0, subcategories: {} };
       }

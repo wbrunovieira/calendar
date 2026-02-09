@@ -675,7 +675,7 @@ function MonthCard({
                             className="flex items-center justify-between cursor-pointer"
                             onClick={(e) => {
                               e.stopPropagation();
-                              week.transactions.length > 0 && onToggleSection(weekKey);
+                              if (week.transactions.length > 0) onToggleSection(weekKey);
                             }}
                           >
                             <div className="flex items-center gap-2">
