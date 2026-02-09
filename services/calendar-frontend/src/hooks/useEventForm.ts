@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { api } from '@/lib/api';
-import { Category, CategoryType } from '@/types/calendar';
+import { Category, CategoryType, ReminderInput } from '@/types/calendar';
 import { calculateEndTime, incrementTime } from '@/utils/calendar';
 import { buildEventPayload, validateEventForm } from '@/utils/eventHelpers';
 
@@ -47,6 +47,7 @@ export function useEventForm({
     recurrenceInterval: 1,
     recurrenceDaysOfWeek: [] as number[],
     recurrenceEndDate: '',
+    reminders: [{ minutesBefore: 30, method: 'notification' }] as ReminderInput[],
   });
 
   const [loading, setLoading] = useState(false);

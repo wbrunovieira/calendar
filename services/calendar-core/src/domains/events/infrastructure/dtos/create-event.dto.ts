@@ -9,7 +9,10 @@ import {
   IsIn,
   Min,
   Max,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+import { EventReminderDto } from './event-reminder.dto';
 
 export class CreateEventDto {
   @IsString()
@@ -129,4 +132,11 @@ export class CreateEventDto {
   @IsArray()
   @IsString({ each: true })
   weeklyPreferredDays?: string[]; // Dias preferidos ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
+
+  // Alertas do evento (ex: [{ minutesBefore: 30, method: 'notification' }])
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => EventReminderDto)
+  reminders?: EventReminderDto[];
 }

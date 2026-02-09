@@ -8,6 +8,7 @@ import ModalFooter from '../ui/modal/ModalFooter';
 import EventFormFields from '../forms/EventFormFields';
 import FormCheckbox from '../forms/FormCheckbox';
 import RecurrenceFields from '../forms/RecurrenceFields';
+import EventRemindersField from '../forms/EventRemindersField';
 
 interface CreateEventModalProps {
   isOpen: boolean;
@@ -87,6 +88,12 @@ export default function CreateEventModal({
           onEndDateChange={value => setFormData({ ...formData, endDate: value })}
           onStartTimeChange={handleStartTimeChange}
           onEndTimeChange={value => setFormData({ ...formData, endTime: value })}
+        />
+
+        {/* Alertas */}
+        <EventRemindersField
+          reminders={formData.reminders || []}
+          onChange={reminders => setFormData({ ...formData, reminders })}
         />
 
         {/* Evento Recorrente */}

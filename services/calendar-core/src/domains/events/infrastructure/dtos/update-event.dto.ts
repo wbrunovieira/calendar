@@ -7,7 +7,10 @@ import {
   IsIn,
   Min,
   Max,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+import { EventReminderDto } from './event-reminder.dto';
 
 export class UpdateEventDto {
   @IsOptional()
@@ -105,4 +108,11 @@ export class UpdateEventDto {
   @IsArray()
   @IsNumber({}, { each: true })
   reminderDaysBefore?: number[];
+
+  // Alertas do evento (ex: [{ minutesBefore: 30, method: 'notification' }])
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => EventReminderDto)
+  reminders?: EventReminderDto[];
 }

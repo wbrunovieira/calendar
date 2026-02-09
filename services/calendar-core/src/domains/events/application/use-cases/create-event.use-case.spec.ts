@@ -33,6 +33,7 @@ describe('CreateEventUseCase', () => {
         expect.objectContaining({
           eventType: 'EVENT',
         }),
+        undefined,
       );
     });
 
@@ -322,6 +323,67 @@ describe('CreateEventUseCase', () => {
       expect(result.reminderDaysBefore).toEqual([7, 3, 1, 0]);
       expect(result.description).toBe('Cobrar depoimento do cliente');
       expect(result.categoryId).toBe('category-456');
+    });
+  });
+
+  describe('event reminders (alerts)', () => {
+    it('should pass reminders to repository when provided', async () => {
+      vi.mocked(mockEventRepository.create!).mockImplementation(async (event) => event);
+
+      await useCase.execute({
+        ...baseEventDto,
+        reminders: [
+          { minutesBefore: 30, method: 'notification' },
+          { minutesBefore: 10 },
+        ],
+      });
+
+      expect(mockEventRepository.create).toHaveBeenCalledWith(
+        expect.any(Object),
+        [
+          { minutesBefore: 30, method: 'notification' },
+          { minutesBefore: 10 },
+        ],
+      );
+    });
+
+    it('should pass undefined reminders when not provided', async () => {
+      vi.mocked(mockEventRepository.create!).mockImplementation(async (event) => event);
+
+      await useCase.execute(baseEventDto);
+
+      expect(mockEventRepository.create).toHaveBeenCalledWith(
+        expect.any(Object),
+        undefined,
+      );
+    });
+
+    it('should pass empty array when reminders is empty', async () => {
+      vi.mocked(mockEventRepository.create!).mockImplementation(async (event) => event);
+
+      await useCase.execute({
+        ...baseEventDto,
+        reminders: [],
+      });
+
+      expect(mockEventRepository.create).toHaveBeenCalledWith(
+        expect.any(Object),
+        [],
+      );
+    });
+
+    it('should pass single reminder (0 minutes = at event time)', async () => {
+      vi.mocked(mockEventRepository.create!).mockImplementation(async (event) => event);
+
+      await useCase.execute({
+        ...baseEventDto,
+        reminders: [{ minutesBefore: 0, method: 'notification' }],
+      });
+
+      expect(mockEventRepository.create).toHaveBeenCalledWith(
+        expect.any(Object),
+        [{ minutesBefore: 0, method: 'notification' }],
+      );
     });
   });
 });

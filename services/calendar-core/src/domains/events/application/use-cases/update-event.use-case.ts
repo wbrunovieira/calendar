@@ -79,7 +79,7 @@ export class UpdateEventUseCase {
       });
     }
 
-    const updatedEvent = await this.eventRepository.update(id, updateData);
+    const updatedEvent = await this.eventRepository.update(id, updateData, dto.reminders);
     return updatedEvent;
   }
 
@@ -407,7 +407,7 @@ export class UpdateEventUseCase {
         },
       );
 
-      const updatedEvent = await this.eventRepository.update(id, updateData);
+      const updatedEvent = await this.eventRepository.update(id, updateData, dto.reminders);
 
       console.log('[UpdateEventUseCase] Event updated successfully', {
         updatedEventId: updatedEvent.id,

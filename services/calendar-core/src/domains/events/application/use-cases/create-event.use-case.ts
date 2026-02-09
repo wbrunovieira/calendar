@@ -106,6 +106,6 @@ export class CreateEventUseCase {
       weeklyPreferredDays,
     });
 
-    return await this.eventRepository.create(event);
+    return await this.eventRepository.create(event, dto.reminders);
   }
 }

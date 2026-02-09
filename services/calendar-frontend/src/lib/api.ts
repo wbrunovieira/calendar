@@ -171,6 +171,15 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ orderedIds }),
       }),
+    upcomingReminders: (windowMinutes = 2) =>
+      fetchAPI<Array<{
+        eventId: string;
+        eventTitle: string;
+        startTime: string;
+        startDate: string;
+        minutesBefore: number;
+        triggerAt: string;
+      }>>(`/events/upcoming-reminders?windowMinutes=${windowMinutes}`),
   },
 
   // Calendars (Profiles)

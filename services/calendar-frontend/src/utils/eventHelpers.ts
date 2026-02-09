@@ -3,6 +3,8 @@
  * Business logic for event operations
  */
 
+import { ReminderInput } from '@/types/calendar';
+
 interface EventFormData {
   calendarId: string;
   categoryId: string;
@@ -18,6 +20,7 @@ interface EventFormData {
   recurrenceInterval: number;
   recurrenceDaysOfWeek: number[];
   recurrenceEndDate: string;
+  reminders?: ReminderInput[];
 }
 
 /**
@@ -60,6 +63,11 @@ export function buildEventPayload(formData: EventFormData): Record<string, unkno
     if (formData.recurrenceEndDate) {
       payload.recurrenceEndDate = formData.recurrenceEndDate;
     }
+  }
+
+  // Add reminders if present
+  if (formData.reminders && formData.reminders.length > 0) {
+    payload.reminders = formData.reminders;
   }
 
   return payload;

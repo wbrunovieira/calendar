@@ -2,6 +2,7 @@
 
 import { useState, ReactNode } from 'react';
 import Sidebar from './Sidebar';
+import { useEventAlerts } from '@/hooks/useEventAlerts';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -9,6 +10,7 @@ interface AppLayoutProps {
 
 export default function AppLayout({ children }: AppLayoutProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  useEventAlerts();
 
   const handleSidebarToggle = (collapsed: boolean) => {
     setIsSidebarCollapsed(collapsed);

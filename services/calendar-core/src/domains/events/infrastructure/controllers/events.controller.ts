@@ -10,6 +10,7 @@ import {
   HttpCode,
   HttpStatus,
 } from "@nestjs/common";
+import { EventRepository } from "../repositories/event.repository";
 import { CreateEventUseCase } from "../../application/use-cases/create-event.use-case";
 import { DeleteEventUseCase } from "../../application/use-cases/delete-event.use-case";
 import { ListEventsUseCase } from "../../application/use-cases/list-events.use-case";
@@ -28,6 +29,7 @@ import { RRuleHelper } from "../../domain/utils/rrule-helper";
 @Controller("events")
 export class EventsController {
   constructor(
+    private readonly eventRepository: EventRepository,
     private readonly createEventUseCase: CreateEventUseCase,
     private readonly deleteEventUseCase: DeleteEventUseCase,
     private readonly listEventsUseCase: ListEventsUseCase,
@@ -98,6 +100,15 @@ export class EventsController {
     return events;
   }
 
+  @Get("upcoming-reminders")
+  @HttpCode(HttpStatus.OK)
+  async getUpcomingReminders(
+    @Query("windowMinutes") windowMinutes?: string,
+  ) {
+    const window = parseInt(windowMinutes || "5", 10);
+    return await this.eventRepository.findUpcomingReminders(window);
+  }
+
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() createEventDto: CreateEventDto) {
@@ -119,6 +130,7 @@ export class EventsController {
       eventType: event.eventType,
       priority: event.priority,
       dueDate: event.dueDate,
+      reminders: event.reminders || [],
       googleEventId: event.googleEventId,
       isActive: event.isActive,
       createdAt: event.createdAt,
@@ -150,6 +162,7 @@ export class EventsController {
       eventType: event.eventType,
       priority: event.priority,
       dueDate: event.dueDate,
+      reminders: event.reminders || [],
       googleEventId: event.googleEventId,
       isActive: event.isActive,
       createdAt: event.createdAt,

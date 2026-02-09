@@ -88,6 +88,20 @@ export interface Event {
   weeklyPreferredDays?: string[]; // Preferred days ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
   // Reminder fields
   reminderDaysBefore?: number[]; // Days before to remind (e.g., [7, 3, 1, 0])
+  // Event alert reminders (minutesBefore-based)
+  reminders?: EventReminder[];
+}
+
+export interface EventReminder {
+  id: string;
+  eventId: string;
+  minutesBefore: number;
+  method: string;
+}
+
+export interface ReminderInput {
+  minutesBefore: number;
+  method?: string;
 }
 
 export interface HabitStats {

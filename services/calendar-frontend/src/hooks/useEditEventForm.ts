@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { api } from '@/lib/api';
-import { Event, Category, CategoryType } from '@/types/calendar';
+import { Event, Category, CategoryType, ReminderInput } from '@/types/calendar';
 import { calculateEndTime } from '@/utils/calendar';
 import { buildEventPayload, validateEventForm } from '@/utils/eventHelpers';
 import { RecurringEventAction } from '@/components/modals/RecurringEventActionModal';
@@ -44,6 +44,7 @@ export function useEditEventForm({
     recurrenceInterval: 1,
     recurrenceDaysOfWeek: [] as number[],
     recurrenceEndDate: '',
+    reminders: [] as ReminderInput[],
   });
 
   const [loading, setLoading] = useState(false);
@@ -75,6 +76,7 @@ export function useEditEventForm({
         recurrenceInterval: event.recurrenceInterval || 1,
         recurrenceDaysOfWeek: event.recurrenceDaysOfWeek || [],
         recurrenceEndDate: event.recurrenceEndDate?.split('T')[0] || '',
+        reminders: event.reminders?.map(r => ({ minutesBefore: r.minutesBefore, method: r.method })) || [],
       });
       setError('');
 

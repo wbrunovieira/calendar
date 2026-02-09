@@ -9,6 +9,11 @@ export interface FindAllFilters {
   eventType?: string;
 }
 
+export interface ReminderInput {
+  minutesBefore: number;
+  method?: string;
+}
+
 @Injectable()
 export class EventRepository {
   private prisma: PrismaClient;
@@ -17,7 +22,7 @@ export class EventRepository {
     this.prisma = new PrismaClient();
   }
 
-  async create(event: Event): Promise<Event> {
+  async create(event: Event, reminders?: ReminderInput[]): Promise<any> {
     const created = await this.prisma.event.create({
       data: {
         calendarId: event.calendarId,
@@ -42,17 +47,39 @@ export class EventRepository {
         weeklyPreferredDays: event.weeklyPreferredDays || [],
         isActive: event.isActive,
       },
+      include: {
+        reminders: true,
+      },
     });
 
-    return new Event(created);
+    if (reminders && reminders.length > 0) {
+      await this.prisma.eventReminder.createMany({
+        data: reminders.map((r) => ({
+          eventId: created.id,
+          minutesBefore: r.minutesBefore,
+          method: r.method || "notification",
+        })),
+      });
+
+      const withReminders = await this.prisma.event.findUnique({
+        where: { id: created.id },
+        include: { reminders: true },
+      });
+
+      return { ...new Event(withReminders), reminders: withReminders!.reminders };
+    }
+
+    return { ...new Event(created), reminders: [] };
   }
 
-  async findById(id: string): Promise<Event | null> {
+  async findById(id: string): Promise<any | null> {
     const event = await this.prisma.event.findUnique({
       where: { id },
+      include: { reminders: true },
     });
 
-    return event ? new Event(event) : null;
+    if (!event) return null;
+    return { ...new Event(event), reminders: event.reminders };
   }
 
   async findAll(filters?: FindAllFilters): Promise<any[]> {
@@ -91,6 +118,7 @@ export class EventRepository {
           },
         },
         completions: true,
+        reminders: true,
       },
     });
 
@@ -102,6 +130,7 @@ export class EventRepository {
         label: event.label,
         exceptions: event.exceptions,
         overrides: event.overrides,
+        reminders: event.reminders,
         executions: event.completions.map((completion) => ({
           id: completion.id,
           eventId: completion.eventId,
@@ -122,7 +151,7 @@ export class EventRepository {
     return events.map((event) => new Event(event));
   }
 
-  async update(id: string, event: Partial<Event>): Promise<Event> {
+  async update(id: string, event: Partial<Event>, reminders?: ReminderInput[]): Promise<any> {
     const updated = await this.prisma.event.update({
       where: { id },
       data: {
@@ -150,7 +179,69 @@ export class EventRepository {
       },
     });
 
-    return new Event(updated);
+    if (reminders !== undefined) {
+      // Replace strategy: delete all old, create new
+      await this.prisma.eventReminder.deleteMany({ where: { eventId: id } });
+
+      if (reminders.length > 0) {
+        await this.prisma.eventReminder.createMany({
+          data: reminders.map((r) => ({
+            eventId: id,
+            minutesBefore: r.minutesBefore,
+            method: r.method || "notification",
+          })),
+        });
+      }
+    }
+
+    const withReminders = await this.prisma.event.findUnique({
+      where: { id },
+      include: { reminders: true },
+    });
+
+    return { ...new Event(withReminders), reminders: withReminders!.reminders };
+  }
+
+  async findUpcomingReminders(windowMinutes: number): Promise<any[]> {
+    const now = new Date();
+    const events = await this.prisma.event.findMany({
+      where: {
+        isActive: true,
+        reminders: { some: {} },
+      },
+      include: { reminders: true },
+    });
+
+    const results: any[] = [];
+
+    for (const event of events) {
+      // Combine startDate + startTime into a full datetime
+      const eventDate = new Date(event.startDate);
+      if (event.startTime) {
+        const [h, m] = event.startTime.split(":").map(Number);
+        eventDate.setHours(h, m, 0, 0);
+      }
+
+      for (const reminder of event.reminders) {
+        const triggerAt = new Date(eventDate.getTime() - reminder.minutesBefore * 60 * 1000);
+        const diffMs = triggerAt.getTime() - now.getTime();
+        const diffMinutes = diffMs / 60000;
+
+        // Trigger if within window and not more than 1 minute past
+        if (diffMinutes >= -1 && diffMinutes <= windowMinutes) {
+          results.push({
+            eventId: event.id,
+            eventTitle: event.title,
+            startTime: event.startTime,
+            startDate: event.startDate,
+            minutesBefore: reminder.minutesBefore,
+            triggerAt: triggerAt.toISOString(),
+          });
+        }
+      }
+    }
+
+    return results;
   }
 
   async delete(id: string): Promise<void> {

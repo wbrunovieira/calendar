@@ -37,6 +37,7 @@ describe('UpdateEventUseCase', () => {
         expect.objectContaining({
           dueDate: expect.any(Date),
         }),
+        undefined,
       );
       expect(result.dueDate).toBeInstanceOf(Date);
       expect(result.dueDate?.getFullYear()).toBe(2024);
@@ -60,6 +61,7 @@ describe('UpdateEventUseCase', () => {
         expect.objectContaining({
           dueDate: null,
         }),
+        undefined,
       );
     });
 
@@ -73,6 +75,7 @@ describe('UpdateEventUseCase', () => {
         expect.not.objectContaining({
           dueDate: expect.anything(),
         }),
+        undefined,
       );
     });
   });
@@ -88,6 +91,7 @@ describe('UpdateEventUseCase', () => {
         expect.objectContaining({
           priority: 1,
         }),
+        undefined,
       );
       expect(result.priority).toBe(1);
     });
@@ -108,6 +112,7 @@ describe('UpdateEventUseCase', () => {
         expect.objectContaining({
           priority: null,
         }),
+        undefined,
       );
     });
 
@@ -151,10 +156,50 @@ describe('UpdateEventUseCase', () => {
           priority: 2,
           title: 'Updated Task',
         }),
+        undefined,
       );
       expect(result.dueDate?.getDate()).toBe(15);
       expect(result.dueDate?.getMonth()).toBe(1); // February
       expect(result.priority).toBe(2);
+    });
+  });
+
+  describe('event reminders (alerts)', () => {
+    it('should pass reminders to repository when provided', async () => {
+      await useCase.execute('event-123', {
+        title: 'Updated',
+        reminders: [{ minutesBefore: 30 }, { minutesBefore: 10, method: 'notification' }],
+      });
+
+      expect(mockEventRepository.update).toHaveBeenCalledWith(
+        'event-123',
+        expect.objectContaining({ title: 'Updated' }),
+        [{ minutesBefore: 30 }, { minutesBefore: 10, method: 'notification' }],
+      );
+    });
+
+    it('should pass undefined reminders when not in dto', async () => {
+      await useCase.execute('event-123', {
+        title: 'Updated',
+      });
+
+      expect(mockEventRepository.update).toHaveBeenCalledWith(
+        'event-123',
+        expect.any(Object),
+        undefined,
+      );
+    });
+
+    it('should pass empty array to clear all reminders', async () => {
+      await useCase.execute('event-123', {
+        reminders: [],
+      });
+
+      expect(mockEventRepository.update).toHaveBeenCalledWith(
+        'event-123',
+        expect.any(Object),
+        [],
+      );
     });
   });
 });
