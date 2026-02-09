@@ -37,6 +37,9 @@ export class Event {
   weeklyTargetCount?: number | null; // Meta semanal (ex: 2 vezes por semana)
   weeklyPreferredDays?: string[]; // Dias preferidos ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
 
+  // Reminders/Alerts
+  reminders?: Array<{ id: string; minutesBefore: number; method: string }>;
+
   // Google Calendar
   googleEventId?: string | null;
   isActive: boolean;
