@@ -195,6 +195,29 @@ export default function HabitsPage() {
     fetchData();
   }, [fetchData]);
 
+  // Background refresh without loading spinner
+  const refreshData = useCallback(async () => {
+    try {
+      const params = {
+        ...dateRange,
+        ...(selectedCalendarId && { calendarId: selectedCalendarId }),
+      };
+      const progressParams = selectedCalendarId ? { calendarId: selectedCalendarId } : undefined;
+
+      const [habitsData, todosData, progressData] = await Promise.all([
+        api.events.listHabits(params),
+        api.events.listTodos(params),
+        api.events.getWeeklyProgress(progressParams),
+      ]);
+
+      setHabits(habitsData || []);
+      setTodos(todosData || []);
+      setFlexibleProgress(progressData || []);
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+    }
+  }, [dateRange, selectedCalendarId]);
+
   const toggleHabitCompletion = async (habit: Event) => {
     const eventId = habit.originalEventId || habit.id;
     const occurrenceDate = habit.occurrenceDate || today;
@@ -202,11 +225,22 @@ export default function HabitsPage() {
       e => e.executionDate.split('T')[0] === occurrenceDate && e.completed
     );
 
+    // Optimistic update — toggle execution in local state immediately
+    setHabits(prev => prev.map(h => {
+      if (h.id !== habit.id) return h;
+      const executions = h.executions || [];
+      if (currentlyCompleted) {
+        return { ...h, executions: executions.filter(e => !(e.executionDate.split('T')[0] === occurrenceDate && e.completed)) };
+      }
+      return { ...h, executions: [...executions, { id: 'temp', eventId, executionDate: occurrenceDate, completed: true }] };
+    }));
+
     try {
       await api.events.toggleExecution(eventId, occurrenceDate, !currentlyCompleted);
-      await fetchData();
+      refreshData();
     } catch (error) {
       console.error('Error toggling habit:', error);
+      refreshData(); // Revert by refetching
     }
   };
 
@@ -216,7 +250,7 @@ export default function HabitsPage() {
 
     try {
       await api.events.toggleExecution(eventId, dateStr, !isCompleted);
-      await fetchData();
+      refreshData();
     } catch (error) {
       console.error('Error toggling flexible habit day:', error);
     }
@@ -225,11 +259,22 @@ export default function HabitsPage() {
   const toggleTodoCompletion = async (todo: Event) => {
     const currentlyCompleted = todo.executions?.some(e => e.completed);
 
+    // Optimistic update
+    setTodos(prev => prev.map(t => {
+      if (t.id !== todo.id) return t;
+      const executions = t.executions || [];
+      if (currentlyCompleted) {
+        return { ...t, executions: executions.filter(e => !e.completed) };
+      }
+      return { ...t, executions: [...executions, { id: 'temp', eventId: todo.id, executionDate: today, completed: true }] };
+    }));
+
     try {
       await api.events.toggleExecution(todo.id, today, !currentlyCompleted);
-      await fetchData();
+      refreshData();
     } catch (error) {
       console.error('Error toggling todo:', error);
+      refreshData(); // Revert by refetching
     }
   };
 

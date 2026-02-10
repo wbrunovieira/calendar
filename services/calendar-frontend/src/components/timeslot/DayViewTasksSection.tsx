@@ -45,7 +45,6 @@ export default function DayViewTasksSection({ date, onTaskToggled, onEditTask }:
   const [tasks, setTasks] = useState<Event[]>([]);
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
-  const [toggling, setToggling] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(true);
   const [draggedId, setDraggedId] = useState<string | null>(null);
 
@@ -180,27 +179,35 @@ export default function DayViewTasksSection({ date, onTaskToggled, onEditTask }:
   const handleToggle = async (task: Event) => {
     const isCompleted = completedIds.has(task.id);
 
-    setToggling(task.id);
+    // Optimistic update — update UI immediately
+    setCompletedIds(prev => {
+      const next = new Set(prev);
+      if (isCompleted) {
+        next.delete(task.id);
+      } else {
+        next.add(task.id);
+      }
+      return next;
+    });
+
     try {
       await api.events.toggleExecution(task.id, dateString, !isCompleted);
-
-      setCompletedIds(prev => {
-        const next = new Set(prev);
-        if (isCompleted) {
-          next.delete(task.id);
-        } else {
-          next.add(task.id);
-        }
-        return next;
-      });
 
       if (onTaskToggled) {
         onTaskToggled();
       }
     } catch (error) {
       console.error('Failed to toggle task:', error);
-    } finally {
-      setToggling(null);
+      // Revert on error
+      setCompletedIds(prev => {
+        const next = new Set(prev);
+        if (isCompleted) {
+          next.add(task.id);
+        } else {
+          next.delete(task.id);
+        }
+        return next;
+      });
     }
   };
 
@@ -212,7 +219,6 @@ export default function DayViewTasksSection({ date, onTaskToggled, onEditTask }:
   // Render a single task item
   const renderTaskItem = (task: Event, list: Event[]) => {
     const isCompleted = completedIds.has(task.id);
-    const isToggling = toggling === task.id;
     const priority = getPriorityInfo(task.priority);
     const dueStatus = getDueDateStatus(task.dueDate, dateString);
     const isDragged = draggedId === task.id;
@@ -239,16 +245,13 @@ export default function DayViewTasksSection({ date, onTaskToggled, onEditTask }:
           {/* Checkbox */}
           <button
             onClick={() => handleToggle(task)}
-            disabled={isToggling}
             className={`w-5 h-5 rounded-md border-2 flex-shrink-0 flex items-center justify-center transition-all duration-200 ${
               isCompleted
                 ? 'bg-green-500 border-green-500'
                 : 'border-white/40 hover:border-white/60'
             }`}
           >
-            {isToggling ? (
-              <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : isCompleted ? (
+            {isCompleted ? (
               <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
               </svg>

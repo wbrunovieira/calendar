@@ -22,7 +22,6 @@ export default function DayViewHabitsSection({ date, onHabitToggled }: DayViewHa
   const [habits, setHabits] = useState<Event[]>([]);
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
-  const [toggling, setToggling] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(true);
 
   const dateString = formatDateToString(date);
@@ -99,27 +98,35 @@ export default function DayViewHabitsSection({ date, onHabitToggled }: DayViewHa
     const habitId = habit.originalEventId || habit.id;
     const isCompleted = completedIds.has(habit.id);
 
-    setToggling(habit.id);
+    // Optimistic update — update UI immediately
+    setCompletedIds(prev => {
+      const next = new Set(prev);
+      if (isCompleted) {
+        next.delete(habit.id);
+      } else {
+        next.add(habit.id);
+      }
+      return next;
+    });
+
     try {
       await api.events.toggleExecution(habitId, dateString, !isCompleted);
-
-      setCompletedIds(prev => {
-        const next = new Set(prev);
-        if (isCompleted) {
-          next.delete(habit.id);
-        } else {
-          next.add(habit.id);
-        }
-        return next;
-      });
 
       if (onHabitToggled) {
         onHabitToggled();
       }
     } catch (error) {
       console.error('Failed to toggle habit:', error);
-    } finally {
-      setToggling(null);
+      // Revert on error
+      setCompletedIds(prev => {
+        const next = new Set(prev);
+        if (isCompleted) {
+          next.add(habit.id);
+        } else {
+          next.delete(habit.id);
+        }
+        return next;
+      });
     }
   };
 
@@ -129,13 +136,11 @@ export default function DayViewHabitsSection({ date, onHabitToggled }: DayViewHa
   // Render a single habit item
   const renderHabitItem = (habit: Event) => {
     const isCompleted = completedIds.has(habit.id);
-    const isToggling = toggling === habit.id;
 
     return (
       <li key={habit.id}>
         <button
           onClick={() => handleToggle(habit)}
-          disabled={isToggling}
           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all duration-200 ${
             isCompleted
               ? 'bg-green-500/20 hover:bg-green-500/30 border border-green-500/30'
@@ -150,9 +155,7 @@ export default function DayViewHabitsSection({ date, onHabitToggled }: DayViewHa
                 : 'border-white/40 hover:border-white/60'
             }`}
           >
-            {isToggling ? (
-              <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : isCompleted ? (
+            {isCompleted ? (
               <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
               </svg>
