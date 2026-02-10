@@ -178,6 +178,14 @@
       changed_when: false
       ignore_errors: true
 
+    - name: Cleanup old Docker images and build cache
+      raw: |
+        echo "Before cleanup:" && df -h / | tail -1
+        docker image prune -f 2>&1 | tail -1
+        docker builder prune -f 2>&1 | tail -1
+        echo "After cleanup:" && df -h / | tail -1
+      changed_when: false
+
   post_tasks:
     - name: Deployment summary
       raw: |
