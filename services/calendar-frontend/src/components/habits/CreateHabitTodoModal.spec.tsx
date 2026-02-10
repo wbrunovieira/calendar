@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import CreateHabitTodoModal from './CreateHabitTodoModal';
-import type { Calendar, Category, Event } from '@/types/calendar';
+import type { Calendar, Category, CategoryType, Event } from '@/types/calendar';
 
 // Mock the api module
 vi.mock('@/lib/api', () => ({
@@ -11,6 +11,9 @@ vi.mock('@/lib/api', () => ({
       create: vi.fn(),
     },
     categories: {
+      list: vi.fn(),
+    },
+    categoryTypes: {
       list: vi.fn(),
     },
     labels: {
@@ -42,6 +45,19 @@ describe('CreateHabitTodoModal', () => {
     },
   ];
 
+  const mockCategoryTypes: CategoryType[] = [
+    {
+      id: 'ct-1',
+      calendarId: 'cal-2',
+      name: 'Work',
+      value: 'work',
+      color: '#0077B5',
+      isActive: true,
+      createdAt: '2024-01-01',
+      updatedAt: '2024-01-01',
+    },
+  ];
+
   const mockCategories: Category[] = [
     {
       id: 'cat-1',
@@ -50,6 +66,7 @@ describe('CreateHabitTodoModal', () => {
       icon: '💼',
       color: '#0077B5',
       isActive: true,
+      categoryTypes: mockCategoryTypes,
     },
   ];
 
@@ -59,6 +76,7 @@ describe('CreateHabitTodoModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(api.categories.list).mockResolvedValue(mockCategories);
+    vi.mocked(api.categoryTypes.list).mockResolvedValue([]);
     vi.mocked(api.labels.list).mockResolvedValue([]);
     vi.mocked(api.events.create).mockResolvedValue({
       id: 'new-event-1',
@@ -163,7 +181,7 @@ describe('CreateHabitTodoModal', () => {
       );
 
       expect(screen.getByLabelText('Frequencia')).toBeInTheDocument();
-      expect(screen.getByLabelText('Horario')).toBeInTheDocument();
+      expect(screen.getByLabelText('Horario Preferido')).toBeInTheDocument();
     });
 
     it('should create habit with correct data', async () => {
@@ -212,7 +230,11 @@ describe('CreateHabitTodoModal', () => {
       expect(screen.getByLabelText('Data de Vencimento')).toBeInTheDocument();
     });
 
-    it('should show category selector for todos', async () => {
+    it('should show category selector for todos when category type is selected', async () => {
+      const user = userEvent.setup();
+      vi.mocked(api.categoryTypes.list).mockResolvedValue(mockCategoryTypes);
+      vi.mocked(api.categories.list).mockResolvedValue(mockCategories);
+
       render(
         <CreateHabitTodoModal
           isOpen={true}
@@ -223,6 +245,15 @@ describe('CreateHabitTodoModal', () => {
           selectedCalendarId="cal-2"
         />
       );
+
+      // Wait for the "Tipo" selector to appear (requires categoryTypes to load)
+      await waitFor(() => {
+        expect(screen.getByLabelText('Tipo')).toBeInTheDocument();
+      });
+
+      // Select a category type to make the "Categoria" field appear
+      const tipoSelect = screen.getByLabelText('Tipo');
+      await user.selectOptions(tipoSelect, 'ct-1');
 
       await waitFor(() => {
         expect(screen.getByLabelText('Categoria')).toBeInTheDocument();

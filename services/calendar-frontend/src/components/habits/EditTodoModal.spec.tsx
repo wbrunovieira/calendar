@@ -13,6 +13,9 @@ vi.mock('@/lib/api', () => ({
     categories: {
       list: vi.fn(),
     },
+    categoryTypes: {
+      list: vi.fn(),
+    },
     labels: {
       list: vi.fn(),
       create: vi.fn(),
@@ -62,6 +65,7 @@ describe('EditTodoModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(api.categories.list).mockResolvedValue([]);
+    vi.mocked(api.categoryTypes.list).mockResolvedValue([]);
     vi.mocked(api.labels.list).mockResolvedValue([]);
     vi.mocked(api.events.update).mockResolvedValue(mockTodo);
   });
