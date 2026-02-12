@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import asyncio
+import logging
+
 from pydantic import BaseModel, Field
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks
 
 from app.agents.crm.graph import build_crm_graph
 from app.agents.finances.nodes import langfuse
+
+logger = logging.getLogger("agents")
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -18,11 +23,52 @@ def _get_graph():
     return _graph
 
 
-class LeadResearchRequest(BaseModel):
-    query: str
-    icp_id: str
-    count: int = Field(default=1, ge=1, le=5)
+# ── Request models ──────────────────────────────────────────
 
+class ICPPayload(BaseModel):
+    id: str
+    name: str = ""
+    content: str = ""
+
+
+class SearchParams(BaseModel):
+    searchTerm: str
+    country: str = "Brasil"
+    quantity: int = Field(default=1, ge=1, le=5)
+    quality: str = "cold"
+
+
+class LeadResearchRequest(BaseModel):
+    # CRM format (primary)
+    icp: ICPPayload | None = None
+    searchParams: SearchParams | None = None
+
+    # Direct format (alternative)
+    query: str | None = None
+    icp_id: str | None = None
+    count: int | None = Field(default=None, ge=1, le=5)
+
+    def resolve(self) -> tuple[str, str, int, dict | None]:
+        """Returns (query, icp_id, count, icp_context_or_none)."""
+        if self.icp and self.searchParams:
+            # CRM format: ICP object + searchParams
+            icp_context = {"id": self.icp.id, "name": self.icp.name, "content": self.icp.content}
+            return (
+                self.searchParams.searchTerm,
+                self.icp.id,
+                self.searchParams.quantity,
+                icp_context,
+            )
+        # Direct format
+        return (
+            self.query or "",
+            self.icp_id or "",
+            self.count or 1,
+            None,
+        )
+
+
+# ── Response models ─────────────────────────────────────────
 
 class LeadResult(BaseModel):
     lead: dict
@@ -43,54 +89,88 @@ class LeadResearchResponse(BaseModel):
     error: str | None = None
 
 
-@router.post("/crm/lead-research", response_model=LeadResearchResponse)
-async def handle_lead_research(req: LeadResearchRequest):
-    trace = langfuse.trace(
-        name="crm-lead-research",
-        input={"query": req.query, "icp_id": req.icp_id, "count": req.count},
-    ) if langfuse.enabled else None
+# ── Background worker ──────────────────────────────────────
+
+async def _run_research(query: str, icp_id: str, count: int, icp_context: dict | None, trace_id: str | None):
+    """Run lead research in background."""
+    trace = None
+    if trace_id and langfuse.enabled:
+        trace = langfuse.trace(
+            name="crm-lead-research",
+            id=trace_id,
+            input={"query": query, "icp_id": icp_id, "count": count},
+        )
 
     graph = _get_graph()
-    result = await graph.ainvoke({
-        "query": req.query,
-        "icp_id": req.icp_id,
-        "count": req.count,
+    state_input: dict = {
+        "query": query,
+        "icp_id": icp_id,
+        "count": count,
         "_trace": trace,
-    })
+    }
+    if icp_context:
+        state_input["icp_context"] = icp_context
+
+    try:
+        result = await graph.ainvoke(state_input)
+    except Exception:
+        logger.exception("Background lead research failed")
+        if trace:
+            trace.update(output={"error": "background_task_failed"})
+            langfuse.flush()
+        return
 
     error = result.get("error")
-    created = result.get("created_leads", [])
-    rejected = result.get("rejected", [])
     reply = result.get("reply", "Unknown error")
-
-    if error:
-        status = "error"
-    elif rejected and created:
-        status = "partial"
-    else:
-        status = "created"
-
-    leads_out = [
-        LeadResult(
-            lead=c["lead"],
-            contacts=c.get("contacts", []),
-            supervisor_notes=c.get("supervisor_notes", ""),
-        )
-        for c in created
-    ]
-    rejected_out = [
-        RejectedLead(query_term=r["query_term"], reason=r["reason"])
-        for r in rejected
-    ]
+    status = "error" if error else "created"
 
     if trace:
         trace.update(output={"reply": reply, "status": status, "error": error})
         langfuse.flush()
 
+    created = result.get("created_leads", [])
+    rejected = result.get("rejected", [])
+    logger.info(
+        "Lead research completed: query=%s, created=%d, rejected=%d, error=%s",
+        query, len(created), len(rejected), error,
+    )
+
+
+# ── Endpoint ───────────────────────────────────────────────
+
+@router.post("/crm/lead-research", response_model=LeadResearchResponse)
+async def handle_lead_research(req: LeadResearchRequest, background_tasks: BackgroundTasks):
+    query, icp_id, count, icp_context = req.resolve()
+
+    if not query:
+        return LeadResearchResponse(
+            status="error",
+            reply="Missing search query",
+            error="missing_query",
+        )
+
+    if not icp_id:
+        return LeadResearchResponse(
+            status="error",
+            reply="Missing ICP ID",
+            error="missing_icp_id",
+        )
+
+    # Create trace ID upfront so we can track it
+    trace_id = None
+    if langfuse.enabled:
+        trace = langfuse.trace(
+            name="crm-lead-research",
+            input={"query": query, "icp_id": icp_id, "count": count},
+            metadata={"async": True},
+        )
+        trace_id = trace.id
+        langfuse.flush()
+
+    # Schedule research in background
+    background_tasks.add_task(_run_research, query, icp_id, count, icp_context, trace_id)
+
     return LeadResearchResponse(
-        status=status,
-        reply=reply,
-        leads=leads_out,
-        rejected=rejected_out,
-        error=error,
+        status="accepted",
+        reply=f"Research started: '{query}' ({count} lead(s)). Results will be saved to CRM.",
     )

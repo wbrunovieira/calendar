@@ -152,9 +152,16 @@ async def _call_claude_with_tool_loop(
 
 
 async def load_icp_context(state: CRMLeadState) -> dict:
-    """Fetch ICP from CRM. Error if not found."""
+    """Fetch ICP from CRM, or use pre-loaded ICP if already in state."""
     trace = state.get("_trace")
     icp_id = state["icp_id"]
+
+    # Skip API call if ICP was already provided in the request
+    if state.get("icp_context"):
+        if trace:
+            span = trace.span(name="load_icp_context", input={"icp_id": icp_id})
+            span.end(output={"icp_name": state["icp_context"].get("name", ""), "source": "pre-loaded"})
+        return {}
 
     span = trace.span(name="load_icp_context", input={"icp_id": icp_id}) if trace else None
 
