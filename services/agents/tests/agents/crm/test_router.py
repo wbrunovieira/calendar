@@ -22,6 +22,7 @@ def test_returns_error_when_no_query_direct_format():
     assert resp.status_code == 200
     assert data["status"] == "error"
     assert data["error"] == "missing_query"
+    assert data["jobId"] is None
 
 
 def test_returns_error_when_no_icp_id_direct_format():
@@ -57,6 +58,8 @@ def test_accepted_direct_format():
     data = resp.json()
     assert resp.status_code == 200
     assert data["status"] == "accepted"
+    assert data["jobId"] is not None
+    assert len(data["jobId"]) == 36  # UUID format
     assert "Research started" in data["reply"]
 
 
@@ -69,6 +72,7 @@ def test_accepted_crm_format():
     data = resp.json()
     assert resp.status_code == 200
     assert data["status"] == "accepted"
+    assert data["jobId"] is not None
     assert "Hotmart" in data["reply"]
     assert "2 lead(s)" in data["reply"]
 
@@ -82,6 +86,7 @@ def test_accepted_crm_format_defaults():
     data = resp.json()
     assert resp.status_code == 200
     assert data["status"] == "accepted"
+    assert data["jobId"] is not None
 
 
 def test_crm_format_quantity_exceeds_max():
@@ -90,3 +95,21 @@ def test_crm_format_quantity_exceeds_max():
         "searchParams": {"searchTerm": "test", "quantity": 10},
     })
     assert resp.status_code == 422
+
+
+# ── Background worker passes jobId ───────────────────────
+
+
+def test_background_receives_job_id():
+    mock = AsyncMock()
+    with patch(_mock_research, mock):
+        resp = client.post("/agents/crm/lead-research", json={
+            "query": "test", "icp_id": "icp-1", "count": 1
+        })
+    data = resp.json()
+    job_id = data["jobId"]
+
+    # _run_research was called with job_id as first arg
+    mock.assert_called_once()
+    call_args = mock.call_args
+    assert call_args[0][0] == job_id  # first positional arg is job_id

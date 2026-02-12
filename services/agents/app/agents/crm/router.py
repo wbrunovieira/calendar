@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import asyncio
 import logging
+import uuid
 
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, BackgroundTasks
 
 from app.agents.crm.graph import build_crm_graph
+from app.clients import crm
 from app.agents.finances.nodes import langfuse
 
 logger = logging.getLogger("agents")
@@ -83,6 +84,7 @@ class RejectedLead(BaseModel):
 
 class LeadResearchResponse(BaseModel):
     status: str
+    jobId: str | None = None
     reply: str
     leads: list[LeadResult] = []
     rejected: list[RejectedLead] = []
@@ -91,8 +93,11 @@ class LeadResearchResponse(BaseModel):
 
 # ── Background worker ──────────────────────────────────────
 
-async def _run_research(query: str, icp_id: str, count: int, icp_context: dict | None, trace_id: str | None):
-    """Run lead research in background."""
+async def _run_research(
+    job_id: str, query: str, icp_id: str, count: int,
+    icp_context: dict | None, trace_id: str | None,
+):
+    """Run lead research in background and notify CRM via webhook."""
     trace = None
     if trace_id and langfuse.enabled:
         trace = langfuse.trace(
@@ -118,11 +123,19 @@ async def _run_research(query: str, icp_id: str, count: int, icp_context: dict |
         if trace:
             trace.update(output={"error": "background_task_failed"})
             langfuse.flush()
+        await crm.send_webhook({
+            "jobId": job_id,
+            "status": "error",
+            "createdLeads": [],
+            "rejected": [],
+            "summary": "Background task failed unexpectedly",
+            "error": "background_task_failed",
+        })
         return
 
     error = result.get("error")
     reply = result.get("reply", "Unknown error")
-    status = "error" if error else "created"
+    status = "error" if error else "completed"
 
     if trace:
         trace.update(output={"reply": reply, "status": status, "error": error})
@@ -134,6 +147,19 @@ async def _run_research(query: str, icp_id: str, count: int, icp_context: dict |
         "Lead research completed: query=%s, created=%d, rejected=%d, error=%s",
         query, len(created), len(rejected), error,
     )
+
+    # Notify CRM via webhook
+    await crm.send_webhook({
+        "jobId": job_id,
+        "status": status,
+        "createdLeads": created,
+        "rejected": [
+            {"queryTerm": r.get("query_term", "?"), "reason": r.get("reason", "")}
+            for r in rejected
+        ],
+        "summary": reply,
+        "error": error,
+    })
 
 
 # ── Endpoint ───────────────────────────────────────────────
@@ -156,21 +182,24 @@ async def handle_lead_research(req: LeadResearchRequest, background_tasks: Backg
             error="missing_icp_id",
         )
 
+    job_id = str(uuid.uuid4())
+
     # Create trace ID upfront so we can track it
     trace_id = None
     if langfuse.enabled:
         trace = langfuse.trace(
             name="crm-lead-research",
             input={"query": query, "icp_id": icp_id, "count": count},
-            metadata={"async": True},
+            metadata={"async": True, "job_id": job_id},
         )
         trace_id = trace.id
         langfuse.flush()
 
     # Schedule research in background
-    background_tasks.add_task(_run_research, query, icp_id, count, icp_context, trace_id)
+    background_tasks.add_task(_run_research, job_id, query, icp_id, count, icp_context, trace_id)
 
     return LeadResearchResponse(
         status="accepted",
+        jobId=job_id,
         reply=f"Research started: '{query}' ({count} lead(s)). Results will be saved to CRM.",
     )
