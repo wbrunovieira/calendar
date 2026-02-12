@@ -8,8 +8,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langfuse import Langfuse
 
-from app.agents.transaction.prompts import FALLBACK_SYSTEM, FALLBACK_USER
-from app.agents.transaction.state import TransactionState
+from app.agents.finances.prompts import FALLBACK_SYSTEM, FALLBACK_USER
+from app.agents.finances.state import TransactionState
 from app.clients import finances
 from app.config import settings
 

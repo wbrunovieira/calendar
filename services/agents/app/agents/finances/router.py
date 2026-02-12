@@ -3,9 +3,9 @@ from __future__ import annotations
 from pydantic import BaseModel
 from fastapi import APIRouter
 
-from app.agents.transaction.evaluator import evaluate_trace
-from app.agents.transaction.graph import build_transaction_graph
-from app.agents.transaction.nodes import langfuse
+from app.agents.finances.evaluator import evaluate_trace
+from app.agents.finances.graph import build_transaction_graph
+from app.agents.finances.nodes import langfuse
 from app.config import settings
 
 router = APIRouter(prefix="/agents", tags=["agents"])

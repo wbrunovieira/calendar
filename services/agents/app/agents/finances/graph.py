@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
 
-from app.agents.transaction.nodes import (
+from app.agents.finances.nodes import (
     create_transaction,
     format_reply,
     load_context,
     parse_message,
     resolve_entities,
 )
-from app.agents.transaction.state import TransactionState
+from app.agents.finances.state import TransactionState
 
 
 def _after_parse(state: TransactionState) -> str:

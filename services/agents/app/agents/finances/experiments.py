@@ -7,13 +7,13 @@ and records everything in Langfuse for comparison.
 
 Usage:
     # From Docker (recommended)
-    docker compose exec agents python -m app.agents.transaction.experiments
+    docker compose exec agents python -m app.agents.finances.experiments
 
     # Seed dataset only (no run)
-    docker compose exec agents python -m app.agents.transaction.experiments --seed-only
+    docker compose exec agents python -m app.agents.finances.experiments --seed-only
 
     # Run experiment with a custom name
-    docker compose exec agents python -m app.agents.transaction.experiments --run-name "prompt-v2"
+    docker compose exec agents python -m app.agents.finances.experiments --run-name "prompt-v2"
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ from datetime import date
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
-from app.agents.transaction.evaluator import EVAL_PROMPT, EVAL_USER
-from app.agents.transaction.nodes import langfuse, _build_messages
+from app.agents.finances.evaluator import EVAL_PROMPT, EVAL_USER
+from app.agents.finances.nodes import langfuse, _build_messages
 from app.config import settings
 
 logger = logging.getLogger("agents")

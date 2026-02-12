@@ -6,7 +6,7 @@ import logging
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
-from app.agents.transaction.nodes import langfuse
+from app.agents.finances.nodes import langfuse
 from app.config import settings
 
 logger = logging.getLogger("agents")
