@@ -15,6 +15,14 @@ class Settings:
     # Finance profile IDs
     finance_personal_profile_id: str = os.getenv("FINANCE_PERSONAL_PROFILE_ID", "")
 
+    # Anthropic (Claude)
+    anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
+    anthropic_model: str = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-6")
+    anthropic_supervisor_model: str = os.getenv("ANTHROPIC_SUPERVISOR_MODEL", "claude-haiku-4-5-20251001")
+
+    # WB-CRM (internal network)
+    crm_base_url: str = os.getenv("CRM_BASE_URL", "http://host.docker.internal:3000")
+
     # Langfuse
     langfuse_public_key: str = os.getenv("LANGFUSE_PUBLIC_KEY", "")
     langfuse_secret_key: str = os.getenv("LANGFUSE_SECRET_KEY", "")

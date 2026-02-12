@@ -1,0 +1,153 @@
+from __future__ import annotations
+
+import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from app.agents.crm.nodes import (
+    load_icp_context,
+    structure_leads_data,
+    supervisor_review,
+    save_to_crm,
+)
+
+pytestmark = pytest.mark.asyncio
+
+
+def _mock_claude_response(text: str) -> MagicMock:
+    """Create a mock Anthropic response with proper content block."""
+    block = SimpleNamespace(type="text", text=text)
+    resp = MagicMock()
+    resp.content = [block]
+    resp.stop_reason = "end_turn"
+    return resp
+
+
+# ── load_icp_context ────────────────────────────────────────
+
+
+async def test_load_icp_context_success():
+    fake_icp = {
+        "id": "icp-1",
+        "name": "SaaS B2B",
+        "content": "Companies selling SaaS to SMBs in Brazil",
+    }
+    with patch("app.agents.crm.nodes.crm.get_icp", new_callable=AsyncMock, return_value=fake_icp):
+        result = await load_icp_context({"icp_id": "icp-1", "_trace": None})
+    assert result["icp_context"] == fake_icp
+    assert "error" not in result
+
+
+async def test_load_icp_context_not_found():
+    with patch(
+        "app.agents.crm.nodes.crm.get_icp",
+        new_callable=AsyncMock,
+        side_effect=LookupError("ICP 'bad-id' not found"),
+    ):
+        result = await load_icp_context({"icp_id": "bad-id", "_trace": None})
+    assert result["error"] == "icp_not_found"
+    assert "reply" in result
+
+
+# ── structure_leads_data ────────────────────────────────────
+
+
+async def test_structure_leads_data_valid_json():
+    structured = json.dumps({
+        "lead": {"businessName": "TechCo", "email": "hi@techco.com", "source": "ai-research", "status": "new"},
+        "contacts": [{"name": "John", "role": "CEO", "isPrimary": True}],
+    })
+
+    mock_resp = _mock_claude_response(structured)
+
+    with patch("app.agents.crm.nodes._call_claude", new_callable=AsyncMock, return_value=mock_resp):
+        result = await structure_leads_data({
+            "raw_dossiers": ["=== COMPANY: TechCo ===\nWebsite: techco.com"],
+            "_trace": None,
+        })
+    assert len(result["leads_data"]) == 1
+    assert result["leads_data"][0]["businessName"] == "TechCo"
+    assert len(result["contacts_data"]) == 1
+
+
+async def test_structure_leads_data_missing_business_name():
+    structured = json.dumps({"error": "missing_business_name"})
+
+    mock_resp = _mock_claude_response(structured)
+
+    with patch("app.agents.crm.nodes._call_claude", new_callable=AsyncMock, return_value=mock_resp):
+        result = await structure_leads_data({
+            "raw_dossiers": ["=== COMPANY: ??? ==="],
+            "_trace": None,
+        })
+    assert len(result["leads_data"]) == 0
+
+
+# ── supervisor_review ───────────────────────────────────────
+
+
+async def test_supervisor_approves_good_lead():
+    review = json.dumps({"approved": True, "notes": "Data verified.", "issues": []})
+
+    mock_resp = _mock_claude_response(review)
+
+    with patch("app.agents.crm.nodes._call_claude", new_callable=AsyncMock, return_value=mock_resp):
+        result = await supervisor_review({
+            "leads_data": [{"businessName": "TechCo", "email": "hi@techco.com"}],
+            "contacts_data": [[{"name": "John", "role": "CEO"}]],
+            "icp_context": {"name": "SaaS B2B", "content": "SaaS companies"},
+            "_trace": None,
+        })
+    assert 0 in result["approved_indices"]
+    assert len(result["rejected"]) == 0
+
+
+async def test_supervisor_rejects_bad_lead():
+    review = json.dumps({"approved": False, "notes": "Generic data.", "issues": ["No real contact"]})
+
+    mock_resp = _mock_claude_response(review)
+
+    with patch("app.agents.crm.nodes._call_claude", new_callable=AsyncMock, return_value=mock_resp):
+        result = await supervisor_review({
+            "leads_data": [{"businessName": "Company XYZ"}],
+            "contacts_data": [[{"name": "Unknown"}]],
+            "icp_context": {"name": "SaaS B2B", "content": "SaaS companies"},
+            "_trace": None,
+        })
+    assert len(result["approved_indices"]) == 0
+    assert len(result["rejected"]) == 1
+    assert "Generic data" in result["rejected"][0]["reason"]
+
+
+# ── save_to_crm ────────────────────────────────────────────
+
+
+async def test_save_to_crm_creates_lead_and_contacts():
+    fake_lead = {"id": "lead-1", "businessName": "TechCo"}
+    fake_contact = {"id": "contact-1", "name": "John"}
+
+    with patch("app.agents.crm.nodes.crm.create_lead", new_callable=AsyncMock, return_value=fake_lead), \
+         patch("app.agents.crm.nodes.crm.create_lead_contact", new_callable=AsyncMock, return_value=fake_contact):
+        result = await save_to_crm({
+            "leads_data": [{"businessName": "TechCo", "email": "hi@techco.com"}],
+            "contacts_data": [[{"name": "John", "role": "CEO"}]],
+            "approved_indices": [0],
+            "_trace": None,
+        })
+    assert len(result["created_leads"]) == 1
+    assert result["created_leads"][0]["lead"]["id"] == "lead-1"
+
+
+async def test_save_to_crm_skips_rejected():
+    with patch("app.agents.crm.nodes.crm.create_lead", new_callable=AsyncMock) as mock_create:
+        result = await save_to_crm({
+            "leads_data": [{"businessName": "Rejected Co"}, {"businessName": "Approved Co"}],
+            "contacts_data": [[{"name": "A"}], [{"name": "B"}]],
+            "approved_indices": [1],
+            "_trace": None,
+        })
+    # Only the approved lead (index 1) should be created
+    assert mock_create.call_count == 1
+    assert mock_create.call_args[0][0]["businessName"] == "Approved Co"
