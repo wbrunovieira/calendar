@@ -42,14 +42,27 @@ def _get_langfuse_prompt(name: str) -> Any | None:
 
 
 def _build_investigator_messages(
-    icp_context: str, query: str, count: int,
+    icp_context: str, query: str, count: int, existing_leads: list[str] | None = None,
 ) -> tuple[str, str, Any | None]:
+    existing_section = ""
+    if existing_leads:
+        names = ", ".join(existing_leads)
+        existing_section = (
+            f"\n**IMPORTANT — These companies are already in the CRM. DO NOT research them again:**\n"
+            f"{names}\n"
+        )
     prompt = _get_langfuse_prompt("crm-lead-investigator")
     if prompt is not None:
-        compiled = prompt.compile(icp_context=icp_context, query=query, count=str(count))
+        compiled = prompt.compile(
+            icp_context=icp_context, query=query, count=str(count),
+            existing_leads_section=existing_section,
+        )
         return compiled[0]["content"], compiled[1]["content"], prompt
     system = INVESTIGATOR_SYSTEM
-    user = INVESTIGATOR_USER.format(icp_context=icp_context, query=query, count=count)
+    user = INVESTIGATOR_USER.format(
+        icp_context=icp_context, query=query, count=count,
+        existing_leads_section=existing_section,
+    )
     return system, user, None
 
 
@@ -206,14 +219,30 @@ async def load_icp_context(state: CRMLeadState) -> dict:
     trace = state.get("_trace")
     icp_id = state["icp_id"]
 
-    # Skip API call if ICP was already provided in the request
-    if state.get("icp_context"):
-        if trace:
-            span = trace.span(name="load_icp_context", input={"icp_id": icp_id})
-            span.end(output={"icp_name": state["icp_context"].get("name", ""), "source": "pre-loaded"})
-        return {}
-
     span = trace.span(name="load_icp_context", input={"icp_id": icp_id}) if trace else None
+
+    # Fetch existing leads for dedup (regardless of ICP source)
+    existing_leads: list[str] = []
+    try:
+        leads_list = await crm.get_leads_by_icp(icp_id)
+        existing_leads = [
+            lead.get("businessName", "") for lead in leads_list
+            if lead.get("businessName")
+        ]
+        if existing_leads:
+            logger.info("Found %d existing leads for ICP %s: %s", len(existing_leads), icp_id, existing_leads)
+    except Exception:
+        logger.warning("Failed to fetch existing leads for ICP %s, continuing without dedup", icp_id)
+
+    # Skip ICP API call if ICP was already provided in the request
+    if state.get("icp_context"):
+        if span:
+            span.end(output={
+                "icp_name": state["icp_context"].get("name", ""),
+                "source": "pre-loaded",
+                "existing_leads": len(existing_leads),
+            })
+        return {"existing_leads": existing_leads}
 
     try:
         icp = await crm.get_icp(icp_id)
@@ -234,9 +263,9 @@ async def load_icp_context(state: CRMLeadState) -> dict:
         }
 
     if span:
-        span.end(output={"icp_name": icp.get("name", "")})
+        span.end(output={"icp_name": icp.get("name", ""), "existing_leads": len(existing_leads)})
 
-    return {"icp_context": icp}
+    return {"icp_context": icp, "existing_leads": existing_leads}
 
 
 async def investigate_leads(state: CRMLeadState) -> dict:
@@ -250,8 +279,9 @@ async def investigate_leads(state: CRMLeadState) -> dict:
     count = state.get("count", 1)
 
     icp_text = f"Name: {icp.get('name', '')}\n{icp.get('content', '')}"
+    existing_leads = state.get("existing_leads", [])
 
-    system, user, lf_prompt = _build_investigator_messages(icp_text, query, count)
+    system, user, lf_prompt = _build_investigator_messages(icp_text, query, count, existing_leads)
 
     gen_kwargs: dict = {
         "name": "investigate_leads",
@@ -264,7 +294,7 @@ async def investigate_leads(state: CRMLeadState) -> dict:
 
     generation = trace.generation(**gen_kwargs) if trace else None
 
-    tools = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 10}]
+    tools = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}]
 
     try:
         raw_text, usage = await _call_claude_with_tool_loop(system, user, tools=tools)
@@ -443,6 +473,7 @@ async def save_to_crm(state: CRMLeadState) -> dict:
     leads = state.get("leads_data", [])
     contacts = state.get("contacts_data", [])
     approved = state.get("approved_indices", [])
+    icp_id = state.get("icp_id", "")
 
     span = trace.span(name="save_to_crm", input={"approved_count": len(approved)}) if trace else None
 
@@ -454,12 +485,20 @@ async def save_to_crm(state: CRMLeadState) -> dict:
 
         try:
             lead_result = await crm.create_lead(lead_data)
-        except Exception as exc:
+        except Exception:
             logger.exception("Failed to create lead %s", lead_data.get("businessName"))
             continue
 
-        saved_contacts = []
         lead_id = lead_result.get("id", "")
+
+        # Link lead to ICP
+        if lead_id and icp_id:
+            try:
+                await crm.link_lead_to_icp(lead_id, icp_id)
+            except Exception:
+                logger.warning("Failed to link lead %s to ICP %s", lead_id, icp_id)
+
+        saved_contacts = []
         for contact in lead_contacts:
             try:
                 contact_result = await crm.create_lead_contact(lead_id, contact)

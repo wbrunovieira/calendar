@@ -64,7 +64,7 @@ INVESTIGATOR_USER = """\
 Research {count} company(ies) matching the ICP above, using the following search criteria:
 
 **Query**: {query}
-
+{existing_leads_section}
 Build a complete dossier for each company found. Use web search to find real data.
 """
 
@@ -95,6 +95,7 @@ JSON format:
             "role": "Job Title",
             "email": "email@company.com",
             "phone": "+5511999999999",
+            "linkedin": "https://linkedin.com/in/username",
             "isPrimary": true
         }}
     ]
@@ -106,6 +107,7 @@ RULES:
 - Do NOT invent data. If a field was not found, omit it from the JSON
 - phone should be in E.164 format (+55...) when possible
 - The first contact must have isPrimary: true
+- linkedin is IMPORTANT: include the LinkedIn profile URL for each contact when found
 """
 
 STRUCTURE_USER = """\

@@ -12,6 +12,7 @@ class CRMLeadState(TypedDict, total=False):
 
     # Context
     icp_context: dict | None
+    existing_leads: list[str]
 
     # Investigation
     raw_dossiers: list[str]

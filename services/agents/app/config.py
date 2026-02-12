@@ -17,7 +17,7 @@ class Settings:
 
     # Anthropic (Claude)
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
-    anthropic_model: str = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-6")
+    anthropic_model: str = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
     anthropic_supervisor_model: str = os.getenv("ANTHROPIC_SUPERVISOR_MODEL", "claude-haiku-4-5-20251001")
 
     # WB-CRM (internal network)
