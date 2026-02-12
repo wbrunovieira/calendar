@@ -49,11 +49,15 @@ class LeadResearchRequest(BaseModel):
     icp_id: str | None = None
     count: int | None = Field(default=None, ge=1, le=5)
 
+    # Max ICP content chars to send to the agent (ICP definition + checklist only, no sales copy)
+    _ICP_CONTENT_MAX_CHARS = 2500
+
     def resolve(self) -> tuple[str, str, int, dict | None]:
         """Returns (query, icp_id, count, icp_context_or_none)."""
         if self.icp and self.searchParams:
-            # CRM format: ICP object + searchParams
-            icp_context = {"id": self.icp.id, "name": self.icp.name, "content": self.icp.content}
+            # CRM format: ICP object + searchParams — truncate content to save tokens
+            content = self.icp.content[:self._ICP_CONTENT_MAX_CHARS] if self.icp.content else ""
+            icp_context = {"id": self.icp.id, "name": self.icp.name, "content": content}
             return (
                 self.searchParams.searchTerm,
                 self.icp.id,

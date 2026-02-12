@@ -78,8 +78,34 @@ def _build_supervisor_messages(
 # ── Claude helpers ──────────────────────────────────────────
 
 
+class AgentError(Exception):
+    """User-friendly error from agent operations."""
+
+    def __init__(self, message: str, code: str = "agent_error"):
+        super().__init__(message)
+        self.code = code
+
+
 def _get_client() -> anthropic.AsyncAnthropic:
     return anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+
+
+def _handle_anthropic_error(exc: Exception) -> AgentError:
+    """Convert Anthropic SDK exceptions to user-friendly AgentError."""
+    msg = str(exc)
+    if isinstance(exc, anthropic.AuthenticationError):
+        return AgentError("Anthropic API key is invalid or expired. Contact the administrator.", "auth_error")
+    if isinstance(exc, anthropic.BadRequestError):
+        if "credit balance" in msg.lower() or "billing" in msg.lower():
+            return AgentError("Anthropic API credits exhausted. Please add credits at console.anthropic.com.", "billing_error")
+        return AgentError(f"Invalid request to AI provider: {msg}", "bad_request")
+    if isinstance(exc, anthropic.RateLimitError):
+        return AgentError("AI provider rate limit reached. Please try again in a few minutes.", "rate_limit")
+    if isinstance(exc, anthropic.APIStatusError):
+        return AgentError(f"AI provider error (HTTP {exc.status_code}). Please try again later.", "api_error")
+    if isinstance(exc, TypeError) and "authentication" in msg.lower():
+        return AgentError("Anthropic API key is not configured. Contact the administrator.", "auth_error")
+    return AgentError(f"Unexpected AI error: {msg}", "agent_error")
 
 
 async def _call_claude(
@@ -98,7 +124,21 @@ async def _call_claude(
     }
     if tools:
         kwargs["tools"] = tools
-    return await client.messages.create(**kwargs)
+    try:
+        return await client.messages.create(**kwargs)
+    except Exception as exc:
+        raise _handle_anthropic_error(exc) from exc
+
+
+def _extract_usage(response: anthropic.types.Message) -> dict:
+    """Extract token usage from an Anthropic response."""
+    usage = response.usage
+    return {
+        "input": usage.input_tokens,
+        "output": usage.output_tokens,
+        "total": usage.input_tokens + usage.output_tokens,
+        "unit": "TOKENS",
+    }
 
 
 async def _call_claude_with_tool_loop(
@@ -108,10 +148,12 @@ async def _call_claude_with_tool_loop(
     tools: list | None = None,
     max_tokens: int = 16384,
     max_rounds: int = 20,
-) -> str:
-    """Call Claude in a tool-use loop until it produces a final text response."""
+) -> tuple[str, dict]:
+    """Call Claude in a tool-use loop. Returns (text, accumulated_usage)."""
     client = _get_client()
     messages: list[dict] = [{"role": "user", "content": user}]
+    total_input = 0
+    total_output = 0
 
     for _ in range(max_rounds):
         kwargs: dict = {
@@ -123,11 +165,19 @@ async def _call_claude_with_tool_loop(
         if tools:
             kwargs["tools"] = tools
 
-        response = await client.messages.create(**kwargs)
+        try:
+            response = await client.messages.create(**kwargs)
+        except Exception as exc:
+            raise _handle_anthropic_error(exc) from exc
+
+        total_input += response.usage.input_tokens
+        total_output += response.usage.output_tokens
+
+        accumulated = {"input": total_input, "output": total_output, "total": total_input + total_output, "unit": "TOKENS"}
 
         if response.stop_reason == "end_turn":
             text_parts = [b.text for b in response.content if b.type == "text"]
-            return "\n".join(text_parts)
+            return "\n".join(text_parts), accumulated
 
         if response.stop_reason == "tool_use":
             messages.append({"role": "assistant", "content": response.content})
@@ -142,10 +192,10 @@ async def _call_claude_with_tool_loop(
             messages.append({"role": "user", "content": tool_results})
         else:
             text_parts = [b.text for b in response.content if b.type == "text"]
-            return "\n".join(text_parts)
+            return "\n".join(text_parts), accumulated
 
     text_parts = [b.text for b in response.content if b.type == "text"]
-    return "\n".join(text_parts)
+    return "\n".join(text_parts), accumulated
 
 
 # ── Graph nodes ─────────────────────────────────────────────
@@ -217,18 +267,23 @@ async def investigate_leads(state: CRMLeadState) -> dict:
     tools = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 10}]
 
     try:
-        raw_text = await _call_claude_with_tool_loop(system, user, tools=tools)
+        raw_text, usage = await _call_claude_with_tool_loop(system, user, tools=tools)
+    except AgentError as exc:
+        logger.error("Investigation failed: %s [%s]", exc, exc.code)
+        if generation:
+            generation.end(output={"error": str(exc)})
+        return {"error": exc.code, "reply": str(exc)}
     except Exception as exc:
         logger.exception("Investigation failed")
         if generation:
             generation.end(output={"error": str(exc)})
         return {
             "error": "investigation_failed",
-            "reply": f"Investigation failed: {exc}",
+            "reply": "Investigation failed due to an unexpected error. Please try again.",
         }
 
     if generation:
-        generation.end(output=raw_text[:2000])
+        generation.end(output=raw_text[:2000], usage=usage)
 
     # Split dossiers by company separator
     dossiers = []
@@ -259,7 +314,7 @@ async def structure_leads_data(state: CRMLeadState) -> dict:
 
         gen_kwargs: dict = {
             "name": f"structure_lead_{i}",
-            "model": settings.anthropic_model,
+            "model": settings.anthropic_supervisor_model,
             "input": [{"role": "system", "content": system}, {"role": "user", "content": user}],
         }
         if lf_prompt is not None:
@@ -268,9 +323,20 @@ async def structure_leads_data(state: CRMLeadState) -> dict:
         generation = trace.generation(**gen_kwargs) if trace else None
 
         try:
-            response = await _call_claude(system, user)
+            response = await _call_claude(system, user, model=settings.anthropic_supervisor_model)
+            usage = _extract_usage(response)
             raw = "".join(b.text for b in response.content if b.type == "text").strip()
+            # Strip markdown code fences if present
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+            if raw.endswith("```"):
+                raw = raw[:-3].rstrip()
             parsed = json.loads(raw)
+        except AgentError as exc:
+            logger.error("Failed to structure dossier %d: %s [%s]", i, exc, exc.code)
+            if generation:
+                generation.end(output={"error": str(exc)})
+            return {"error": exc.code, "reply": str(exc)}
         except Exception:
             logger.exception("Failed to structure dossier %d", i)
             if generation:
@@ -278,7 +344,7 @@ async def structure_leads_data(state: CRMLeadState) -> dict:
             continue
 
         if generation:
-            generation.end(output=parsed)
+            generation.end(output=parsed, usage=usage)
 
         if "error" in parsed:
             logger.warning("Dossier %d has error: %s", i, parsed["error"])
@@ -331,8 +397,19 @@ async def supervisor_review(state: CRMLeadState) -> dict:
 
         try:
             response = await _call_claude(system, user, model=settings.anthropic_supervisor_model)
+            usage = _extract_usage(response)
             raw = "".join(b.text for b in response.content if b.type == "text").strip()
+            # Strip markdown code fences if present
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+            if raw.endswith("```"):
+                raw = raw[:-3].rstrip()
             review = json.loads(raw)
+        except AgentError as exc:
+            logger.error("Supervisor review failed for lead %d: %s [%s]", i, exc, exc.code)
+            if generation:
+                generation.end(output={"error": str(exc)})
+            return {"error": exc.code, "reply": str(exc)}
         except Exception:
             logger.exception("Supervisor review failed for lead %d", i)
             if generation:
@@ -344,7 +421,7 @@ async def supervisor_review(state: CRMLeadState) -> dict:
             continue
 
         if generation:
-            generation.end(output=review)
+            generation.end(output=review, usage=usage)
 
         if review.get("approved"):
             approved_indices.append(i)
@@ -413,6 +490,12 @@ async def format_reply(state: CRMLeadState) -> dict:
 
     total_created = len(created)
     total_rejected = len(rejected)
+
+    if total_created == 0 and total_rejected == 0:
+        return {
+            "reply": "No leads could be processed. The data could not be structured. Please try again.",
+            "error": "no_leads_processed",
+        }
 
     if total_created == 0 and total_rejected > 0:
         names = ", ".join(r.get("query_term", "?") for r in rejected)
