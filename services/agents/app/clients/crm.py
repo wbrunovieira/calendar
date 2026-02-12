@@ -38,9 +38,12 @@ async def create_lead_contact(lead_id: str, payload: dict) -> dict:
 async def send_webhook(payload: dict) -> None:
     """POST /api/webhooks/lead-research — Notify CRM that research is done."""
     url = f"{settings.crm_base_url}/api/webhooks/lead-research"
+    headers: dict[str, str] = {}
+    if settings.crm_webhook_secret:
+        headers["X-Webhook-Secret"] = settings.crm_webhook_secret
     async with httpx.AsyncClient(timeout=10) as client:
         try:
-            resp = await client.post(url, json=payload)
+            resp = await client.post(url, json=payload, headers=headers)
             resp.raise_for_status()
         except Exception:
             import logging

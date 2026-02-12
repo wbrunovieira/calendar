@@ -91,6 +91,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-opus-4-6}
       - CRM_BASE_URL=${CRM_BASE_URL:-http://host.docker.internal:3000}
+      - CRM_WEBHOOK_SECRET=${CRM_WEBHOOK_SECRET:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

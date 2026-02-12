@@ -22,6 +22,7 @@ class Settings:
 
     # WB-CRM (internal network)
     crm_base_url: str = os.getenv("CRM_BASE_URL", "http://host.docker.internal:3000")
+    crm_webhook_secret: str = os.getenv("CRM_WEBHOOK_SECRET", "")
 
     # Langfuse
     langfuse_public_key: str = os.getenv("LANGFUSE_PUBLIC_KEY", "")
