@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
@@ -30,6 +31,20 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="agents", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://crm.wbdigitalsolutions.com",
+        "https://calendar.wbdigitalsolutions.com",
+        "https://finances.wbdigitalsolutions.com",
+        "https://projects.wbdigitalsolutions.com",
+        "http://localhost:3000",
+        "http://localhost:3003",
+    ],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 from app.health import router as health_router  # noqa: E402
 from app.agents.finances.router import router as transaction_router  # noqa: E402
