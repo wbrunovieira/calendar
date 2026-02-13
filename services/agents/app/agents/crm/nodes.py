@@ -144,6 +144,18 @@ async def _call_claude(
         raise _handle_anthropic_error(exc) from exc
 
 
+def _parse_json_lenient(raw: str) -> dict:
+    """Parse JSON leniently — handles extra data after the first valid object."""
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        if "Extra data" in str(exc):
+            decoder = json.JSONDecoder()
+            obj, _ = decoder.raw_decode(raw)
+            return obj
+        raise
+
+
 def _extract_usage(response: anthropic.types.Message) -> dict:
     """Extract token usage from an Anthropic response."""
     usage = response.usage
@@ -362,7 +374,7 @@ async def structure_leads_data(state: CRMLeadState) -> dict:
                 raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
             if raw.endswith("```"):
                 raw = raw[:-3].rstrip()
-            parsed = json.loads(raw)
+            parsed = _parse_json_lenient(raw)
         except AgentError as exc:
             logger.error("Failed to structure dossier %d: %s [%s]", i, exc, exc.code)
             if generation:
