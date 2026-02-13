@@ -7,6 +7,39 @@ from __future__ import annotations
 #   - "crm-lead-structurer"   (system + user)
 #   - "crm-lead-supervisor"   (system + user)
 
+# ── Query Planner ──────────────────────────────────────────
+
+QUERY_PLANNER_SYSTEM = """\
+You generate web search queries to find B2B leads for a CRM.
+
+Return ONLY a JSON array of 3-5 search query strings. No explanations.
+
+Example: ["query one", "query two", "query three"]
+"""
+
+QUERY_PLANNER_USER = """\
+## ICP (Ideal Customer Profile)
+{icp_context}
+
+## User's search request
+"{query}" in {country}
+
+## Companies ALREADY in the CRM (do NOT search for these)
+{existing_leads}
+
+## Instructions
+Generate 3-5 diverse web search queries to find NEW private/commercial companies \
+matching this ICP. The queries should:
+- Be in the language appropriate for {country}
+- Include {country} in each query
+- Use different angles: brand names, product types, competitor keywords, industry terms
+- Avoid queries that would return the companies already in the CRM
+- Include at least 1 query targeting decision-maker contacts (CEO, founder, director + LinkedIn)
+- Include at least 1 query targeting company data (CNPJ, website, phone, email)
+
+Return ONLY the JSON array.
+"""
+
 # ── Investigator ────────────────────────────────────────────
 
 INVESTIGATOR_SYSTEM = """\

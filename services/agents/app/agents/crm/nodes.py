@@ -11,6 +11,8 @@ from app.agents.crm.prompts import (
     INVESTIGATOR_SYSTEM,
     INVESTIGATOR_USER,
     INVESTIGATOR_USER_TAVILY,
+    QUERY_PLANNER_SYSTEM,
+    QUERY_PLANNER_USER,
     STRUCTURE_SYSTEM,
     STRUCTURE_USER,
     SUPERVISOR_SYSTEM,
@@ -139,18 +141,50 @@ def _format_tavily_results(tavily_data: list[dict]) -> str:
     return "\n".join(parts)
 
 
-def _build_tavily_queries(query: str, icp_context: dict, count: int, country: str = "Brasil") -> list[str]:
-    """Generate search queries for Tavily from ICP + user query + country."""
-    queries = [
+async def _plan_search_queries(
+    query: str, icp_text: str, country: str,
+    existing_leads: list[str], trace: Any = None,
+) -> list[str]:
+    """Use Haiku to generate smart search queries based on ICP + context."""
+    existing_str = ", ".join(existing_leads) if existing_leads else "(none)"
+
+    system = QUERY_PLANNER_SYSTEM
+    user = QUERY_PLANNER_USER.format(
+        icp_context=icp_text, query=query, country=country,
+        existing_leads=existing_str,
+    )
+
+    generation = trace.generation(
+        name="plan_search_queries",
+        model=settings.anthropic_supervisor_model,
+        input=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+    ) if trace else None
+
+    try:
+        response = await _call_claude(system, user, model=settings.anthropic_supervisor_model, max_tokens=512)
+        usage = _extract_usage(response)
+        raw = "".join(b.text for b in response.content if b.type == "text").strip()
+        # Strip markdown code fences if present
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+        if raw.endswith("```"):
+            raw = raw[:-3].rstrip()
+        queries = json.loads(raw)
+        if generation:
+            generation.end(output=queries, usage=usage)
+        if isinstance(queries, list) and all(isinstance(q, str) for q in queries):
+            return queries[:5]
+    except Exception:
+        logger.warning("Query planner failed, using fallback queries")
+        if generation:
+            generation.end(output={"error": "fallback"})
+
+    # Fallback: programmatic queries
+    return [
         f"{query} {country}",
-        f"{query} {country} CNPJ site oficial endereço telefone email",
-        f"{query} {country} CEO fundador diretor LinkedIn email",
+        f"{query} {country} CNPJ site oficial telefone email",
+        f"{query} {country} CEO fundador diretor LinkedIn",
     ]
-    if count > 1:
-        segment = icp_context.get("name", "")
-        if segment:
-            queries.append(f"{segment} empresas {country} {query}")
-    return queries
 
 
 # ── Claude helpers ──────────────────────────────────────────
@@ -375,35 +409,75 @@ async def _investigate_with_tavily(
     trace: Any, icp: dict, icp_text: str, query: str, count: int,
     existing_leads: list[str], country: str = "Brasil",
 ) -> dict:
-    """Tavily search + Haiku to build dossiers."""
-    # 1. Generate and run search queries
-    queries = _build_tavily_queries(query, icp, count, country)
+    """Tavily search + Haiku to build dossiers, with smart query planning."""
+    all_tavily_data: list[dict] = []
 
-    search_span = trace.span(name="tavily_search", input={"queries": queries}) if trace else None
+    # Up to 2 rounds: initial search + optional retry with new queries
+    for round_num in range(2):
+        # 1. Plan search queries using Haiku
+        queries = await _plan_search_queries(
+            query, icp_text, country, existing_leads, trace,
+        )
+        logger.info("Search round %d queries: %s", round_num + 1, queries)
 
-    try:
-        tavily_data = await _tavily_search(queries)
-    except Exception as exc:
-        logger.exception("Tavily search failed")
+        # 2. Run Tavily search
+        search_span = trace.span(
+            name=f"tavily_search_round_{round_num + 1}",
+            input={"queries": queries, "round": round_num + 1},
+        ) if trace else None
+
+        try:
+            tavily_data = await _tavily_search(queries)
+        except Exception as exc:
+            logger.exception("Tavily search failed (round %d)", round_num + 1)
+            if search_span:
+                search_span.end(output={"error": str(exc)})
+            if all_tavily_data:
+                break  # Use results from previous round
+            return {
+                "error": "investigation_failed",
+                "reply": "Web search failed. Please try again.",
+            }
+
+        total_results = sum(len(g.get("results", [])) for g in tavily_data)
         if search_span:
-            search_span.end(output={"error": str(exc)})
-        return {
-            "error": "investigation_failed",
-            "reply": "Web search failed. Please try again.",
-        }
+            search_span.end(output={"total_results": total_results, "queries_run": len(tavily_data)})
 
-    total_results = sum(len(g.get("results", [])) for g in tavily_data)
-    if search_span:
-        search_span.end(output={"total_results": total_results, "queries_run": len(tavily_data)})
+        all_tavily_data.extend(tavily_data)
 
-    if total_results == 0:
+        if total_results == 0 and round_num == 0:
+            # No results at all on first round — retry
+            logger.info("No results in round 1, retrying with new queries")
+            continue
+
+        # Check if results contain any NEW companies (not already in CRM)
+        if round_num == 0 and existing_leads:
+            result_text = _format_tavily_results(tavily_data).lower()
+            existing_lower = [name.lower() for name in existing_leads]
+            has_new = any(
+                name not in result_text
+                for name in existing_lower
+            )
+            # If ALL existing companies appear in results and we have few unique results,
+            # the search is probably too generic — retry
+            all_existing_found = sum(1 for name in existing_lower if name in result_text)
+            if all_existing_found >= min(3, len(existing_lower)) and not has_new:
+                logger.info(
+                    "Round 1 results overlap heavily with existing leads (%d/%d), retrying",
+                    all_existing_found, len(existing_lower),
+                )
+                continue
+
+        break  # Good results, no need to retry
+
+    # 3. Format all results and call Haiku to write dossier
+    search_context = _format_tavily_results(all_tavily_data)
+
+    if not search_context.strip():
         return {
             "error": "investigation_failed",
             "reply": "No search results found. Try a different query.",
         }
-
-    # 2. Format results and call Haiku to write dossier
-    search_context = _format_tavily_results(tavily_data)
 
     existing_section = ""
     if existing_leads:
@@ -424,7 +498,7 @@ async def _investigate_with_tavily(
         name="investigate_leads",
         model=settings.anthropic_supervisor_model,
         input=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-        metadata={"search_provider": "tavily", "search_results": total_results},
+        metadata={"search_provider": "tavily", "total_results": len(all_tavily_data)},
     ) if trace else None
 
     try:
@@ -449,7 +523,7 @@ async def _investigate_with_tavily(
         generation.end(output=raw_text[:2000], usage=usage)
 
     result = _split_dossiers(raw_text)
-    result["tavily_data"] = tavily_data
+    result["tavily_data"] = all_tavily_data
     return result
 
 
