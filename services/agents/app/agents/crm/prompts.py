@@ -85,6 +85,31 @@ IMPORTANT:
 - Research each company thoroughly using web search before writing the dossier.
 """
 
+# ── Investigator (Tavily mode — search results provided) ───
+
+INVESTIGATOR_USER_TAVILY = """\
+## Ideal Customer Profile (ICP)
+
+{icp_context}
+
+## Task
+
+Based on the web search results below, write exactly {count} detailed company dossier(s) \
+matching the ICP above for the query: **{query}**
+{existing_leads_section}
+## Web Search Results
+
+{search_results}
+
+IMPORTANT:
+- Use ONLY information from the search results above. Do NOT invent data.
+- If a data point is not in the results, leave that field blank.
+- Each company MUST use the === COMPANY: [Name] === format.
+- Fill ALL fields you can find: website, CNPJ, phone, email, address, segment, size.
+- For contacts: name, title, email, LinkedIn URL (search results may have LinkedIn links).
+- Include source URLs for each piece of information.
+"""
+
 # ── Structurer ──────────────────────────────────────────────
 
 STRUCTURE_SYSTEM = """\
@@ -102,7 +127,7 @@ JSON format:
         "website": "https://site.com",
         "address": "Full address",
         "cnpj": "00.000.000/0000-00",
-        "notes": "Full company brief — see rules below",
+        "description": "Full company brief — see rules below",
         "source": "ai-research",
         "status": "new"
     }},
@@ -120,8 +145,8 @@ JSON format:
 
 RULES:
 - businessName is REQUIRED. If missing, return {{"error": "missing_business_name"}}
-- ALWAYS fill ALL lead basic info fields (email, phone, website, cnpj, address, notes). Only omit if truly not found
-- **notes** is CRITICAL — it must be a COMPREHENSIVE company brief. The sales team will read this during \
+- ALWAYS fill ALL lead basic info fields (email, phone, website, cnpj, address, description). Only omit if truly not found
+- **description** is CRITICAL — it must be a COMPREHENSIVE company brief. The sales team will read this during \
 prospecting and should NOT need to research the company again. Include ALL of the following from the dossier:
   * Products and services offered
   * Market position and competitive landscape

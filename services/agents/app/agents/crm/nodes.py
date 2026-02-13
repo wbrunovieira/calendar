@@ -10,6 +10,7 @@ import httpx
 from app.agents.crm.prompts import (
     INVESTIGATOR_SYSTEM,
     INVESTIGATOR_USER,
+    INVESTIGATOR_USER_TAVILY,
     STRUCTURE_SYSTEM,
     STRUCTURE_USER,
     SUPERVISOR_SYSTEM,
@@ -87,6 +88,69 @@ def _build_supervisor_messages(
     system = SUPERVISOR_SYSTEM
     user = SUPERVISOR_USER.format(lead_json=lead_json, contacts_json=contacts_json)
     return system, user, None
+
+
+# ── Tavily search ─────────────────────────────────────────
+
+
+async def _tavily_search(queries: list[str], max_results: int = 5) -> list[dict]:
+    """Run Tavily searches and return combined results."""
+    all_results: list[dict] = []
+    async with httpx.AsyncClient(timeout=30) as client:
+        for query in queries:
+            try:
+                resp = await client.post(
+                    "https://api.tavily.com/search",
+                    json={
+                        "api_key": settings.tavily_api_key,
+                        "query": query,
+                        "max_results": max_results,
+                        "search_depth": "advanced",
+                        "include_answer": True,
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                all_results.append({
+                    "query": query,
+                    "answer": data.get("answer", ""),
+                    "results": data.get("results", []),
+                })
+            except Exception:
+                logger.warning("Tavily search failed for query: %s", query)
+    return all_results
+
+
+def _format_tavily_results(tavily_data: list[dict]) -> str:
+    """Format Tavily search results as text context for LLM."""
+    parts: list[str] = []
+    seen_urls: set[str] = set()
+    for group in tavily_data:
+        if group.get("answer"):
+            parts.append(f"### AI Summary for '{group['query']}'\n{group['answer']}\n")
+        for r in group.get("results", []):
+            url = r.get("url", "")
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
+            title = r.get("title", "No title")
+            content = r.get("content", "")
+            parts.append(f"**{title}** ({url})\n{content}\n")
+    return "\n".join(parts)
+
+
+def _build_tavily_queries(query: str, icp_context: dict, count: int) -> list[str]:
+    """Generate search queries for Tavily from ICP + user query."""
+    queries = [
+        query,
+        f"{query} CNPJ site oficial endereço telefone email",
+        f"{query} CEO fundador diretor LinkedIn email",
+    ]
+    if count > 1:
+        segment = icp_context.get("name", "")
+        if segment:
+            queries.append(f"{segment} empresas Brasil {query}")
+    return queries
 
 
 # ── Claude helpers ──────────────────────────────────────────
@@ -282,7 +346,7 @@ async def load_icp_context(state: CRMLeadState) -> dict:
 
 
 async def investigate_leads(state: CRMLeadState) -> dict:
-    """Use Claude + web_search to research leads."""
+    """Research leads using Tavily search + Haiku, with Sonnet+web_search fallback."""
     if state.get("error"):
         return {}
 
@@ -294,13 +358,112 @@ async def investigate_leads(state: CRMLeadState) -> dict:
     icp_text = f"Name: {icp.get('name', '')}\n{icp.get('content', '')}"
     existing_leads = state.get("existing_leads", [])
 
+    # ── Tavily mode (primary) ────────────────────────────────
+    if settings.tavily_api_key:
+        return await _investigate_with_tavily(
+            trace, icp, icp_text, query, count, existing_leads,
+        )
+
+    # ── Sonnet + web_search fallback ─────────────────────────
+    return await _investigate_with_web_search(
+        trace, icp_text, query, count, existing_leads,
+    )
+
+
+async def _investigate_with_tavily(
+    trace: Any, icp: dict, icp_text: str, query: str, count: int,
+    existing_leads: list[str],
+) -> dict:
+    """Tavily search + Haiku to build dossiers."""
+    # 1. Generate and run search queries
+    queries = _build_tavily_queries(query, icp, count)
+
+    search_span = trace.span(name="tavily_search", input={"queries": queries}) if trace else None
+
+    try:
+        tavily_data = await _tavily_search(queries)
+    except Exception as exc:
+        logger.exception("Tavily search failed")
+        if search_span:
+            search_span.end(output={"error": str(exc)})
+        return {
+            "error": "investigation_failed",
+            "reply": "Web search failed. Please try again.",
+        }
+
+    total_results = sum(len(g.get("results", [])) for g in tavily_data)
+    if search_span:
+        search_span.end(output={"total_results": total_results, "queries_run": len(tavily_data)})
+
+    if total_results == 0:
+        return {
+            "error": "investigation_failed",
+            "reply": "No search results found. Try a different query.",
+        }
+
+    # 2. Format results and call Haiku to write dossier
+    search_context = _format_tavily_results(tavily_data)
+
+    existing_section = ""
+    if existing_leads:
+        names = ", ".join(existing_leads)
+        existing_section = (
+            f"\n**IMPORTANT — These companies are already in the CRM. DO NOT include them:**\n"
+            f"{names}\n"
+        )
+
+    system = INVESTIGATOR_SYSTEM
+    user = INVESTIGATOR_USER_TAVILY.format(
+        icp_context=icp_text, query=query, count=count,
+        existing_leads_section=existing_section,
+        search_results=search_context,
+    )
+
+    generation = trace.generation(
+        name="investigate_leads",
+        model=settings.anthropic_supervisor_model,
+        input=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+        metadata={"search_provider": "tavily", "search_results": total_results},
+    ) if trace else None
+
+    try:
+        response = await _call_claude(system, user, model=settings.anthropic_supervisor_model, max_tokens=8192)
+        usage = _extract_usage(response)
+        raw_text = "".join(b.text for b in response.content if b.type == "text")
+    except AgentError as exc:
+        logger.error("Investigation (Tavily+Haiku) failed: %s [%s]", exc, exc.code)
+        if generation:
+            generation.end(output={"error": str(exc)})
+        return {"error": exc.code, "reply": str(exc)}
+    except Exception as exc:
+        logger.exception("Investigation (Tavily+Haiku) failed")
+        if generation:
+            generation.end(output={"error": str(exc)})
+        return {
+            "error": "investigation_failed",
+            "reply": "Investigation failed due to an unexpected error. Please try again.",
+        }
+
+    if generation:
+        generation.end(output=raw_text[:2000], usage=usage)
+
+    result = _split_dossiers(raw_text)
+    result["tavily_data"] = tavily_data
+    return result
+
+
+async def _investigate_with_web_search(
+    trace: Any, icp_text: str, query: str, count: int,
+    existing_leads: list[str],
+) -> dict:
+    """Fallback: Sonnet + Claude web_search tool loop."""
     system, user, lf_prompt = _build_investigator_messages(icp_text, query, count, existing_leads)
 
     gen_kwargs: dict = {
         "name": "investigate_leads",
         "model": settings.anthropic_model,
         "input": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-        "metadata": {"prompt_source": "langfuse" if lf_prompt else "local"},
+        "metadata": {"search_provider": "claude_web_search"},
     }
     if lf_prompt is not None:
         gen_kwargs["prompt"] = lf_prompt
@@ -316,10 +479,10 @@ async def investigate_leads(state: CRMLeadState) -> dict:
         if generation:
             generation.end(output={"error": str(exc)})
         return {"error": exc.code, "reply": str(exc)}
-    except Exception as exc:
+    except Exception:
         logger.exception("Investigation failed")
         if generation:
-            generation.end(output={"error": str(exc)})
+            generation.end(output={"error": "unexpected"})
         return {
             "error": "investigation_failed",
             "reply": "Investigation failed due to an unexpected error. Please try again.",
@@ -328,16 +491,18 @@ async def investigate_leads(state: CRMLeadState) -> dict:
     if generation:
         generation.end(output=raw_text[:2000], usage=usage)
 
-    # Split dossiers by company separator
-    dossiers = []
+    return _split_dossiers(raw_text)
+
+
+def _split_dossiers(raw_text: str) -> dict:
+    """Split raw investigation text into individual dossiers."""
+    dossiers: list[str] = []
     if "=== COMPANY:" in raw_text:
         parts = raw_text.split("=== COMPANY:")
         for part in parts[1:]:
             dossiers.append("=== COMPANY:" + part.strip())
     else:
-        # If no separator, treat entire response as a single dossier
         dossiers = [raw_text]
-
     return {"raw_dossiers": dossiers}
 
 
@@ -600,18 +765,34 @@ async def run_shadow_investigation(
     query: str,
     count: int,
     existing_leads: list[str],
+    tavily_data: list[dict] | None = None,
 ) -> None:
-    """Run a shadow investigation with experiment model via OpenRouter.
+    """Run a shadow investigation with DeepSeek using the same Tavily results.
 
+    Reuses Tavily search results from the main flow (no extra search cost).
     Results are logged to Langfuse only (not saved to CRM).
-    Used for A/B cost/quality comparison.
     """
-    if not settings.openrouter_api_key:
+    if not settings.deepseek_api_key or not tavily_data:
         return
 
-    model = settings.experiment_model
+    model = settings.deepseek_model
     icp_text = f"Name: {icp_context.get('name', '')}\n{icp_context.get('content', '')}"
-    system, user, _ = _build_investigator_messages(icp_text, query, count, existing_leads)
+
+    existing_section = ""
+    if existing_leads:
+        names = ", ".join(existing_leads)
+        existing_section = (
+            f"\n**IMPORTANT — These companies are already in the CRM. DO NOT include them:**\n"
+            f"{names}\n"
+        )
+
+    search_context = _format_tavily_results(tavily_data)
+    system = INVESTIGATOR_SYSTEM
+    user = INVESTIGATOR_USER_TAVILY.format(
+        icp_context=icp_text, query=query, count=count,
+        existing_leads_section=existing_section,
+        search_results=search_context,
+    )
 
     generation = None
     if trace:
@@ -619,15 +800,15 @@ async def run_shadow_investigation(
             name="investigate_leads_experiment",
             model=model,
             input=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-            metadata={"provider": "openrouter", "experiment": True},
+            metadata={"provider": "deepseek", "experiment": True},
         )
 
     try:
-        async with httpx.AsyncClient(timeout=180) as client:
+        async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(
-                f"{settings.openrouter_base_url}/chat/completions",
+                f"{settings.deepseek_base_url}/chat/completions",
                 headers={
-                    "Authorization": f"Bearer {settings.openrouter_api_key}",
+                    "Authorization": f"Bearer {settings.deepseek_api_key}",
                     "Content-Type": "application/json",
                 },
                 json={
@@ -636,11 +817,7 @@ async def run_shadow_investigation(
                         {"role": "system", "content": system},
                         {"role": "user", "content": user},
                     ],
-                    "max_tokens": 4096,
-                    "plugins": [{
-                        "id": "web",
-                        "max_results": 5,
-                    }],
+                    "max_tokens": 8192,
                 },
             )
             resp.raise_for_status()

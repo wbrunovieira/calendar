@@ -76,6 +76,7 @@ services:
       - CRM_WEBHOOK_SECRET=${CRM_WEBHOOK_SECRET:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - EXPERIMENT_MODEL=${EXPERIMENT_MODEL:-z-ai/glm-5}
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

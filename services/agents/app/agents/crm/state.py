@@ -16,6 +16,7 @@ class CRMLeadState(TypedDict, total=False):
 
     # Investigation
     raw_dossiers: list[str]
+    tavily_data: list[dict] | None
 
     # Structured
     leads_data: list[dict]

@@ -141,11 +141,12 @@ async def _run_research(
         return
 
     # Fire shadow experiment (A/B test) — runs in parallel, doesn't block
-    if settings.openrouter_api_key:
+    if settings.deepseek_api_key:
         icp_ctx = icp_context or result.get("icp_context") or {}
         existing = result.get("existing_leads", [])
+        tavily_data = result.get("tavily_data")
         asyncio.create_task(
-            run_shadow_investigation(trace, icp_ctx, query, count, existing)
+            run_shadow_investigation(trace, icp_ctx, query, count, existing, tavily_data)
         )
 
     error = result.get("error")
