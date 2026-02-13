@@ -147,13 +147,18 @@ APPROVAL criteria (ALL must be met):
 2. At least 1 form of contact (email OR phone OR website)
 3. At least 1 contact with a real name
 4. Data appears real and not fabricated
-5. Lead matches the provided ICP
 
 REJECTION criteria (ANY triggers rejection):
 1. businessName is missing or generic
 2. No form of contact at all
 3. Data appears fabricated or too generic
-4. Lead does not match the ICP
+
+ICP MATCHING — BE FLEXIBLE:
+- The ICP describes the IDEAL customer, not the ONLY customer.
+- Established companies that are modernizing, expanding, or launching new products ARE valid leads.
+- Do NOT reject a lead just because the company is large or mature.
+- Focus on whether the company OPERATES in the ICP's industry/segment.
+- When in doubt, APPROVE. It's better to have a sales team evaluate than to miss an opportunity.
 
 Respond ONLY with valid JSON:
 {{"approved": true | false, "notes": "Decision explanation", "issues": ["list of issues found, if any"]}}

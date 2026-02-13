@@ -629,7 +629,17 @@ async def run_shadow_investigation(
                         {"role": "user", "content": user},
                     ],
                     "max_tokens": 16384,
-                    "plugins": [{"id": "web", "max_results": 5}],
+                    "reasoning": {"effort": "low"},
+                    "plugins": [{
+                        "id": "web",
+                        "max_results": 5,
+                        "search_prompt": (
+                            "The following are web search results retrieved today. "
+                            "Use these results to answer the user's question. "
+                            "Do NOT attempt to call any tools or functions. "
+                            "Simply use the information provided below."
+                        ),
+                    }],
                 },
             )
             resp.raise_for_status()
