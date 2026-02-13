@@ -523,6 +523,9 @@ async def _investigate_with_tavily(
         generation.end(output=raw_text[:2000], usage=usage)
 
     result = _split_dossiers(raw_text)
+    # Enforce requested count — LLM may produce more dossiers than asked
+    if len(result.get("raw_dossiers", [])) > count:
+        result["raw_dossiers"] = result["raw_dossiers"][:count]
     result["tavily_data"] = all_tavily_data
     return result
 
@@ -712,7 +715,7 @@ async def supervisor_review(state: CRMLeadState) -> dict:
                 raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
             if raw.endswith("```"):
                 raw = raw[:-3].rstrip()
-            review = json.loads(raw)
+            review = _parse_json_lenient(raw)
         except AgentError as exc:
             logger.error("Supervisor review failed for lead %d: %s [%s]", i, exc, exc.code)
             if generation:

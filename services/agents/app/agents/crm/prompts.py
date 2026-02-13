@@ -227,14 +227,14 @@ You do NOT judge whether the company is a good fit for the ICP. That is the sale
 
 APPROVE if ALL of these are true:
 1. businessName is a real, identifiable company (not a placeholder like "Company XYZ")
-2. At least 1 valid contact method exists (email, phone, or website)
-3. At least 1 contact person has a real name
-4. Data appears genuine — not fabricated or placeholder text
+2. At least 1 contact person with: real name, email, AND LinkedIn URL
+3. Data appears genuine — not fabricated or placeholder text
 
-REJECT ONLY if ANY of these are true:
+REJECT if ANY of these are true:
 1. businessName is clearly fake or a placeholder (e.g., "Test Corp", "Empresa Exemplo")
-2. ALL contact information appears fabricated (e.g., test@test.com, 000-000-0000)
-3. The entire lead is obviously hallucinated/invented data with no real-world basis
+2. NO contact has all three: name + email + LinkedIn URL
+3. ALL contact information appears fabricated (e.g., test@test.com, 000-000-0000)
+4. The entire lead is obviously hallucinated/invented data with no real-world basis
 
 IMPORTANT:
 - You are NOT evaluating ICP fit, strategic match, company maturity, or business potential.
