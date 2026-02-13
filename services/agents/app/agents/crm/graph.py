@@ -40,15 +40,13 @@ def _after_supervisor(state: CRMLeadState) -> str:
         return "format_reply"
     if state.get("enrichment_indices"):
         return "enrich_contacts"
-    if not state.get("approved_indices"):
-        return "format_reply"
+    # Always go to save_to_crm — even with 0 approved, it calculates
+    # remaining_count and triggers retry loop if needed
     return "save_to_crm"
 
 
 def _after_enrich(state: CRMLeadState) -> str:
     if state.get("error"):
-        return "format_reply"
-    if not state.get("approved_indices"):
         return "format_reply"
     return "save_to_crm"
 

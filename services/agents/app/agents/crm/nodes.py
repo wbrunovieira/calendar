@@ -660,10 +660,8 @@ def _extract_company_name(dossier: str) -> str:
 
 
 _COMPANY_SUFFIXES = re.compile(
-    r"\b(ltda|s\.?a\.?|s/a|me|eireli|epp|participações|participacoes|"
-    r"educação|educacao|tecnologia|serviços|servicos|"
-    r"pós graduação|pos graduacao|graduação|graduacao|"
-    r"residência médica|residencia medica|"
+    r"\b(ltda|s\.?a\.?|s/a|me|eireli|epp|"
+    r"participações|participacoes|"
     r"group|grupo|editora|instituto)\b",
     re.IGNORECASE,
 )
@@ -690,9 +688,12 @@ def _is_duplicate(candidate: str, existing_leads: list[str]) -> str | None:
         # Exact match after normalization
         if norm_candidate == norm_existing:
             return existing
-        # Substring match (bidirectional)
-        if norm_candidate in norm_existing or norm_existing in norm_candidate:
-            return existing
+        # Substring match (bidirectional) — require the shorter string to be
+        # at least 5 chars to avoid false positives ("portal", "med", etc.)
+        shorter = min(len(norm_candidate), len(norm_existing))
+        if shorter >= 5:
+            if norm_candidate in norm_existing or norm_existing in norm_candidate:
+                return existing
     return None
 
 
