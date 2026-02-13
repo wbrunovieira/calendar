@@ -58,7 +58,7 @@ def _after_save(state: CRMLeadState) -> str:
         return "format_reply"
     remaining = state.get("remaining_count", 0)
     retry_round = state.get("retry_round", 0)
-    if remaining > 0 and retry_round < 3:
+    if remaining > 0 and retry_round < 5:
         return "investigate_leads"
     return "format_reply"
 
