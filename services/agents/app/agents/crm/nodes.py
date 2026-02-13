@@ -877,20 +877,14 @@ async def enrich_contacts(state: CRMLeadState) -> dict:
         company_name = lead.get("businessName", "")
         website = lead.get("website", "")
 
-        # 1. Build targeted search queries for this company's contacts
-        search_queries = [
-            f"site:linkedin.com/in {company_name} CEO OR fundador OR diretor",
+        # ── Phase 1: Discover who the decision-makers are ──────
+        phase1_queries = [
             f"{company_name} fundador CEO diretor email contato",
+            f"{company_name} equipe diretoria liderança",
         ]
-        # Add contact-specific searches on LinkedIn
-        for c in lead_contacts:
-            name = c.get("name", "")
-            if name and len(name.split()) >= 2:
-                search_queries.append(f"site:linkedin.com/in {name}")
 
-        # 2. Run Tavily searches
         try:
-            tavily_data = await _tavily_search(search_queries, max_results=3)
+            tavily_data = await _tavily_search(phase1_queries, max_results=5)
         except Exception:
             logger.warning("Contact enrichment search failed for %s", company_name)
             newly_rejected.append({
@@ -899,10 +893,10 @@ async def enrich_contacts(state: CRMLeadState) -> dict:
             })
             continue
 
-        # 3. Fetch company website /sobre and /contato pages
+        # Fetch company website pages for contact info
         if website:
             base = website.rstrip("/")
-            for page_path in ["/sobre", "/contato", "/equipe", "/about", "/contact"]:
+            for page_path in ["/sobre", "/contato", "/equipe", "/about", "/contact", "/team"]:
                 try:
                     async with httpx.AsyncClient(timeout=10) as client:
                         resp = await client.get(f"{base}{page_path}", follow_redirects=True)
@@ -913,7 +907,7 @@ async def enrich_contacts(state: CRMLeadState) -> dict:
                                 "results": [{"title": f"{company_name} {page_path}", "url": f"{base}{page_path}", "content": resp.text[:3000]}],
                             })
                 except Exception:
-                    pass  # Page doesn't exist or timed out, skip
+                    pass
 
         search_context = _format_tavily_results(tavily_data)
 
@@ -925,7 +919,26 @@ async def enrich_contacts(state: CRMLeadState) -> dict:
             })
             continue
 
-        # 4. Call Haiku to extract contacts from search results
+        # ── Phase 2: Find LinkedIn for each person by name ────
+        # Extract names from phase 1 results + existing contacts
+        # Search "{name}" {company} LinkedIn for each
+        phase2_names = [c.get("name", "") for c in lead_contacts if c.get("name")]
+        # Also extract names mentioned in phase 1 search context (Haiku will do this)
+        # For now, do targeted LinkedIn searches for known contacts
+        for contact_name in phase2_names:
+            if len(contact_name.split()) >= 2:
+                try:
+                    linkedin_results = await _tavily_search(
+                        [f'"{contact_name}" {company_name} LinkedIn'], max_results=3,
+                    )
+                    tavily_data.extend(linkedin_results)
+                except Exception:
+                    pass
+
+        # Rebuild context with LinkedIn results included
+        search_context = _format_tavily_results(tavily_data)
+
+        # 3. Call Haiku to extract contacts from phase 1 + known LinkedIn results
         existing_contacts_str = json.dumps(lead_contacts, ensure_ascii=False, indent=2)
         system = CONTACT_ENRICHER_SYSTEM
         user = CONTACT_ENRICHER_USER.format(
@@ -962,6 +975,63 @@ async def enrich_contacts(state: CRMLeadState) -> dict:
 
         if generation:
             generation.end(output=enriched, usage=usage)
+
+        # ── Phase 3: Search LinkedIn for contacts still missing it ──
+        extracted_contacts = enriched.get("contacts", [])
+        missing_linkedin = [
+            c for c in extracted_contacts
+            if c.get("name") and len(c["name"].split()) >= 2 and not c.get("linkedin")
+        ]
+        if missing_linkedin:
+            linkedin_queries = [
+                f'"{c["name"]}" {company_name} LinkedIn'
+                for c in missing_linkedin
+            ]
+            try:
+                linkedin_data = await _tavily_search(linkedin_queries, max_results=3)
+                linkedin_context = _format_tavily_results(linkedin_data)
+                if linkedin_context.strip():
+                    # Quick Haiku call to match LinkedIn URLs to contacts
+                    linkedin_system = (
+                        "Match LinkedIn profile URLs to the people listed below. "
+                        "Return ONLY valid JSON: {\"matches\": [{\"name\": \"...\", \"linkedin\": \"https://linkedin.com/in/...\"}]}\n"
+                        "RULES:\n"
+                        "- Only match if the LinkedIn profile clearly belongs to that person at that company.\n"
+                        "- If unsure, omit the match. Do NOT guess."
+                    )
+                    contacts_names = json.dumps(
+                        [{"name": c["name"], "role": c.get("role", "")} for c in missing_linkedin],
+                        ensure_ascii=False,
+                    )
+                    linkedin_user = f"## People to find\n{contacts_names}\n\n## Company\n{company_name}\n\n## Search results\n{linkedin_context}"
+
+                    li_gen = trace.generation(
+                        name=f"enrich_linkedin_{idx}",
+                        model=settings.anthropic_supervisor_model,
+                        input=[{"role": "system", "content": linkedin_system}, {"role": "user", "content": linkedin_user}],
+                    ) if trace else None
+
+                    li_resp = await _call_claude(linkedin_system, linkedin_user, model=settings.anthropic_supervisor_model, max_tokens=512)
+                    li_usage = _extract_usage(li_resp)
+                    li_raw = "".join(b.text for b in li_resp.content if b.type == "text").strip()
+                    if li_raw.startswith("```"):
+                        li_raw = li_raw.split("\n", 1)[1] if "\n" in li_raw else li_raw[3:]
+                    if li_raw.endswith("```"):
+                        li_raw = li_raw[:-3].rstrip()
+                    li_parsed = _parse_json_lenient(li_raw)
+                    if li_gen:
+                        li_gen.end(output=li_parsed, usage=li_usage)
+
+                    # Apply LinkedIn matches to extracted contacts
+                    matches = {m["name"].lower(): m["linkedin"] for m in li_parsed.get("matches", [])}
+                    for c in extracted_contacts:
+                        if not c.get("linkedin") and c.get("name", "").lower() in matches:
+                            c["linkedin"] = matches[c["name"].lower()]
+                            logger.info("LinkedIn found for %s: %s", c["name"], c["linkedin"])
+            except Exception:
+                logger.warning("LinkedIn enrichment search failed for %s", company_name)
+
+        enriched["contacts"] = extracted_contacts
 
         # 5. Update contacts and lead with enriched data
         new_contacts = enriched.get("contacts", lead_contacts)
