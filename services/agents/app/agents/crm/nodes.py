@@ -5,6 +5,7 @@ import logging
 from typing import Any
 
 import anthropic
+import httpx
 
 from app.agents.crm.prompts import (
     INVESTIGATOR_SYSTEM,
@@ -551,3 +552,80 @@ async def format_reply(state: CRMLeadState) -> dict:
         parts.append(f"{total_rejected} rejected")
 
     return {"reply": ". ".join(parts)}
+
+
+# ── Shadow experiment (A/B test) ──────────────────────────
+
+
+async def run_shadow_investigation(
+    trace: Any,
+    icp_context: dict,
+    query: str,
+    count: int,
+    existing_leads: list[str],
+) -> None:
+    """Run a shadow investigation with experiment model via OpenRouter.
+
+    Results are logged to Langfuse only (not saved to CRM).
+    Used for A/B cost/quality comparison.
+    """
+    if not settings.openrouter_api_key:
+        return
+
+    model = settings.experiment_model
+    icp_text = f"Name: {icp_context.get('name', '')}\n{icp_context.get('content', '')}"
+    system, user, _ = _build_investigator_messages(icp_text, query, count, existing_leads)
+
+    generation = None
+    if trace:
+        generation = trace.generation(
+            name="investigate_leads_experiment",
+            model=model,
+            input=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+            metadata={"provider": "openrouter", "experiment": True},
+        )
+
+    try:
+        async with httpx.AsyncClient(timeout=180) as client:
+            resp = await client.post(
+                f"{settings.openrouter_base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {settings.openrouter_api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
+                    ],
+                    "max_tokens": 16384,
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        text = data["choices"][0]["message"]["content"]
+        usage_data = data.get("usage", {})
+        usage = {
+            "input": usage_data.get("prompt_tokens", 0),
+            "output": usage_data.get("completion_tokens", 0),
+            "total": usage_data.get("total_tokens", 0),
+            "unit": "TOKENS",
+        }
+
+        if generation:
+            generation.end(output=text[:3000], usage=usage)
+
+        logger.info(
+            "Shadow investigation (%s) completed: %d chars, %d tokens",
+            model, len(text), usage["total"],
+        )
+
+    except Exception as exc:
+        logger.warning("Shadow investigation (%s) failed: %s", model, exc)
+        if generation:
+            generation.end(output={"error": str(exc)})
+
+    if langfuse.enabled:
+        langfuse.flush()

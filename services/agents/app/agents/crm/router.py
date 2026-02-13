@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 
@@ -7,7 +8,9 @@ from pydantic import BaseModel, Field
 from fastapi import APIRouter, BackgroundTasks
 
 from app.agents.crm.graph import build_crm_graph
+from app.agents.crm.nodes import run_shadow_investigation
 from app.clients import crm
+from app.config import settings
 from app.agents.finances.nodes import langfuse
 
 logger = logging.getLogger("agents")
@@ -136,6 +139,14 @@ async def _run_research(
             "error": "background_task_failed",
         })
         return
+
+    # Fire shadow experiment (A/B test) — runs in parallel, doesn't block
+    if settings.openrouter_api_key:
+        icp_ctx = icp_context or result.get("icp_context") or {}
+        existing = result.get("existing_leads", [])
+        asyncio.create_task(
+            run_shadow_investigation(trace, icp_ctx, query, count, existing)
+        )
 
     error = result.get("error")
     reply = result.get("reply", "Unknown error")
