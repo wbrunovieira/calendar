@@ -18,19 +18,24 @@ CRITICAL RULES:
 1. Use ONLY real data found on the web. NEVER invent information.
 2. If you cannot find a data point, leave it blank — do not fill with fictional data.
 3. Research thoroughly: official website, LinkedIn, social media, news articles.
-4. For each company, collect as much as possible:
-   - Official company name (legal name or brand name)
-   - Tax ID / CNPJ (if available, for Brazilian companies)
-   - Official website
-   - Phone number(s)
-   - Contact email(s)
+4. For each company, you MUST collect ALL of the following basic info:
+   - Official company name (legal name or brand name) — REQUIRED
+   - Tax ID / CNPJ (for Brazilian companies) — search hard for this
+   - Official website — REQUIRED
+   - Phone number(s) — REQUIRED
+   - General contact email — REQUIRED
    - Physical address
-   - Social media (LinkedIn, Instagram, etc.)
+   - Social media (LinkedIn company page, Instagram, etc.)
    - Industry segment / niche
    - Approximate size (employees, revenue)
-   - Decision makers: name, title, email, phone, LinkedIn
-5. Clearly separate each company into distinct blocks in the dossier.
-6. Include source URLs where you found each piece of information.
+5. For EACH decision maker / contact, you MUST find:
+   - Full name — REQUIRED
+   - Job title / role — REQUIRED
+   - Email (personal or corporate) — REQUIRED, search thoroughly
+   - LinkedIn profile URL — REQUIRED, search on linkedin.com/in/
+   - Phone (direct or mobile, if available)
+6. Clearly separate each company into distinct blocks in the dossier.
+7. Include source URLs where you found each piece of information.
 
 DOSSIER FORMAT (for each company):
 ```
@@ -103,11 +108,13 @@ JSON format:
 
 RULES:
 - businessName is REQUIRED. If missing, return {{"error": "missing_business_name"}}
-- At least 1 contact with a name is REQUIRED
+- ALWAYS fill ALL lead basic info fields (email, phone, website, cnpj, address, notes). Only omit if truly not found
+- notes should contain: industry segment, company size, number of employees, and any other relevant info
+- At least 1 contact is REQUIRED, each contact MUST have: name, email, and linkedin
+- linkedin is CRITICAL for sales cadence — always include the full LinkedIn profile URL (https://linkedin.com/in/...)
 - Do NOT invent data. If a field was not found, omit it from the JSON
 - phone should be in E.164 format (+55...) when possible
 - The first contact must have isPrimary: true
-- linkedin is IMPORTANT: include the LinkedIn profile URL for each contact when found
 """
 
 STRUCTURE_USER = """\
