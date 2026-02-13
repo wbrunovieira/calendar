@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 import anthropic
@@ -584,12 +585,12 @@ async def _investigate_with_tavily(
 
     # Programmatic dedup: remove dossiers for companies already in CRM
     if existing_leads:
-        existing_lower = {name.lower().strip() for name in existing_leads if name}
         filtered = []
         for dossier in result.get("raw_dossiers", []):
             company_name = _extract_company_name(dossier)
-            if company_name and company_name.lower().strip() in existing_lower:
-                logger.info("Dedup: filtered out '%s' (already in CRM)", company_name)
+            matched = _is_duplicate(company_name, existing_leads)
+            if matched:
+                logger.info("Dedup: filtered out '%s' (matches existing '%s')", company_name, matched)
                 continue
             filtered.append(dossier)
         if len(filtered) < len(result["raw_dossiers"]):
@@ -656,6 +657,43 @@ def _extract_company_name(dossier: str) -> str:
         if delimiter in after:
             return after.split(delimiter, 1)[0].strip()
     return after.strip()
+
+
+_COMPANY_SUFFIXES = re.compile(
+    r"\b(ltda|s\.?a\.?|s/a|me|eireli|epp|participações|participacoes|"
+    r"educação|educacao|tecnologia|serviços|servicos|"
+    r"pós graduação|pos graduacao|graduação|graduacao|"
+    r"residência médica|residencia medica|"
+    r"group|grupo|editora|instituto)\b",
+    re.IGNORECASE,
+)
+
+
+def _normalize_company_name(name: str) -> str:
+    """Normalize company name by stripping suffixes and extra whitespace."""
+    normalized = _COMPANY_SUFFIXES.sub("", name.lower())
+    normalized = re.sub(r"[.\-/,()]+", " ", normalized)
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _is_duplicate(candidate: str, existing_leads: list[str]) -> str | None:
+    """Check if candidate name matches any existing lead. Returns matched name or None."""
+    if not candidate:
+        return None
+    norm_candidate = _normalize_company_name(candidate)
+    if not norm_candidate:
+        return None
+    for existing in existing_leads:
+        norm_existing = _normalize_company_name(existing)
+        if not norm_existing:
+            continue
+        # Exact match after normalization
+        if norm_candidate == norm_existing:
+            return existing
+        # Substring match (bidirectional)
+        if norm_candidate in norm_existing or norm_existing in norm_candidate:
+            return existing
+    return None
 
 
 def _split_dossiers(raw_text: str) -> dict:
