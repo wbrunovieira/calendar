@@ -14,6 +14,8 @@ You generate web search queries to find B2B leads for a CRM.
 
 Return ONLY a JSON array of 3-5 search query strings. No explanations.
 
+Keep queries SHORT (5-8 words max) — long queries perform poorly in web search.
+
 Example: ["query one", "query two", "query three"]
 """
 
@@ -32,10 +34,14 @@ Generate 3-5 diverse web search queries to find NEW private/commercial companies
 matching this ICP. The queries should:
 - Be in the language appropriate for {country}
 - Include {country} in each query
+- Keep each query SHORT (5-8 words). Long queries return poor results.
 - Use different angles: brand names, product types, competitor keywords, industry terms
 - Avoid queries that would return the companies already in the CRM
+- Include at least 1 query with a SPECIFIC technical sub-niche or specialty term \
+(e.g. for medical education: "cardiologia", "dermatologia", "ortopedia"; \
+for legal tech: "compliance trabalhista", "LGPD"; for agritech: "pecuária de precisão"). \
+The LLM should pick the most relevant specialty based on the ICP and search context.
 - Include at least 1 query targeting decision-maker contacts (CEO, founder, director + LinkedIn)
-- Include at least 1 query targeting company data (CNPJ, website, phone, email)
 
 Return ONLY the JSON array.
 """
