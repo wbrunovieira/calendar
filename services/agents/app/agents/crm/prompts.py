@@ -24,7 +24,7 @@ QUERY_PLANNER_USER = """\
 {icp_context}
 
 ## User's search request
-"{query}" in {country}
+{query_section}
 
 ## Companies ALREADY in the CRM (do NOT search for these)
 {existing_leads}
@@ -133,7 +133,7 @@ INVESTIGATOR_USER_TAVILY = """\
 
 ## Instructions
 
-Write exactly {count} company dossier(s) from the search results above for the query: **{query}**
+Write exactly {count} company dossier(s) from the search results above{query_hint}.
 
 Use the ICP below only as a PREFERENCE guide, not as a filter:
 {icp_context}

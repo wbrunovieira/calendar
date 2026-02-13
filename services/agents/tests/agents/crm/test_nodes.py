@@ -124,7 +124,7 @@ async def test_supervisor_approves_good_lead():
     with patch("app.agents.crm.nodes._call_claude", new_callable=AsyncMock, return_value=mock_resp):
         result = await supervisor_review({
             "leads_data": [{"businessName": "TechCo", "email": "hi@techco.com"}],
-            "contacts_data": [[{"name": "John", "role": "CEO"}]],
+            "contacts_data": [[{"name": "John Smith", "role": "CEO"}]],
             "icp_context": {"name": "SaaS B2B", "content": "SaaS companies"},
             "_trace": None,
         })
@@ -161,7 +161,7 @@ async def test_save_to_crm_creates_lead_and_contacts_and_links_icp():
          patch("app.agents.crm.nodes.crm.link_lead_to_icp", new_callable=AsyncMock) as mock_link:
         result = await save_to_crm({
             "leads_data": [{"businessName": "TechCo", "email": "hi@techco.com"}],
-            "contacts_data": [[{"name": "John", "role": "CEO"}]],
+            "contacts_data": [[{"name": "John Smith", "role": "CEO"}]],
             "approved_indices": [0],
             "icp_id": "icp-123",
             "_trace": None,

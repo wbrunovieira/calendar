@@ -152,9 +152,14 @@ async def _plan_search_queries(
     """Use Haiku to generate smart search queries based on ICP + context."""
     existing_str = ", ".join(existing_leads) if existing_leads else "(none)"
 
+    if query:
+        query_section = f'"{query}" in {country}'
+    else:
+        query_section = f"No specific search term provided. Generate queries based on the ICP above, targeting {country}."
+
     system = QUERY_PLANNER_SYSTEM
     user = QUERY_PLANNER_USER.format(
-        icp_context=icp_text, query=query, country=country,
+        icp_context=icp_text, query_section=query_section, country=country,
         existing_leads=existing_str,
     )
 
@@ -192,10 +197,11 @@ async def _plan_search_queries(
             generation.end(output={"error": "fallback"})
 
     # Fallback: programmatic queries
+    base = query if query else "empresas"
     return [
-        f"{query} {country}",
-        f"{query} {country} CNPJ site oficial telefone email",
-        f"{query} {country} CEO fundador diretor LinkedIn",
+        f"{base} {country}",
+        f"{base} {country} CNPJ site oficial telefone email",
+        f"{base} {country} CEO fundador diretor LinkedIn",
     ]
 
 
@@ -546,9 +552,11 @@ async def _investigate_with_tavily(
             f"{names}\n"
         )
 
+    query_hint = f" for the query: **{query}**" if query else ""
+
     system = INVESTIGATOR_SYSTEM
     user = INVESTIGATOR_USER_TAVILY.format(
-        icp_context=icp_text, query=query, count=count,
+        icp_context=icp_text, query_hint=query_hint, count=count,
         existing_leads_section=existing_section,
         search_results=search_context,
     )
@@ -1297,9 +1305,10 @@ async def run_shadow_investigation(
         )
 
     search_context = _format_tavily_results(tavily_data)
+    query_hint = f" for the query: **{query}**" if query else ""
     system = INVESTIGATOR_SYSTEM
     user = INVESTIGATOR_USER_TAVILY.format(
-        icp_context=icp_text, query=query, count=count,
+        icp_context=icp_text, query_hint=query_hint, count=count,
         existing_leads_section=existing_section,
         search_results=search_context,
     )

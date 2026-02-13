@@ -16,15 +16,6 @@ _mock_research = "app.agents.crm.router._run_research"
 # ── Validation ──────────────────────────────────────────────
 
 
-def test_returns_error_when_no_query_direct_format():
-    resp = client.post("/agents/crm/lead-research", json={"icp_id": "icp-1"})
-    data = resp.json()
-    assert resp.status_code == 200
-    assert data["status"] == "error"
-    assert data["error"] == "missing_query"
-    assert data["jobId"] is None
-
-
 def test_returns_error_when_no_icp_id_direct_format():
     resp = client.post("/agents/crm/lead-research", json={"query": "test"})
     data = resp.json()
@@ -35,7 +26,7 @@ def test_returns_error_when_no_icp_id_direct_format():
 
 def test_returns_error_when_count_exceeds_max():
     resp = client.post("/agents/crm/lead-research", json={
-        "query": "test", "icp_id": "icp-1", "count": 10
+        "query": "test", "icp_id": "icp-1", "count": 11
     })
     assert resp.status_code == 422
 
@@ -63,6 +54,18 @@ def test_accepted_direct_format():
     assert "Research started" in data["reply"]
 
 
+def test_accepted_direct_format_no_query():
+    """Query is optional — agent will generate search terms from ICP."""
+    with patch(_mock_research, new_callable=AsyncMock):
+        resp = client.post("/agents/crm/lead-research", json={
+            "icp_id": "icp-1", "count": 1
+        })
+    data = resp.json()
+    assert resp.status_code == 200
+    assert data["status"] == "accepted"
+    assert data["jobId"] is not None
+
+
 def test_accepted_crm_format():
     with patch(_mock_research, new_callable=AsyncMock):
         resp = client.post("/agents/crm/lead-research", json={
@@ -73,7 +76,7 @@ def test_accepted_crm_format():
     assert resp.status_code == 200
     assert data["status"] == "accepted"
     assert data["jobId"] is not None
-    assert "Hotmart" in data["reply"]
+    assert "Hotmart" in data["reply"]  # searchTerm appears in reply
     assert "2 lead(s)" in data["reply"]
 
 
@@ -89,10 +92,35 @@ def test_accepted_crm_format_defaults():
     assert data["jobId"] is not None
 
 
+def test_accepted_crm_format_no_search_params():
+    """ICP without searchParams — agent generates queries from ICP content."""
+    with patch(_mock_research, new_callable=AsyncMock):
+        resp = client.post("/agents/crm/lead-research", json={
+            "icp": {"id": "icp-1", "name": "EdTech B2B", "content": "Companies in education technology"},
+        })
+    data = resp.json()
+    assert resp.status_code == 200
+    assert data["status"] == "accepted"
+    assert data["jobId"] is not None
+
+
+def test_accepted_crm_format_empty_search_term():
+    """Empty searchTerm — agent generates queries from ICP content."""
+    with patch(_mock_research, new_callable=AsyncMock):
+        resp = client.post("/agents/crm/lead-research", json={
+            "icp": {"id": "icp-1", "name": "EdTech B2B"},
+            "searchParams": {"searchTerm": "", "country": "Brasil", "quantity": 3},
+        })
+    data = resp.json()
+    assert resp.status_code == 200
+    assert data["status"] == "accepted"
+    assert data["jobId"] is not None
+
+
 def test_crm_format_quantity_exceeds_max():
     resp = client.post("/agents/crm/lead-research", json={
         "icp": {"id": "icp-1"},
-        "searchParams": {"searchTerm": "test", "quantity": 10},
+        "searchParams": {"searchTerm": "test", "quantity": 11},
     })
     assert resp.status_code == 422
 

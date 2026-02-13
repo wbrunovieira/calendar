@@ -36,7 +36,7 @@ class ICPPayload(BaseModel):
 
 
 class SearchParams(BaseModel):
-    searchTerm: str
+    searchTerm: str = ""
     country: str = "Brasil"
     quantity: int = Field(default=1, ge=1, le=10)
     quality: str = "cold"
@@ -58,15 +58,16 @@ class LeadResearchRequest(BaseModel):
 
     def resolve(self) -> tuple[str, str, int, str, dict | None]:
         """Returns (query, icp_id, count, country, icp_context_or_none)."""
-        if self.icp and self.searchParams:
-            # CRM format: ICP object + searchParams — truncate content to save tokens
+        if self.icp:
+            # CRM format: ICP object + optional searchParams
             content = self.icp.content[:self._ICP_CONTENT_MAX_CHARS] if self.icp.content else ""
             icp_context = {"id": self.icp.id, "name": self.icp.name, "content": content}
+            sp = self.searchParams
             return (
-                self.searchParams.searchTerm,
+                sp.searchTerm if sp else "",
                 self.icp.id,
-                self.searchParams.quantity,
-                self.searchParams.country,
+                sp.quantity if sp else (self.count or 1),
+                sp.country if sp else self.country,
                 icp_context,
             )
         # Direct format
@@ -188,13 +189,6 @@ async def _run_research(
 async def handle_lead_research(req: LeadResearchRequest, background_tasks: BackgroundTasks):
     query, icp_id, count, country, icp_context = req.resolve()
 
-    if not query:
-        return LeadResearchResponse(
-            status="error",
-            reply="Missing search query",
-            error="missing_query",
-        )
-
     if not icp_id:
         return LeadResearchResponse(
             status="error",
@@ -221,5 +215,5 @@ async def handle_lead_research(req: LeadResearchRequest, background_tasks: Backg
     return LeadResearchResponse(
         status="accepted",
         jobId=job_id,
-        reply=f"Research started: '{query}' ({count} lead(s)). Results will be saved to CRM.",
+        reply=f"Research started{f': \"{query}\"' if query else ''} ({count} lead(s)). Results will be saved to CRM.",
     )
