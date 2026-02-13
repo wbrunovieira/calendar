@@ -38,7 +38,7 @@ class ICPPayload(BaseModel):
 class SearchParams(BaseModel):
     searchTerm: str
     country: str = "Brasil"
-    quantity: int = Field(default=1, ge=1, le=5)
+    quantity: int = Field(default=1, ge=1, le=10)
     quality: str = "cold"
 
 
@@ -50,7 +50,7 @@ class LeadResearchRequest(BaseModel):
     # Direct format (alternative)
     query: str | None = None
     icp_id: str | None = None
-    count: int | None = Field(default=None, ge=1, le=5)
+    count: int | None = Field(default=None, ge=1, le=10)
     country: str = "Brasil"
 
     # Max ICP content chars to send to the agent (ICP definition + checklist only, no sales copy)
