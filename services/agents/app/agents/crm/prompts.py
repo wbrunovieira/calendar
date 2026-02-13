@@ -95,13 +95,21 @@ INVESTIGATOR_USER_TAVILY = """\
 ## Task
 
 Based on the web search results below, write exactly {count} detailed company dossier(s) \
-matching the ICP above for the query: **{query}**
+for PRIVATE companies related to the query: **{query}**
 {existing_leads_section}
 ## Web Search Results
 
 {search_results}
 
-IMPORTANT:
+CRITICAL RULES:
+- You MUST output exactly {count} dossier(s). NEVER refuse or say you cannot find companies.
+- If the search results mention ANY private/commercial company, write a dossier for it.
+- Prefer companies that are closest to the ICP, but ALWAYS produce output. \
+A partial match is better than no output.
+- Do NOT skip companies just because they don't perfectly match the ICP. \
+ICP evaluation is NOT your job — a separate supervisor will handle that.
+- Do NOT filter out companies. Do NOT write analysis or explanations. \
+ONLY write dossiers in the === COMPANY: [Name] === format.
 - Use ONLY information from the search results above. Do NOT invent data.
 - If a data point is not in the results, leave that field blank.
 - Each company MUST use the === COMPANY: [Name] === format.
