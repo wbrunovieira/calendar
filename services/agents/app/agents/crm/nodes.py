@@ -256,6 +256,36 @@ def _parse_json_lenient(raw: str) -> dict:
         raise
 
 
+_DECISION_MAKER_ROLES = {
+    "ceo", "cto", "cfo", "coo", "cmo", "cpo", "cio", "cro",
+    "founder", "co-founder", "cofounder", "fundador", "cofundador",
+    "owner", "sócio", "socio", "proprietário", "proprietario",
+    "president", "presidente",
+    "director", "diretor", "diretora",
+    "vp", "vice-president", "vice-presidente",
+    "head", "chief",
+    "partner", "managing",
+    "gerente", "manager",
+    "coordenador", "coordenadora", "coordinator",
+    "supervisor", "superintendente",
+    "lead", "líder", "lider",
+}
+
+
+def _is_decision_maker(contact: dict) -> bool:
+    """Check if a contact is a real decision-maker based on role/title."""
+    name = contact.get("name", "")
+    role = contact.get("role", "")
+    # Must have a real name (first + last)
+    if not name or len(name.split()) < 2:
+        return False
+    # Must have a recognizable decision-maker role
+    if not role:
+        return False
+    role_lower = role.lower()
+    return any(kw in role_lower for kw in _DECISION_MAKER_ROLES)
+
+
 def _extract_usage(response: anthropic.types.Message) -> dict:
     """Extract token usage from an Anthropic response."""
     usage = response.usage
@@ -743,7 +773,14 @@ async def supervisor_review(state: CRMLeadState) -> dict:
             verdict = "approved" if review.get("approved") else "rejected"
 
         if verdict == "approved":
-            approved_indices.append(i)
+            # Double-check: filter out generic contacts and verify real people remain
+            real_contacts = [c for c in lead_contacts if _is_decision_maker(c)]
+            if real_contacts:
+                contacts[i] = real_contacts
+                approved_indices.append(i)
+            else:
+                # LLM approved but contacts are not real people — send to enrichment
+                enrichment_indices.append(i)
         elif verdict == "needs_enrichment":
             enrichment_indices.append(i)
         else:
@@ -842,14 +879,14 @@ async def enrich_contacts(state: CRMLeadState) -> dict:
 
         # 1. Build targeted search queries for this company's contacts
         search_queries = [
-            f"{company_name} contato email telefone",
-            f"{company_name} fundador CEO diretor LinkedIn email",
+            f"site:linkedin.com/in {company_name} CEO OR fundador OR diretor",
+            f"{company_name} fundador CEO diretor email contato",
         ]
-        # Add contact-specific searches
+        # Add contact-specific searches on LinkedIn
         for c in lead_contacts:
             name = c.get("name", "")
-            if name:
-                search_queries.append(f"{name} {company_name} LinkedIn email")
+            if name and len(name.split()) >= 2:
+                search_queries.append(f"site:linkedin.com/in {name}")
 
         # 2. Run Tavily searches
         try:
@@ -934,7 +971,11 @@ async def enrich_contacts(state: CRMLeadState) -> dict:
             leads[idx]["phone"] = enriched["company_phone"]
         contacts[idx] = new_contacts
 
-        # Check if enrichment succeeded (at least 1 contact with name + email or linkedin)
+        # Filter out generic/team contacts (not real people)
+        new_contacts = [c for c in new_contacts if _is_decision_maker(c)]
+        contacts[idx] = new_contacts
+
+        # Check if enrichment succeeded (at least 1 real person with name + email or linkedin)
         has_good_contact = any(
             c.get("name") and (c.get("email") or c.get("linkedin"))
             for c in new_contacts

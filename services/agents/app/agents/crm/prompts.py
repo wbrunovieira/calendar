@@ -156,6 +156,9 @@ RULES:
 3. DO NOT skip companies for being international, small, or imperfect ICP match.
 4. DO NOT output anything before the first === COMPANY: line.
 5. Use ONLY data from the search results. Leave fields blank if not found.
+6. A company's SUBSIDIARIES, BRANDS, and PRODUCTS count as the SAME company. \
+For example: "SanarFlix" is a product of "Sanar", "iFood Shop" is part of "iFood". \
+If the parent company is in the exclusion list, do NOT include any of its brands/products.
 """
 
 # ── Structurer ──────────────────────────────────────────────
@@ -284,11 +287,15 @@ Return ONLY valid JSON:
 }}
 
 RULES:
-- Keep ALL existing contacts, updating their missing fields with data from the search results.
-- Add NEW contacts found in the search results (founders, directors, C-level).
-- Each contact MUST have at minimum: name and (email OR linkedin).
+- Contacts MUST be DECISION MAKERS: CEO, founder, director, VP, head, manager, coordinator, etc.
+- Each contact must be a real person with first and last name AND a clear job title/role.
+- NEVER include generic entries like "Support Team", "Atendimento", department names, or company names.
+- Keep ALL existing contacts that are decision makers, updating their missing fields.
+- Add NEW decision-maker contacts found in the search results.
+- Each contact MUST have at minimum: full name, role, and (email OR linkedin).
 - Do NOT invent data. Only use information from the search results.
 - If no new data was found for a field, keep it as empty string.
+- If you cannot find any decision-maker contact, return {{"contacts": []}}.
 """
 
 CONTACT_ENRICHER_USER = """\
