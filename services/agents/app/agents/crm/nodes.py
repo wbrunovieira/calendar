@@ -894,6 +894,13 @@ _LEAD_STRING_FIELDS = [
     "address", "cnpj", "description", "source", "status",
 ]
 
+_EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+
+
+def _is_valid_email(value: str) -> bool:
+    """Check if a string is a valid email address."""
+    return bool(value and _EMAIL_RE.match(value.strip()))
+
 
 def _sanitize_lead_data(lead: dict) -> dict:
     """Ensure all string fields are strings (not None/null) for CRM API."""
@@ -901,6 +908,22 @@ def _sanitize_lead_data(lead: dict) -> dict:
     for field in _LEAD_STRING_FIELDS:
         if field in sanitized and sanitized[field] is None:
             sanitized[field] = ""
+    # Validate email — CRM rejects invalid formats
+    if sanitized.get("email") and not _is_valid_email(sanitized["email"]):
+        logger.warning("Invalid lead email stripped: %s", sanitized["email"])
+        sanitized["email"] = ""
+    return sanitized
+
+
+def _sanitize_contact_data(contact: dict) -> dict:
+    """Sanitize contact data before sending to CRM API."""
+    sanitized = dict(contact)
+    for field in ("name", "role", "email", "phone", "linkedin"):
+        if field in sanitized and sanitized[field] is None:
+            sanitized[field] = ""
+    if sanitized.get("email") and not _is_valid_email(sanitized["email"]):
+        logger.warning("Invalid contact email stripped: %s (contact: %s)", sanitized["email"], sanitized.get("name", "?"))
+        sanitized["email"] = ""
     return sanitized
 
 
@@ -948,7 +971,8 @@ async def save_to_crm(state: CRMLeadState) -> dict:
         saved_contacts = []
         for contact in lead_contacts:
             try:
-                contact_result = await crm.create_lead_contact(lead_id, contact)
+                sanitized_contact = _sanitize_contact_data(contact)
+                contact_result = await crm.create_lead_contact(lead_id, sanitized_contact)
                 saved_contacts.append(contact_result)
             except Exception:
                 logger.exception("Failed to create contact for lead %s", lead_id)
