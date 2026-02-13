@@ -78,14 +78,14 @@ def _build_structure_messages(dossier: str) -> tuple[str, str, Any | None]:
 
 
 def _build_supervisor_messages(
-    icp_context: str, lead_json: str, contacts_json: str,
+    lead_json: str, contacts_json: str,
 ) -> tuple[str, str, Any | None]:
     prompt = _get_langfuse_prompt("crm-lead-supervisor")
     if prompt is not None:
-        compiled = prompt.compile(icp_context=icp_context, lead_json=lead_json, contacts_json=contacts_json)
+        compiled = prompt.compile(lead_json=lead_json, contacts_json=contacts_json)
         return compiled[0]["content"], compiled[1]["content"], prompt
     system = SUPERVISOR_SYSTEM
-    user = SUPERVISOR_USER.format(icp_context=icp_context, lead_json=lead_json, contacts_json=contacts_json)
+    user = SUPERVISOR_USER.format(lead_json=lead_json, contacts_json=contacts_json)
     return system, user, None
 
 
@@ -429,9 +429,6 @@ async def supervisor_review(state: CRMLeadState) -> dict:
     trace = state.get("_trace")
     leads = state.get("leads_data", [])
     contacts = state.get("contacts_data", [])
-    icp = state.get("icp_context", {})
-
-    icp_text = f"Name: {icp.get('name', '')}\n{icp.get('content', '')}"
 
     approved_indices: list[int] = []
     rejected: list[dict] = []
@@ -440,7 +437,6 @@ async def supervisor_review(state: CRMLeadState) -> dict:
         lead_contacts = contacts[i] if i < len(contacts) else []
 
         system, user, lf_prompt = _build_supervisor_messages(
-            icp_context=icp_text,
             lead_json=json.dumps(lead, ensure_ascii=False, indent=2),
             contacts_json=json.dumps(lead_contacts, ensure_ascii=False, indent=2),
         )
@@ -628,17 +624,10 @@ async def run_shadow_investigation(
                         {"role": "system", "content": system},
                         {"role": "user", "content": user},
                     ],
-                    "max_tokens": 16384,
-                    "reasoning": {"effort": "low"},
+                    "max_tokens": 4096,
                     "plugins": [{
                         "id": "web",
                         "max_results": 5,
-                        "search_prompt": (
-                            "The following are web search results retrieved today. "
-                            "Use these results to answer the user's question. "
-                            "Do NOT attempt to call any tools or functions. "
-                            "Simply use the information provided below."
-                        ),
                     }],
                 },
             )

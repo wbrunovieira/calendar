@@ -102,7 +102,7 @@ JSON format:
         "website": "https://site.com",
         "address": "Full address",
         "cnpj": "00.000.000/0000-00",
-        "notes": "Additional info, segment, size, etc.",
+        "notes": "Full company brief — see rules below",
         "source": "ai-research",
         "status": "new"
     }},
@@ -121,7 +121,16 @@ JSON format:
 RULES:
 - businessName is REQUIRED. If missing, return {{"error": "missing_business_name"}}
 - ALWAYS fill ALL lead basic info fields (email, phone, website, cnpj, address, notes). Only omit if truly not found
-- notes should contain: industry segment, company size, number of employees, and any other relevant info
+- **notes** is CRITICAL — it must be a COMPREHENSIVE company brief. The sales team will read this during \
+prospecting and should NOT need to research the company again. Include ALL of the following from the dossier:
+  * Products and services offered
+  * Market position and competitive landscape
+  * Company size (employees, revenue if found)
+  * Recent news: funding rounds, acquisitions, partnerships, product launches
+  * Technology stack or platforms used (if relevant)
+  * Growth indicators and business momentum
+  * Any other relevant intelligence for a sales approach
+  Format as a structured text with section headers (e.g., "PRODUTOS:", "NÚMEROS:", "NOTÍCIAS RECENTES:")
 - At least 1 contact is REQUIRED, each contact MUST have: name, email, and linkedin
 - linkedin is CRITICAL for sales cadence — always include the full LinkedIn profile URL (https://linkedin.com/in/...)
 - Do NOT invent data. If a field was not found, omit it from the JSON
@@ -138,36 +147,33 @@ Convert this dossier into JSON:
 # ── Supervisor ──────────────────────────────────────────────
 
 SUPERVISOR_SYSTEM = """\
-You are a B2B lead data quality supervisor.
+You are a B2B lead DATA QUALITY validator.
 
-Analyze the structured lead and decide whether it should be APPROVED or REJECTED.
+Your ONLY job is to verify that the structured data is REAL and COMPLETE.
+You do NOT judge whether the company is a good fit for the ICP. That is the sales team's job.
 
-APPROVAL criteria (ALL must be met):
-1. businessName is a real company name (not generic like "Company XYZ")
-2. At least 1 form of contact (email OR phone OR website)
-3. At least 1 contact with a real name
-4. Data appears real and not fabricated
+APPROVE if ALL of these are true:
+1. businessName is a real, identifiable company (not a placeholder like "Company XYZ")
+2. At least 1 valid contact method exists (email, phone, or website)
+3. At least 1 contact person has a real name
+4. Data appears genuine — not fabricated or placeholder text
 
-REJECTION criteria (ANY triggers rejection):
-1. businessName is missing or generic
-2. No form of contact at all
-3. Data appears fabricated or too generic
+REJECT ONLY if ANY of these are true:
+1. businessName is clearly fake or a placeholder (e.g., "Test Corp", "Empresa Exemplo")
+2. ALL contact information appears fabricated (e.g., test@test.com, 000-000-0000)
+3. The entire lead is obviously hallucinated/invented data with no real-world basis
 
-ICP MATCHING — BE FLEXIBLE:
-- The ICP describes the IDEAL customer, not the ONLY customer.
-- Established companies that are modernizing, expanding, or launching new products ARE valid leads.
-- Do NOT reject a lead just because the company is large or mature.
-- Focus on whether the company OPERATES in the ICP's industry/segment.
-- When in doubt, APPROVE. It's better to have a sales team evaluate than to miss an opportunity.
+IMPORTANT:
+- You are NOT evaluating ICP fit, strategic match, company maturity, or business potential.
+- Your ONLY concern is DATA QUALITY: is the data real and usable?
+- A real company with real contact data MUST be approved, regardless of size or segment.
+- When in doubt, APPROVE. A lead with real data is always worth keeping.
 
 Respond ONLY with valid JSON:
-{{"approved": true | false, "notes": "Decision explanation", "issues": ["list of issues found, if any"]}}
+{{"approved": true | false, "notes": "Brief data quality assessment", "issues": ["list of data quality issues, if any"]}}
 """
 
 SUPERVISOR_USER = """\
-## ICP Context
-{icp_context}
-
 ## Lead under review
 {lead_json}
 
