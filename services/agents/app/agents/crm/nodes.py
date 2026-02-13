@@ -377,14 +377,43 @@ async def structure_leads_data(state: CRMLeadState) -> dict:
         if generation:
             generation.end(output=parsed, usage=usage)
 
-        if "error" in parsed:
-            logger.warning("Dossier %d has error: %s", i, parsed["error"])
-            continue
-
         lead = parsed.get("lead", {})
-        if not lead.get("businessName"):
-            logger.warning("Dossier %d missing businessName, skipping", i)
-            continue
+        needs_retry = "error" in parsed or not lead.get("businessName")
+
+        if needs_retry:
+            logger.info("Dossier %d missing businessName, retrying with correction prompt", i)
+            retry_user = (
+                "The previous attempt failed to extract a businessName. "
+                "Here is the original dossier. Please try again — extract the company/brand name "
+                "even if it's not perfectly formatted. Use the most prominent organization mentioned.\n\n"
+                f"{dossier}"
+            )
+            retry_gen = trace.generation(
+                name=f"structure_lead_{i}_retry",
+                model=settings.anthropic_supervisor_model,
+                input=[{"role": "system", "content": system}, {"role": "user", "content": retry_user}],
+            ) if trace else None
+
+            try:
+                retry_resp = await _call_claude(system, retry_user, model=settings.anthropic_supervisor_model)
+                retry_usage = _extract_usage(retry_resp)
+                retry_raw = "".join(b.text for b in retry_resp.content if b.type == "text").strip()
+                if retry_raw.startswith("```"):
+                    retry_raw = retry_raw.split("\n", 1)[1] if "\n" in retry_raw else retry_raw[3:]
+                if retry_raw.endswith("```"):
+                    retry_raw = retry_raw[:-3].rstrip()
+                parsed = json.loads(retry_raw)
+                lead = parsed.get("lead", {})
+                if retry_gen:
+                    retry_gen.end(output=parsed, usage=retry_usage)
+            except Exception:
+                logger.exception("Retry structuring dossier %d also failed", i)
+                if retry_gen:
+                    retry_gen.end(output={"error": "retry_failed"})
+
+            if not lead.get("businessName"):
+                logger.warning("Dossier %d still missing businessName after retry, skipping", i)
+                continue
 
         leads_data.append(lead)
         contacts_data.append(parsed.get("contacts", []))
@@ -600,6 +629,7 @@ async def run_shadow_investigation(
                         {"role": "user", "content": user},
                     ],
                     "max_tokens": 16384,
+                    "plugins": [{"id": "web", "max_results": 5}],
                 },
             )
             resp.raise_for_status()
