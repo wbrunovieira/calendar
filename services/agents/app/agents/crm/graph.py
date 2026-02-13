@@ -22,6 +22,9 @@ def _after_load_icp(state: CRMLeadState) -> str:
 
 def _after_investigate(state: CRMLeadState) -> str:
     if state.get("error"):
+        # On retry rounds with previous results, don't abort — format what we have
+        if state.get("created_leads"):
+            return "format_reply"
         return END
     return "structure_leads_data"
 
@@ -52,7 +55,11 @@ def _after_enrich(state: CRMLeadState) -> str:
 
 def _after_save(state: CRMLeadState) -> str:
     if state.get("error"):
-        return END
+        return "format_reply"
+    remaining = state.get("remaining_count", 0)
+    retry_round = state.get("retry_round", 0)
+    if remaining > 0 and retry_round < 3:
+        return "investigate_leads"
     return "format_reply"
 
 

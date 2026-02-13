@@ -32,3 +32,8 @@ class CRMLeadState(TypedDict, total=False):
     created_leads: list[dict]
     reply: str
     error: str | None
+
+    # Retry loop
+    remaining_count: int
+    retry_round: int
+    previous_queries: list[str]

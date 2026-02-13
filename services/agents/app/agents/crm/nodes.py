@@ -146,6 +146,7 @@ def _format_tavily_results(tavily_data: list[dict]) -> str:
 async def _plan_search_queries(
     query: str, icp_text: str, country: str,
     existing_leads: list[str], trace: Any = None,
+    previous_queries: list[str] | None = None,
 ) -> list[str]:
     """Use Haiku to generate smart search queries based on ICP + context."""
     existing_str = ", ".join(existing_leads) if existing_leads else "(none)"
@@ -155,6 +156,14 @@ async def _plan_search_queries(
         icp_context=icp_text, query=query, country=country,
         existing_leads=existing_str,
     )
+
+    # On retry rounds, tell the planner to avoid previous queries
+    if previous_queries:
+        prev_str = "\n".join(f"- {q}" for q in previous_queries)
+        user += (
+            f"\n\n## Previous search queries (DO NOT repeat these — use DIFFERENT terms)\n"
+            f"{prev_str}\n"
+        )
 
     generation = trace.generation(
         name="plan_search_queries",
@@ -419,36 +428,52 @@ async def investigate_leads(state: CRMLeadState) -> dict:
     trace = state.get("_trace")
     icp = state["icp_context"]
     query = state["query"]
-    count = state.get("count", 1)
     country = state.get("country", "Brasil")
+    existing_leads = state.get("existing_leads", [])
+
+    # On retry rounds, use remaining_count instead of original count
+    remaining = state.get("remaining_count", 0)
+    retry_round = state.get("retry_round", 0)
+    count = remaining if remaining > 0 else state.get("count", 1)
 
     icp_text = f"Name: {icp.get('name', '')}\n{icp.get('content', '')}"
-    existing_leads = state.get("existing_leads", [])
+
+    previous_queries = state.get("previous_queries", [])
+    logger.info("Investigate round %d: count=%d, existing=%d, prev_queries=%d", retry_round + 1, count, len(existing_leads), len(previous_queries))
 
     # ── Tavily mode (primary) ────────────────────────────────
     if settings.tavily_api_key:
-        return await _investigate_with_tavily(
+        result = await _investigate_with_tavily(
             trace, icp, icp_text, query, count, existing_leads, country,
+            previous_queries=previous_queries if previous_queries else None,
         )
+        # Track retry round
+        result["retry_round"] = retry_round + 1
+        return result
 
     # ── Sonnet + web_search fallback ─────────────────────────
-    return await _investigate_with_web_search(
+    result = await _investigate_with_web_search(
         trace, icp_text, query, count, existing_leads,
     )
+    result["retry_round"] = retry_round + 1
+    return result
 
 
 async def _investigate_with_tavily(
     trace: Any, icp: dict, icp_text: str, query: str, count: int,
     existing_leads: list[str], country: str = "Brasil",
+    previous_queries: list[str] | None = None,
 ) -> dict:
     """Tavily search + Haiku to build dossiers, with smart query planning."""
     all_tavily_data: list[dict] = []
+    all_queries_used: list[str] = list(previous_queries or [])
 
     # Up to 2 rounds: initial search + optional retry with new queries
     for round_num in range(2):
         # 1. Plan search queries using Haiku
         queries = await _plan_search_queries(
             query, icp_text, country, existing_leads, trace,
+            previous_queries=all_queries_used if all_queries_used else None,
         )
         logger.info("Search round %d queries: %s", round_num + 1, queries)
 
@@ -476,6 +501,7 @@ async def _investigate_with_tavily(
             search_span.end(output={"total_results": total_results, "queries_run": len(tavily_data)})
 
         all_tavily_data.extend(tavily_data)
+        all_queries_used.extend(queries)
 
         if total_results == 0 and round_num == 0:
             # No results at all on first round — retry
@@ -555,10 +581,26 @@ async def _investigate_with_tavily(
         generation.end(output=raw_text[:2000], usage=usage)
 
     result = _split_dossiers(raw_text)
+
+    # Programmatic dedup: remove dossiers for companies already in CRM
+    if existing_leads:
+        existing_lower = {name.lower().strip() for name in existing_leads if name}
+        filtered = []
+        for dossier in result.get("raw_dossiers", []):
+            company_name = _extract_company_name(dossier)
+            if company_name and company_name.lower().strip() in existing_lower:
+                logger.info("Dedup: filtered out '%s' (already in CRM)", company_name)
+                continue
+            filtered.append(dossier)
+        if len(filtered) < len(result["raw_dossiers"]):
+            logger.info("Dedup: %d/%d dossiers kept", len(filtered), len(result["raw_dossiers"]))
+        result["raw_dossiers"] = filtered
+
     # Enforce requested count — LLM may produce more dossiers than asked
     if len(result.get("raw_dossiers", [])) > count:
         result["raw_dossiers"] = result["raw_dossiers"][:count]
     result["tavily_data"] = all_tavily_data
+    result["previous_queries"] = all_queries_used
     return result
 
 
@@ -602,6 +644,18 @@ async def _investigate_with_web_search(
         generation.end(output=raw_text[:2000], usage=usage)
 
     return _split_dossiers(raw_text)
+
+
+def _extract_company_name(dossier: str) -> str:
+    """Extract company name from dossier header '=== COMPANY: Name ==='."""
+    if "=== COMPANY:" not in dossier:
+        return ""
+    after = dossier.split("=== COMPANY:", 1)[1]
+    # Name ends at '===' or newline
+    for delimiter in ["===", "\n"]:
+        if delimiter in after:
+            return after.split(delimiter, 1)[0].strip()
+    return after.strip()
 
 
 def _split_dossiers(raw_text: str) -> dict:
@@ -796,6 +850,21 @@ async def supervisor_review(state: CRMLeadState) -> dict:
     }
 
 
+_LEAD_STRING_FIELDS = [
+    "businessName", "contactName", "email", "phone", "website",
+    "address", "cnpj", "description", "source", "status",
+]
+
+
+def _sanitize_lead_data(lead: dict) -> dict:
+    """Ensure all string fields are strings (not None/null) for CRM API."""
+    sanitized = dict(lead)
+    for field in _LEAD_STRING_FIELDS:
+        if field in sanitized and sanitized[field] is None:
+            sanitized[field] = ""
+    return sanitized
+
+
 async def save_to_crm(state: CRMLeadState) -> dict:
     """Save approved leads to CRM."""
     if state.get("error"):
@@ -806,13 +875,19 @@ async def save_to_crm(state: CRMLeadState) -> dict:
     contacts = state.get("contacts_data", [])
     approved = state.get("approved_indices", [])
     icp_id = state.get("icp_id", "")
+    original_count = state.get("count", 1)
+
+    # Accumulate from previous rounds
+    previously_created = state.get("created_leads", [])
+    existing_leads = state.get("existing_leads", [])
 
     span = trace.span(name="save_to_crm", input={"approved_count": len(approved)}) if trace else None
 
-    created_leads: list[dict] = []
+    created_leads: list[dict] = list(previously_created)
+    new_names: list[str] = []
 
     for idx in approved:
-        lead_data = leads[idx]
+        lead_data = _sanitize_lead_data(leads[idx])
         lead_contacts = contacts[idx] if idx < len(contacts) else []
 
         try:
@@ -822,6 +897,7 @@ async def save_to_crm(state: CRMLeadState) -> dict:
             continue
 
         lead_id = lead_result.get("id", "")
+        new_names.append(lead_data.get("businessName", ""))
 
         # Link lead to ICP
         if lead_id and icp_id:
@@ -845,9 +921,24 @@ async def save_to_crm(state: CRMLeadState) -> dict:
         })
 
     if span:
-        span.end(output={"created": len(created_leads)})
+        span.end(output={"created_this_round": len(new_names), "total_created": len(created_leads)})
 
-    return {"created_leads": created_leads}
+    # Calculate remaining and update existing_leads for retry
+    remaining = original_count - len(created_leads)
+    # Add rejected names to existing_leads so they're not searched again
+    rejected_names = [r.get("query_term", "") for r in state.get("rejected", []) if r.get("query_term")]
+    updated_existing = list(set(existing_leads + new_names + rejected_names))
+
+    logger.info(
+        "Save complete: created=%d/%d, remaining=%d",
+        len(created_leads), original_count, max(remaining, 0),
+    )
+
+    return {
+        "created_leads": created_leads,
+        "remaining_count": max(remaining, 0),
+        "existing_leads": updated_existing,
+    }
 
 
 async def enrich_contacts(state: CRMLeadState) -> dict:
@@ -1081,7 +1172,8 @@ async def format_reply(state: CRMLeadState) -> dict:
     rejected = state.get("rejected", [])
     error = state.get("error")
 
-    if error:
+    # If error but we have results from previous rounds, treat as partial success
+    if error and not created:
         return {}
 
     total_created = len(created)
@@ -1107,7 +1199,8 @@ async def format_reply(state: CRMLeadState) -> dict:
     if total_rejected > 0:
         parts.append(f"{total_rejected} rejected")
 
-    return {"reply": ". ".join(parts)}
+    # Clear error if we have results (partial success)
+    return {"reply": ". ".join(parts), "error": None}
 
 
 # ── Shadow experiment (A/B test) ──────────────────────────
