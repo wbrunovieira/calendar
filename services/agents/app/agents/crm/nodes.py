@@ -139,17 +139,17 @@ def _format_tavily_results(tavily_data: list[dict]) -> str:
     return "\n".join(parts)
 
 
-def _build_tavily_queries(query: str, icp_context: dict, count: int) -> list[str]:
-    """Generate search queries for Tavily from ICP + user query."""
+def _build_tavily_queries(query: str, icp_context: dict, count: int, country: str = "Brasil") -> list[str]:
+    """Generate search queries for Tavily from ICP + user query + country."""
     queries = [
-        query,
-        f"{query} CNPJ site oficial endereço telefone email",
-        f"{query} CEO fundador diretor LinkedIn email",
+        f"{query} {country}",
+        f"{query} {country} CNPJ site oficial endereço telefone email",
+        f"{query} {country} CEO fundador diretor LinkedIn email",
     ]
     if count > 1:
         segment = icp_context.get("name", "")
         if segment:
-            queries.append(f"{segment} empresas Brasil {query}")
+            queries.append(f"{segment} empresas {country} {query}")
     return queries
 
 
@@ -354,6 +354,7 @@ async def investigate_leads(state: CRMLeadState) -> dict:
     icp = state["icp_context"]
     query = state["query"]
     count = state.get("count", 1)
+    country = state.get("country", "Brasil")
 
     icp_text = f"Name: {icp.get('name', '')}\n{icp.get('content', '')}"
     existing_leads = state.get("existing_leads", [])
@@ -361,7 +362,7 @@ async def investigate_leads(state: CRMLeadState) -> dict:
     # ── Tavily mode (primary) ────────────────────────────────
     if settings.tavily_api_key:
         return await _investigate_with_tavily(
-            trace, icp, icp_text, query, count, existing_leads,
+            trace, icp, icp_text, query, count, existing_leads, country,
         )
 
     # ── Sonnet + web_search fallback ─────────────────────────
@@ -372,11 +373,11 @@ async def investigate_leads(state: CRMLeadState) -> dict:
 
 async def _investigate_with_tavily(
     trace: Any, icp: dict, icp_text: str, query: str, count: int,
-    existing_leads: list[str],
+    existing_leads: list[str], country: str = "Brasil",
 ) -> dict:
     """Tavily search + Haiku to build dossiers."""
     # 1. Generate and run search queries
-    queries = _build_tavily_queries(query, icp, count)
+    queries = _build_tavily_queries(query, icp, count, country)
 
     search_span = trace.span(name="tavily_search", input={"queries": queries}) if trace else None
 
@@ -579,7 +580,7 @@ async def structure_leads_data(state: CRMLeadState) -> dict:
                     retry_raw = retry_raw.split("\n", 1)[1] if "\n" in retry_raw else retry_raw[3:]
                 if retry_raw.endswith("```"):
                     retry_raw = retry_raw[:-3].rstrip()
-                parsed = json.loads(retry_raw)
+                parsed = _parse_json_lenient(retry_raw)
                 lead = parsed.get("lead", {})
                 if retry_gen:
                     retry_gen.end(output=parsed, usage=retry_usage)

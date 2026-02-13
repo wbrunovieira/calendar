@@ -8,6 +8,7 @@ class CRMLeadState(TypedDict, total=False):
     query: str
     icp_id: str
     count: int
+    country: str
     _trace: Any
 
     # Context

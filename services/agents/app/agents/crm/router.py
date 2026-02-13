@@ -51,12 +51,13 @@ class LeadResearchRequest(BaseModel):
     query: str | None = None
     icp_id: str | None = None
     count: int | None = Field(default=None, ge=1, le=5)
+    country: str = "Brasil"
 
     # Max ICP content chars to send to the agent (ICP definition + checklist only, no sales copy)
     _ICP_CONTENT_MAX_CHARS = 2500
 
-    def resolve(self) -> tuple[str, str, int, dict | None]:
-        """Returns (query, icp_id, count, icp_context_or_none)."""
+    def resolve(self) -> tuple[str, str, int, str, dict | None]:
+        """Returns (query, icp_id, count, country, icp_context_or_none)."""
         if self.icp and self.searchParams:
             # CRM format: ICP object + searchParams — truncate content to save tokens
             content = self.icp.content[:self._ICP_CONTENT_MAX_CHARS] if self.icp.content else ""
@@ -65,6 +66,7 @@ class LeadResearchRequest(BaseModel):
                 self.searchParams.searchTerm,
                 self.icp.id,
                 self.searchParams.quantity,
+                self.searchParams.country,
                 icp_context,
             )
         # Direct format
@@ -72,6 +74,7 @@ class LeadResearchRequest(BaseModel):
             self.query or "",
             self.icp_id or "",
             self.count or 1,
+            self.country,
             None,
         )
 
@@ -102,7 +105,7 @@ class LeadResearchResponse(BaseModel):
 
 async def _run_research(
     job_id: str, query: str, icp_id: str, count: int,
-    icp_context: dict | None, trace_id: str | None,
+    country: str, icp_context: dict | None, trace_id: str | None,
 ):
     """Run lead research in background and notify CRM via webhook."""
     trace = None
@@ -110,7 +113,7 @@ async def _run_research(
         trace = langfuse.trace(
             name="crm-lead-research",
             id=trace_id,
-            input={"query": query, "icp_id": icp_id, "count": count},
+            input={"query": query, "icp_id": icp_id, "count": count, "country": country},
         )
 
     graph = _get_graph()
@@ -118,6 +121,7 @@ async def _run_research(
         "query": query,
         "icp_id": icp_id,
         "count": count,
+        "country": country,
         "_trace": trace,
     }
     if icp_context:
@@ -182,7 +186,7 @@ async def _run_research(
 
 @router.post("/crm/lead-research", response_model=LeadResearchResponse)
 async def handle_lead_research(req: LeadResearchRequest, background_tasks: BackgroundTasks):
-    query, icp_id, count, icp_context = req.resolve()
+    query, icp_id, count, country, icp_context = req.resolve()
 
     if not query:
         return LeadResearchResponse(
@@ -205,14 +209,14 @@ async def handle_lead_research(req: LeadResearchRequest, background_tasks: Backg
     if langfuse.enabled:
         trace = langfuse.trace(
             name="crm-lead-research",
-            input={"query": query, "icp_id": icp_id, "count": count},
+            input={"query": query, "icp_id": icp_id, "count": count, "country": country},
             metadata={"async": True, "job_id": job_id},
         )
         trace_id = trace.id
         langfuse.flush()
 
     # Schedule research in background
-    background_tasks.add_task(_run_research, job_id, query, icp_id, count, icp_context, trace_id)
+    background_tasks.add_task(_run_research, job_id, query, icp_id, count, country, icp_context, trace_id)
 
     return LeadResearchResponse(
         status="accepted",

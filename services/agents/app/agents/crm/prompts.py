@@ -88,34 +88,41 @@ IMPORTANT:
 # ── Investigator (Tavily mode — search results provided) ───
 
 INVESTIGATOR_USER_TAVILY = """\
-## Ideal Customer Profile (ICP)
-
-{icp_context}
-
-## Task
-
-Based on the web search results below, write exactly {count} detailed company dossier(s) \
-for PRIVATE companies related to the query: **{query}**
-{existing_leads_section}
-## Web Search Results
+## Search Results
 
 {search_results}
 
-CRITICAL RULES:
-- You MUST output exactly {count} dossier(s). NEVER refuse or say you cannot find companies.
-- If the search results mention ANY private/commercial company, write a dossier for it.
-- Prefer companies that are closest to the ICP, but ALWAYS produce output. \
-A partial match is better than no output.
-- Do NOT skip companies just because they don't perfectly match the ICP. \
-ICP evaluation is NOT your job — a separate supervisor will handle that.
-- Do NOT filter out companies. Do NOT write analysis or explanations. \
-ONLY write dossiers in the === COMPANY: [Name] === format.
-- Use ONLY information from the search results above. Do NOT invent data.
-- If a data point is not in the results, leave that field blank.
-- Each company MUST use the === COMPANY: [Name] === format.
-- Fill ALL fields you can find: website, CNPJ, phone, email, address, segment, size.
-- For contacts: name, title, email, LinkedIn URL (search results may have LinkedIn links).
-- Include source URLs for each piece of information.
+## Instructions
+
+Write exactly {count} company dossier(s) from the search results above for the query: **{query}**
+
+Use the ICP below only as a PREFERENCE guide, not as a filter:
+{icp_context}
+{existing_leads_section}
+OUTPUT FORMAT — your response must contain ONLY dossiers, nothing else:
+
+=== COMPANY: [Name] ===
+Website: ...
+Tax ID/CNPJ: ...
+Segment: ...
+Size: ...
+Address: ...
+Phone: ...
+Email: ...
+Social media: ...
+
+--- CONTACTS/DECISION MAKERS ---
+1. Name: ... | Title: ... | Email: ... | Phone: ... | LinkedIn: ...
+
+--- SOURCES ---
+- [URL]
+
+RULES:
+1. Pick the {count} BEST company(ies) from the results. Any real company counts.
+2. DO NOT write analysis, explanations, or reasons. ONLY dossiers.
+3. DO NOT skip companies for being international, small, or imperfect ICP match.
+4. DO NOT output anything before the first === COMPANY: line.
+5. Use ONLY data from the search results. Leave fields blank if not found.
 """
 
 # ── Structurer ──────────────────────────────────────────────
