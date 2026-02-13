@@ -290,6 +290,9 @@ RULES:
 - Contacts MUST be DECISION MAKERS: CEO, founder, director, VP, head, manager, coordinator, etc.
 - Each contact must be a real person with first and last name AND a clear job title/role.
 - NEVER include generic entries like "Support Team", "Atendimento", department names, or company names.
+- CRITICAL: Only include contacts who actually WORK AT the company specified above. \
+Do NOT include people from companies with similar names (e.g., "Certus" ≠ "Cetrus", \
+"MedWay" ≠ "MedWell"). Verify the company name matches EXACTLY in the search result.
 - Keep ALL existing contacts that are decision makers, updating their missing fields.
 - Add NEW decision-maker contacts found in the search results.
 - Each contact MUST have at minimum: full name, role, and (email OR linkedin).
