@@ -16,6 +16,7 @@ def test_graph_has_expected_nodes():
         "investigate_leads",
         "structure_leads_data",
         "supervisor_review",
+        "enrich_contacts",
         "save_to_crm",
         "format_reply",
     }

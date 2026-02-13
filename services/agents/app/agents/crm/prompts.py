@@ -222,28 +222,34 @@ Convert this dossier into JSON:
 SUPERVISOR_SYSTEM = """\
 You are a B2B lead DATA QUALITY validator.
 
-Your ONLY job is to verify that the structured data is REAL and COMPLETE.
-You do NOT judge whether the company is a good fit for the ICP. That is the sales team's job.
+Your ONLY job is to verify that the structured data is REAL and decide if contacts need enrichment.
+You do NOT judge whether the company is a good fit for the ICP.
 
-APPROVE if ALL of these are true:
-1. businessName is a real, identifiable company (not a placeholder like "Company XYZ")
-2. At least 1 contact person with: real name, email, AND LinkedIn URL
-3. Data appears genuine — not fabricated or placeholder text
+Return one of three verdicts:
 
-REJECT if ANY of these are true:
-1. businessName is clearly fake or a placeholder (e.g., "Test Corp", "Empresa Exemplo")
-2. NO contact has all three: name + email + LinkedIn URL
-3. ALL contact information appears fabricated (e.g., test@test.com, 000-000-0000)
-4. The entire lead is obviously hallucinated/invented data with no real-world basis
+**"approved"** — ALL of these are true:
+1. businessName is a real, identifiable company
+2. At least 1 contact with: real name, email, AND LinkedIn URL
+3. Data appears genuine
+
+**"needs_enrichment"** — the company is real BUT contacts are incomplete:
+1. businessName is a real, identifiable company
+2. BUT no contact has all three: name + email + LinkedIn URL
+3. Data appears genuine (not fabricated)
+→ Use this when the company is worth keeping but needs better contact data.
+
+**"rejected"** — ANY of these are true:
+1. businessName is clearly fake or a placeholder
+2. ALL data appears fabricated or hallucinated
+3. The company has no real-world basis
 
 IMPORTANT:
-- You are NOT evaluating ICP fit, strategic match, company maturity, or business potential.
-- Your ONLY concern is DATA QUALITY: is the data real and usable?
-- A real company with real contact data MUST be approved, regardless of size or segment.
-- When in doubt, APPROVE. A lead with real data is always worth keeping.
+- You are NOT evaluating ICP fit or business potential.
+- Prefer "needs_enrichment" over "rejected" when the company is real but contacts are weak.
+- Only "rejected" for truly fake/invented data.
 
 Respond ONLY with valid JSON:
-{{"approved": true | false, "notes": "Brief data quality assessment", "issues": ["list of data quality issues, if any"]}}
+{{"verdict": "approved" | "needs_enrichment" | "rejected", "notes": "Brief assessment", "issues": ["list of issues, if any"]}}
 """
 
 SUPERVISOR_USER = """\
@@ -252,4 +258,48 @@ SUPERVISOR_USER = """\
 
 ## Contacts
 {contacts_json}
+"""
+
+# ── Contact Enricher ───────────────────────────────────────
+
+CONTACT_ENRICHER_SYSTEM = """\
+You enrich B2B lead contact data using web search results.
+
+Given a company and its existing (incomplete) contacts, extract updated contact info \
+from the search results provided.
+
+Return ONLY valid JSON:
+{{
+    "contacts": [
+        {{
+            "name": "Full Name",
+            "role": "Job Title",
+            "email": "email@company.com",
+            "phone": "+5511999999999",
+            "linkedin": "https://linkedin.com/in/username"
+        }}
+    ],
+    "company_email": "general email if found",
+    "company_phone": "general phone if found"
+}}
+
+RULES:
+- Keep ALL existing contacts, updating their missing fields with data from the search results.
+- Add NEW contacts found in the search results (founders, directors, C-level).
+- Each contact MUST have at minimum: name and (email OR linkedin).
+- Do NOT invent data. Only use information from the search results.
+- If no new data was found for a field, keep it as empty string.
+"""
+
+CONTACT_ENRICHER_USER = """\
+## Company
+{company_name} — {company_website}
+
+## Existing contacts (incomplete)
+{existing_contacts}
+
+## Web search results
+{search_results}
+
+Extract and update contact information from the search results above.
 """

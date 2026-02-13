@@ -8,6 +8,8 @@ import anthropic
 import httpx
 
 from app.agents.crm.prompts import (
+    CONTACT_ENRICHER_SYSTEM,
+    CONTACT_ENRICHER_USER,
     INVESTIGATOR_SYSTEM,
     INVESTIGATOR_USER,
     INVESTIGATOR_USER_TAVILY,
@@ -686,6 +688,7 @@ async def supervisor_review(state: CRMLeadState) -> dict:
     contacts = state.get("contacts_data", [])
 
     approved_indices: list[int] = []
+    enrichment_indices: list[int] = []
     rejected: list[dict] = []
 
     for i, lead in enumerate(leads):
@@ -734,15 +737,26 @@ async def supervisor_review(state: CRMLeadState) -> dict:
         if generation:
             generation.end(output=review, usage=usage)
 
-        if review.get("approved"):
+        verdict = review.get("verdict", "")
+        # Backwards compat: old prompt used "approved": true/false
+        if not verdict:
+            verdict = "approved" if review.get("approved") else "rejected"
+
+        if verdict == "approved":
             approved_indices.append(i)
+        elif verdict == "needs_enrichment":
+            enrichment_indices.append(i)
         else:
             rejected.append({
                 "query_term": lead.get("businessName", "Unknown"),
                 "reason": review.get("notes", "Rejected by supervisor"),
             })
 
-    return {"approved_indices": approved_indices, "rejected": rejected}
+    return {
+        "approved_indices": approved_indices,
+        "enrichment_indices": enrichment_indices,
+        "rejected": rejected,
+    }
 
 
 async def save_to_crm(state: CRMLeadState) -> dict:
@@ -797,6 +811,157 @@ async def save_to_crm(state: CRMLeadState) -> dict:
         span.end(output={"created": len(created_leads)})
 
     return {"created_leads": created_leads}
+
+
+async def enrich_contacts(state: CRMLeadState) -> dict:
+    """Enrich leads that have incomplete contact data via targeted web searches."""
+    if state.get("error"):
+        return {}
+
+    trace = state.get("_trace")
+    leads = state.get("leads_data", [])
+    contacts = state.get("contacts_data", [])
+    enrichment_indices = state.get("enrichment_indices", [])
+
+    if not enrichment_indices:
+        return {}
+
+    span = trace.span(
+        name="enrich_contacts",
+        input={"leads_to_enrich": len(enrichment_indices)},
+    ) if trace else None
+
+    newly_approved: list[int] = []
+    newly_rejected: list[dict] = []
+
+    for idx in enrichment_indices:
+        lead = leads[idx]
+        lead_contacts = contacts[idx] if idx < len(contacts) else []
+        company_name = lead.get("businessName", "")
+        website = lead.get("website", "")
+
+        # 1. Build targeted search queries for this company's contacts
+        search_queries = [
+            f"{company_name} contato email telefone",
+            f"{company_name} fundador CEO diretor LinkedIn email",
+        ]
+        # Add contact-specific searches
+        for c in lead_contacts:
+            name = c.get("name", "")
+            if name:
+                search_queries.append(f"{name} {company_name} LinkedIn email")
+
+        # 2. Run Tavily searches
+        try:
+            tavily_data = await _tavily_search(search_queries, max_results=3)
+        except Exception:
+            logger.warning("Contact enrichment search failed for %s", company_name)
+            newly_rejected.append({
+                "query_term": company_name,
+                "reason": "Contact enrichment search failed",
+            })
+            continue
+
+        # 3. Fetch company website /sobre and /contato pages
+        if website:
+            base = website.rstrip("/")
+            for page_path in ["/sobre", "/contato", "/equipe", "/about", "/contact"]:
+                try:
+                    async with httpx.AsyncClient(timeout=10) as client:
+                        resp = await client.get(f"{base}{page_path}", follow_redirects=True)
+                        if resp.status_code == 200 and len(resp.text) < 50000:
+                            tavily_data.append({
+                                "query": f"website {page_path}",
+                                "answer": "",
+                                "results": [{"title": f"{company_name} {page_path}", "url": f"{base}{page_path}", "content": resp.text[:3000]}],
+                            })
+                except Exception:
+                    pass  # Page doesn't exist or timed out, skip
+
+        search_context = _format_tavily_results(tavily_data)
+
+        if not search_context.strip():
+            logger.info("No enrichment data found for %s", company_name)
+            newly_rejected.append({
+                "query_term": company_name,
+                "reason": "No contact data found after enrichment search",
+            })
+            continue
+
+        # 4. Call Haiku to extract contacts from search results
+        existing_contacts_str = json.dumps(lead_contacts, ensure_ascii=False, indent=2)
+        system = CONTACT_ENRICHER_SYSTEM
+        user = CONTACT_ENRICHER_USER.format(
+            company_name=company_name,
+            company_website=website,
+            existing_contacts=existing_contacts_str,
+            search_results=search_context,
+        )
+
+        generation = trace.generation(
+            name=f"enrich_contacts_{idx}",
+            model=settings.anthropic_supervisor_model,
+            input=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+        ) if trace else None
+
+        try:
+            response = await _call_claude(system, user, model=settings.anthropic_supervisor_model, max_tokens=2048)
+            usage = _extract_usage(response)
+            raw = "".join(b.text for b in response.content if b.type == "text").strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+            if raw.endswith("```"):
+                raw = raw[:-3].rstrip()
+            enriched = _parse_json_lenient(raw)
+        except Exception:
+            logger.exception("Contact enrichment LLM failed for %s", company_name)
+            if generation:
+                generation.end(output={"error": "enrichment_failed"})
+            newly_rejected.append({
+                "query_term": company_name,
+                "reason": "Contact enrichment failed",
+            })
+            continue
+
+        if generation:
+            generation.end(output=enriched, usage=usage)
+
+        # 5. Update contacts and lead with enriched data
+        new_contacts = enriched.get("contacts", lead_contacts)
+        if enriched.get("company_email") and not lead.get("email"):
+            leads[idx]["email"] = enriched["company_email"]
+        if enriched.get("company_phone") and not lead.get("phone"):
+            leads[idx]["phone"] = enriched["company_phone"]
+        contacts[idx] = new_contacts
+
+        # Check if enrichment succeeded (at least 1 contact with name + email or linkedin)
+        has_good_contact = any(
+            c.get("name") and (c.get("email") or c.get("linkedin"))
+            for c in new_contacts
+        )
+        if has_good_contact:
+            newly_approved.append(idx)
+            logger.info("Enrichment succeeded for %s: %d contacts", company_name, len(new_contacts))
+        else:
+            newly_rejected.append({
+                "query_term": company_name,
+                "reason": "Contact data still incomplete after enrichment",
+            })
+
+    # Merge enriched approvals with existing approvals
+    current_approved = state.get("approved_indices", [])
+    current_rejected = state.get("rejected", [])
+
+    if span:
+        span.end(output={"enriched": len(newly_approved), "failed": len(newly_rejected)})
+
+    return {
+        "approved_indices": current_approved + newly_approved,
+        "enrichment_indices": [],  # Clear — enrichment is done
+        "rejected": current_rejected + newly_rejected,
+        "leads_data": leads,
+        "contacts_data": contacts,
+    }
 
 
 async def format_reply(state: CRMLeadState) -> dict:

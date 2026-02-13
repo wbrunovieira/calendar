@@ -25,6 +25,7 @@ class CRMLeadState(TypedDict, total=False):
 
     # Supervisor
     approved_indices: list[int]
+    enrichment_indices: list[int]
     rejected: list[dict]
 
     # Result
