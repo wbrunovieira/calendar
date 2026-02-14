@@ -25,6 +25,7 @@ type UpdateBankAccountInput struct {
 	DueDay          *int     `json:"dueDay,omitempty"`
 	ClosingDay      *int     `json:"closingDay,omitempty"`
 	LinkedAccountID *string  `json:"linkedAccountId,omitempty"`
+	DisplayOrder    *int     `json:"displayOrder,omitempty"`
 
 	// Investment-specific fields
 	InvestmentType *string    `json:"investmentType,omitempty"`
@@ -69,6 +70,7 @@ func (uc *UpdateBankAccountUseCase) Execute(id string, input UpdateBankAccountIn
 	account.DueDay = input.DueDay
 	account.ClosingDay = input.ClosingDay
 	account.LinkedAccountID = input.LinkedAccountID
+	account.DisplayOrder = input.DisplayOrder
 
 	// Update investment-specific fields
 	if input.InvestmentType != nil {

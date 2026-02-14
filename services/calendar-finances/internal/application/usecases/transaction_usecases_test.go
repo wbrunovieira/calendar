@@ -50,7 +50,8 @@ func (f *fakeAccountRepo) Update(acc *bankaccount.BankAccount) error {
 	}
 	return nil
 }
-func (f *fakeAccountRepo) Delete(string) error { return nil }
+func (f *fakeAccountRepo) Delete(string) error                                    { return nil }
+func (f *fakeAccountRepo) UpdateDisplayOrders([]bankaccount.DisplayOrderUpdate) error { return nil }
 func (f *fakeAccountRepo) FindByID(id string) (*bankaccount.BankAccount, error) {
 	if acc, ok := f.accounts[id]; ok {
 		return acc, nil

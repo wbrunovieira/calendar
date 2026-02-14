@@ -57,6 +57,7 @@ export interface BankAccount {
   dueDay?: number;
   closingDay?: number;
   linkedAccountId?: string;
+  displayOrder?: number;
   // Investment-specific fields
   investmentType?: InvestmentType;
   yieldType?: YieldType;

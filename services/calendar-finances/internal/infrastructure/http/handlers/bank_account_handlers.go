@@ -9,11 +9,12 @@ import (
 )
 
 type BankAccountHandlers struct {
-	createUseCase *usecases.CreateBankAccountUseCase
-	listUseCase   *usecases.ListBankAccountsUseCase
-	getUseCase    *usecases.GetBankAccountUseCase
-	updateUseCase *usecases.UpdateBankAccountUseCase
-	deleteUseCase *usecases.DeleteBankAccountUseCase
+	createUseCase  *usecases.CreateBankAccountUseCase
+	listUseCase    *usecases.ListBankAccountsUseCase
+	getUseCase     *usecases.GetBankAccountUseCase
+	updateUseCase  *usecases.UpdateBankAccountUseCase
+	deleteUseCase  *usecases.DeleteBankAccountUseCase
+	reorderUseCase *usecases.ReorderBankAccountsUseCase
 }
 
 func NewBankAccountHandlers(
@@ -22,13 +23,15 @@ func NewBankAccountHandlers(
 	getUC *usecases.GetBankAccountUseCase,
 	updateUC *usecases.UpdateBankAccountUseCase,
 	deleteUC *usecases.DeleteBankAccountUseCase,
+	reorderUC *usecases.ReorderBankAccountsUseCase,
 ) *BankAccountHandlers {
 	return &BankAccountHandlers{
-		createUseCase: createUC,
-		listUseCase:   listUC,
-		getUseCase:    getUC,
-		updateUseCase: updateUC,
-		deleteUseCase: deleteUC,
+		createUseCase:  createUC,
+		listUseCase:    listUC,
+		getUseCase:     getUC,
+		updateUseCase:  updateUC,
+		deleteUseCase:  deleteUC,
+		reorderUseCase: reorderUC,
 	}
 }
 
@@ -128,6 +131,24 @@ func (h *BankAccountHandlers) Delete(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// Reorder handles PUT /api/v1/bank-accounts/reorder
+func (h *BankAccountHandlers) Reorder(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Items []usecases.ReorderItem `json:"items"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.reorderUseCase.Execute(body.Items); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

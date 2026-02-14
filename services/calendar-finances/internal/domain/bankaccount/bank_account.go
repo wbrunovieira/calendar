@@ -88,6 +88,7 @@ type BankAccount struct {
 	DueDay          *int     `json:"dueDay,omitempty"`
 	ClosingDay      *int     `json:"closingDay,omitempty"`
 	LinkedAccountID *string  `json:"linkedAccountId,omitempty"`
+	DisplayOrder    *int     `json:"displayOrder,omitempty"`
 
 	// Investment-specific fields
 	InvestmentType *InvestmentType `json:"investmentType,omitempty"` // Type of investment product

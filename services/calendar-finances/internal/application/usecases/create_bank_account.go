@@ -24,6 +24,7 @@ type CreateBankAccountInput struct {
 	DueDay          *int     `json:"dueDay,omitempty"`
 	ClosingDay      *int     `json:"closingDay,omitempty"`
 	LinkedAccountID *string  `json:"linkedAccountId,omitempty"`
+	DisplayOrder    *int     `json:"displayOrder,omitempty"`
 
 	// Investment-specific fields
 	InvestmentType *string    `json:"investmentType,omitempty"` // SAVINGS_BOX, CDB, LCI, LCA, STOCKS, FUNDS, FII, CRYPTO, TREASURY, OTHER
@@ -68,6 +69,24 @@ func (uc *CreateBankAccountUseCase) Execute(input CreateBankAccountInput) (*bank
 	account.DueDay = input.DueDay
 	account.ClosingDay = input.ClosingDay
 	account.LinkedAccountID = input.LinkedAccountID
+
+	// Auto-assign DisplayOrder if not explicitly provided
+	if input.DisplayOrder != nil {
+		account.DisplayOrder = input.DisplayOrder
+	} else {
+		existing, err := uc.repo.FindByProfileID(input.ProfileID)
+		if err != nil {
+			return nil, err
+		}
+		maxOrder := 0
+		for _, acc := range existing {
+			if acc.DisplayOrder != nil && *acc.DisplayOrder > maxOrder {
+				maxOrder = *acc.DisplayOrder
+			}
+		}
+		nextOrder := maxOrder + 1
+		account.DisplayOrder = &nextOrder
+	}
 
 	// Set investment-specific fields
 	if input.InvestmentType != nil {

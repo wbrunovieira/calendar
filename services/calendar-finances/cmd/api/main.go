@@ -73,6 +73,8 @@ func main() {
 	updateBankAccountUC := usecases.NewUpdateBankAccountUseCase(bankAccountRepo)
 	deleteBankAccountUC := usecases.NewDeleteBankAccountUseCase(bankAccountRepo)
 
+	reorderBankAccountsUC := usecases.NewReorderBankAccountsUseCase(bankAccountRepo)
+
 	// Initialize Bank Account handlers
 	bankAccountHandler := httpHandlers.NewBankAccountHandlers(
 		createBankAccountUC,
@@ -80,6 +82,7 @@ func main() {
 		getBankAccountUC,
 		updateBankAccountUC,
 		deleteBankAccountUC,
+		reorderBankAccountsUC,
 	)
 	// Initialize Category repository and use cases
 	categoryRepo := persistence.NewCategoryRepository(db)
@@ -156,6 +159,7 @@ func main() {
 	// Bank Account routes
 	apiRouter.HandleFunc("/bank-accounts", bankAccountHandler.List).Methods("GET")
 	apiRouter.HandleFunc("/bank-accounts", bankAccountHandler.Create).Methods("POST")
+	apiRouter.HandleFunc("/bank-accounts/reorder", bankAccountHandler.Reorder).Methods("PUT")
 	apiRouter.HandleFunc("/bank-accounts/{id}", bankAccountHandler.Get).Methods("GET")
 	apiRouter.HandleFunc("/bank-accounts/{id}", bankAccountHandler.Update).Methods("PUT")
 	apiRouter.HandleFunc("/bank-accounts/{id}", bankAccountHandler.Delete).Methods("DELETE")

@@ -193,6 +193,20 @@ func RunMigrations(db *sql.DB) error {
 		END $$`,
 		`CREATE INDEX IF NOT EXISTS idx_bank_accounts_linked ON finance.bank_accounts(linked_account_id)`,
 
+		// Migration: Add display_order to bank_accounts (for custom ordering)
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'finance'
+				AND table_name = 'bank_accounts'
+				AND column_name = 'display_order'
+			) THEN
+				ALTER TABLE finance.bank_accounts
+				ADD COLUMN display_order INTEGER DEFAULT 0;
+			END IF;
+		END $$`,
+
 		// Create credit_card_invoices table
 		`CREATE TABLE IF NOT EXISTS finance.credit_card_invoices (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

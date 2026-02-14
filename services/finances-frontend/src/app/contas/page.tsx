@@ -7,6 +7,23 @@ import CreditCardInfo from '@/components/finances/CreditCardInfo';
 import InvestmentAccountInfo from '@/components/finances/InvestmentAccountInfo';
 import type { BankAccount, Invoice, Transaction, Category } from '@/types/finances';
 import { API_BASE } from '@/lib/api';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 const formatCurrency = (value: number, currency = 'BRL') =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value);
@@ -115,6 +132,45 @@ function TransactionHistory({
   );
 }
 
+type DndListeners = ReturnType<typeof useSortable>['listeners'];
+type DndAttributes = ReturnType<typeof useSortable>['attributes'];
+
+function DragHandle({ listeners, attributes }: { listeners?: DndListeners; attributes?: DndAttributes }) {
+  return (
+    <button
+      className="touch-none p-1 cursor-grab active:cursor-grabbing text-white/30 hover:text-white/60 transition-colors"
+      {...attributes}
+      {...listeners}
+    >
+      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+        <circle cx="9" cy="6" r="1.5" />
+        <circle cx="15" cy="6" r="1.5" />
+        <circle cx="9" cy="12" r="1.5" />
+        <circle cx="15" cy="12" r="1.5" />
+        <circle cx="9" cy="18" r="1.5" />
+        <circle cx="15" cy="18" r="1.5" />
+      </svg>
+    </button>
+  );
+}
+
+function SortableItem({ id, children }: { id: string; children: (props: { listeners: DndListeners; attributes: DndAttributes }) => React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 50 : undefined,
+    opacity: isDragging ? 0.8 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      {children({ listeners, attributes })}
+    </div>
+  );
+}
+
 export default function ContasPage() {
   const { profiles, selectedProfileId, selectedProfile, isLoading: profilesLoading } = useProfile();
 
@@ -128,7 +184,9 @@ export default function ContasPage() {
   const [currentInvoices, setCurrentInvoices] = useState<Record<string, Invoice>>({});
 
   const filteredAccounts = useMemo(
-    () => bankAccounts.filter((account) => account.profileId === selectedProfileId),
+    () => bankAccounts
+      .filter((account) => account.profileId === selectedProfileId)
+      .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0)),
     [bankAccounts, selectedProfileId],
   );
 
@@ -346,6 +404,51 @@ export default function ContasPage() {
     setIsBankAccountModalOpen(true);
   };
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleDragEnd = async (event: DragEndEvent, accountList: BankAccount[]) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = accountList.findIndex((a) => a.id === active.id);
+    const newIndex = accountList.findIndex((a) => a.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(accountList, oldIndex, newIndex);
+
+    // Update local state immediately
+    setBankAccounts((prev) => {
+      const updated = [...prev];
+      reordered.forEach((account, index) => {
+        const i = updated.findIndex((a) => a.id === account.id);
+        if (i !== -1) {
+          updated[i] = { ...updated[i], displayOrder: index + 1 };
+        }
+      });
+      return updated;
+    });
+
+    // Persist to backend
+    try {
+      await fetch(`${API_BASE}/bank-accounts/reorder`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: reordered.map((account, index) => ({
+            id: account.id,
+            displayOrder: index + 1,
+          })),
+        }),
+      });
+    } catch (error) {
+      console.error('Erro ao reordenar contas:', error);
+      await fetchBankAccounts();
+    }
+  };
+
   const PencilButton = ({ account }: { account: BankAccount }) => (
     <button
       onClick={(e) => { e.stopPropagation(); openEditModal(account); }}
@@ -441,78 +544,98 @@ export default function ContasPage() {
                   Nenhuma conta cadastrada para este perfil.
                 </p>
               )}
-              {regularAccounts.map((account) => {
-                const isExpanded = expandedAccountId === account.id;
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={(event) => handleDragEnd(event, regularAccounts)}
+              >
+                <SortableContext items={regularAccounts.map((a) => a.id)} strategy={verticalListSortingStrategy}>
+                  {regularAccounts.map((account) => {
+                    const isExpanded = expandedAccountId === account.id;
 
-                if (account.type === 'CREDIT_CARD') {
-                  return (
-                    <div key={account.id} className="space-y-0">
-                      <div
-                        className="cursor-pointer"
-                        onClick={() => toggleExpand(account.id)}
-                      >
-                        <CreditCardInfo
-                          account={account}
-                          currentInvoice={currentInvoices[account.id]}
-                          invoices={invoicesByAccount[account.id] || []}
-                          onPayInvoice={handlePayInvoice}
-                          onEdit={() => openEditModal(account)}
-                        />
-                      </div>
-                      {isExpanded && selectedProfileId && (
-                        <div className="bg-white/[0.03] border border-white/10 border-t-0 rounded-b-xl p-4">
-                          <p className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-3">Historico de transacoes</p>
-                          <TransactionHistory
-                            accountId={account.id}
-                            profileId={selectedProfileId}
-                            categories={categories}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  );
-                }
+                    if (account.type === 'CREDIT_CARD') {
+                      return (
+                        <SortableItem key={account.id} id={account.id}>
+                          {({ listeners, attributes }) => (
+                            <div className="space-y-0">
+                              <div className="flex items-center gap-1">
+                                <DragHandle listeners={listeners} attributes={attributes} />
+                                <div
+                                  className="cursor-pointer flex-1"
+                                  onClick={() => toggleExpand(account.id)}
+                                >
+                                  <CreditCardInfo
+                                    account={account}
+                                    currentInvoice={currentInvoices[account.id]}
+                                    invoices={invoicesByAccount[account.id] || []}
+                                    onPayInvoice={handlePayInvoice}
+                                    onEdit={() => openEditModal(account)}
+                                  />
+                                </div>
+                              </div>
+                              {isExpanded && selectedProfileId && (
+                                <div className="bg-white/[0.03] border border-white/10 border-t-0 rounded-b-xl p-4 ml-7">
+                                  <p className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-3">Historico de transacoes</p>
+                                  <TransactionHistory
+                                    accountId={account.id}
+                                    profileId={selectedProfileId}
+                                    categories={categories}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </SortableItem>
+                      );
+                    }
 
-                return (
-                  <div key={account.id}>
-                    <div
-                      className={`border border-white/10 p-4 bg-white/5 cursor-pointer hover:bg-white/10 transition-colors ${
-                        isExpanded ? 'rounded-t-xl' : 'rounded-xl'
-                      }`}
-                      onClick={() => toggleExpand(account.id)}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <span className="text-2xl">{account.icon || '🏦'}</span>
+                    return (
+                      <SortableItem key={account.id} id={account.id}>
+                        {({ listeners, attributes }) => (
                           <div>
-                            <p className="text-white font-semibold text-sm">{account.name}</p>
-                            <p className="text-white/50 text-xs">{account.bankName || account.type}</p>
+                            <div
+                              className={`border border-white/10 p-4 bg-white/5 cursor-pointer hover:bg-white/10 transition-colors ${
+                                isExpanded ? 'rounded-t-xl' : 'rounded-xl'
+                              }`}
+                              onClick={() => toggleExpand(account.id)}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <DragHandle listeners={listeners} attributes={attributes} />
+                                  <span className="text-2xl">{account.icon || '🏦'}</span>
+                                  <div>
+                                    <p className="text-white font-semibold text-sm">{account.name}</p>
+                                    <p className="text-white/50 text-xs">{account.bankName || account.type}</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <div className="text-right">
+                                    <p className="text-white/80 text-sm font-semibold">
+                                      {formatCurrency(account.currentBalance, account.currency)}
+                                    </p>
+                                    <p className="text-white/50 text-xs">Saldo atual</p>
+                                  </div>
+                                  <PencilButton account={account} />
+                                </div>
+                              </div>
+                            </div>
+                            {isExpanded && selectedProfileId && (
+                              <div className="bg-white/[0.03] border border-white/10 border-t-0 rounded-b-xl p-4">
+                                <p className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-3">Historico de transacoes</p>
+                                <TransactionHistory
+                                  accountId={account.id}
+                                  profileId={selectedProfileId}
+                                  categories={categories}
+                                />
+                              </div>
+                            )}
                           </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <div className="text-right">
-                            <p className="text-white/80 text-sm font-semibold">
-                              {formatCurrency(account.currentBalance, account.currency)}
-                            </p>
-                            <p className="text-white/50 text-xs">Saldo atual</p>
-                          </div>
-                          <PencilButton account={account} />
-                        </div>
-                      </div>
-                    </div>
-                    {isExpanded && selectedProfileId && (
-                      <div className="bg-white/[0.03] border border-white/10 border-t-0 rounded-b-xl p-4">
-                        <p className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-3">Historico de transacoes</p>
-                        <TransactionHistory
-                          accountId={account.id}
-                          profileId={selectedProfileId}
-                          categories={categories}
-                        />
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                        )}
+                      </SortableItem>
+                    );
+                  })}
+                </SortableContext>
+              </DndContext>
             </div>
 
             {/* Investments */}
@@ -532,36 +655,51 @@ export default function ContasPage() {
                     </span>
                   </div>
                 </div>
-                {investmentAccounts.map((account) => {
-                  const isExpanded = expandedAccountId === account.id;
-                  return (
-                    <div key={account.id}>
-                      <div
-                        className="cursor-pointer"
-                        onClick={() => toggleExpand(account.id)}
-                      >
-                        <InvestmentAccountInfo
-                          account={account}
-                          linkedAccount={account.linkedAccountId
-                            ? filteredAccounts.find((a) => a.id === account.linkedAccountId)
-                            : undefined
-                          }
-                          onEdit={() => openEditModal(account)}
-                        />
-                      </div>
-                      {isExpanded && selectedProfileId && (
-                        <div className="bg-white/[0.03] border border-white/10 border-t-0 rounded-b-xl p-4">
-                          <p className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-3">Historico de transacoes</p>
-                          <TransactionHistory
-                            accountId={account.id}
-                            profileId={selectedProfileId}
-                            categories={categories}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={(event) => handleDragEnd(event, investmentAccounts)}
+                >
+                  <SortableContext items={investmentAccounts.map((a) => a.id)} strategy={verticalListSortingStrategy}>
+                    {investmentAccounts.map((account) => {
+                      const isExpanded = expandedAccountId === account.id;
+                      return (
+                        <SortableItem key={account.id} id={account.id}>
+                          {({ listeners, attributes }) => (
+                            <div>
+                              <div className="flex items-center gap-1">
+                                <DragHandle listeners={listeners} attributes={attributes} />
+                                <div
+                                  className="cursor-pointer flex-1"
+                                  onClick={() => toggleExpand(account.id)}
+                                >
+                                  <InvestmentAccountInfo
+                                    account={account}
+                                    linkedAccount={account.linkedAccountId
+                                      ? filteredAccounts.find((a) => a.id === account.linkedAccountId)
+                                      : undefined
+                                    }
+                                    onEdit={() => openEditModal(account)}
+                                  />
+                                </div>
+                              </div>
+                              {isExpanded && selectedProfileId && (
+                                <div className="bg-white/[0.03] border border-white/10 border-t-0 rounded-b-xl p-4 ml-7">
+                                  <p className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-3">Historico de transacoes</p>
+                                  <TransactionHistory
+                                    accountId={account.id}
+                                    profileId={selectedProfileId}
+                                    categories={categories}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </SortableItem>
+                      );
+                    })}
+                  </SortableContext>
+                </DndContext>
               </div>
             )}
           </>
