@@ -501,9 +501,14 @@ export default function ContasPage() {
               <div className="bg-white/5 border border-white/10 rounded-2xl p-5 backdrop-blur-sm">
                 <p className="text-white/50 text-sm mb-1">Saldo em contas</p>
                 <p className="text-2xl font-bold text-white">{formatCurrency(totalBalance)}</p>
-                <p className="text-white/40 text-xs mt-1">
-                  {regularAccounts.filter((a) => a.type !== 'CREDIT_CARD').length} {regularAccounts.filter((a) => a.type !== 'CREDIT_CARD').length === 1 ? 'conta' : 'contas'}
-                </p>
+                <div className="mt-2 space-y-1">
+                  {regularAccounts.filter((a) => a.type !== 'CREDIT_CARD').map((a) => (
+                    <div key={a.id} className="flex items-center justify-between text-xs">
+                      <span className="text-white/40 truncate mr-2">{a.name}</span>
+                      <span className="text-white/60 font-medium shrink-0">{formatCurrency(a.currentBalance, a.currency)}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
               {investmentAccounts.length > 0 && (
                 <div className="bg-gradient-to-br from-purple-900/30 to-indigo-900/30 border border-purple-500/20 rounded-2xl p-5 backdrop-blur-sm">
