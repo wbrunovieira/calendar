@@ -107,8 +107,7 @@ export default function InvestmentAccountInfo({
     <div className="border border-white/10 rounded-xl overflow-hidden bg-gradient-to-br from-white/5 to-white/[0.02]">
       {/* Header */}
       <div
-        className="p-4 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-colors"
-        onClick={onEdit}
+        className="p-4 flex items-center justify-between"
         style={{ borderLeft: `4px solid ${account.color || '#8b5cf6'}` }}
       >
         <div className="flex items-center gap-3">
@@ -123,10 +122,23 @@ export default function InvestmentAccountInfo({
             </div>
           </div>
         </div>
-        <div className="text-right">
-          <p className="text-white font-bold text-lg">{formatCurrency(account.currentBalance)}</p>
-          {yieldDescription && (
-            <p className="text-white/50 text-xs">{yieldDescription}</p>
+        <div className="flex items-center gap-3">
+          <div className="text-right">
+            <p className="text-white font-bold text-lg">{formatCurrency(account.currentBalance)}</p>
+            {yieldDescription && (
+              <p className="text-white/50 text-xs">{yieldDescription}</p>
+            )}
+          </div>
+          {onEdit && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onEdit(); }}
+              className="p-1.5 rounded-lg hover:bg-white/10 transition-colors text-white/40 hover:text-white/80"
+              title="Editar conta"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+              </svg>
+            </button>
           )}
         </div>
       </div>

@@ -5,15 +5,124 @@ import AppLayout, { useProfile } from '@/components/layout/AppLayout';
 import BankAccountModal from '@/components/finances/BankAccountModal';
 import CreditCardInfo from '@/components/finances/CreditCardInfo';
 import InvestmentAccountInfo from '@/components/finances/InvestmentAccountInfo';
-import type { BankAccount, Invoice } from '@/types/finances';
+import type { BankAccount, Invoice, Transaction, Category } from '@/types/finances';
 import { API_BASE } from '@/lib/api';
+
+const formatCurrency = (value: number, currency = 'BRL') =>
+  new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value);
+
+const formatDate = (dateStr: string) => {
+  const date = new Date(dateStr + 'T12:00:00');
+  return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+};
+
+const statusConfig: Record<string, { label: string; color: string }> = {
+  PLANNED: { label: 'Planejado', color: 'bg-blue-500/20 text-blue-400' },
+  CONFIRMED: { label: 'Confirmado', color: 'bg-emerald-500/20 text-emerald-400' },
+  CANCELLED: { label: 'Cancelado', color: 'bg-red-500/20 text-red-400' },
+};
+
+function TransactionHistory({
+  accountId,
+  profileId,
+  categories,
+}: {
+  accountId: string;
+  profileId: string;
+  categories: Category[];
+}) {
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const categoryMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    categories.forEach((c) => { map[c.id] = c.name; });
+    return map;
+  }, [categories]);
+
+  useEffect(() => {
+    const fetchTransactions = async () => {
+      try {
+        setLoading(true);
+        const params = new URLSearchParams({ profileId, bankAccountId: accountId });
+        const response = await fetch(`${API_BASE}/transactions?${params}`);
+        if (response.ok) {
+          const data = await response.json();
+          setTransactions(data.data || []);
+        }
+      } catch (error) {
+        console.warn('Erro ao carregar historico:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchTransactions();
+  }, [accountId, profileId]);
+
+  if (loading) {
+    return (
+      <div className="py-4 text-center text-white/50 text-sm">
+        Carregando historico...
+      </div>
+    );
+  }
+
+  if (transactions.length === 0) {
+    return (
+      <div className="py-4 text-center text-white/40 text-sm">
+        Nenhuma transacao encontrada para esta conta.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5 max-h-80 overflow-y-auto">
+      {transactions.map((tx) => {
+        const status = statusConfig[tx.status] || statusConfig.PLANNED;
+        const isExpense = tx.type === 'EXPENSE';
+        const isIncome = tx.type === 'INCOME';
+        return (
+          <div
+            key={tx.id}
+            className="flex items-center justify-between py-2 px-3 bg-white/5 rounded-lg"
+          >
+            <div className="flex-1 min-w-0">
+              <p className="text-white text-sm truncate">{tx.description}</p>
+              <div className="flex items-center gap-2 text-white/40 text-xs">
+                <span>{formatDate(tx.occurredOn)}</span>
+                {tx.categoryId && categoryMap[tx.categoryId] && (
+                  <>
+                    <span>·</span>
+                    <span className="truncate">{categoryMap[tx.categoryId]}</span>
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 ml-3 shrink-0">
+              <div className="text-right">
+                <p className={`text-sm font-semibold ${isExpense ? 'text-red-400' : isIncome ? 'text-emerald-400' : 'text-blue-400'}`}>
+                  {isExpense ? '-' : isIncome ? '+' : ''}{formatCurrency(tx.amount, tx.currency)}
+                </p>
+              </div>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${status.color}`}>
+                {status.label}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function ContasPage() {
   const { profiles, selectedProfileId, selectedProfile, isLoading: profilesLoading } = useProfile();
 
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [isBankAccountModalOpen, setIsBankAccountModalOpen] = useState(false);
   const [editingBankAccount, setEditingBankAccount] = useState<BankAccount | null>(null);
+  const [expandedAccountId, setExpandedAccountId] = useState<string | null>(null);
 
   const [invoicesByAccount, setInvoicesByAccount] = useState<Record<string, Invoice[]>>({});
   const [currentInvoices, setCurrentInvoices] = useState<Record<string, Invoice>>({});
@@ -43,9 +152,19 @@ export default function ContasPage() {
     [investmentAccounts],
   );
 
+  const toggleExpand = (accountId: string) => {
+    setExpandedAccountId((prev) => (prev === accountId ? null : accountId));
+  };
+
   useEffect(() => {
     fetchBankAccounts();
   }, []);
+
+  useEffect(() => {
+    if (selectedProfileId) {
+      fetchCategories(selectedProfileId);
+    }
+  }, [selectedProfileId]);
 
   const fetchBankAccounts = async () => {
     try {
@@ -54,6 +173,18 @@ export default function ContasPage() {
       setBankAccounts(data.data || []);
     } catch (error) {
       console.error('Erro ao carregar contas bancarias:', error);
+    }
+  };
+
+  const fetchCategories = async (profileId: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/categories?profileId=${profileId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setCategories(data.data || []);
+      }
+    } catch (error) {
+      console.warn('Erro ao carregar categorias:', error);
     }
   };
 
@@ -210,8 +341,22 @@ export default function ContasPage() {
     }
   };
 
-  const formatCurrency = (value: number, currency = 'BRL') =>
-    new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value);
+  const openEditModal = (account: BankAccount) => {
+    setEditingBankAccount(account);
+    setIsBankAccountModalOpen(true);
+  };
+
+  const PencilButton = ({ account }: { account: BankAccount }) => (
+    <button
+      onClick={(e) => { e.stopPropagation(); openEditModal(account); }}
+      className="p-1.5 rounded-lg hover:bg-white/10 transition-colors text-white/40 hover:text-white/80"
+      title="Editar conta"
+    >
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+      </svg>
+    </button>
+  );
 
   return (
     <AppLayout>
@@ -284,64 +429,96 @@ export default function ContasPage() {
             </div>
 
             {/* Regular accounts */}
-            <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
-              <div className="flex items-center justify-between mb-4">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-white">Contas do perfil</h3>
                 <span className="text-white/50 text-sm">
                   {regularAccounts.length} {regularAccounts.length === 1 ? 'conta' : 'contas'}
                 </span>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {regularAccounts.length === 0 && (
-                  <p className="text-white/60 text-sm col-span-full">
-                    Nenhuma conta cadastrada para este perfil.
-                  </p>
-                )}
-                {regularAccounts.map((account) =>
-                  account.type === 'CREDIT_CARD' ? (
-                    <CreditCardInfo
-                      key={account.id}
-                      account={account}
-                      currentInvoice={currentInvoices[account.id]}
-                      invoices={invoicesByAccount[account.id] || []}
-                      onPayInvoice={handlePayInvoice}
-                      onEdit={() => {
-                        setEditingBankAccount(account);
-                        setIsBankAccountModalOpen(true);
-                      }}
-                    />
-                  ) : (
+              {regularAccounts.length === 0 && (
+                <p className="text-white/60 text-sm">
+                  Nenhuma conta cadastrada para este perfil.
+                </p>
+              )}
+              {regularAccounts.map((account) => {
+                const isExpanded = expandedAccountId === account.id;
+
+                if (account.type === 'CREDIT_CARD') {
+                  return (
+                    <div key={account.id} className="space-y-0">
+                      <div
+                        className="cursor-pointer"
+                        onClick={() => toggleExpand(account.id)}
+                      >
+                        <CreditCardInfo
+                          account={account}
+                          currentInvoice={currentInvoices[account.id]}
+                          invoices={invoicesByAccount[account.id] || []}
+                          onPayInvoice={handlePayInvoice}
+                          onEdit={() => openEditModal(account)}
+                        />
+                      </div>
+                      {isExpanded && selectedProfileId && (
+                        <div className="bg-white/[0.03] border border-white/10 border-t-0 rounded-b-xl p-4">
+                          <p className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-3">Historico de transacoes</p>
+                          <TransactionHistory
+                            accountId={account.id}
+                            profileId={selectedProfileId}
+                            categories={categories}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={account.id}>
                     <div
-                      key={account.id}
-                      className="border border-white/10 rounded-xl p-4 flex items-center justify-between bg-white/5 cursor-pointer hover:bg-white/10 transition-colors"
-                      onClick={() => {
-                        setEditingBankAccount(account);
-                        setIsBankAccountModalOpen(true);
-                      }}
+                      className={`border border-white/10 p-4 bg-white/5 cursor-pointer hover:bg-white/10 transition-colors ${
+                        isExpanded ? 'rounded-t-xl' : 'rounded-xl'
+                      }`}
+                      onClick={() => toggleExpand(account.id)}
                     >
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl">{account.icon || '🏦'}</span>
-                        <div>
-                          <p className="text-white font-semibold text-sm">{account.name}</p>
-                          <p className="text-white/50 text-xs">{account.bankName || account.type}</p>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <span className="text-2xl">{account.icon || '🏦'}</span>
+                          <div>
+                            <p className="text-white font-semibold text-sm">{account.name}</p>
+                            <p className="text-white/50 text-xs">{account.bankName || account.type}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                            <p className="text-white/80 text-sm font-semibold">
+                              {formatCurrency(account.currentBalance, account.currency)}
+                            </p>
+                            <p className="text-white/50 text-xs">Saldo atual</p>
+                          </div>
+                          <PencilButton account={account} />
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-white/80 text-sm font-semibold">
-                          {formatCurrency(account.currentBalance, account.currency)}
-                        </p>
-                        <p className="text-white/50 text-xs">Saldo atual</p>
-                      </div>
                     </div>
-                  ),
-                )}
-              </div>
+                    {isExpanded && selectedProfileId && (
+                      <div className="bg-white/[0.03] border border-white/10 border-t-0 rounded-b-xl p-4">
+                        <p className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-3">Historico de transacoes</p>
+                        <TransactionHistory
+                          accountId={account.id}
+                          profileId={selectedProfileId}
+                          categories={categories}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             {/* Investments */}
             {investmentAccounts.length > 0 && (
-              <div className="bg-gradient-to-br from-purple-900/30 to-indigo-900/30 border border-purple-500/20 rounded-2xl p-6 backdrop-blur-sm">
-                <div className="flex items-center justify-between mb-4">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="text-xl">📈</span>
                     <h3 className="text-lg font-semibold text-white">Investimentos</h3>
@@ -355,22 +532,36 @@ export default function ContasPage() {
                     </span>
                   </div>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {investmentAccounts.map((account) => (
-                    <InvestmentAccountInfo
-                      key={account.id}
-                      account={account}
-                      linkedAccount={account.linkedAccountId
-                        ? filteredAccounts.find((a) => a.id === account.linkedAccountId)
-                        : undefined
-                      }
-                      onEdit={() => {
-                        setEditingBankAccount(account);
-                        setIsBankAccountModalOpen(true);
-                      }}
-                    />
-                  ))}
-                </div>
+                {investmentAccounts.map((account) => {
+                  const isExpanded = expandedAccountId === account.id;
+                  return (
+                    <div key={account.id}>
+                      <div
+                        className="cursor-pointer"
+                        onClick={() => toggleExpand(account.id)}
+                      >
+                        <InvestmentAccountInfo
+                          account={account}
+                          linkedAccount={account.linkedAccountId
+                            ? filteredAccounts.find((a) => a.id === account.linkedAccountId)
+                            : undefined
+                          }
+                          onEdit={() => openEditModal(account)}
+                        />
+                      </div>
+                      {isExpanded && selectedProfileId && (
+                        <div className="bg-white/[0.03] border border-white/10 border-t-0 rounded-b-xl p-4">
+                          <p className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-3">Historico de transacoes</p>
+                          <TransactionHistory
+                            accountId={account.id}
+                            profileId={selectedProfileId}
+                            categories={categories}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </>
