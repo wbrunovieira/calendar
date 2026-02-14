@@ -708,7 +708,7 @@ func (r *TransactionRepository) SumByInvoiceID(invoiceID string) (float64, error
 	query := `
 		SELECT COALESCE(SUM(amount), 0)
 		FROM finance.transactions
-		WHERE invoice_id = $1
+		WHERE invoice_id = $1 AND status != 'CANCELLED'
 	`
 
 	var total float64
