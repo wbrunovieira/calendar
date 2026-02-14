@@ -29,7 +29,8 @@ const formatCurrency = (value: number, currency = 'BRL') =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value);
 
 const formatDate = (dateStr: string) => {
-  const date = new Date(dateStr + 'T12:00:00');
+  const raw = dateStr.includes('T') ? dateStr : dateStr + 'T12:00:00';
+  const date = new Date(raw);
   return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
 };
 
@@ -93,7 +94,7 @@ function TransactionHistory({
   }
 
   return (
-    <div className="space-y-1.5 max-h-80 overflow-y-auto">
+    <div className="space-y-1.5 max-h-[28rem] overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
       {transactions.map((tx) => {
         const status = statusConfig[tx.status] || statusConfig.PLANNED;
         const isExpense = tx.type === 'EXPENSE';
