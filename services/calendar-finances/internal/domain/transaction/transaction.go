@@ -50,6 +50,7 @@ type Transaction struct {
 	InstallmentNumber    *int       `json:"installmentNumber,omitempty"`
 	InstallmentTotal     *int       `json:"installmentTotal,omitempty"`
 	ExternalID           *string    `json:"externalId,omitempty"`
+	LinkedTransactionID  *string    `json:"linkedTransactionId,omitempty"` // Points to paired transaction (cross-profile transfers)
 	Tags                 []string   `json:"tags,omitempty"`
 	Splits               []*Split   `json:"splits,omitempty"`
 	CreatedAt            time.Time
@@ -76,6 +77,7 @@ type CreateParams struct {
 	InstallmentNumber    *int
 	InstallmentTotal     *int
 	ExternalID           *string
+	LinkedTransactionID  *string
 	Tags                 []string
 	Splits               []*Split
 }
@@ -137,6 +139,7 @@ func New(params CreateParams) (*Transaction, error) {
 		InstallmentNumber:    cloneInt(params.InstallmentNumber),
 		InstallmentTotal:     cloneInt(params.InstallmentTotal),
 		ExternalID:           cloneString(params.ExternalID),
+		LinkedTransactionID:  cloneString(params.LinkedTransactionID),
 		Tags:                 sanitizeTags(params.Tags),
 		Splits:               []*Split{},
 		CreatedAt:            now,

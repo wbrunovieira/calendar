@@ -19,5 +19,6 @@ var (
 	ErrInvoiceNotFound        = errors.New("invoice not found")
 	ErrInvoiceNotOpen         = errors.New("invoice is not open")
 	ErrInvoiceAlreadyPaid     = errors.New("invoice is already paid")
-	ErrNotCreditCard          = errors.New("bank account is not a credit card")
+	ErrNotCreditCard              = errors.New("bank account is not a credit card")
+	ErrDestinationCategoryRequired = errors.New("destination category is required for cross-profile transfer")
 )

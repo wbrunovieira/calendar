@@ -400,6 +400,21 @@ func RunMigrations(db *sql.DB) error {
 			END IF;
 		END $$`,
 		`CREATE INDEX IF NOT EXISTS idx_transactions_reminder ON finance.transactions(reminder_on) WHERE reminder_on IS NOT NULL`,
+
+		// Migration: Add linked_transaction_id to transactions (for cross-profile paired transfers)
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'finance'
+				AND table_name = 'transactions'
+				AND column_name = 'linked_transaction_id'
+			) THEN
+				ALTER TABLE finance.transactions
+				ADD COLUMN linked_transaction_id UUID;
+			END IF;
+		END $$`,
+		`CREATE INDEX IF NOT EXISTS idx_transactions_linked ON finance.transactions(linked_transaction_id) WHERE linked_transaction_id IS NOT NULL`,
 	}
 
 	for i, migration := range migrations {

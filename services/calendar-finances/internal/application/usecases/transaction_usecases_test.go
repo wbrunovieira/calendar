@@ -127,8 +127,16 @@ func (f *fakeTransactionRepo) Update(tx *transaction.Transaction) error {
 	return errors.New("not found")
 }
 
-func (f *fakeTransactionRepo) UpdateStatus(string, transaction.Status, time.Time, *string) error {
-	return nil
+func (f *fakeTransactionRepo) UpdateStatus(id string, status transaction.Status, occurredOn time.Time, notes *string) error {
+	for _, tx := range f.created {
+		if tx.ID == id {
+			tx.Status = status
+			tx.OccurredOn = occurredOn
+			tx.UpdatedAt = time.Now()
+			return nil
+		}
+	}
+	return errors.New("not found")
 }
 func (f *fakeTransactionRepo) Delete(id string) error {
 	for i, tx := range f.created {
@@ -2526,5 +2534,450 @@ func TestUpdateTransactionStatus_TransferCancel_ShouldReverseDestination(t *test
 	dest := accountRepo.accounts[destID]
 	if dest.CurrentBalance != 1000 {
 		t.Fatalf("expected destination balance 1000 after cancel, got %.2f", dest.CurrentBalance)
+	}
+}
+
+// =============================================================================
+// Cross-Profile Transfer Tests (TDD)
+// =============================================================================
+
+func TestCreateTransaction_CrossProfileTransfer_ShouldCreatePairedTransactions(t *testing.T) {
+	// Given: Source account in profile WB, destination account in profile Bruno
+	// When: Creating a CONFIRMED TRANSFER of R$1500 (salary)
+	// Then: Should create EXPENSE in WB + INCOME in Bruno, linked by LinkedTransactionID
+
+	profileWB := "profile-wb"
+	profileBruno := "profile-bruno"
+	sourceID := "nubank-pj"
+	destID := "nubank-pessoal"
+	sourceCatID := "cat-salary-expense"
+	destCatID := "cat-salary-income"
+
+	now := time.Now()
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileWB: {
+			ID:         profileWB,
+			CalendarID: "cal-1",
+			Name:       "WB Digital",
+			Type:       profile.ProfileTypeBusiness,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+		profileBruno: {
+			ID:         profileBruno,
+			CalendarID: "cal-2",
+			Name:       "Bruno Pessoal",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		sourceID: {
+			ID:             sourceID,
+			ProfileID:      profileWB,
+			Name:           "Nubank PJ",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 10000,
+			CurrentBalance: 10000,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+		destID: {
+			ID:             destID,
+			ProfileID:      profileBruno,
+			Name:           "Nubank Pessoal",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 500,
+			CurrentBalance: 500,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{
+		sourceCatID: {
+			ID:        sourceCatID,
+			ProfileID: profileWB,
+			Name:      "Salário",
+			Type:      category.TypeExpense,
+			IsActive:  true,
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+		destCatID: {
+			ID:        destCatID,
+			ProfileID: profileBruno,
+			Name:      "Salário",
+			Type:      category.TypeIncome,
+			IsActive:  true,
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+	}}
+
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	confirmedStatus := "CONFIRMED"
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+
+	input := CreateTransactionInput{
+		ProfileID:             profileWB,
+		BankAccountID:         sourceID,
+		DestinationAccountID:  &destID,
+		CategoryID:            &sourceCatID,
+		DestinationCategoryID: &destCatID,
+		Type:                  "TRANSFER",
+		Status:                &confirmedStatus,
+		Amount:                1500,
+		Currency:              "BRL",
+		Description:           "Salário Bruno",
+		OccurredOn:            yesterday,
+	}
+
+	tx, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should have created 2 transactions
+	if len(txRepo.created) != 2 {
+		t.Fatalf("expected 2 transactions (paired), got %d", len(txRepo.created))
+	}
+
+	// First tx (returned) should be EXPENSE in source profile
+	if tx.Type != transaction.TypeExpense {
+		t.Fatalf("expected source tx type EXPENSE, got %s", tx.Type)
+	}
+	if tx.ProfileID != profileWB {
+		t.Fatalf("expected source tx profile %s, got %s", profileWB, tx.ProfileID)
+	}
+	if tx.BankAccountID != sourceID {
+		t.Fatalf("expected source tx account %s, got %s", sourceID, tx.BankAccountID)
+	}
+	if tx.CategoryID == nil || *tx.CategoryID != sourceCatID {
+		t.Fatal("expected source tx to have source category")
+	}
+
+	// Second tx should be INCOME in destination profile
+	destTx := txRepo.created[1]
+	if destTx.Type != transaction.TypeIncome {
+		t.Fatalf("expected dest tx type INCOME, got %s", destTx.Type)
+	}
+	if destTx.ProfileID != profileBruno {
+		t.Fatalf("expected dest tx profile %s, got %s", profileBruno, destTx.ProfileID)
+	}
+	if destTx.BankAccountID != destID {
+		t.Fatalf("expected dest tx account %s, got %s", destID, destTx.BankAccountID)
+	}
+	if destTx.CategoryID == nil || *destTx.CategoryID != destCatID {
+		t.Fatal("expected dest tx to have destination category")
+	}
+
+	// Both should be linked to each other
+	if tx.LinkedTransactionID == nil {
+		t.Fatal("expected source tx to have LinkedTransactionID")
+	}
+	if destTx.LinkedTransactionID == nil {
+		t.Fatal("expected dest tx to have LinkedTransactionID")
+	}
+	if *tx.LinkedTransactionID != destTx.ID {
+		t.Fatalf("expected source linked to dest ID %s, got %s", destTx.ID, *tx.LinkedTransactionID)
+	}
+	if *destTx.LinkedTransactionID != tx.ID {
+		t.Fatalf("expected dest linked to source ID %s, got %s", tx.ID, *destTx.LinkedTransactionID)
+	}
+
+	// Both balances should be updated
+	source := accountRepo.accounts[sourceID]
+	if source.CurrentBalance != 8500 {
+		t.Fatalf("expected source balance 8500, got %.2f", source.CurrentBalance)
+	}
+	dest := accountRepo.accounts[destID]
+	if dest.CurrentBalance != 2000 {
+		t.Fatalf("expected dest balance 2000, got %.2f", dest.CurrentBalance)
+	}
+}
+
+func TestCreateTransaction_CrossProfileTransfer_RequiresDestinationCategory(t *testing.T) {
+	// Given: Cross-profile transfer WITHOUT destinationCategoryId
+	// Then: Should return ErrDestinationCategoryRequired
+
+	profileWB := "profile-wb"
+	profileBruno := "profile-bruno"
+	sourceID := "nubank-pj"
+	destID := "nubank-pessoal"
+	sourceCatID := "cat-salary-expense"
+
+	now := time.Now()
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileWB:    {ID: profileWB, CalendarID: "cal-1", Name: "WB", Type: profile.ProfileTypeBusiness, IsActive: true, CreatedAt: now, UpdatedAt: now},
+		profileBruno: {ID: profileBruno, CalendarID: "cal-2", Name: "Bruno", Type: profile.ProfileTypePersonal, IsActive: true, CreatedAt: now, UpdatedAt: now},
+	}}
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		sourceID: {ID: sourceID, ProfileID: profileWB, Name: "Nubank PJ", Type: bankaccount.AccountTypeChecking, CurrentBalance: 10000, Currency: "BRL", IsActive: true, CreatedAt: now, UpdatedAt: now},
+		destID:   {ID: destID, ProfileID: profileBruno, Name: "Nubank", Type: bankaccount.AccountTypeChecking, CurrentBalance: 500, Currency: "BRL", IsActive: true, CreatedAt: now, UpdatedAt: now},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{
+		sourceCatID: {ID: sourceCatID, ProfileID: profileWB, Name: "Salário", Type: category.TypeExpense, IsActive: true, CreatedAt: now, UpdatedAt: now},
+	}}
+
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	confirmedStatus := "CONFIRMED"
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+
+	input := CreateTransactionInput{
+		ProfileID:            profileWB,
+		BankAccountID:        sourceID,
+		DestinationAccountID: &destID,
+		CategoryID:           &sourceCatID,
+		// DestinationCategoryID intentionally omitted
+		Type:        "TRANSFER",
+		Status:      &confirmedStatus,
+		Amount:      1500,
+		Currency:    "BRL",
+		Description: "Salário",
+		OccurredOn:  yesterday,
+	}
+
+	_, err := useCase.Execute(input)
+	if err == nil {
+		t.Fatal("expected error for missing destination category")
+	}
+	if !errors.Is(err, ErrDestinationCategoryRequired) {
+		t.Fatalf("expected ErrDestinationCategoryRequired, got %v", err)
+	}
+}
+
+func TestCreateTransaction_SameProfileTransfer_StillWorksAsBefore(t *testing.T) {
+	// Given: Source and destination in the SAME profile
+	// When: Creating a TRANSFER
+	// Then: Should create a single TRANSFER transaction (not paired)
+
+	profileID := "profile-1"
+	sourceID := "mercado-pago"
+	destID := "caixinha"
+
+	now := time.Now()
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {ID: profileID, CalendarID: "cal-1", Name: "Bruno", Type: profile.ProfileTypePersonal, IsActive: true, CreatedAt: now, UpdatedAt: now},
+	}}
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		sourceID: {ID: sourceID, ProfileID: profileID, Name: "Mercado Pago", Type: bankaccount.AccountTypeChecking, CurrentBalance: 5000, Currency: "BRL", IsActive: true, CreatedAt: now, UpdatedAt: now},
+		destID:   {ID: destID, ProfileID: profileID, Name: "Caixinha", Type: bankaccount.AccountTypeChecking, CurrentBalance: 1000, Currency: "BRL", IsActive: true, CreatedAt: now, UpdatedAt: now},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	confirmedStatus := "CONFIRMED"
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+
+	input := CreateTransactionInput{
+		ProfileID:            profileID,
+		BankAccountID:        sourceID,
+		DestinationAccountID: &destID,
+		Type:                 "TRANSFER",
+		Status:               &confirmedStatus,
+		Amount:               3000,
+		Currency:             "BRL",
+		Description:          "Transferência para caixinha",
+		OccurredOn:           yesterday,
+	}
+
+	tx, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should create only 1 transaction (not paired)
+	if len(txRepo.created) != 1 {
+		t.Fatalf("expected 1 transaction for same-profile transfer, got %d", len(txRepo.created))
+	}
+
+	// Should be TRANSFER type, not EXPENSE
+	if tx.Type != transaction.TypeTransfer {
+		t.Fatalf("expected TRANSFER type for same-profile, got %s", tx.Type)
+	}
+
+	// Should NOT have LinkedTransactionID
+	if tx.LinkedTransactionID != nil {
+		t.Fatal("same-profile transfer should not have LinkedTransactionID")
+	}
+}
+
+func TestDeleteTransaction_CrossProfileLinked_ShouldDeleteBoth(t *testing.T) {
+	// Given: Two linked transactions (EXPENSE in WB, INCOME in Bruno)
+	// When: Deleting the source (EXPENSE)
+	// Then: Both should be deleted, both balances reversed
+
+	profileWB := "profile-wb"
+	profileBruno := "profile-bruno"
+	sourceID := "nubank-pj"
+	destID := "nubank-pessoal"
+
+	now := time.Now()
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		sourceID: {ID: sourceID, ProfileID: profileWB, Name: "Nubank PJ", Type: bankaccount.AccountTypeChecking, CurrentBalance: 8500, Currency: "BRL", IsActive: true, CreatedAt: now, UpdatedAt: now},
+		destID:   {ID: destID, ProfileID: profileBruno, Name: "Nubank", Type: bankaccount.AccountTypeChecking, CurrentBalance: 2000, Currency: "BRL", IsActive: true, CreatedAt: now, UpdatedAt: now},
+	}}
+
+	destTxID := "dest-tx-1"
+	sourceTxID := "source-tx-1"
+
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{
+		{
+			ID:                  sourceTxID,
+			ProfileID:           profileWB,
+			BankAccountID:       sourceID,
+			Type:                transaction.TypeExpense,
+			Status:              transaction.StatusConfirmed,
+			Amount:              1500,
+			Currency:            "BRL",
+			Description:         "Salário Bruno",
+			LinkedTransactionID: &destTxID,
+			OccurredOn:          now,
+			CreatedAt:           now,
+			UpdatedAt:           now,
+		},
+		{
+			ID:                  destTxID,
+			ProfileID:           profileBruno,
+			BankAccountID:       destID,
+			Type:                transaction.TypeIncome,
+			Status:              transaction.StatusConfirmed,
+			Amount:              1500,
+			Currency:            "BRL",
+			Description:         "Salário Bruno",
+			LinkedTransactionID: &sourceTxID,
+			OccurredOn:          now,
+			CreatedAt:           now,
+			UpdatedAt:           now,
+		},
+	}}
+
+	deleteUC := NewDeleteTransactionUseCase(txRepo, accountRepo)
+	err := deleteUC.Execute(sourceTxID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Both transactions should be deleted
+	if len(txRepo.created) != 0 {
+		t.Fatalf("expected 0 transactions after delete, got %d", len(txRepo.created))
+	}
+
+	// Source balance should be restored (8500 + 1500 = 10000)
+	source := accountRepo.accounts[sourceID]
+	if source.CurrentBalance != 10000 {
+		t.Fatalf("expected source balance 10000, got %.2f", source.CurrentBalance)
+	}
+
+	// Dest balance should be reversed (2000 - 1500 = 500)
+	dest := accountRepo.accounts[destID]
+	if dest.CurrentBalance != 500 {
+		t.Fatalf("expected dest balance 500, got %.2f", dest.CurrentBalance)
+	}
+}
+
+func TestUpdateTransactionStatus_CrossProfileConfirm_ShouldUpdateBoth(t *testing.T) {
+	// Given: Two PLANNED linked transactions
+	// When: Confirming the source
+	// Then: Both should be confirmed, both balances updated
+
+	profileWB := "profile-wb"
+	profileBruno := "profile-bruno"
+	sourceID := "nubank-pj"
+	destID := "nubank-pessoal"
+
+	now := time.Now()
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		sourceID: {ID: sourceID, ProfileID: profileWB, Name: "Nubank PJ", Type: bankaccount.AccountTypeChecking, CurrentBalance: 10000, Currency: "BRL", IsActive: true, CreatedAt: now, UpdatedAt: now},
+		destID:   {ID: destID, ProfileID: profileBruno, Name: "Nubank", Type: bankaccount.AccountTypeChecking, CurrentBalance: 500, Currency: "BRL", IsActive: true, CreatedAt: now, UpdatedAt: now},
+	}}
+
+	destTxID := "dest-tx-1"
+	sourceTxID := "source-tx-1"
+
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{
+		{
+			ID:                  sourceTxID,
+			ProfileID:           profileWB,
+			BankAccountID:       sourceID,
+			Type:                transaction.TypeExpense,
+			Status:              transaction.StatusPlanned,
+			Amount:              1500,
+			Currency:            "BRL",
+			Description:         "Salário Bruno",
+			LinkedTransactionID: &destTxID,
+			OccurredOn:          now,
+			CreatedAt:           now,
+			UpdatedAt:           now,
+		},
+		{
+			ID:                  destTxID,
+			ProfileID:           profileBruno,
+			BankAccountID:       destID,
+			Type:                transaction.TypeIncome,
+			Status:              transaction.StatusPlanned,
+			Amount:              1500,
+			Currency:            "BRL",
+			Description:         "Salário Bruno",
+			LinkedTransactionID: &sourceTxID,
+			OccurredOn:          now,
+			CreatedAt:           now,
+			UpdatedAt:           now,
+		},
+	}}
+
+	useCase := NewUpdateTransactionStatusUseCase(txRepo, accountRepo)
+
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	_, err := useCase.Execute(sourceTxID, UpdateTransactionStatusInput{
+		Status:     "CONFIRMED",
+		OccurredOn: &yesterday,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Source balance should be debited (10000 - 1500 = 8500)
+	source := accountRepo.accounts[sourceID]
+	if source.CurrentBalance != 8500 {
+		t.Fatalf("expected source balance 8500, got %.2f", source.CurrentBalance)
+	}
+
+	// Dest balance should be credited (500 + 1500 = 2000)
+	dest := accountRepo.accounts[destID]
+	if dest.CurrentBalance != 2000 {
+		t.Fatalf("expected dest balance 2000, got %.2f", dest.CurrentBalance)
+	}
+
+	// Linked transaction should also be confirmed
+	linkedTx, _ := txRepo.GetByID(destTxID)
+	if linkedTx.Status != transaction.StatusConfirmed {
+		t.Fatalf("expected linked tx status CONFIRMED, got %s", linkedTx.Status)
 	}
 }

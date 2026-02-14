@@ -86,6 +86,19 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 		// The transaction status is already updated
 	}
 
+	// Handle linked transaction (cross-profile paired transactions)
+	if tx.LinkedTransactionID != nil {
+		linkedTx, err := uc.repo.GetByID(*tx.LinkedTransactionID)
+		if err == nil {
+			linkedOldStatus := linkedTx.Status
+			// Update linked transaction status
+			_ = uc.repo.UpdateStatus(linkedTx.ID, targetStatus, occurredAt, linkedTx.Notes)
+			// Update linked transaction balance
+			_ = uc.updateBalanceOnStatusChange(linkedTx, linkedOldStatus, targetStatus)
+			linkedTx.Status = targetStatus
+		}
+	}
+
 	tx.Status = targetStatus
 	return tx, nil
 }

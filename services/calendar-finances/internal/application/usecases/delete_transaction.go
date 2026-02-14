@@ -22,24 +22,37 @@ func (uc *DeleteTransactionUseCase) Execute(id string) error {
 		return ErrTransactionNotFound
 	}
 
+	// Handle linked transaction (cross-profile paired transactions)
+	if txn.LinkedTransactionID != nil {
+		linkedTxn, err := uc.repo.GetByID(*txn.LinkedTransactionID)
+		if err == nil {
+			// Reverse linked transaction balance
+			if linkedTxn.Status == transaction.StatusConfirmed {
+				linkedAccount, err := uc.accountRepo.FindByID(linkedTxn.BankAccountID)
+				if err == nil && linkedAccount.Type != bankaccount.AccountTypeCreditCard {
+					uc.reverseBalance(linkedAccount, linkedTxn.Type, linkedTxn.Amount)
+					linkedAccount.UpdatedAt = time.Now()
+					if err := uc.accountRepo.Update(linkedAccount); err != nil {
+						return err
+					}
+				}
+			}
+			// Delete linked transaction
+			_ = uc.repo.Delete(linkedTxn.ID)
+		}
+	}
+
 	// Reverse balance for CONFIRMED non-credit-card transactions
 	if txn.Status == transaction.StatusConfirmed {
 		account, err := uc.accountRepo.FindByID(txn.BankAccountID)
 		if err == nil && account.Type != bankaccount.AccountTypeCreditCard {
-			switch txn.Type {
-			case transaction.TypeExpense:
-				account.CurrentBalance += txn.Amount
-			case transaction.TypeIncome:
-				account.CurrentBalance -= txn.Amount
-			case transaction.TypeTransfer:
-				account.CurrentBalance += txn.Amount
-			}
+			uc.reverseBalance(account, txn.Type, txn.Amount)
 			account.UpdatedAt = time.Now()
 			if err := uc.accountRepo.Update(account); err != nil {
 				return err
 			}
 
-			// For TRANSFER: also reverse the destination account credit
+			// For same-profile TRANSFER: also reverse the destination account credit
 			if txn.Type == transaction.TypeTransfer && txn.DestinationAccountID != nil {
 				destAccount, err := uc.accountRepo.FindByID(*txn.DestinationAccountID)
 				if err == nil {
@@ -58,4 +71,15 @@ func (uc *DeleteTransactionUseCase) Execute(id string) error {
 	}
 
 	return nil
+}
+
+func (uc *DeleteTransactionUseCase) reverseBalance(account *bankaccount.BankAccount, txType transaction.Type, amount float64) {
+	switch txType {
+	case transaction.TypeExpense:
+		account.CurrentBalance += amount
+	case transaction.TypeIncome:
+		account.CurrentBalance -= amount
+	case transaction.TypeTransfer:
+		account.CurrentBalance += amount
+	}
 }

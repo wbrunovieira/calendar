@@ -51,6 +51,7 @@ const defaultForm = (profileId: string, status: TransactionStatus = 'CONFIRMED')
   bankAccountId: '',
   destinationAccountId: undefined,
   categoryId: undefined,
+  destinationCategoryId: undefined,
   type: 'EXPENSE',
   status,
   amount: 0,
@@ -83,7 +84,9 @@ export default function TransactionForm({
   const [formData, setFormData] = useState<TransactionFormData>(() => defaultForm(defaultProfileId));
   const [tagsInput, setTagsInput] = useState('');
   const [selectedProfileId, setSelectedProfileId] = useState<string>(defaultProfileId);
+  const [destProfileId, setDestProfileId] = useState<string>(defaultProfileId);
   const [localCategories, setLocalCategories] = useState<Category[]>(categories);
+  const [destCategories, setDestCategories] = useState<Category[]>([]);
 
   const isEditing = !!editingTransaction;
 
@@ -119,6 +122,8 @@ export default function TransactionForm({
       } else {
         // Create mode - use defaults (CONFIRMED by default for quick daily transactions)
         setSelectedProfileId(defaultProfileId);
+        setDestProfileId(defaultProfileId);
+        setDestCategories([]);
         const initialAccount = accounts.find((account) => account.profileId === defaultProfileId)?.id || '';
         setFormData({
           ...defaultForm(defaultProfileId, 'CONFIRMED'),
@@ -130,9 +135,12 @@ export default function TransactionForm({
   }, [isOpen, defaultProfileId, accounts, categories, editingTransaction]);
 
   const availableCategories = useMemo(() => {
-    const expectedType = typeToCategory[formData.type];
+    // For cross-profile transfers, source side uses EXPENSE categories
+    const expectedType = (formData.type === 'TRANSFER' && destProfileId !== selectedProfileId)
+      ? 'EXPENSE'
+      : typeToCategory[formData.type];
     return localCategories.filter((category) => category.type === expectedType);
-  }, [localCategories, formData.type]);
+  }, [localCategories, formData.type, destProfileId, selectedProfileId]);
 
   // Organize categories hierarchically
   const hierarchicalCategories = useMemo(() => {
@@ -143,12 +151,28 @@ export default function TransactionForm({
     }));
   }, [availableCategories]);
 
+  const isCrossProfile = formData.type === 'TRANSFER' && destProfileId !== selectedProfileId;
+
   const destinationOptions = useMemo(() => {
     if (formData.type !== 'TRANSFER') return [];
     return accounts.filter(
-      (account) => account.profileId === selectedProfileId && account.id !== formData.bankAccountId,
+      (account) => account.profileId === destProfileId && account.id !== formData.bankAccountId,
     );
-  }, [accounts, selectedProfileId, formData.type, formData.bankAccountId]);
+  }, [accounts, destProfileId, formData.type, formData.bankAccountId]);
+
+  // Categories for destination profile (cross-profile only, INCOME type)
+  const destIncomeCategories = useMemo(() => {
+    if (!isCrossProfile) return [];
+    return destCategories.filter((c) => c.type === 'INCOME');
+  }, [isCrossProfile, destCategories]);
+
+  const destHierarchicalCategories = useMemo(() => {
+    const parents = destIncomeCategories.filter((c) => !c.parentId);
+    return parents.map((parent) => ({
+      ...parent,
+      children: destIncomeCategories.filter((c) => c.parentId === parent.id),
+    }));
+  }, [destIncomeCategories]);
 
   const accountsForProfile = useMemo(
     () => accounts.filter((a) => a.profileId === selectedProfileId),
@@ -179,6 +203,30 @@ export default function TransactionForm({
     }
   };
 
+  const onChangeDestProfile = async (profileId: string) => {
+    setDestProfileId(profileId);
+    setFormData((prev) => ({
+      ...prev,
+      destinationAccountId: undefined,
+      destinationCategoryId: undefined,
+    }));
+    if (profileId !== selectedProfileId) {
+      try {
+        const res = await fetch(`${API_BASE}/categories?profileId=${profileId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setDestCategories(data.data || []);
+        } else {
+          setDestCategories([]);
+        }
+      } catch {
+        setDestCategories([]);
+      }
+    } else {
+      setDestCategories([]);
+    }
+  };
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -191,8 +239,10 @@ export default function TransactionForm({
         .filter(Boolean),
       destinationAccountId:
         formData.type === 'TRANSFER' ? formData.destinationAccountId : undefined,
+      destinationCategoryId:
+        isCrossProfile ? formData.destinationCategoryId : undefined,
       categoryId:
-        formData.type === 'TRANSFER' ? formData.categoryId ?? availableCategories[0]?.id : formData.categoryId,
+        isCrossProfile ? formData.categoryId : (formData.type === 'TRANSFER' ? formData.categoryId ?? availableCategories[0]?.id : formData.categoryId),
       // Only include installment fields if they have valid positive values
       installmentNumber: formData.installmentNumber && formData.installmentNumber > 0 ? formData.installmentNumber : undefined,
       installmentTotal: formData.installmentTotal && formData.installmentTotal > 0 ? formData.installmentTotal : undefined,
@@ -255,13 +305,17 @@ export default function TransactionForm({
                     <button
                       key={option.value}
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
                         setFormData((prev) => ({
                           ...prev,
                           type: option.value,
                           destinationAccountId: undefined,
                           categoryId: undefined,
-                        }))
+                          destinationCategoryId: undefined,
+                        }));
+                        setDestProfileId(selectedProfileId);
+                        setDestCategories([]);
+                      }
                       }
                       className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all ${
                         formData.type === option.value
@@ -303,27 +357,41 @@ export default function TransactionForm({
                 </div>
 
                 {formData.type === 'TRANSFER' && (
-                  <div>
-                    <label className="block text-white/80 text-sm font-semibold mb-2">Conta de destino</label>
-                    <select
-                      value={formData.destinationAccountId ?? ''}
-                      onChange={(event) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          destinationAccountId: event.target.value || undefined,
-                        }))
-                      }
-                      required
-                      className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    >
-                      <option value="">Selecione uma conta</option>
-                      {destinationOptions.map((account) => (
-                        <option key={account.id} value={account.id} className="bg-slate-900">
-                          {account.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  <>
+                    <div>
+                      <label className="block text-white/80 text-sm font-semibold mb-2">Perfil de destino</label>
+                      <select
+                        value={destProfileId}
+                        onChange={(e) => onChangeDestProfile(e.target.value)}
+                        className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      >
+                        {profiles.map((p) => (
+                          <option key={p.id} value={p.id} className="bg-slate-900">{p.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-white/80 text-sm font-semibold mb-2">Conta de destino</label>
+                      <select
+                        value={formData.destinationAccountId ?? ''}
+                        onChange={(event) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            destinationAccountId: event.target.value || undefined,
+                          }))
+                        }
+                        required
+                        className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      >
+                        <option value="">Selecione uma conta</option>
+                        {destinationOptions.map((account) => (
+                          <option key={account.id} value={account.id} className="bg-slate-900">
+                            {account.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
                 )}
               </div>
 
@@ -360,6 +428,83 @@ export default function TransactionForm({
                       )
                     ))}
                   </select>
+                </div>
+              )}
+
+              {isCrossProfile && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-white/80 text-sm font-semibold mb-2">
+                      Categoria de saída <span className="text-white/50 text-xs">(origem)</span>
+                    </label>
+                    <select
+                      value={formData.categoryId ?? ''}
+                      onChange={(event) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          categoryId: event.target.value || undefined,
+                        }))
+                      }
+                      required
+                      className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="">Selecione uma categoria</option>
+                      {hierarchicalCategories.map((parent) => (
+                        parent.children.length > 0 ? (
+                          <optgroup key={parent.id} label={parent.name} className="bg-slate-900">
+                            <option value={parent.id} className="bg-slate-900">
+                              {parent.name} (geral)
+                            </option>
+                            {parent.children.map((sub) => (
+                              <option key={sub.id} value={sub.id} className="bg-slate-900">
+                                ↳ {sub.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ) : (
+                          <option key={parent.id} value={parent.id} className="bg-slate-900">
+                            {parent.name}
+                          </option>
+                        )
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-white/80 text-sm font-semibold mb-2">
+                      Categoria de entrada <span className="text-white/50 text-xs">(destino)</span>
+                    </label>
+                    <select
+                      value={formData.destinationCategoryId ?? ''}
+                      onChange={(event) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          destinationCategoryId: event.target.value || undefined,
+                        }))
+                      }
+                      required
+                      className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="">Selecione uma categoria</option>
+                      {destHierarchicalCategories.map((parent) => (
+                        parent.children.length > 0 ? (
+                          <optgroup key={parent.id} label={parent.name} className="bg-slate-900">
+                            <option value={parent.id} className="bg-slate-900">
+                              {parent.name} (geral)
+                            </option>
+                            {parent.children.map((sub) => (
+                              <option key={sub.id} value={sub.id} className="bg-slate-900">
+                                ↳ {sub.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ) : (
+                          <option key={parent.id} value={parent.id} className="bg-slate-900">
+                            {parent.name}
+                          </option>
+                        )
+                      ))}
+                    </select>
+                  </div>
                 </div>
               )}
 

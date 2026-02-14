@@ -58,12 +58,12 @@ func (r *TransactionRepository) Create(txn *transaction.Transaction) (err error)
 			id, profile_id, bank_account_id, destination_account_id, category_id, invoice_id,
 			type, status, amount, currency, description, notes, cost_center,
 			occurred_on, due_on, reminder_on, recurrence_rule, installment_number, installment_total,
-			external_id, created_at, updated_at
+			external_id, linked_transaction_id, created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, $10, $11, $12, $13,
 			$14, $15, $16, $17, $18, $19,
-			$20, $21, $22
+			$20, $21, $22, $23
 		)
 	`
 
@@ -93,6 +93,7 @@ func (r *TransactionRepository) Create(txn *transaction.Transaction) (err error)
 		nullableInt(txn.InstallmentNumber),
 		nullableInt(txn.InstallmentTotal),
 		nullableString(txn.ExternalID),
+		nullableString(txn.LinkedTransactionID),
 		txn.CreatedAt,
 		txn.UpdatedAt,
 	)
@@ -146,7 +147,7 @@ func (r *TransactionRepository) GetByID(id string) (*transaction.Transaction, er
 		SELECT id, profile_id, bank_account_id, destination_account_id, category_id, invoice_id,
 			type, status, amount, currency, description, notes, cost_center,
 			occurred_on, due_on, reminder_on, recurrence_rule, installment_number, installment_total,
-			external_id, created_at, updated_at
+			external_id, linked_transaction_id, created_at, updated_at
 		FROM finance.transactions
 		WHERE id = $1
 	`
@@ -252,10 +253,11 @@ func scanTransaction(scanner transactionScanner) (*transaction.Transaction, erro
 		costCenter        sql.NullString
 		dueOn             sql.NullTime
 		reminderOn        sql.NullTime
-		recurrence        sql.NullString
-		installmentNumber sql.NullInt64
-		installmentTotal  sql.NullInt64
-		externalID        sql.NullString
+		recurrence          sql.NullString
+		installmentNumber   sql.NullInt64
+		installmentTotal    sql.NullInt64
+		externalID          sql.NullString
+		linkedTransactionID sql.NullString
 	)
 
 	err := scanner.Scan(
@@ -279,6 +281,7 @@ func scanTransaction(scanner transactionScanner) (*transaction.Transaction, erro
 		&installmentNumber,
 		&installmentTotal,
 		&externalID,
+		&linkedTransactionID,
 		&tx.CreatedAt,
 		&tx.UpdatedAt,
 	)
@@ -336,6 +339,10 @@ func scanTransaction(scanner transactionScanner) (*transaction.Transaction, erro
 		s := externalID.String
 		tx.ExternalID = &s
 	}
+	if linkedTransactionID.Valid {
+		s := linkedTransactionID.String
+		tx.LinkedTransactionID = &s
+	}
 
 	tx.Splits = []*transaction.Split{}
 	tx.Tags = []string{}
@@ -384,6 +391,7 @@ func (r *TransactionRepository) Update(txn *transaction.Transaction) (err error)
 			installment_number = $16,
 			installment_total = $17,
 			external_id = $18,
+			linked_transaction_id = $19,
 			updated_at = NOW()
 		WHERE id = $1
 	`
@@ -407,6 +415,7 @@ func (r *TransactionRepository) Update(txn *transaction.Transaction) (err error)
 		nullableInt(txn.InstallmentNumber),
 		nullableInt(txn.InstallmentTotal),
 		nullableString(txn.ExternalID),
+		nullableString(txn.LinkedTransactionID),
 	)
 	if err != nil {
 		return err

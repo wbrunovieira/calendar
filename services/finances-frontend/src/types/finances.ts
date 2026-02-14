@@ -116,6 +116,7 @@ export interface Transaction {
   installmentNumber?: number;
   installmentTotal?: number;
   externalId?: string;
+  linkedTransactionId?: string;
   tags?: string[];
   splits?: TransactionSplit[];
   createdAt: string;
@@ -127,6 +128,7 @@ export interface TransactionFormData {
   bankAccountId: string;
   destinationAccountId?: string;
   categoryId?: string;
+  destinationCategoryId?: string;
   type: TransactionType;
   status?: TransactionStatus;
   amount: number;

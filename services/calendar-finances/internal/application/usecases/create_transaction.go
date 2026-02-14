@@ -18,11 +18,12 @@ type CreateTransactionSplitInput struct {
 }
 
 type CreateTransactionInput struct {
-	ProfileID            string                        `json:"profileId"`
-	BankAccountID        string                        `json:"bankAccountId"`
-	DestinationAccountID *string                       `json:"destinationAccountId,omitempty"`
-	CategoryID           *string                       `json:"categoryId,omitempty"`
-	Type                 string                        `json:"type"`
+	ProfileID             string                        `json:"profileId"`
+	BankAccountID         string                        `json:"bankAccountId"`
+	DestinationAccountID  *string                       `json:"destinationAccountId,omitempty"`
+	CategoryID            *string                       `json:"categoryId,omitempty"`
+	DestinationCategoryID *string                       `json:"destinationCategoryId,omitempty"` // Category for the INCOME side of cross-profile transfers
+	Type                  string                        `json:"type"`
 	Status               *string                       `json:"status,omitempty"`
 	Amount               float64                       `json:"amount"`
 	Currency             string                        `json:"currency"`
@@ -87,6 +88,43 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		return nil, err
 	}
 
+	// Detect cross-profile transfer first (affects category validation)
+	var destinationAccountID *string
+	var destinationAccount *bankaccount.BankAccount
+	isCrossProfile := false
+	if typeValue == transaction.TypeTransfer {
+		if input.DestinationAccountID == nil {
+			return nil, ErrDestinationRequired
+		}
+		destinationAccount, err = uc.accountRepo.FindByID(*input.DestinationAccountID)
+		if err != nil {
+			return nil, ErrBankAccountNotFound
+		}
+		if destinationAccount.ID == account.ID {
+			return nil, ErrInvalidInput
+		}
+		isCrossProfile = destinationAccount.ProfileID != input.ProfileID
+		if isCrossProfile {
+			// Cross-profile transfer: requires destination category
+			if input.DestinationCategoryID == nil {
+				return nil, ErrDestinationCategoryRequired
+			}
+			// Validate destination category belongs to destination profile and is INCOME
+			destCat, err := uc.categoryRepo.FindByID(*input.DestinationCategoryID)
+			if err != nil {
+				return nil, ErrCategoryNotFound
+			}
+			if destCat.ProfileID != destinationAccount.ProfileID {
+				return nil, ErrCategoryNotFound
+			}
+			if destCat.Type != category.TypeIncome {
+				return nil, ErrInvalidInput
+			}
+		}
+		destinationAccountID = &destinationAccount.ID
+	}
+
+	// Validate source category
 	var categoryEntity *category.Category
 	if input.CategoryID != nil {
 		categoryEntity, err = uc.categoryRepo.FindByID(*input.CategoryID)
@@ -96,27 +134,14 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		if categoryEntity.ProfileID != input.ProfileID {
 			return nil, ErrCategoryNotFound
 		}
-		if !isCategoryCompatible(typeValue, categoryEntity.Type) {
+		// For cross-profile transfers, source category should be EXPENSE (not TRANSFER)
+		expectedType := typeValue
+		if isCrossProfile {
+			expectedType = transaction.TypeExpense
+		}
+		if !isCategoryCompatible(expectedType, categoryEntity.Type) {
 			return nil, ErrInvalidInput
 		}
-	}
-
-	var destinationAccountID *string
-	if typeValue == transaction.TypeTransfer {
-		if input.DestinationAccountID == nil {
-			return nil, ErrDestinationRequired
-		}
-		destination, err := uc.accountRepo.FindByID(*input.DestinationAccountID)
-		if err != nil {
-			return nil, ErrBankAccountNotFound
-		}
-		if destination.ID == account.ID {
-			return nil, ErrInvalidInput
-		}
-		if destination.ProfileID != input.ProfileID {
-			return nil, ErrBankAccountMismatch
-		}
-		destinationAccountID = &destination.ID
 	}
 
 	occurredOn, err := parseDate(input.OccurredOn)
@@ -172,13 +197,19 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		}
 	}
 
+	// Determine the effective type for the source transaction
+	effectiveType := typeValue
+	if isCrossProfile {
+		effectiveType = transaction.TypeExpense // Cross-profile: source becomes EXPENSE
+	}
+
 	createParams := transaction.CreateParams{
 		ProfileID:            input.ProfileID,
 		BankAccountID:        input.BankAccountID,
 		DestinationAccountID: destinationAccountID,
 		CategoryID:           input.CategoryID,
 		InvoiceID:            invoiceID,
-		Type:                 typeValue,
+		Type:                 effectiveType,
 		Amount:               input.Amount,
 		Currency:             input.Currency,
 		Description:          input.Description,
@@ -201,14 +232,67 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 	}
 
 	// Set status if provided (defaults to PLANNED in transaction.New)
+	var txnStatus transaction.Status
 	if input.Status != nil {
-		status, err := parseTransactionStatus(*input.Status)
+		txnStatus, err = parseTransactionStatus(*input.Status)
 		if err != nil {
 			return nil, err
 		}
-		txn.Status = status
+		txn.Status = txnStatus
+	} else {
+		txnStatus = txn.Status
 	}
 
+	// Cross-profile transfer: create paired INCOME transaction in destination profile
+	if isCrossProfile {
+		destParams := transaction.CreateParams{
+			ProfileID:     destinationAccount.ProfileID,
+			BankAccountID: destinationAccount.ID,
+			CategoryID:    input.DestinationCategoryID,
+			Type:          transaction.TypeIncome,
+			Amount:        input.Amount,
+			Currency:      input.Currency,
+			Description:   input.Description,
+			Notes:         input.Notes,
+			OccurredOn:    occurredOn,
+		}
+		destTxn, err := transaction.New(destParams)
+		if err != nil {
+			return nil, err
+		}
+		destTxn.Status = txnStatus
+
+		// Link transactions to each other
+		txn.LinkedTransactionID = &destTxn.ID
+		destTxn.LinkedTransactionID = &txn.ID
+
+		if err := uc.transactionRepo.Create(txn); err != nil {
+			return nil, err
+		}
+		if err := uc.transactionRepo.Create(destTxn); err != nil {
+			return nil, err
+		}
+
+		// Update balances for CONFIRMED cross-profile transfers
+		if txnStatus == transaction.StatusConfirmed {
+			// Debit source
+			account.CurrentBalance -= input.Amount
+			account.UpdatedAt = time.Now()
+			if err := uc.accountRepo.Update(account); err != nil {
+				return nil, err
+			}
+			// Credit destination
+			destinationAccount.CurrentBalance += input.Amount
+			destinationAccount.UpdatedAt = time.Now()
+			if err := uc.accountRepo.Update(destinationAccount); err != nil {
+				return nil, err
+			}
+		}
+
+		return txn, nil
+	}
+
+	// Same-profile transfer or non-transfer: existing behavior
 	if err := uc.transactionRepo.Create(txn); err != nil {
 		return nil, err
 	}
@@ -216,20 +300,16 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 	// Update bank account balance for CONFIRMED transactions
 	// NOTE: Credit card transactions do NOT update balance - the balance is only
 	// affected when the invoice is paid (via PayInvoiceUseCaseV2)
-	if txn.Status == transaction.StatusConfirmed && account.Type != bankaccount.AccountTypeCreditCard {
-		if err := uc.updateAccountBalance(account, typeValue, input.Amount); err != nil {
+	if txnStatus == transaction.StatusConfirmed && account.Type != bankaccount.AccountTypeCreditCard {
+		if err := uc.updateAccountBalance(account, effectiveType, input.Amount); err != nil {
 			return nil, err
 		}
 
-		// For TRANSFER: also credit the destination account
-		if typeValue == transaction.TypeTransfer && destinationAccountID != nil {
-			destAccount, err := uc.accountRepo.FindByID(*destinationAccountID)
-			if err != nil {
-				return nil, err
-			}
-			destAccount.CurrentBalance += input.Amount
-			destAccount.UpdatedAt = time.Now()
-			if err := uc.accountRepo.Update(destAccount); err != nil {
+		// For same-profile TRANSFER: also credit the destination account
+		if effectiveType == transaction.TypeTransfer && destinationAccountID != nil {
+			destinationAccount.CurrentBalance += input.Amount
+			destinationAccount.UpdatedAt = time.Now()
+			if err := uc.accountRepo.Update(destinationAccount); err != nil {
 				return nil, err
 			}
 		}
