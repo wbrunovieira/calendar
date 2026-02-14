@@ -174,7 +174,7 @@ func (r *TransactionRepository) List(filter transaction.ListFilter) ([]*transact
         SELECT id, profile_id, bank_account_id, destination_account_id, category_id, invoice_id,
                type, status, amount, currency, description, notes, cost_center,
                occurred_on, due_on, reminder_on, recurrence_rule, installment_number, installment_total,
-               external_id, created_at, updated_at
+               external_id, linked_transaction_id, created_at, updated_at
         FROM finance.transactions
         WHERE profile_id = $1`
 
