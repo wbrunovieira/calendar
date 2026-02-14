@@ -33,6 +33,9 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 		return nil, err
 	}
 
+	// Capture old status BEFORE any mutations
+	oldStatus := tx.Status
+
 	var occurredAt time.Time
 	switch targetStatus {
 	case transaction.StatusConfirmed:
@@ -72,9 +75,6 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 		occurredAt = time.Now()
 		tx.OccurredOn = occurredAt
 	}
-
-	// Get the old status before updating
-	oldStatus := tx.Status
 
 	if err := uc.repo.UpdateStatus(tx.ID, targetStatus, occurredAt, tx.Notes); err != nil {
 		return nil, err
@@ -138,7 +138,23 @@ func (uc *UpdateTransactionStatusUseCase) updateBalanceOnStatusChange(tx *transa
 	if balanceChange != 0 {
 		account.CurrentBalance += balanceChange
 		account.UpdatedAt = time.Now()
-		return uc.accountRepo.Update(account)
+		if err := uc.accountRepo.Update(account); err != nil {
+			return err
+		}
+
+		// For TRANSFER: also update the destination account
+		if tx.Type == transaction.TypeTransfer && tx.DestinationAccountID != nil {
+			destAccount, err := uc.accountRepo.FindByID(*tx.DestinationAccountID)
+			if err != nil {
+				return err
+			}
+			// Destination gets the opposite of source: credited on confirm, debited on cancel
+			destAccount.CurrentBalance -= balanceChange
+			destAccount.UpdatedAt = time.Now()
+			if err := uc.accountRepo.Update(destAccount); err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil

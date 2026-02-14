@@ -220,6 +220,19 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		if err := uc.updateAccountBalance(account, typeValue, input.Amount); err != nil {
 			return nil, err
 		}
+
+		// For TRANSFER: also credit the destination account
+		if typeValue == transaction.TypeTransfer && destinationAccountID != nil {
+			destAccount, err := uc.accountRepo.FindByID(*destinationAccountID)
+			if err != nil {
+				return nil, err
+			}
+			destAccount.CurrentBalance += input.Amount
+			destAccount.UpdatedAt = time.Now()
+			if err := uc.accountRepo.Update(destAccount); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	// Update invoice amount if this is a credit card expense

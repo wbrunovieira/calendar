@@ -38,6 +38,18 @@ func (uc *DeleteTransactionUseCase) Execute(id string) error {
 			if err := uc.accountRepo.Update(account); err != nil {
 				return err
 			}
+
+			// For TRANSFER: also reverse the destination account credit
+			if txn.Type == transaction.TypeTransfer && txn.DestinationAccountID != nil {
+				destAccount, err := uc.accountRepo.FindByID(*txn.DestinationAccountID)
+				if err == nil {
+					destAccount.CurrentBalance -= txn.Amount
+					destAccount.UpdatedAt = time.Now()
+					if err := uc.accountRepo.Update(destAccount); err != nil {
+						return err
+					}
+				}
+			}
 		}
 	}
 
