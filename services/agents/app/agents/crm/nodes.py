@@ -539,10 +539,8 @@ async def _investigate_with_tavily(
     search_context = _format_tavily_results(all_tavily_data)
 
     if not search_context.strip():
-        return {
-            "error": "investigation_failed",
-            "reply": "No search results found. Try a different query.",
-        }
+        logger.warning("No search results found this round, allowing retry")
+        return {"raw_dossiers": [], "previous_queries": all_queries_used}
 
     existing_section = ""
     if existing_leads:
@@ -890,10 +888,12 @@ async def supervisor_review(state: CRMLeadState) -> dict:
                 "reason": review.get("notes", "Rejected by supervisor"),
             })
 
+    # Accumulate rejected across retry rounds
+    previous_rejected = state.get("rejected", [])
     return {
         "approved_indices": approved_indices,
         "enrichment_indices": enrichment_indices,
-        "rejected": rejected,
+        "rejected": previous_rejected + rejected,
     }
 
 

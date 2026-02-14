@@ -149,6 +149,26 @@ async def test_supervisor_rejects_bad_lead():
     assert "Generic data" in result["rejected"][0]["reason"]
 
 
+async def test_supervisor_accumulates_rejected_across_rounds():
+    """Rejected from previous rounds should be preserved."""
+    review = json.dumps({"approved": False, "notes": "Bad data.", "issues": []})
+    mock_resp = _mock_claude_response(review)
+
+    previous_rejected = [{"query_term": "PrevCo", "reason": "From round 1"}]
+
+    with patch("app.agents.crm.nodes._call_claude", new_callable=AsyncMock, return_value=mock_resp):
+        result = await supervisor_review({
+            "leads_data": [{"businessName": "NewCo"}],
+            "contacts_data": [[{"name": "Unknown"}]],
+            "icp_context": {"name": "SaaS B2B", "content": "SaaS companies"},
+            "rejected": previous_rejected,
+            "_trace": None,
+        })
+    assert len(result["rejected"]) == 2
+    assert result["rejected"][0]["query_term"] == "PrevCo"
+    assert result["rejected"][1]["query_term"] == "NewCo"
+
+
 # ── save_to_crm ────────────────────────────────────────────
 
 
