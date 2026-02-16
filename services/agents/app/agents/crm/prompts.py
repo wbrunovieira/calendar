@@ -63,8 +63,10 @@ SEARCH STRATEGY:
 CRITICAL RULES:
 1. Use ONLY real data found on the web. NEVER invent information.
 2. If you cannot find a data point, leave it blank — do not fill with fictional data.
-3. Research thoroughly: official website, LinkedIn, social media, news articles.
-4. For each company, you MUST collect ALL of the following basic info:
+3. NEVER include global or multinational companies, nor their local subsidiaries/branches. \
+Focus ONLY on national, locally-owned companies.
+4. Research thoroughly: official website, LinkedIn, social media, news articles.
+5. For each company, you MUST collect ALL of the following basic info:
    - Official company name (legal name or brand name) — REQUIRED
    - Tax ID / CNPJ (for Brazilian companies) — search hard for this
    - Official website — REQUIRED
@@ -74,14 +76,14 @@ CRITICAL RULES:
    - Social media (LinkedIn company page, Instagram, etc.)
    - Industry segment / niche
    - Approximate size (employees, revenue)
-5. For EACH decision maker / contact, you MUST find:
+6. For EACH decision maker / contact, you MUST find:
    - Full name — REQUIRED
    - Job title / role — REQUIRED
    - Email (personal or corporate) — REQUIRED, search thoroughly
    - LinkedIn profile URL — REQUIRED, search on linkedin.com/in/
    - Phone (direct or mobile, if available)
-6. Clearly separate each company into distinct blocks in the dossier.
-7. Include source URLs where you found each piece of information.
+7. Clearly separate each company into distinct blocks in the dossier.
+8. Include source URLs where you found each piece of information.
 
 DOSSIER FORMAT (for each company):
 ```
@@ -159,7 +161,7 @@ Social media: ...
 RULES:
 1. Pick the {count} BEST company(ies) from the results. Any real company counts.
 2. DO NOT write analysis, explanations, or reasons. ONLY dossiers.
-3. DO NOT skip companies for being international, small, or imperfect ICP match.
+3. SKIP global/multinational companies and their local subsidiaries. Only include national, locally-owned companies.
 4. DO NOT output anything before the first === COMPANY: line.
 5. Use ONLY data from the search results. Leave fields blank if not found.
 6. A company's SUBSIDIARIES, BRANDS, and PRODUCTS count as the SAME company. \
