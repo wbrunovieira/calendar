@@ -444,6 +444,67 @@ describe('GetWeeklyProgressUseCase', () => {
       expect(result[0].currentWeek.completedDates).not.toContain('2025-01-20');
     });
 
+    it('should assign Saturday/Sunday completions to previous week when today is Monday', async () => {
+      // Today is Monday Feb 16, 2026
+      vi.setSystemTime(new Date(2026, 1, 16, 10, 0, 0));
+
+      const habit = createFlexibleHabit({
+        id: 'habit-paraglider',
+        title: 'Paraglider',
+        weeklyTargetCount: 2,
+        weeklyPreferredDays: ['SA', 'SU'],
+      });
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([habit]);
+
+      // Completions on Sat Feb 14 and Sun Feb 15 (stored as UTC midnight)
+      const executions = [
+        createExecution('habit-paraglider', new Date('2026-02-14T00:00:00.000Z'), true),
+        createExecution('habit-paraglider', new Date('2026-02-15T00:00:00.000Z'), true),
+      ];
+      vi.mocked(mockExecutionRepository.findByEventId!).mockResolvedValue(executions);
+
+      const result = await useCase.execute({});
+      const progress = result.find(r => r.habitId === 'habit-paraglider')!;
+
+      // Current week (Feb 16-22) should have 0 completions
+      expect(progress.currentWeek.weekStartDate).toBe('2026-02-16');
+      expect(progress.currentWeek.completedCount).toBe(0);
+      expect(progress.currentWeek.completedDates).toEqual([]);
+
+      // Previous week (Feb 9-15) should have both completions
+      const prevWeek = progress.weekHistory.find(w => w.weekStartDate === '2026-02-09');
+      expect(prevWeek).toBeDefined();
+      expect(prevWeek!.completedCount).toBe(2);
+      expect(prevWeek!.completedDates).toEqual(
+        expect.arrayContaining(['2026-02-14', '2026-02-15']),
+      );
+      expect(prevWeek!.isGoalMet).toBe(true);
+    });
+
+    it('should use consistent date format keys so currentWeek lookup matches weekMap', async () => {
+      // This catches the bug where currentWeekStartStr uses formatLocalDate
+      // but weekMap keys use formatDate (UTC), potentially causing mismatches
+      vi.setSystemTime(new Date(2026, 1, 16, 10, 0, 0)); // Monday Feb 16
+
+      const habit = createFlexibleHabit({
+        id: 'habit-test',
+        weeklyTargetCount: 1,
+      });
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([habit]);
+
+      // Completion on Monday Feb 16 (current week)
+      const executions = [
+        createExecution('habit-test', new Date('2026-02-16T00:00:00.000Z'), true),
+      ];
+      vi.mocked(mockExecutionRepository.findByEventId!).mockResolvedValue(executions);
+
+      const result = await useCase.execute({});
+
+      // The current week MUST find this completion
+      expect(result[0].currentWeek.completedCount).toBe(1);
+      expect(result[0].currentWeek.completedDates).toContain('2026-02-16');
+    });
+
     it('should handle multiple flexible habits', async () => {
       const jiujitsu = createFlexibleHabit({
         id: 'habit-jj',

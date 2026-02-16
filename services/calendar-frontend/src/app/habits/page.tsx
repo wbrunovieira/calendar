@@ -29,26 +29,33 @@ const formatDisplayDate = (dateStr: string) => {
   return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}`;
 };
 
-// Get current week days (Monday to Sunday)
-const getCurrentWeekDays = () => {
+// Get week days (Monday to Sunday) with optional offset from current week
+const getWeekDays = (offset: number = 0) => {
   const today = new Date();
+  const todayStr = formatLocalDate(today);
   const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, ...
   const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+
+  const monday = new Date(today);
+  monday.setDate(today.getDate() + diffToMonday + offset * 7);
 
   const days: { date: string; dayCode: string; dayLabel: string; isToday: boolean; isPast: boolean }[] = [];
   const dayLabels = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'];
   const dayCodes = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
 
+  const todayStart = new Date(today);
+  todayStart.setHours(0, 0, 0, 0);
+
   for (let i = 0; i < 7; i++) {
-    const d = new Date(today);
-    d.setDate(today.getDate() + diffToMonday + i);
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
     const dateStr = formatLocalDate(d);
     days.push({
       date: dateStr,
       dayCode: dayCodes[i],
       dayLabel: dayLabels[i],
-      isToday: dateStr === formatLocalDate(today),
-      isPast: d < new Date(today.setHours(0, 0, 0, 0)),
+      isToday: dateStr === todayStr,
+      isPast: d < todayStart,
     });
   }
 
@@ -133,9 +140,11 @@ export default function HabitsPage() {
   const [editingHabit, setEditingHabit] = useState<Event | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [flexibleProgress, setFlexibleProgress] = useState<FlexibleHabitProgress[]>([]);
+  const [weekOffset, setWeekOffset] = useState(0);
 
   const today = formatLocalDate(new Date());
-  const currentWeekDays = useMemo(() => getCurrentWeekDays(), []);
+  const currentWeekDays = useMemo(() => getWeekDays(0), []);
+  const navigatedWeekDays = useMemo(() => getWeekDays(weekOffset), [weekOffset]);
 
   // Calculate date range for fetching (last 30 days to next 30 days)
   const dateRange = useMemo(() => {
@@ -616,18 +625,59 @@ export default function HabitsPage() {
                 {/* Flexible Weekly Habits */}
                 {flexibleHabitsWithProgress.length > 0 && (
                   <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
-                    <h2 className="text-lg font-semibold text-white mb-4">Habitos Semanais Flexiveis</h2>
+                    {/* Header with week navigation */}
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-lg font-semibold text-white">Habitos Semanais Flexiveis</h2>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setWeekOffset(prev => Math.max(prev - 1, -12))}
+                          disabled={weekOffset <= -12}
+                          className="p-1.5 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                          title="Semana anterior"
+                        >
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => setWeekOffset(0)}
+                          className={`px-3 py-1 rounded-lg text-sm transition-colors ${
+                            weekOffset === 0
+                              ? 'bg-purple-600/50 text-white'
+                              : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'
+                          }`}
+                        >
+                          {weekOffset === 0
+                            ? 'Esta semana'
+                            : `${formatDisplayDate(navigatedWeekDays[0].date)} - ${formatDisplayDate(navigatedWeekDays[6].date)}`
+                          }
+                        </button>
+                        <button
+                          onClick={() => setWeekOffset(prev => Math.min(prev + 1, 4))}
+                          disabled={weekOffset >= 4}
+                          className="p-1.5 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                          title="Proxima semana"
+                        >
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
                     <div className="space-y-4">
                       {flexibleHabitsWithProgress.map(habit => {
                         const habitId = habit.originalEventId || habit.id;
                         const progress = habit.progress;
-                        const currentWeek = progress?.currentWeek;
-                        const completed = currentWeek?.completedCount || 0;
-                        const target = currentWeek?.targetCount || habit.weeklyTargetCount || 2;
+                        const navigatedWeekStart = navigatedWeekDays[0].date;
+                        const weekData = weekOffset === 0
+                          ? progress?.currentWeek
+                          : progress?.weekHistory?.find(w => w.weekStartDate === navigatedWeekStart);
+                        const completed = weekData?.completedCount || 0;
+                        const target = weekData?.targetCount || habit.weeklyTargetCount || 2;
                         const percentage = Math.min((completed / target) * 100, 100);
-                        const isGoalMet = currentWeek?.isGoalMet || completed >= target;
-                        const weeklyStreak = progress?.currentStreak || 0;
-                        const completedDates = currentWeek?.completedDates || [];
+                        const isGoalMet = weekData?.isGoalMet || completed >= target;
+                        const weeklyStreak = weekOffset === 0 ? (progress?.currentStreak || 0) : 0;
+                        const completedDates = weekData?.completedDates || [];
                         const preferredDays = habit.weeklyPreferredDays || [];
 
                         return (
@@ -667,10 +717,14 @@ export default function HabitsPage() {
                                 </div>
                               </div>
                               <div className="flex items-center gap-3">
-                                {weeklyStreak > 0 && (
-                                  <span className="flex items-center gap-1 px-2 py-1 bg-purple-500/20 text-purple-400 rounded-lg text-sm">
+                                {isGoalMet && (
+                                  <span className="flex items-center gap-1 px-2 py-1 bg-emerald-500/20 text-emerald-400 rounded-lg text-sm">
                                     <span>🏆</span>
-                                    <span>{weeklyStreak} {weeklyStreak === 1 ? 'semana' : 'semanas'}</span>
+                                  </span>
+                                )}
+                                {weeklyStreak > 1 && (
+                                  <span className="flex items-center gap-1 px-2 py-1 bg-purple-500/20 text-purple-400 rounded-lg text-sm">
+                                    <span>🔥 {weeklyStreak} semanas</span>
                                   </span>
                                 )}
                                 <span className={`text-lg font-bold ${isGoalMet ? 'text-emerald-400' : 'text-white'}`}>
@@ -690,7 +744,7 @@ export default function HabitsPage() {
 
                             {/* Week Days Grid */}
                             <div className="flex gap-1 mb-3">
-                              {currentWeekDays.map((day) => {
+                              {navigatedWeekDays.map((day) => {
                                 const isDayCompleted = completedDates.includes(day.date);
                                 const isPreferred = preferredDays.includes(day.dayCode);
 
@@ -746,9 +800,9 @@ export default function HabitsPage() {
                                   </span>
                                 )}
                               </div>
-                              {!isGoalMet && currentWeek?.daysRemaining !== undefined && currentWeek.daysRemaining > 0 && (
+                              {!isGoalMet && weekOffset === 0 && weekData?.daysRemaining !== undefined && weekData.daysRemaining > 0 && (
                                 <span>
-                                  {target - completed} {target - completed === 1 ? 'vez faltando' : 'vezes faltando'} • {currentWeek.daysRemaining} dias
+                                  {target - completed} {target - completed === 1 ? 'vez faltando' : 'vezes faltando'} • {weekData.daysRemaining} dias
                                 </span>
                               )}
                             </div>

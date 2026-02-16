@@ -129,12 +129,11 @@ export class GetWeeklyProgressUseCase {
       const executions = await this.executionRepository.findByEventId(habit.id);
       const completedExecutions = executions.filter((e) => e.completed);
 
-      // Group executions by week
+      // Group executions by week (UTC — execution dates are stored as UTC midnight)
       const weekMap = new Map<string, string[]>();
 
       for (const exec of completedExecutions) {
         const execDate = new Date(exec.executionDate);
-        // Use UTC methods since execution dates are stored in UTC
         const weekStart = getWeekStartUTC(execDate);
         const weekStartStr = formatDate(weekStart);
 
@@ -144,9 +143,8 @@ export class GetWeeklyProgressUseCase {
         weekMap.get(weekStartStr)!.push(formatDate(execDate));
       }
 
-      // Build current week progress
-      // Use local time for current week calculation since "today" is local
-      const currentWeekStartStr = formatLocalDate(currentWeekStart);
+      // Build current week progress (formatDate on local midnight = same day for São Paulo UTC-3)
+      const currentWeekStartStr = formatDate(currentWeekStart);
       const currentWeekDates = weekMap.get(currentWeekStartStr) || [];
       const currentWeekProgress: WeekProgress = {
         weekStartDate: currentWeekStartStr,
@@ -205,42 +203,17 @@ export class GetWeeklyProgressUseCase {
     currentWeek: WeekProgress,
     targetCount: number,
   ): { currentStreak: number; longestStreak: number } {
-    // Sort weeks from most recent to oldest
+    // Sort weeks from most recent to oldest for current streak
     const sortedWeeks = [...weekHistory].sort(
       (a, b) => b.weekStartDate.localeCompare(a.weekStartDate),
     );
 
-    // Calculate current streak (counting backwards from most recent completed weeks)
+    // Current streak: count consecutive completed weeks backwards
+    // Include current week if met, then count backwards through history
     let currentStreak = 0;
-
-    // If current week goal is met, include it
     if (currentWeek.isGoalMet) {
       currentStreak = 1;
     }
-
-    // Count consecutive weeks before current week
-    for (const week of sortedWeeks) {
-      if (week.isGoalMet) {
-        if (currentStreak > 0 || currentWeek.isGoalMet) {
-          // Only continue if we've started counting
-          currentStreak++;
-        } else if (currentStreak === 0 && !currentWeek.isGoalMet) {
-          // Current week not met, but check if last week was
-          currentStreak = 1;
-        }
-      } else {
-        // Streak broken
-        if (currentStreak > 0) break;
-      }
-    }
-
-    // Recalculate to handle the logic properly
-    currentStreak = 0;
-    if (currentWeek.isGoalMet) {
-      currentStreak = 1;
-    }
-
-    // Check consecutive completed weeks before current
     for (const week of sortedWeeks) {
       if (week.isGoalMet) {
         currentStreak++;
@@ -249,7 +222,7 @@ export class GetWeeklyProgressUseCase {
       }
     }
 
-    // If current week is not met but we have previous streak, don't add current week
+    // If current week not met, streak is just the consecutive past weeks
     if (!currentWeek.isGoalMet) {
       currentStreak = 0;
       for (const week of sortedWeeks) {
@@ -261,19 +234,12 @@ export class GetWeeklyProgressUseCase {
       }
     }
 
-    // Calculate longest streak (across all weeks including current)
-    const allWeeks = currentWeek.isGoalMet
-      ? [currentWeek, ...sortedWeeks]
-      : sortedWeeks;
-
-    // Sort chronologically for longest streak calculation
+    // Longest streak: scan chronologically through all weeks
     const chronologicalWeeks = [...weekHistory, currentWeek].sort(
       (a, b) => a.weekStartDate.localeCompare(b.weekStartDate),
     );
-
     let longestStreak = 0;
     let tempStreak = 0;
-
     for (const week of chronologicalWeeks) {
       if (week.isGoalMet) {
         tempStreak++;
