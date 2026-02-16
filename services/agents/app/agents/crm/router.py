@@ -129,7 +129,7 @@ async def _run_research(
         state_input["icp_context"] = icp_context
 
     try:
-        result = await graph.ainvoke(state_input)
+        result = await graph.ainvoke(state_input, config={"recursion_limit": 80})
     except Exception:
         logger.exception("Background lead research failed")
         if trace:
