@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import httpx
@@ -7,6 +8,9 @@ import httpx
 from app.config import settings
 
 logger = logging.getLogger("agents")
+
+_RETRY_ATTEMPTS = 3
+_RETRY_DELAYS = [2, 5, 10]  # seconds between retries
 
 
 def _auth_headers() -> dict[str, str]:
@@ -28,13 +32,22 @@ async def get_icp(icp_id: str) -> dict:
 
 
 async def get_leads_by_icp(icp_id: str) -> list[dict]:
-    """GET /api/leads/by-icp/{icp_id} — Fetch existing leads for an ICP."""
-    async with httpx.AsyncClient(base_url=settings.crm_base_url, timeout=10) as client:
-        resp = await client.get(f"/api/leads/by-icp/{icp_id}", headers=_auth_headers())
-        if resp.status_code == 404:
-            return []
-        resp.raise_for_status()
-        return resp.json()
+    """GET /api/leads/by-icp/{icp_id} — Fetch existing leads for an ICP, with retry."""
+    last_exc: Exception | None = None
+    for attempt in range(_RETRY_ATTEMPTS):
+        try:
+            async with httpx.AsyncClient(base_url=settings.crm_base_url, timeout=15) as client:
+                resp = await client.get(f"/api/leads/by-icp/{icp_id}", headers=_auth_headers())
+                if resp.status_code == 404:
+                    return []
+                resp.raise_for_status()
+                return resp.json()
+        except Exception as exc:
+            last_exc = exc
+            delay = _RETRY_DELAYS[attempt] if attempt < len(_RETRY_DELAYS) else _RETRY_DELAYS[-1]
+            logger.warning("get_leads_by_icp attempt %d failed: %s. Retrying in %ds...", attempt + 1, exc, delay)
+            await asyncio.sleep(delay)
+    raise last_exc  # type: ignore[misc]
 
 
 async def create_lead(payload: dict) -> dict:
