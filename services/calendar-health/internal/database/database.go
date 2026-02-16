@@ -29,11 +29,14 @@ func Connect(dbURL string) (*sql.DB, error) {
 	return db, nil
 }
 
-// RunMigrations creates the health schema and initial tables
+// RunMigrations creates the health schema and initial tables.
+// Base migrations (CREATE IF NOT EXISTS) run every startup.
+// Versioned migrations run once and are tracked in health.schema_migrations.
 func RunMigrations(db *sql.DB) error {
 	log.Println("Running health database migrations...")
 
-	migrations := []string{
+	// Base migrations — idempotent, run every startup
+	baseMigrations := []string{
 		// Ensure required extension
 		`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`,
 
@@ -167,9 +170,56 @@ func RunMigrations(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_health_personal_records_profile_exercise ON health.personal_records(profile_id, exercise_id)`,
 	}
 
-	for i, migration := range migrations {
-		if _, err := db.Exec(migration); err != nil {
-			return fmt.Errorf("migration %d failed: %w", i+1, err)
+	for i, m := range baseMigrations {
+		if _, err := db.Exec(m); err != nil {
+			return fmt.Errorf("base migration %d failed: %w", i+1, err)
+		}
+	}
+
+	// Versioned migrations — run once, tracked in schema_migrations
+	type versionedMigration struct {
+		version     int
+		description string
+		sql         string
+	}
+
+	versionedMigrations := []versionedMigration{
+		{
+			version:     1,
+			description: "add WIM_HOF to activity_type CHECK constraint",
+			sql: `DO $$ BEGIN
+				ALTER TABLE health.activities DROP CONSTRAINT IF EXISTS activities_activity_type_check;
+				ALTER TABLE health.activities ADD CONSTRAINT activities_activity_type_check
+					CHECK (activity_type IN ('BREATHING','COLD_EXPOSURE','MEDITATION','HIIT','CARDIO','STRETCHING','OTHER','WIM_HOF'));
+			END $$`,
+		},
+	}
+
+	// Create migration tracking table
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS health.schema_migrations (
+		version INTEGER PRIMARY KEY,
+		description VARCHAR(255) NOT NULL,
+		applied_at TIMESTAMP NOT NULL DEFAULT NOW()
+	)`); err != nil {
+		return fmt.Errorf("failed to create schema_migrations: %w", err)
+	}
+
+	for _, m := range versionedMigrations {
+		var exists bool
+		err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM health.schema_migrations WHERE version = $1)", m.version).Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("failed to check migration %d: %w", m.version, err)
+		}
+		if exists {
+			continue
+		}
+
+		log.Printf("  Running migration %d: %s", m.version, m.description)
+		if _, err := db.Exec(m.sql); err != nil {
+			return fmt.Errorf("migration %d (%s) failed: %w", m.version, m.description, err)
+		}
+		if _, err := db.Exec("INSERT INTO health.schema_migrations (version, description) VALUES ($1, $2)", m.version, m.description); err != nil {
+			return fmt.Errorf("failed to record migration %d: %w", m.version, err)
 		}
 	}
 

@@ -97,9 +97,11 @@ export interface Activity {
 export interface ActivityMetrics {
   // Wim Hof specific
   breathingRounds?: number;
+  breathsPerRound?: number[];
   retentionTimes?: number[];
   coldExposureSeconds?: number;
   waterTemperature?: number;
+  pushUps?: number;
 
   // HIIT specific
   intervals?: number;

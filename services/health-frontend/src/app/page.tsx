@@ -169,6 +169,25 @@ export default function DashboardPage() {
               </div>
             </div>
 
+            {/* Wim Hof Quick Start */}
+            <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="text-4xl">🧊</div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">Wim Hof Method</h3>
+                    <p className="text-white/60 text-sm">Respiracao guiada + retencao + flexoes</p>
+                  </div>
+                </div>
+                <a
+                  href="/wim-hof"
+                  className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  Iniciar
+                </a>
+              </div>
+            </div>
+
             {/* Activity Types Breakdown */}
             {Object.keys(weekStats.activityTypeStats).length > 0 && (
               <div className="bg-white/5 border border-white/10 rounded-xl p-6">
