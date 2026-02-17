@@ -259,6 +259,7 @@ export default function FinancesPage() {
       }
 
       await fetchTransactions(selectedProfileId, transactionFilters);
+      await fetchBankAccounts();
       setEditingTransaction(null);
     } catch (error) {
       console.error('Erro ao criar lançamento:', error);
@@ -290,6 +291,7 @@ export default function FinancesPage() {
       }
 
       await fetchTransactions(selectedProfileId, transactionFilters);
+      await fetchBankAccounts();
       setEditingTransaction(null);
     } catch (error) {
       console.error('Erro ao atualizar lançamento:', error);
@@ -331,6 +333,7 @@ export default function FinancesPage() {
 
       if (selectedProfileId) {
         await fetchTransactions(selectedProfileId, transactionFilters);
+        await fetchBankAccounts();
       }
     } catch (error) {
       console.error('Erro ao atualizar status do lançamento:', error);
@@ -355,6 +358,7 @@ export default function FinancesPage() {
 
       if (selectedProfileId) {
         await fetchTransactions(selectedProfileId, transactionFilters);
+        await fetchBankAccounts();
       }
     } catch (error) {
       console.error('Erro ao excluir lançamento:', error);

@@ -95,6 +95,8 @@ func (f *fakeCategoryRepo) GetDescendantIDs(id string) ([]string, error) {
 	return ids, nil
 }
 
+func strPtr(s string) *string { return &s }
+
 type fakeTransactionRepo struct {
 	created []*transaction.Transaction
 }
@@ -2979,5 +2981,164 @@ func TestUpdateTransactionStatus_CrossProfileConfirm_ShouldUpdateBoth(t *testing
 	linkedTx, _ := txRepo.GetByID(destTxID)
 	if linkedTx.Status != transaction.StatusConfirmed {
 		t.Fatalf("expected linked tx status CONFIRMED, got %s", linkedTx.Status)
+	}
+}
+
+func TestCreateTransaction_CrossProfilePlanned_ShouldNotUpdateBalances(t *testing.T) {
+	// Given: A cross-profile transfer with PLANNED status
+	// When: Created
+	// Then: Neither source nor destination balances should change
+
+	profileWB := "profile-wb"
+	profileBruno := "profile-bruno"
+	sourceID := "nubank-pj"
+	destID := "mercado-pago"
+
+	now := time.Now()
+
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileWB: {ID: profileWB, Name: "WB Digital Solutions"},
+	}}
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		sourceID: {ID: sourceID, ProfileID: profileWB, Name: "Nubank PJ", Type: bankaccount.AccountTypeChecking, CurrentBalance: 5000, Currency: "BRL", IsActive: true, CreatedAt: now, UpdatedAt: now},
+		destID:   {ID: destID, ProfileID: profileBruno, Name: "Mercado Pago", Type: bankaccount.AccountTypeChecking, CurrentBalance: 300, Currency: "BRL", IsActive: true, CreatedAt: now, UpdatedAt: now},
+	}}
+	catRepo := &fakeCategoryRepo{categories: map[string]*category.Category{
+		"cat-expense": {ID: "cat-expense", ProfileID: profileWB, Name: "Produtividade", Type: category.TypeExpense},
+		"cat-income":  {ID: "cat-income", ProfileID: profileBruno, Name: "Reembolso", Type: category.TypeIncome},
+	}}
+	txRepo := &fakeTransactionRepo{}
+	invRepo := &fakeInvoiceRepo{}
+
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, catRepo, txRepo, invRepo)
+
+	plannedStatus := "PLANNED"
+	destAccountID := destID
+	catExpense := "cat-expense"
+	catIncome := "cat-income"
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+
+	_, err := useCase.Execute(CreateTransactionInput{
+		ProfileID:             profileWB,
+		BankAccountID:         sourceID,
+		DestinationAccountID:  &destAccountID,
+		CategoryID:            &catExpense,
+		DestinationCategoryID: &catIncome,
+		Type:                  "TRANSFER",
+		Status:                &plannedStatus,
+		Amount:                27.05,
+		Currency:              "BRL",
+		Description:           "Obsidian - reembolso",
+		OccurredOn:            yesterday,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Source balance should NOT change (still 5000)
+	source := accountRepo.accounts[sourceID]
+	if source.CurrentBalance != 5000 {
+		t.Fatalf("expected source balance 5000, got %.2f", source.CurrentBalance)
+	}
+
+	// Destination balance should NOT change (still 300)
+	dest := accountRepo.accounts[destID]
+	if dest.CurrentBalance != 300 {
+		t.Fatalf("expected dest balance 300, got %.2f", dest.CurrentBalance)
+	}
+
+	// Should have created 2 transactions (both PLANNED)
+	if len(txRepo.created) != 2 {
+		t.Fatalf("expected 2 transactions, got %d", len(txRepo.created))
+	}
+	if txRepo.created[0].Status != transaction.StatusPlanned {
+		t.Fatalf("expected source PLANNED, got %s", txRepo.created[0].Status)
+	}
+	if txRepo.created[1].Status != transaction.StatusPlanned {
+		t.Fatalf("expected dest PLANNED, got %s", txRepo.created[1].Status)
+	}
+}
+
+func TestUpdateTransactionStatus_CrossProfileCancel_ShouldReverseBoth(t *testing.T) {
+	// Given: Two CONFIRMED linked transactions
+	// When: Cancelling the source
+	// Then: Both should be cancelled, both balances reversed
+
+	profileWB := "profile-wb"
+	profileBruno := "profile-bruno"
+	sourceID := "nubank-pj"
+	destID := "mercado-pago"
+
+	now := time.Now()
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		sourceID: {ID: sourceID, ProfileID: profileWB, Name: "Nubank PJ", Type: bankaccount.AccountTypeChecking, CurrentBalance: 8500, Currency: "BRL", IsActive: true, CreatedAt: now, UpdatedAt: now},
+		destID:   {ID: destID, ProfileID: profileBruno, Name: "Mercado Pago", Type: bankaccount.AccountTypeChecking, CurrentBalance: 550, Currency: "BRL", IsActive: true, CreatedAt: now, UpdatedAt: now},
+	}}
+
+	destTxID := "dest-tx-cancel"
+	sourceTxID := "source-tx-cancel"
+
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{
+		{
+			ID:                  sourceTxID,
+			ProfileID:           profileWB,
+			BankAccountID:       sourceID,
+			Type:                transaction.TypeExpense,
+			Status:              transaction.StatusConfirmed,
+			Amount:              50,
+			Currency:            "BRL",
+			Description:         "Reembolso teste",
+			LinkedTransactionID: &destTxID,
+			OccurredOn:          now,
+			CreatedAt:           now,
+			UpdatedAt:           now,
+		},
+		{
+			ID:                  destTxID,
+			ProfileID:           profileBruno,
+			BankAccountID:       destID,
+			Type:                transaction.TypeIncome,
+			Status:              transaction.StatusConfirmed,
+			Amount:              50,
+			Currency:            "BRL",
+			Description:         "Reembolso teste",
+			LinkedTransactionID: &sourceTxID,
+			OccurredOn:          now,
+			CreatedAt:           now,
+			UpdatedAt:           now,
+		},
+	}}
+
+	useCase := NewUpdateTransactionStatusUseCase(txRepo, accountRepo)
+
+	_, err := useCase.Execute(sourceTxID, UpdateTransactionStatusInput{
+		Status: "CANCELLED",
+		Reason: strPtr("Cancelado"),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Source balance should be restored (8500 + 50 = 8550) — EXPENSE reversal
+	source := accountRepo.accounts[sourceID]
+	if source.CurrentBalance != 8550 {
+		t.Fatalf("expected source balance 8550, got %.2f", source.CurrentBalance)
+	}
+
+	// Dest balance should be reversed (550 - 50 = 500) — INCOME reversal
+	dest := accountRepo.accounts[destID]
+	if dest.CurrentBalance != 500 {
+		t.Fatalf("expected dest balance 500, got %.2f", dest.CurrentBalance)
+	}
+
+	// Both should be cancelled
+	sourceTx, _ := txRepo.GetByID(sourceTxID)
+	if sourceTx.Status != transaction.StatusCancelled {
+		t.Fatalf("expected source CANCELLED, got %s", sourceTx.Status)
+	}
+	linkedTx, _ := txRepo.GetByID(destTxID)
+	if linkedTx.Status != transaction.StatusCancelled {
+		t.Fatalf("expected linked CANCELLED, got %s", linkedTx.Status)
 	}
 }
