@@ -121,9 +121,12 @@ export default function WimHofPage() {
   // Active session overlay
   if (isActivePhase) {
     return (
-      <div className="fixed inset-0 z-50 bg-gradient-to-b from-gray-950 via-gray-900 to-gray-950 flex flex-col">
+      <div
+        className={`fixed inset-0 z-50 bg-gradient-to-b from-gray-950 via-gray-900 to-gray-950 flex flex-col ${state.phase === 'HOLD' ? 'cursor-pointer' : ''}`}
+        onClick={state.phase === 'HOLD' ? () => session.endHold() : undefined}
+      >
         {/* Top bar */}
-        <div className="flex items-center justify-between px-6 py-4">
+        <div className="flex items-center justify-between px-6 py-4" onClick={e => e.stopPropagation()}>
           <button
             onClick={() => { session.reset(); }}
             className="p-2 text-white/40 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
@@ -154,7 +157,7 @@ export default function WimHofPage() {
         </div>
 
         {/* Round progress dots */}
-        <div className="flex justify-center gap-2 px-6 pb-4">
+        <div className="flex justify-center gap-2 px-6 pb-4" onClick={e => e.stopPropagation()}>
           {Array.from({ length: state.totalRounds }, (_, i) => (
             <div
               key={i}
@@ -234,15 +237,7 @@ export default function WimHofPage() {
               )}
 
               {state.phase === 'HOLD' && (
-                <>
-                  <button
-                    onClick={() => session.endHold()}
-                    className="px-10 py-4 bg-red-600/20 border-2 border-red-400/40 hover:bg-red-600/30 active:scale-95 rounded-xl transition-all"
-                  >
-                    <span className="text-red-200 text-lg font-medium">Respirei</span>
-                  </button>
-                  <p className="text-white/40 text-sm">Segure a respiracao o maximo que conseguir</p>
-                </>
+                <p className="text-white/30 text-sm">Toque na tela quando precisar respirar</p>
               )}
 
               {state.phase === 'RECOVERY' && (
@@ -254,7 +249,7 @@ export default function WimHofPage() {
 
         {/* Retention times from previous rounds */}
         {state.retentionTimes.length > 0 && (
-          <div className="px-6 pb-6">
+          <div className="px-6 pb-6" onClick={e => e.stopPropagation()}>
             <div className="flex justify-center gap-4">
               {state.retentionTimes.map((time, i) => (
                 <div key={i} className="text-center">
