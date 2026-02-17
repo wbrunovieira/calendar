@@ -82,12 +82,12 @@ export function useWimHofSession() {
     setState(prev => ({ ...prev, currentBreath: 1 }));
 
     intervalRef.current = setInterval(() => {
+      let transitionToHold = false;
       setState(prev => {
         if (prev.phase !== 'BREATHING') return prev;
         const next = prev.currentBreath + 1;
         if (next > prev.breathsPerRound) {
-          clearTimer();
-          startHoldRef.current();
+          transitionToHold = true;
           return {
             ...prev,
             phase: 'HOLD' as Phase,
@@ -97,6 +97,11 @@ export function useWimHofSession() {
         }
         return { ...prev, currentBreath: next };
       });
+      // Side effects outside setState — clear breathing interval, start hold timer
+      if (transitionToHold) {
+        clearTimer();
+        startHoldRef.current();
+      }
     }, BREATH_INTERVAL_MS);
   };
 
@@ -157,10 +162,9 @@ export function useWimHofSession() {
   }, [clearTimer]);
 
   const skipToHold = useCallback(() => {
+    clearTimer();
     setState(prev => {
       if (prev.phase !== 'BREATHING' || prev.currentBreath === 0) return prev;
-      clearTimer();
-      startHoldRef.current();
       return {
         ...prev,
         phase: 'HOLD' as Phase,
@@ -168,6 +172,7 @@ export function useWimHofSession() {
         roundBreaths: [...prev.roundBreaths, prev.currentBreath],
       };
     });
+    startHoldRef.current();
   }, [clearTimer]);
 
   const endHold = useCallback(() => {
