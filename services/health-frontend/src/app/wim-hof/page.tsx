@@ -220,13 +220,16 @@ export default function WimHofPage() {
 
               {state.phase === 'BREATHING' && (
                 <>
-                  <button
-                    onClick={() => session.nextBreath()}
-                    className="w-48 h-48 rounded-full bg-cyan-600/20 border-2 border-cyan-400/40 hover:bg-cyan-600/30 active:scale-95 transition-all flex items-center justify-center"
-                  >
-                    <span className="text-cyan-200 text-lg font-medium">Respirar</span>
-                  </button>
-                  <p className="text-white/40 text-sm">Respire forte pelo nariz, solte pela boca</p>
+                  <p className="text-white/50 text-sm">Respire forte pelo nariz, solte pela boca</p>
+                  <p className="text-cyan-300/60 text-xs">Acompanhe o ritmo do pulso</p>
+                  {state.currentBreath > 0 && (
+                    <button
+                      onClick={() => session.skipToHold()}
+                      className="px-8 py-3 bg-red-600/20 border border-red-400/30 hover:bg-red-600/30 active:scale-95 rounded-xl transition-all"
+                    >
+                      <span className="text-red-300 text-base font-medium">Segurar agora</span>
+                    </button>
+                  )}
                 </>
               )}
 
@@ -394,7 +397,7 @@ export default function WimHofPage() {
           {/* Settings */}
           <div className="grid grid-cols-2 gap-4 text-left">
             <div>
-              <label className="block text-white/60 text-sm mb-1">Rounds</label>
+              <label className="block text-white/60 text-sm mb-1">Rounds de respiracao</label>
               <input
                 type="number"
                 inputMode="numeric"
@@ -404,9 +407,10 @@ export default function WimHofPage() {
                 max={10}
                 className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-center focus:outline-none focus:border-cyan-400/50"
               />
+              <p className="text-white/30 text-xs mt-1">Cada round: respirar + segurar + recuperar</p>
             </div>
             <div>
-              <label className="block text-white/60 text-sm mb-1">Respiracoes</label>
+              <label className="block text-white/60 text-sm mb-1">Respiracoes por round</label>
               <input
                 type="number"
                 inputMode="numeric"
@@ -416,6 +420,7 @@ export default function WimHofPage() {
                 max={60}
                 className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-center focus:outline-none focus:border-cyan-400/50"
               />
+              <p className="text-white/30 text-xs mt-1">Alvo — pode interromper antes</p>
             </div>
           </div>
 

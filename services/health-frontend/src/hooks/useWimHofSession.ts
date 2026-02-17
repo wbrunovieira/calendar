@@ -21,6 +21,7 @@ export interface WimHofSessionState {
 }
 
 const RECOVERY_DURATION = 15;
+const BREATH_INTERVAL_MS = 2000;
 
 const initialState: WimHofSessionState = {
   phase: 'SETUP',
@@ -49,7 +50,6 @@ export function useWimHofSession() {
     }
   }, []);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => clearTimer();
   }, [clearTimer]);
@@ -62,7 +62,45 @@ export function useWimHofSession() {
     setState(prev => ({ ...prev, breathsPerRound: Math.max(10, Math.min(60, n)) }));
   }, []);
 
-  const startRecoveryTimer = useCallback(() => {
+  // Use refs to break circular dependency between timer functions
+  const startBreathingRef = useRef<() => void>(() => {});
+  const startHoldRef = useRef<() => void>(() => {});
+  const startRecoveryRef = useRef<() => void>(() => {});
+
+  startHoldRef.current = () => {
+    clearTimer();
+    timerStartRef.current = Date.now();
+    intervalRef.current = setInterval(() => {
+      const elapsed = (Date.now() - timerStartRef.current) / 1000;
+      setState(s => ({ ...s, holdTimeSeconds: elapsed }));
+    }, 100);
+  };
+
+  startBreathingRef.current = () => {
+    clearTimer();
+    timerStartRef.current = Date.now();
+    setState(prev => ({ ...prev, currentBreath: 1 }));
+
+    intervalRef.current = setInterval(() => {
+      setState(prev => {
+        if (prev.phase !== 'BREATHING') return prev;
+        const next = prev.currentBreath + 1;
+        if (next > prev.breathsPerRound) {
+          clearTimer();
+          startHoldRef.current();
+          return {
+            ...prev,
+            phase: 'HOLD' as Phase,
+            holdTimeSeconds: 0,
+            roundBreaths: [...prev.roundBreaths, prev.currentBreath],
+          };
+        }
+        return { ...prev, currentBreath: next };
+      });
+    }, BREATH_INTERVAL_MS);
+  };
+
+  startRecoveryRef.current = () => {
     clearTimer();
     setState(prev => ({ ...prev, phase: 'RECOVERY', recoveryTimeSeconds: RECOVERY_DURATION }));
     timerStartRef.current = Date.now();
@@ -86,11 +124,19 @@ export function useWimHofSession() {
             recoveryTimeSeconds: 0,
           };
         });
+        setTimeout(() => {
+          setState(prev => {
+            if (prev.phase === 'BREATHING') {
+              startBreathingRef.current();
+            }
+            return prev;
+          });
+        }, 0);
       } else {
         setState(prev => ({ ...prev, recoveryTimeSeconds: Math.ceil(remaining) }));
       }
     }, 100);
-  }, [clearTimer]);
+  };
 
   const startSession = useCallback(() => {
     clearTimer();
@@ -107,30 +153,20 @@ export function useWimHofSession() {
       sessionStartTime: new Date(),
       sessionEndTime: null,
     }));
+    setTimeout(() => startBreathingRef.current(), 0);
   }, [clearTimer]);
 
-  const nextBreath = useCallback(() => {
+  const skipToHold = useCallback(() => {
     setState(prev => {
-      if (prev.phase !== 'BREATHING') return prev;
-      const next = prev.currentBreath + 1;
-      if (next >= prev.breathsPerRound) {
-        // Last breath — transition to HOLD
-        clearTimer();
-        timerStartRef.current = Date.now();
-        intervalRef.current = setInterval(() => {
-          const elapsed = (Date.now() - timerStartRef.current) / 1000;
-          setState(s => ({ ...s, holdTimeSeconds: elapsed }));
-        }, 100);
-
-        return {
-          ...prev,
-          phase: 'HOLD',
-          currentBreath: next,
-          holdTimeSeconds: 0,
-          roundBreaths: [...prev.roundBreaths, next],
-        };
-      }
-      return { ...prev, currentBreath: next };
+      if (prev.phase !== 'BREATHING' || prev.currentBreath === 0) return prev;
+      clearTimer();
+      startHoldRef.current();
+      return {
+        ...prev,
+        phase: 'HOLD' as Phase,
+        holdTimeSeconds: 0,
+        roundBreaths: [...prev.roundBreaths, prev.currentBreath],
+      };
     });
   }, [clearTimer]);
 
@@ -145,9 +181,8 @@ export function useWimHofSession() {
         holdTimeSeconds: retentionSeconds,
       };
     });
-    // Start recovery after state update
-    startRecoveryTimer();
-  }, [clearTimer, startRecoveryTimer]);
+    startRecoveryRef.current();
+  }, [clearTimer]);
 
   const setPushUpCount = useCallback((n: number) => {
     setState(prev => ({ ...prev, pushUpCount: Math.max(0, n) }));
@@ -212,7 +247,7 @@ export function useWimHofSession() {
     setTotalRounds,
     setBreathsPerRound,
     startSession,
-    nextBreath,
+    skipToHold,
     endHold,
     setPushUpCount,
     confirmPushUps,
