@@ -47,5 +47,5 @@ def test_after_save_retries_when_remaining():
 
 def test_after_save_stops_at_max_retries():
     """After max retries, go to format_reply even if remaining."""
-    state = {"remaining_count": 2, "retry_round": 5}
+    state = {"remaining_count": 2, "retry_round": 3}
     assert _after_save(state) == "format_reply"

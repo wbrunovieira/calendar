@@ -12,7 +12,7 @@ from __future__ import annotations
 QUERY_PLANNER_SYSTEM = """\
 You generate web search queries to find B2B leads for a CRM.
 
-Return ONLY a JSON array of 3-5 search query strings. No explanations.
+Return ONLY a JSON array of exactly 3 search query strings. No explanations.
 
 Keep queries SHORT (5-8 words max) — long queries perform poorly in web search.
 
@@ -30,7 +30,7 @@ QUERY_PLANNER_USER = """\
 {existing_leads}
 
 ## Instructions
-Generate 3-5 diverse web search queries to find NEW private/commercial companies \
+Generate exactly 3 diverse web search queries to find NEW private/commercial companies \
 matching this ICP. The queries should:
 - Be in the language appropriate for {country}
 - Include {country} in each query

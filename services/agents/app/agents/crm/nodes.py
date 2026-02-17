@@ -110,7 +110,7 @@ async def _tavily_search(queries: list[str], max_results: int = 5) -> list[dict]
                         "api_key": settings.tavily_api_key,
                         "query": query,
                         "max_results": max_results,
-                        "search_depth": "advanced",
+                        "search_depth": "basic",
                         "include_answer": True,
                     },
                 )
@@ -190,7 +190,7 @@ async def _plan_search_queries(
         if generation:
             generation.end(output=queries, usage=usage)
         if isinstance(queries, list) and all(isinstance(q, str) for q in queries):
-            return queries[:5]
+            return queries[:3]
     except Exception:
         logger.warning("Query planner failed, using fallback queries")
         if generation:
