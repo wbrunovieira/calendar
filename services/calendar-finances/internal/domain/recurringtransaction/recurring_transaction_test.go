@@ -377,9 +377,9 @@ func TestCalculateNextOccurrence_Monthly_MultipleMonthsPassed(t *testing.T) {
 }
 
 func TestCalculateNextOccurrence_Weekly(t *testing.T) {
-	// Given: A weekly recurring transaction starting Monday Jan 6th
-	// When: Today is Jan 26th (Sunday)
-	// Then: Next occurrence should be Monday Jan 27th
+	// Given: A weekly recurring transaction starting Monday Jan 5th
+	// When: Today is Jan 26th (Monday — same weekday as start)
+	// Then: Next occurrence should be today (Jan 26th) — alert should show
 
 	startOn := time.Date(2026, time.January, 5, 0, 0, 0, 0, time.UTC) // Monday
 	nextOccurrence := time.Date(2026, time.January, 5, 0, 0, 0, 0, time.UTC)
@@ -398,12 +398,11 @@ func TestCalculateNextOccurrence_Weekly(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	referenceDate := time.Date(2026, time.January, 26, 0, 0, 0, 0, time.UTC) // Sunday
+	referenceDate := time.Date(2026, time.January, 26, 0, 0, 0, 0, time.UTC) // Monday
 	calculatedNext := rt.CalculateNextOccurrence(referenceDate)
 
-	// Jan 5 + 3 weeks = Jan 26, but that's today, so next is Jan 5 + 4 weeks = Feb 2
-	// Wait, let me recalculate: Jan 5, 12, 19, 26 (today), so next is Feb 2
-	expected := time.Date(2026, time.February, 2, 0, 0, 0, 0, time.UTC)
+	// Jan 26 is the target weekday (Monday), so next occurrence is today
+	expected := time.Date(2026, time.January, 26, 0, 0, 0, 0, time.UTC)
 
 	if !calculatedNext.Equal(expected) {
 		t.Errorf("expected %v, got %v", expected, calculatedNext)
@@ -413,7 +412,7 @@ func TestCalculateNextOccurrence_Weekly(t *testing.T) {
 func TestCalculateNextOccurrence_Daily(t *testing.T) {
 	// Given: A daily recurring transaction starting Jan 1st
 	// When: Today is Jan 26th
-	// Then: Next occurrence should be Jan 27th
+	// Then: Next occurrence should be today (Jan 26th) — daily means every day including today
 
 	startOn := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	nextOccurrence := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
@@ -435,7 +434,7 @@ func TestCalculateNextOccurrence_Daily(t *testing.T) {
 	referenceDate := time.Date(2026, time.January, 26, 0, 0, 0, 0, time.UTC)
 	calculatedNext := rt.CalculateNextOccurrence(referenceDate)
 
-	expected := time.Date(2026, time.January, 27, 0, 0, 0, 0, time.UTC)
+	expected := time.Date(2026, time.January, 26, 0, 0, 0, 0, time.UTC)
 
 	if !calculatedNext.Equal(expected) {
 		t.Errorf("expected %v, got %v", expected, calculatedNext)
@@ -898,5 +897,103 @@ func TestCalculateNextOccurrence_OtherShortMonths_Day31(t *testing.T) {
 
 	if !calculatedNext.Equal(expectedNext) {
 		t.Fatalf("expected next occurrence %v, got %v", expectedNext, calculatedNext)
+	}
+}
+
+// =============================================================================
+// Day-of Occurrence Tests (bug fix: alerts must show on the day of the recurring)
+// =============================================================================
+
+func TestCalculateNextOccurrence_Monthly_OnTheDayOf_WithTimeComponent(t *testing.T) {
+	// BUG FIX: On Feb 14 at 10:00 BRT (13:00 UTC), a recurring on day 14 should
+	// return Feb 14, NOT March 14. The old code used time-aware comparison
+	// (candidate midnight UTC < referenceDate 13:00 UTC → jumped to next month).
+
+	startOn := time.Date(2026, time.January, 14, 0, 0, 0, 0, time.UTC)
+	nextOccurrence := time.Date(2026, time.January, 14, 0, 0, 0, 0, time.UTC)
+
+	rt, err := New(CreateParams{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         24.90,
+		Description:    "Amazon Kindle Unlimited",
+		RecurrenceRule: "FREQ=MONTHLY;BYMONTHDAY=14",
+		StartOn:        startOn,
+		NextOccurrence: nextOccurrence,
+		Status:         StatusActive,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Simulate time.Now() returning 10:00 BRT (13:00 UTC) on Feb 14
+	referenceDate := time.Date(2026, time.February, 14, 13, 0, 0, 0, time.UTC)
+	calculatedNext := rt.CalculateNextOccurrence(referenceDate)
+
+	// Must return Feb 14, NOT March 14
+	expected := time.Date(2026, time.February, 14, 0, 0, 0, 0, time.UTC)
+
+	if !calculatedNext.Equal(expected) {
+		t.Fatalf("expected %v (today), got %v (should not skip to next month)", expected, calculatedNext)
+	}
+}
+
+func TestCalculateNextOccurrence_Monthly_DayAfter_ReturnsNextMonth(t *testing.T) {
+	// On Feb 15, a recurring on day 14 should return March 14
+
+	startOn := time.Date(2026, time.January, 14, 0, 0, 0, 0, time.UTC)
+	nextOccurrence := time.Date(2026, time.January, 14, 0, 0, 0, 0, time.UTC)
+
+	rt, err := New(CreateParams{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         24.90,
+		Description:    "Amazon Kindle Unlimited",
+		RecurrenceRule: "FREQ=MONTHLY;BYMONTHDAY=14",
+		StartOn:        startOn,
+		NextOccurrence: nextOccurrence,
+		Status:         StatusActive,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	referenceDate := time.Date(2026, time.February, 15, 10, 30, 0, 0, time.UTC)
+	calculatedNext := rt.CalculateNextOccurrence(referenceDate)
+
+	expected := time.Date(2026, time.March, 14, 0, 0, 0, 0, time.UTC)
+
+	if !calculatedNext.Equal(expected) {
+		t.Fatalf("expected %v, got %v", expected, calculatedNext)
+	}
+}
+
+func TestCalculateNextOccurrence_Monthly_DayBefore_ReturnsSameMonth(t *testing.T) {
+	// On Feb 13, a recurring on day 14 should return Feb 14
+
+	startOn := time.Date(2026, time.January, 14, 0, 0, 0, 0, time.UTC)
+	nextOccurrence := time.Date(2026, time.January, 14, 0, 0, 0, 0, time.UTC)
+
+	rt, err := New(CreateParams{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         24.90,
+		Description:    "Amazon Kindle Unlimited",
+		RecurrenceRule: "FREQ=MONTHLY;BYMONTHDAY=14",
+		StartOn:        startOn,
+		NextOccurrence: nextOccurrence,
+		Status:         StatusActive,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	referenceDate := time.Date(2026, time.February, 13, 23, 59, 0, 0, time.UTC)
+	calculatedNext := rt.CalculateNextOccurrence(referenceDate)
+
+	expected := time.Date(2026, time.February, 14, 0, 0, 0, 0, time.UTC)
+
+	if !calculatedNext.Equal(expected) {
+		t.Fatalf("expected %v, got %v", expected, calculatedNext)
 	}
 }

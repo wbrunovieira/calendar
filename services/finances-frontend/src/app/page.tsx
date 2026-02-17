@@ -451,13 +451,14 @@ export default function FinancesPage() {
         throw new Error('Erro ao criar transacao');
       }
 
-      // Refresh transactions to update the alerts
+      // Refresh transactions and balances to update the alerts
       await fetchTransactions(selectedProfileId, transactionFilters);
+      await fetchBankAccounts();
     } catch (error) {
       console.error('Erro ao confirmar recorrente:', error);
       alert('Erro ao confirmar pagamento');
     }
-  }, [selectedProfileId, filteredAccounts, transactionFilters, fetchTransactions]);
+  }, [selectedProfileId, filteredAccounts, transactionFilters, fetchTransactions, fetchBankAccounts]);
 
   return (
     <AppLayout>

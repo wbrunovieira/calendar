@@ -197,39 +197,47 @@ func (r *RecurringTransaction) CalculateNextOccurrence(referenceDate time.Time) 
 }
 
 func (r *RecurringTransaction) calculateNextDaily(referenceDate time.Time) time.Time {
-	// Start from the day after reference date
-	next := time.Date(
-		referenceDate.Year(), referenceDate.Month(), referenceDate.Day()+1,
+	// Return today (daily means every day including today)
+	return time.Date(
+		referenceDate.Year(), referenceDate.Month(), referenceDate.Day(),
 		0, 0, 0, 0, time.UTC,
 	)
-	return next
 }
 
 func (r *RecurringTransaction) calculateNextWeekly(referenceDate time.Time) time.Time {
-	// Get the weekday from StartOn
+	// Normalize to date-only
+	refDate := time.Date(referenceDate.Year(), referenceDate.Month(), referenceDate.Day(), 0, 0, 0, 0, time.UTC)
 	targetWeekday := r.StartOn.Weekday()
 
-	// Find the next occurrence of that weekday after referenceDate
-	next := referenceDate
+	// If today is the target weekday, return today
+	if refDate.Weekday() == targetWeekday {
+		return refDate
+	}
+
+	// Find the next occurrence of that weekday
+	next := refDate
 	for {
 		next = next.AddDate(0, 0, 1)
 		if next.Weekday() == targetWeekday {
-			return time.Date(next.Year(), next.Month(), next.Day(), 0, 0, 0, 0, time.UTC)
+			return next
 		}
 	}
 }
 
 func (r *RecurringTransaction) calculateNextMonthly(referenceDate time.Time, dayOfMonth int) time.Time {
+	// Normalize reference to date-only (strip time) to avoid time-of-day issues
+	refDate := time.Date(referenceDate.Year(), referenceDate.Month(), referenceDate.Day(), 0, 0, 0, 0, time.UTC)
+
 	// Start with the target day in the reference month
-	year := referenceDate.Year()
-	month := referenceDate.Month()
+	year := refDate.Year()
+	month := refDate.Month()
 
 	// Create a date for the target day in the current month, clamped to last day of month
 	clampedDay := clampDayToMonth(year, month, dayOfMonth)
 	candidate := time.Date(year, month, clampedDay, 0, 0, 0, 0, time.UTC)
 
-	// If the candidate is after the reference date, that's our next occurrence
-	if candidate.After(referenceDate) {
+	// If the candidate is today or in the future, that's our next occurrence
+	if !candidate.Before(refDate) {
 		return candidate
 	}
 
