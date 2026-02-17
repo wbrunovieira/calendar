@@ -48,6 +48,11 @@ func RegisterHealthRoutes(router *mux.Router, db *sql.DB) {
 	router.HandleFunc("/activities/{id}", h.GetActivity).Methods("GET")
 	router.HandleFunc("/activities/{id}", h.UpdateActivity).Methods("PUT")
 	router.HandleFunc("/activities/{id}", h.DeleteActivity).Methods("DELETE")
+
+	// Body Measurements (weight history)
+	router.HandleFunc("/body-measurements", h.ListBodyMeasurements).Methods("GET")
+	router.HandleFunc("/body-measurements", h.CreateBodyMeasurement).Methods("POST")
+	router.HandleFunc("/body-measurements/{id}", h.DeleteBodyMeasurement).Methods("DELETE")
 }
 
 type HealthHandlers struct {

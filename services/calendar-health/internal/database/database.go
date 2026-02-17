@@ -193,6 +193,24 @@ func RunMigrations(db *sql.DB) error {
 					CHECK (activity_type IN ('BREATHING','COLD_EXPOSURE','MEDITATION','HIIT','CARDIO','STRETCHING','OTHER','WIM_HOF'));
 			END $$`,
 		},
+		{
+			version:     2,
+			description: "create body_measurements table for weight history",
+			sql: `CREATE TABLE IF NOT EXISTS health.body_measurements (
+				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+				profile_id UUID NOT NULL REFERENCES health.profiles(id) ON DELETE CASCADE,
+				measured_at DATE NOT NULL,
+				weight NUMERIC(5, 2),
+				body_fat_pct NUMERIC(4, 1),
+				notes TEXT,
+				created_at TIMESTAMP NOT NULL DEFAULT NOW()
+			)`,
+		},
+		{
+			version:     3,
+			description: "add index on body_measurements profile+date",
+			sql: `CREATE INDEX IF NOT EXISTS idx_health_body_measurements_profile_date ON health.body_measurements(profile_id, measured_at DESC)`,
+		},
 	}
 
 	// Create migration tracking table

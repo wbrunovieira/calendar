@@ -129,6 +129,16 @@ export interface PersonalRecord {
   createdAt: string;
 }
 
+export interface BodyMeasurement {
+  id: string;
+  profileId: string;
+  measuredAt: string;
+  weight?: number;
+  bodyFatPct?: number;
+  notes?: string;
+  createdAt: string;
+}
+
 // Activity types
 export const ACTIVITY_TYPES = [
   { value: 'WIM_HOF', label: 'Wim Hof Method', icon: '🧊' },

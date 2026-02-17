@@ -7,6 +7,7 @@ import {
   ExerciseSet,
   Activity,
   PersonalRecord,
+  BodyMeasurement,
   WorkoutFormData,
   ActivityFormData,
   ExerciseFormData,
@@ -192,6 +193,21 @@ export const activitiesApi = {
     }),
   delete: (id: string) =>
     fetchApi<void>(`/activities/${id}`, {
+      method: 'DELETE',
+    }),
+};
+
+// Body Measurements
+export const bodyMeasurementsApi = {
+  list: (profileId: string) =>
+    fetchApi<BodyMeasurement[]>(`/body-measurements?profileId=${profileId}`),
+  create: (data: { profileId: string; measuredAt: string; weight?: number; bodyFatPct?: number; notes?: string }) =>
+    fetchApi<BodyMeasurement>('/body-measurements', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    fetchApi<void>(`/body-measurements/${id}`, {
       method: 'DELETE',
     }),
 };

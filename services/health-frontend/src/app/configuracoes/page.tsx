@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
-import { profilesApi, exerciseTypesApi } from '@/lib/api';
-import type { Profile, ExerciseType } from '@/types/health';
+import { profilesApi, exerciseTypesApi, bodyMeasurementsApi } from '@/lib/api';
+import type { Profile, ExerciseType, BodyMeasurement } from '@/types/health';
 
 interface Calendar {
   id: string;
@@ -29,6 +29,15 @@ export default function ConfiguracoesPage() {
     targetWeight: '',
   });
 
+  const [measurements, setMeasurements] = useState<BodyMeasurement[]>([]);
+  const [showMeasurementForm, setShowMeasurementForm] = useState(false);
+  const [measurementForm, setMeasurementForm] = useState({
+    measuredAt: new Date().toISOString().split('T')[0],
+    weight: '',
+    bodyFatPct: '',
+    notes: '',
+  });
+
   const [showTypeForm, setShowTypeForm] = useState(false);
   const [typeForm, setTypeForm] = useState({ name: '', description: '', icon: '' });
 
@@ -45,9 +54,20 @@ export default function ConfiguracoesPage() {
       setProfiles(profilesData);
       setExerciseTypes(typesData);
 
+      // Load measurements for first profile
+      if (profilesData.length > 0) {
+        try {
+          const m = await bodyMeasurementsApi.list(profilesData[0].id);
+          setMeasurements(m);
+        } catch (e) {
+          console.warn('Could not load measurements:', e);
+        }
+      }
+
       // Load calendars from calendar-core
       try {
-        const response = await fetch('http://localhost:3334/calendars');
+        const calendarApiUrl = process.env.NEXT_PUBLIC_CALENDAR_API_URL || 'http://localhost:3334';
+        const response = await fetch(`${calendarApiUrl}/calendars`);
         const data = await response.json();
         setCalendars(data.data || []);
       } catch (e) {
@@ -143,6 +163,46 @@ export default function ConfiguracoesPage() {
     } catch (error) {
       console.error('Error deleting type:', error);
       alert('Erro ao excluir tipo');
+    }
+  }
+
+  async function handleMeasurementSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (profiles.length === 0) return;
+    try {
+      await bodyMeasurementsApi.create({
+        profileId: profiles[0].id,
+        measuredAt: measurementForm.measuredAt,
+        weight: measurementForm.weight ? parseFloat(measurementForm.weight) : undefined,
+        bodyFatPct: measurementForm.bodyFatPct ? parseFloat(measurementForm.bodyFatPct) : undefined,
+        notes: measurementForm.notes || undefined,
+      });
+      const m = await bodyMeasurementsApi.list(profiles[0].id);
+      setMeasurements(m);
+      setShowMeasurementForm(false);
+      setMeasurementForm({
+        measuredAt: new Date().toISOString().split('T')[0],
+        weight: '',
+        bodyFatPct: '',
+        notes: '',
+      });
+    } catch (error) {
+      console.error('Error saving measurement:', error);
+      alert('Erro ao salvar medicao');
+    }
+  }
+
+  async function handleDeleteMeasurement(id: string) {
+    if (!confirm('Excluir esta medicao?')) return;
+    try {
+      await bodyMeasurementsApi.delete(id);
+      if (profiles.length > 0) {
+        const m = await bodyMeasurementsApi.list(profiles[0].id);
+        setMeasurements(m);
+      }
+    } catch (error) {
+      console.error('Error deleting measurement:', error);
+      alert('Erro ao excluir medicao');
     }
   }
 
@@ -320,6 +380,131 @@ export default function ConfiguracoesPage() {
             </div>
           )}
         </div>
+
+        {/* Historico de Peso */}
+        {profiles.length > 0 && (
+          <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-xl font-bold text-white">Historico de Peso</h2>
+                <p className="text-white/60 text-sm">Acompanhe sua evolucao</p>
+              </div>
+              <button
+                onClick={() => setShowMeasurementForm(true)}
+                className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-sm font-medium"
+              >
+                + Registrar Peso
+              </button>
+            </div>
+
+            {showMeasurementForm && (
+              <form onSubmit={handleMeasurementSubmit} className="bg-white/5 rounded-lg p-4 mb-4 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-white/60 text-sm mb-1">Data *</label>
+                    <input
+                      type="date"
+                      value={measurementForm.measuredAt}
+                      onChange={(e) => setMeasurementForm({ ...measurementForm, measuredAt: e.target.value })}
+                      className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-white/60 text-sm mb-1">Peso (kg)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={measurementForm.weight}
+                      onChange={(e) => setMeasurementForm({ ...measurementForm, weight: e.target.value })}
+                      className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white"
+                      placeholder="82.5"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-white/60 text-sm mb-1">Gordura (%)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={measurementForm.bodyFatPct}
+                      onChange={(e) => setMeasurementForm({ ...measurementForm, bodyFatPct: e.target.value })}
+                      className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white"
+                      placeholder="15.0"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-white/60 text-sm mb-1">Notas</label>
+                    <input
+                      type="text"
+                      value={measurementForm.notes}
+                      onChange={(e) => setMeasurementForm({ ...measurementForm, notes: e.target.value })}
+                      className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white"
+                      placeholder="Manha, em jejum"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-sm font-medium"
+                  >
+                    Registrar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowMeasurementForm(false)}
+                    className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {measurements.length === 0 ? (
+              <div className="text-center py-8 text-white/60">
+                Nenhuma medicao registrada. Registre seu peso para acompanhar a evolucao.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {measurements.map((m, i) => {
+                  const prev = measurements[i + 1];
+                  const diff = m.weight && prev?.weight ? m.weight - prev.weight : null;
+                  return (
+                    <div
+                      key={m.id}
+                      className="bg-white/5 border border-white/10 rounded-lg px-4 py-3 flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-4">
+                        <span className="text-white/50 text-sm w-24">{m.measuredAt}</span>
+                        <span className="text-white font-medium">
+                          {m.weight ? `${m.weight} kg` : '-'}
+                        </span>
+                        {diff !== null && (
+                          <span className={`text-sm ${diff < 0 ? 'text-green-400' : diff > 0 ? 'text-red-400' : 'text-white/40'}`}>
+                            {diff > 0 ? '+' : ''}{diff.toFixed(1)}
+                          </span>
+                        )}
+                        {m.bodyFatPct && (
+                          <span className="text-white/50 text-sm">{m.bodyFatPct}% gordura</span>
+                        )}
+                        {m.notes && (
+                          <span className="text-white/40 text-sm">{m.notes}</span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleDeleteMeasurement(m.id)}
+                        className="p-1 hover:bg-red-500/20 rounded text-red-300 text-xs"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Tipos de Exercicio */}
         <div className="bg-white/5 border border-white/10 rounded-xl p-6">

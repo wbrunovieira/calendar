@@ -160,6 +160,7 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_URL: https://calendar-health.wbdigitalsolutions.com
+        NEXT_PUBLIC_CALENDAR_API_URL: https://calendar-api.wbdigitalsolutions.com
     container_name: health-frontend
     ports:
       - "127.0.0.1:3004:3004"
