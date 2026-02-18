@@ -38,7 +38,7 @@ const initialState: WimHofSessionState = {
 export function useWimHofSession() {
   const [state, setState] = useState<WimHofSessionState>(initialState);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const timerStartRef = useRef<number>(0);
+  const holdStartRef = useRef<number>(0);
 
   const clearTimer = useCallback(() => {
     if (intervalRef.current) {
@@ -47,9 +47,45 @@ export function useWimHofSession() {
     }
   }, []);
 
+  // Start timers based on phase changes
   useEffect(() => {
+    clearTimer();
+
+    if (state.phase === 'BREATHING' && state.sessionStartTime) {
+      // Auto-count breaths every 2s
+      setState(prev => ({ ...prev, currentBreath: 1 }));
+      intervalRef.current = setInterval(() => {
+        setState(prev => {
+          if (prev.phase !== 'BREATHING') return prev;
+          const next = prev.currentBreath + 1;
+          if (next > prev.breathsPerRound) {
+            // Reached target — transition to HOLD
+            return {
+              ...prev,
+              phase: 'HOLD' as Phase,
+              holdTimeSeconds: 0,
+              roundBreaths: [...prev.roundBreaths, prev.currentBreath],
+            };
+          }
+          return { ...prev, currentBreath: next };
+        });
+      }, BREATH_INTERVAL_MS);
+    }
+
+    if (state.phase === 'HOLD') {
+      // Stopwatch counting up
+      holdStartRef.current = Date.now();
+      intervalRef.current = setInterval(() => {
+        const elapsed = (Date.now() - holdStartRef.current) / 1000;
+        setState(prev => {
+          if (prev.phase !== 'HOLD') return prev;
+          return { ...prev, holdTimeSeconds: elapsed };
+        });
+      }, 100);
+    }
+
     return () => clearTimer();
-  }, [clearTimer]);
+  }, [state.phase, state.currentRound]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setTotalRounds = useCallback((n: number) => {
     setState(prev => ({ ...prev, totalRounds: Math.max(1, Math.min(10, n)) }));
@@ -59,48 +95,7 @@ export function useWimHofSession() {
     setState(prev => ({ ...prev, breathsPerRound: Math.max(10, Math.min(60, n)) }));
   }, []);
 
-  // Refs to break circular dependency
-  const startBreathingRef = useRef<() => void>(() => {});
-  const startHoldRef = useRef<() => void>(() => {});
-
-  startHoldRef.current = () => {
-    clearTimer();
-    timerStartRef.current = Date.now();
-    intervalRef.current = setInterval(() => {
-      const elapsed = (Date.now() - timerStartRef.current) / 1000;
-      setState(s => ({ ...s, holdTimeSeconds: elapsed }));
-    }, 100);
-  };
-
-  startBreathingRef.current = () => {
-    clearTimer();
-    setState(prev => ({ ...prev, currentBreath: 1 }));
-
-    intervalRef.current = setInterval(() => {
-      let transitionToHold = false;
-      setState(prev => {
-        if (prev.phase !== 'BREATHING') return prev;
-        const next = prev.currentBreath + 1;
-        if (next > prev.breathsPerRound) {
-          transitionToHold = true;
-          return {
-            ...prev,
-            phase: 'HOLD' as Phase,
-            holdTimeSeconds: 0,
-            roundBreaths: [...prev.roundBreaths, prev.currentBreath],
-          };
-        }
-        return { ...prev, currentBreath: next };
-      });
-      if (transitionToHold) {
-        clearTimer();
-        startHoldRef.current();
-      }
-    }, BREATH_INTERVAL_MS);
-  };
-
   const startSession = useCallback(() => {
-    clearTimer();
     setState(prev => ({
       ...prev,
       phase: 'BREATHING',
@@ -113,11 +108,9 @@ export function useWimHofSession() {
       sessionStartTime: new Date(),
       sessionEndTime: null,
     }));
-    setTimeout(() => startBreathingRef.current(), 0);
-  }, [clearTimer]);
+  }, []);
 
   const skipToHold = useCallback(() => {
-    clearTimer();
     setState(prev => {
       if (prev.phase !== 'BREATHING' || prev.currentBreath === 0) return prev;
       return {
@@ -127,11 +120,9 @@ export function useWimHofSession() {
         roundBreaths: [...prev.roundBreaths, prev.currentBreath],
       };
     });
-    startHoldRef.current();
-  }, [clearTimer]);
+  }, []);
 
   const endHold = useCallback(() => {
-    clearTimer();
     setState(prev => {
       if (prev.phase !== 'HOLD') return prev;
       const retentionSeconds = Math.round(prev.holdTimeSeconds);
@@ -153,16 +144,7 @@ export function useWimHofSession() {
         holdTimeSeconds: retentionSeconds,
       };
     });
-    // Start next breathing round if not last
-    setTimeout(() => {
-      setState(prev => {
-        if (prev.phase === 'BREATHING') {
-          startBreathingRef.current();
-        }
-        return prev;
-      });
-    }, 0);
-  }, [clearTimer]);
+  }, []);
 
   const setPushUpCount = useCallback((n: number) => {
     setState(prev => ({ ...prev, pushUpCount: Math.max(0, n) }));
