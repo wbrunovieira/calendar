@@ -14,12 +14,11 @@ function formatTime(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-function BreathingCircle({ phase, breathCount, totalBreaths, holdTime, recoveryTime }: {
+function BreathingCircle({ phase, breathCount, totalBreaths, holdTime }: {
   phase: Phase;
   breathCount: number;
   totalBreaths: number;
   holdTime: number;
-  recoveryTime: number;
 }) {
   const getCircleStyle = () => {
     switch (phase) {
@@ -27,38 +26,22 @@ function BreathingCircle({ phase, breathCount, totalBreaths, holdTime, recoveryT
         return 'border-cyan-400/60 shadow-[0_0_30px_rgba(34,211,238,0.2)] animate-[breathe-pulse_2s_ease-in-out_infinite]';
       case 'HOLD':
         return 'border-red-400/60 shadow-[0_0_30px_rgba(239,68,68,0.3)] animate-[hold-glow_2s_ease-in-out_infinite] scale-100';
-      case 'RECOVERY':
-        return 'border-emerald-400/60 shadow-[0_0_30px_rgba(52,211,153,0.2)] scale-90';
       default:
         return 'border-white/20';
     }
   };
 
-  const getCenterContent = () => {
-    switch (phase) {
-      case 'BREATHING':
-        return (
-          <>
-            <span className="text-5xl font-bold text-cyan-300">{breathCount}</span>
-            <span className="text-lg text-white/50">/ {totalBreaths}</span>
-          </>
-        );
-      case 'HOLD':
-        return (
-          <span className="text-5xl font-bold text-red-300 font-mono">{formatTime(holdTime)}</span>
-        );
-      case 'RECOVERY':
-        return (
-          <span className="text-5xl font-bold text-emerald-300 font-mono">{recoveryTime}s</span>
-        );
-      default:
-        return null;
-    }
-  };
-
   return (
     <div className={`w-56 h-56 rounded-full border-4 flex flex-col items-center justify-center transition-all duration-300 ${getCircleStyle()}`}>
-      {getCenterContent()}
+      {phase === 'BREATHING' && (
+        <>
+          <span className="text-5xl font-bold text-cyan-300">{breathCount}</span>
+          <span className="text-lg text-white/50">/ {totalBreaths}</span>
+        </>
+      )}
+      {phase === 'HOLD' && (
+        <span className="text-5xl font-bold text-red-300 font-mono">{formatTime(holdTime)}</span>
+      )}
     </div>
   );
 }
@@ -116,7 +99,7 @@ export default function WimHofPage() {
     }
   }, [selectedProfile, rating, notes, session, router]);
 
-  const isActivePhase = ['BREATHING', 'HOLD', 'RECOVERY', 'PUSHUPS'].includes(state.phase);
+  const isActivePhase = ['BREATHING', 'HOLD', 'PUSHUPS'].includes(state.phase);
 
   // Active session overlay
   if (isActivePhase) {
@@ -146,9 +129,6 @@ export default function WimHofPage() {
             )}
             {state.phase === 'HOLD' && (
               <span className="px-3 py-1 bg-red-500/20 text-red-300 rounded-full text-sm">Retencao</span>
-            )}
-            {state.phase === 'RECOVERY' && (
-              <span className="px-3 py-1 bg-emerald-500/20 text-emerald-300 rounded-full text-sm">Recuperacao</span>
             )}
             {state.phase === 'PUSHUPS' && (
               <span className="px-3 py-1 bg-amber-500/20 text-amber-300 rounded-full text-sm">Flexoes</span>
@@ -218,7 +198,6 @@ export default function WimHofPage() {
                 breathCount={state.currentBreath}
                 totalBreaths={state.breathsPerRound}
                 holdTime={state.holdTimeSeconds}
-                recoveryTime={state.recoveryTimeSeconds}
               />
 
               {state.phase === 'BREATHING' && (
@@ -238,10 +217,6 @@ export default function WimHofPage() {
 
               {state.phase === 'HOLD' && (
                 <p className="text-white/30 text-sm">Toque na tela quando precisar respirar</p>
-              )}
-
-              {state.phase === 'RECOVERY' && (
-                <p className="text-emerald-300/80 text-lg">Inspire fundo e segure...</p>
               )}
             </>
           )}
@@ -402,7 +377,7 @@ export default function WimHofPage() {
                 max={10}
                 className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-center focus:outline-none focus:border-cyan-400/50"
               />
-              <p className="text-white/30 text-xs mt-1">Cada round: respirar + segurar + recuperar</p>
+              <p className="text-white/30 text-xs mt-1">Cada round: respirar + segurar</p>
             </div>
             <div>
               <label className="block text-white/60 text-sm mb-1">Respiracoes por round</label>
