@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.agents.crm.graph import (
     _after_investigate,
+    _after_load_icp,
     _after_save,
     build_crm_graph,
 )
@@ -61,3 +62,21 @@ def test_after_save_retries_when_not_saturated():
     """When search is NOT saturated and rounds left, continue retrying."""
     state = {"remaining_count": 3, "retry_round": 1, "search_saturated": False}
     assert _after_save(state) == "investigate_leads"
+
+
+def test_after_load_icp_skips_when_excess_covers_count():
+    """When excess cache fully covers requested count, skip to format_reply."""
+    state = {"created_leads": [{"lead": {}}], "remaining_count": 0}
+    assert _after_load_icp(state) == "format_reply"
+
+
+def test_after_load_icp_continues_when_no_excess():
+    """Normal flow — no excess, continue to investigate."""
+    state = {}
+    assert _after_load_icp(state) == "investigate_leads"
+
+
+def test_after_load_icp_continues_when_excess_partial():
+    """When excess only partially covers count, continue investigating."""
+    state = {"created_leads": [{"lead": {}}], "remaining_count": 3}
+    assert _after_load_icp(state) == "investigate_leads"

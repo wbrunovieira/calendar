@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from typing import Any
 
@@ -27,6 +28,76 @@ from app.clients import crm
 from app.config import settings
 
 logger = logging.getLogger("agents")
+
+# ── Excess leads cache (persist overshoot across searches) ───
+
+_EXCESS_DIR = "/tmp/crm_excess"
+
+
+def _excess_path(icp_id: str) -> str:
+    return os.path.join(_EXCESS_DIR, f"{icp_id}.json")
+
+
+def _save_excess(icp_id: str, items: list[dict]) -> None:
+    """Persist excess approved leads for future searches."""
+    os.makedirs(_EXCESS_DIR, exist_ok=True)
+    with open(_excess_path(icp_id), "w") as f:
+        json.dump(items, f)
+    logger.info("Cached %d excess leads for ICP %s", len(items), icp_id)
+
+
+def _load_excess(icp_id: str) -> list[dict] | None:
+    """Load and consume cached excess leads. Returns None if no cache."""
+    path = _excess_path(icp_id)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        os.remove(path)
+        return data if data else None
+    except Exception:
+        logger.warning("Failed to load excess cache for ICP %s", icp_id)
+        return None
+
+
+async def _save_excess_to_crm(
+    excess: list[dict], icp_id: str, max_count: int, existing_leads: list[str],
+) -> tuple[list[dict], list[dict]]:
+    """Save cached excess leads to CRM. Returns (created, remaining_excess)."""
+    created: list[dict] = []
+    remaining: list[dict] = []
+    for item in excess:
+        if len(created) >= max_count:
+            remaining.append(item)
+            continue
+        lead_data = item.get("lead", {})
+        # Skip if somehow already in CRM
+        bname = lead_data.get("businessName", "")
+        if bname and _is_duplicate(bname, existing_leads):
+            logger.info("Excess lead '%s' already in CRM, skipping", bname)
+            continue
+        try:
+            lead_result = await crm.create_lead(lead_data)
+            lead_id = lead_result.get("id", "")
+            if lead_id and icp_id:
+                try:
+                    await crm.link_lead_to_icp(lead_id, icp_id)
+                except Exception:
+                    logger.warning("Failed to link excess lead %s to ICP", lead_id)
+            saved_contacts = []
+            for contact in item.get("contacts", []):
+                try:
+                    cr = await crm.create_lead_contact(lead_id, contact)
+                    saved_contacts.append(cr)
+                except Exception:
+                    logger.warning("Failed to create contact for excess lead %s", lead_id)
+            created.append({"lead": lead_result, "contacts": saved_contacts, "supervisor_notes": "from_cache"})
+            logger.info("Saved cached excess lead: %s", bname)
+        except Exception:
+            logger.warning("Failed to save cached excess lead: %s", bname)
+    return created, remaining
+
 
 # ── Langfuse prompt helpers ─────────────────────────────────
 
@@ -401,7 +472,25 @@ async def load_icp_context(state: CRMLeadState) -> dict:
                 "source": "pre-loaded",
                 "existing_leads": len(existing_leads),
             })
-        return {"existing_leads": existing_leads}
+        result: dict = {"existing_leads": existing_leads}
+        original_count = state.get("count", 1)
+        excess = _load_excess(icp_id)
+        if excess:
+            created_from_excess, remaining_excess = await _save_excess_to_crm(
+                excess, icp_id, original_count, existing_leads,
+            )
+            if created_from_excess:
+                result["created_leads"] = created_from_excess
+                result["existing_leads"] = existing_leads + [
+                    c["lead"].get("businessName", "") for c in created_from_excess
+                    if c["lead"].get("businessName")
+                ]
+                remaining = original_count - len(created_from_excess)
+                result["remaining_count"] = max(remaining, 0)
+                logger.info("Used %d cached excess leads, remaining=%d", len(created_from_excess), max(remaining, 0))
+            if remaining_excess:
+                _save_excess(icp_id, remaining_excess)
+        return result
 
     try:
         icp = await crm.get_icp(icp_id)
@@ -424,7 +513,27 @@ async def load_icp_context(state: CRMLeadState) -> dict:
     if span:
         span.end(output={"icp_name": icp.get("name", ""), "existing_leads": len(existing_leads)})
 
-    return {"icp_context": icp, "existing_leads": existing_leads}
+    # Check for cached excess leads from previous overshoots
+    result: dict = {"icp_context": icp, "existing_leads": existing_leads}
+    original_count = state.get("count", 1)
+    excess = _load_excess(icp_id)
+    if excess:
+        created_from_excess, remaining_excess = await _save_excess_to_crm(
+            excess, icp_id, original_count, existing_leads,
+        )
+        if created_from_excess:
+            result["created_leads"] = created_from_excess
+            result["existing_leads"] = existing_leads + [
+                c["lead"].get("businessName", "") for c in created_from_excess
+                if c["lead"].get("businessName")
+            ]
+            remaining = original_count - len(created_from_excess)
+            result["remaining_count"] = max(remaining, 0)
+            logger.info("Used %d cached excess leads, remaining=%d", len(created_from_excess), max(remaining, 0))
+        if remaining_excess:
+            _save_excess(icp_id, remaining_excess)
+
+    return result
 
 
 async def investigate_leads(state: CRMLeadState) -> dict:
@@ -950,14 +1059,22 @@ async def save_to_crm(state: CRMLeadState) -> dict:
     previously_created = state.get("created_leads", [])
     existing_leads = state.get("existing_leads", [])
 
-    span = trace.span(name="save_to_crm", input={"approved_count": len(approved)}) if trace else None
+    slots_available = original_count - len(previously_created)
+    span = trace.span(name="save_to_crm", input={"approved_count": len(approved), "slots": slots_available}) if trace else None
 
     created_leads: list[dict] = list(previously_created)
     new_names: list[str] = []
+    excess_items: list[dict] = []
 
     for idx in approved:
         lead_data = _sanitize_lead_data(leads[idx])
         lead_contacts = contacts[idx] if idx < len(contacts) else []
+
+        # Cap at original_count — store excess for future searches
+        if len(new_names) >= slots_available:
+            sanitized_contacts = [_sanitize_contact_data(c) for c in lead_contacts]
+            excess_items.append({"lead": lead_data, "contacts": sanitized_contacts})
+            continue
 
         try:
             lead_result = await crm.create_lead(lead_data)
@@ -990,8 +1107,12 @@ async def save_to_crm(state: CRMLeadState) -> dict:
             "supervisor_notes": "",
         })
 
+    # Persist excess approved leads for future searches
+    if excess_items and icp_id:
+        _save_excess(icp_id, excess_items)
+
     if span:
-        span.end(output={"created_this_round": len(new_names), "total_created": len(created_leads)})
+        span.end(output={"created_this_round": len(new_names), "total_created": len(created_leads), "excess_cached": len(excess_items)})
 
     # Calculate remaining and update existing_leads for retry
     remaining = original_count - len(created_leads)

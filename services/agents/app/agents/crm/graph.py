@@ -17,6 +17,9 @@ from app.agents.crm.state import CRMLeadState
 def _after_load_icp(state: CRMLeadState) -> str:
     if state.get("error"):
         return END
+    # If excess cache fully covered the requested count, skip to reply
+    if state.get("created_leads") and state.get("remaining_count", -1) == 0:
+        return "format_reply"
     return "investigate_leads"
 
 
