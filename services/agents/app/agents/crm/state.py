@@ -37,3 +37,4 @@ class CRMLeadState(TypedDict, total=False):
     remaining_count: int
     retry_round: int
     previous_queries: list[str]
+    search_saturated: bool

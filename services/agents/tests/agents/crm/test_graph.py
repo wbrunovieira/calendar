@@ -49,3 +49,15 @@ def test_after_save_stops_at_max_retries():
     """After max retries, go to format_reply even if remaining."""
     state = {"remaining_count": 2, "retry_round": 3}
     assert _after_save(state) == "format_reply"
+
+
+def test_after_save_stops_when_search_saturated():
+    """When search is saturated, stop retrying even if remaining and rounds left."""
+    state = {"remaining_count": 3, "retry_round": 1, "search_saturated": True}
+    assert _after_save(state) == "format_reply"
+
+
+def test_after_save_retries_when_not_saturated():
+    """When search is NOT saturated and rounds left, continue retrying."""
+    state = {"remaining_count": 3, "retry_round": 1, "search_saturated": False}
+    assert _after_save(state) == "investigate_leads"

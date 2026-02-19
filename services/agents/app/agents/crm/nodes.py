@@ -443,16 +443,24 @@ async def investigate_leads(state: CRMLeadState) -> dict:
     retry_round = state.get("retry_round", 0)
     count = remaining if remaining > 0 else state.get("count", 1)
 
+    # Overshoot: request extra dossiers to account for ~30% rejection rate
+    if retry_round == 0:
+        effective_count = min(count + 3, 10)
+    else:
+        effective_count = min(count + 2, 10)
+
     icp_text = f"Name: {icp.get('name', '')}\n{icp.get('content', '')}"
 
     previous_queries = state.get("previous_queries", [])
-    logger.info("Investigate round %d: count=%d, existing=%d, prev_queries=%d", retry_round + 1, count, len(existing_leads), len(previous_queries))
+    previous_tavily = state.get("tavily_data")
+    logger.info("Investigate round %d: count=%d, effective=%d, existing=%d, prev_queries=%d", retry_round + 1, count, effective_count, len(existing_leads), len(previous_queries))
 
     # ── Tavily mode (primary) ────────────────────────────────
     if settings.tavily_api_key:
         result = await _investigate_with_tavily(
-            trace, icp, icp_text, query, count, existing_leads, country,
+            trace, icp, icp_text, query, effective_count, existing_leads, country,
             previous_queries=previous_queries if previous_queries else None,
+            previous_tavily_data=previous_tavily,
         )
         # Track retry round
         result["retry_round"] = retry_round + 1
@@ -470,77 +478,67 @@ async def _investigate_with_tavily(
     trace: Any, icp: dict, icp_text: str, query: str, count: int,
     existing_leads: list[str], country: str = "Brasil",
     previous_queries: list[str] | None = None,
+    previous_tavily_data: list[dict] | None = None,
 ) -> dict:
-    """Tavily search + Haiku to build dossiers, with smart query planning."""
-    all_tavily_data: list[dict] = []
+    """Tavily search + Haiku to build dossiers. Single search round per graph retry."""
     all_queries_used: list[str] = list(previous_queries or [])
 
-    # Up to 2 rounds: initial search + optional retry with new queries
-    for round_num in range(2):
-        # 1. Plan search queries using Haiku
-        queries = await _plan_search_queries(
-            query, icp_text, country, existing_leads, trace,
-            previous_queries=all_queries_used if all_queries_used else None,
-        )
-        logger.info("Search round %d queries: %s", round_num + 1, queries)
+    # 1. Plan search queries using Haiku
+    queries = await _plan_search_queries(
+        query, icp_text, country, existing_leads, trace,
+        previous_queries=all_queries_used if all_queries_used else None,
+    )
+    logger.info("Search queries: %s", queries)
 
-        # 2. Run Tavily search
-        search_span = trace.span(
-            name=f"tavily_search_round_{round_num + 1}",
-            input={"queries": queries, "round": round_num + 1},
-        ) if trace else None
+    # 2. Run Tavily search
+    search_span = trace.span(
+        name="tavily_search",
+        input={"queries": queries},
+    ) if trace else None
 
-        try:
-            tavily_data = await _tavily_search(queries)
-        except Exception as exc:
-            logger.exception("Tavily search failed (round %d)", round_num + 1)
-            if search_span:
-                search_span.end(output={"error": str(exc)})
-            if all_tavily_data:
-                break  # Use results from previous round
+    try:
+        tavily_data = await _tavily_search(queries)
+    except Exception as exc:
+        logger.exception("Tavily search failed")
+        if search_span:
+            search_span.end(output={"error": str(exc)})
+        if previous_tavily_data:
+            # Use results from previous rounds as fallback
+            tavily_data = []
+        else:
             return {
                 "error": "investigation_failed",
                 "reply": "Web search failed. Please try again.",
             }
 
-        total_results = sum(len(g.get("results", [])) for g in tavily_data)
-        if search_span:
-            search_span.end(output={"total_results": total_results, "queries_run": len(tavily_data)})
+    total_results = sum(len(g.get("results", [])) for g in tavily_data)
+    if search_span:
+        search_span.end(output={"total_results": total_results, "queries_run": len(tavily_data)})
+    all_queries_used.extend(queries)
 
-        all_tavily_data.extend(tavily_data)
-        all_queries_used.extend(queries)
+    # 3. Detect saturation: count truly new URLs vs previous rounds
+    previous_urls: set[str] = set()
+    if previous_tavily_data:
+        for group in previous_tavily_data:
+            for r in group.get("results", []):
+                if r.get("url"):
+                    previous_urls.add(r["url"])
+    new_urls: set[str] = set()
+    for group in tavily_data:
+        for r in group.get("results", []):
+            if r.get("url") and r["url"] not in previous_urls:
+                new_urls.add(r["url"])
+    search_saturated = len(new_urls) < 3
+    if search_saturated:
+        logger.info("Search saturated: only %d new URLs found", len(new_urls))
 
-        if total_results == 0 and round_num == 0:
-            # No results at all on first round — retry
-            logger.info("No results in round 1, retrying with new queries")
-            continue
-
-        # Check if results contain any NEW companies (not already in CRM)
-        if round_num == 0 and existing_leads:
-            result_text = _format_tavily_results(tavily_data).lower()
-            existing_lower = [name.lower() for name in existing_leads]
-            has_new = any(
-                name not in result_text
-                for name in existing_lower
-            )
-            # If ALL existing companies appear in results and we have few unique results,
-            # the search is probably too generic — retry
-            all_existing_found = sum(1 for name in existing_lower if name in result_text)
-            if all_existing_found >= min(3, len(existing_lower)) and not has_new:
-                logger.info(
-                    "Round 1 results overlap heavily with existing leads (%d/%d), retrying",
-                    all_existing_found, len(existing_lower),
-                )
-                continue
-
-        break  # Good results, no need to retry
-
-    # 3. Format all results and call Haiku to write dossier
+    # 4. Merge previous + new results for LLM context
+    all_tavily_data = list(previous_tavily_data or []) + tavily_data
     search_context = _format_tavily_results(all_tavily_data)
 
     if not search_context.strip():
         logger.warning("No search results found this round, allowing retry")
-        return {"raw_dossiers": [], "previous_queries": all_queries_used}
+        return {"raw_dossiers": [], "previous_queries": all_queries_used, "search_saturated": True}
 
     existing_section = ""
     if existing_leads:
@@ -608,6 +606,7 @@ async def _investigate_with_tavily(
         result["raw_dossiers"] = result["raw_dossiers"][:count]
     result["tavily_data"] = all_tavily_data
     result["previous_queries"] = all_queries_used
+    result["search_saturated"] = search_saturated
     return result
 
 
