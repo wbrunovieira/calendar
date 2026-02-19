@@ -194,6 +194,13 @@ func (r *TransactionRepository) List(filter transaction.ListFilter) ([]*transact
 		}
 	}
 
+	if filter.InvoiceID != nil {
+		trimmed := strings.TrimSpace(*filter.InvoiceID)
+		if trimmed != "" {
+			addCondition("invoice_id", "=", trimmed)
+		}
+	}
+
 	if filter.Status != nil {
 		addCondition("status", "=", *filter.Status)
 	}

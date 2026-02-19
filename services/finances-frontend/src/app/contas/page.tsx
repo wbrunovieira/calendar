@@ -44,13 +44,16 @@ function TransactionHistory({
   accountId,
   profileId,
   categories,
+  invoices,
 }: {
   accountId: string;
   profileId: string;
   categories: Category[];
+  invoices?: Invoice[];
 }) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>('');
 
   const categoryMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -58,11 +61,28 @@ function TransactionHistory({
     return map;
   }, [categories]);
 
+  const sortedInvoices = useMemo(() => {
+    if (!invoices || invoices.length === 0) return [];
+    return [...invoices].sort((a, b) => b.referenceDate.localeCompare(a.referenceDate));
+  }, [invoices]);
+
+  const formatInvoiceLabel = (inv: Invoice) => {
+    const ref = inv.referenceDate.split('T')[0];
+    const [year, month] = ref.split('-').map(Number);
+    const monthNames = ['', 'Janeiro', 'Fevereiro', 'Marco', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+    const due = inv.dueDate.split('T')[0];
+    const [, dueMonth, dueDay] = due.split('-').map(Number);
+    return `${monthNames[month]} ${year} — vence ${dueDay}/${String(dueMonth).padStart(2, '0')}`;
+  };
+
   useEffect(() => {
     const fetchTransactions = async () => {
       try {
         setLoading(true);
         const params = new URLSearchParams({ profileId, bankAccountId: accountId });
+        if (selectedInvoiceId) {
+          params.set('invoiceId', selectedInvoiceId);
+        }
         const response = await fetch(`${API_BASE}/transactions?${params}`);
         if (response.ok) {
           const data = await response.json();
@@ -75,7 +95,7 @@ function TransactionHistory({
       }
     };
     fetchTransactions();
-  }, [accountId, profileId]);
+  }, [accountId, profileId, selectedInvoiceId]);
 
   if (loading) {
     return (
@@ -94,6 +114,23 @@ function TransactionHistory({
   }
 
   return (
+    <div>
+      {sortedInvoices.length > 0 && (
+        <div className="mb-3">
+          <select
+            value={selectedInvoiceId}
+            onChange={(e) => setSelectedInvoiceId(e.target.value)}
+            className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm"
+          >
+            <option value="" className="bg-slate-900">Todas as faturas</option>
+            {sortedInvoices.map((inv) => (
+              <option key={inv.id} value={inv.id} className="bg-slate-900">
+                {formatInvoiceLabel(inv)} — {inv.status === 'PAID' ? 'Paga' : inv.status === 'CLOSED' ? 'Fechada' : 'Aberta'}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
     <div className="space-y-1.5 max-h-[28rem] overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
       {transactions.map((tx) => {
         const status = statusConfig[tx.status] || statusConfig.PLANNED;
@@ -129,6 +166,7 @@ function TransactionHistory({
           </div>
         );
       })}
+    </div>
     </div>
   );
 }
@@ -586,6 +624,7 @@ export default function ContasPage() {
                                     accountId={account.id}
                                     profileId={selectedProfileId}
                                     categories={categories}
+                                    invoices={invoicesByAccount[account.id] || []}
                                   />
                                 </div>
                               )}

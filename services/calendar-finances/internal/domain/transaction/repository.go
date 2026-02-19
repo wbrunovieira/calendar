@@ -6,6 +6,7 @@ import "time"
 type ListFilter struct {
 	ProfileID     string
 	BankAccountID *string
+	InvoiceID     *string
 	Status        *Status
 	Type          *Type
 	OccurredFrom  *time.Time

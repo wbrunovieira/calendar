@@ -49,6 +49,10 @@ func (f *FakeTransactionRepository) List(filter transaction.ListFilter) ([]*tran
 			continue
 		}
 
+		if filter.InvoiceID != nil && (tx.InvoiceID == nil || *tx.InvoiceID != *filter.InvoiceID) {
+			continue
+		}
+
 		result = append(result, tx)
 	}
 	return result, nil
@@ -299,5 +303,60 @@ func TestListTransactions_FilterByDateRange_InclusiveBoundaries(t *testing.T) {
 
 	if len(result) != 2 {
 		t.Errorf("Expected 2 transactions (inclusive boundaries), got %d", len(result))
+	}
+}
+
+func TestListTransactions_FilterByInvoiceID_ShouldReturnOnlyMatchingInvoice(t *testing.T) {
+	profileID := "profile-1"
+	invoiceA := "invoice-a"
+	invoiceB := "invoice-b"
+
+	txA := &transaction.Transaction{
+		ID:        "tx-a",
+		ProfileID: profileID,
+		InvoiceID: &invoiceA,
+		Type:      transaction.TypeExpense,
+		Status:    transaction.StatusConfirmed,
+		Amount:    50,
+	}
+
+	txB := &transaction.Transaction{
+		ID:        "tx-b",
+		ProfileID: profileID,
+		InvoiceID: &invoiceB,
+		Type:      transaction.TypeExpense,
+		Status:    transaction.StatusConfirmed,
+		Amount:    75,
+	}
+
+	txNoInvoice := &transaction.Transaction{
+		ID:        "tx-no-inv",
+		ProfileID: profileID,
+		Type:      transaction.TypeExpense,
+		Status:    transaction.StatusConfirmed,
+		Amount:    100,
+	}
+
+	repo := &FakeTransactionRepository{
+		transactions: []*transaction.Transaction{txA, txB, txNoInvoice},
+	}
+
+	useCase := NewListTransactionsUseCase(repo)
+
+	result, err := useCase.Execute(ListTransactionsInput{
+		ProfileID: profileID,
+		InvoiceID: &invoiceA,
+	})
+
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	if len(result) != 1 {
+		t.Fatalf("Expected 1 transaction for invoice-a, got %d", len(result))
+	}
+
+	if result[0].ID != "tx-a" {
+		t.Errorf("Expected tx-a, got %s", result[0].ID)
 	}
 }

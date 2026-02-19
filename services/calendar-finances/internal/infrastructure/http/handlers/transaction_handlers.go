@@ -39,14 +39,18 @@ func NewTransactionHandlers(
 func (h *TransactionHandlers) List(w http.ResponseWriter, r *http.Request) {
 	profileID := r.URL.Query().Get("profileId")
 	bankAccountID := r.URL.Query().Get("bankAccountId")
+	invoiceID := r.URL.Query().Get("invoiceId")
 	status := r.URL.Query().Get("status")
 	typeValue := r.URL.Query().Get("type")
 	occurredFrom := r.URL.Query().Get("occurredFrom")
 	occurredTo := r.URL.Query().Get("occurredTo")
 
-	var bankAccountPtr, statusPtr, typePtr, fromPtr, toPtr *string
+	var bankAccountPtr, invoicePtr, statusPtr, typePtr, fromPtr, toPtr *string
 	if bankAccountID != "" {
 		bankAccountPtr = &bankAccountID
+	}
+	if invoiceID != "" {
+		invoicePtr = &invoiceID
 	}
 	if status != "" {
 		statusPtr = &status
@@ -64,6 +68,7 @@ func (h *TransactionHandlers) List(w http.ResponseWriter, r *http.Request) {
 	transactions, err := h.listUseCase.Execute(usecases.ListTransactionsInput{
 		ProfileID:     profileID,
 		BankAccountID: bankAccountPtr,
+		InvoiceID:     invoicePtr,
 		Status:        statusPtr,
 		Type:          typePtr,
 		OccurredFrom:  fromPtr,
