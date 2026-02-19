@@ -2,6 +2,10 @@
     <logger>
         <level>warning</level>
         <console>true</console>
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+        <size>50M</size>
+        <count>3</count>
     </logger>
 
     <keeper_server>
