@@ -171,7 +171,7 @@ services:
       context: ./services/health-frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: https://calendar-health.wbdigitalsolutions.com
+        NEXT_PUBLIC_API_URL: https://calendar-health.wbdigitalsolutions.com/api/v1
         NEXT_PUBLIC_CALENDAR_API_URL: https://calendar-api.wbdigitalsolutions.com
     container_name: health-frontend
     logging: *default-logging
