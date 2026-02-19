@@ -6,7 +6,6 @@ import TransactionForm from '@/components/finances/TransactionForm';
 import TransactionsTable from '@/components/finances/TransactionsTable';
 import CashflowSummary from '@/components/finances/CashflowSummary';
 import QuickExpense from '@/components/finances/QuickExpense';
-import SafeToSpend from '@/components/finances/SafeToSpend';
 import GlobalSearch from '@/components/finances/GlobalSearch';
 import TodayAlerts from '@/components/finances/TodayAlerts';
 import type {
@@ -517,8 +516,7 @@ export default function FinancesPage() {
               </div>
             ) : selectedProfile && (
               <>
-                <SafeToSpend accounts={filteredAccounts} transactions={transactions} />
-                <CashflowSummary transactions={transactions} accounts={filteredAccounts} currentInvoices={currentInvoices} />
+<CashflowSummary transactions={transactions} accounts={filteredAccounts} currentInvoices={currentInvoices} />
 
                 <div className="space-y-6">
                     <QuickExpense
