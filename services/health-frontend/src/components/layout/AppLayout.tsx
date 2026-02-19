@@ -11,6 +11,7 @@ interface AppLayoutProps {
 const navItems = [
   { href: '/', label: 'Dashboard', icon: '📊' },
   { href: '/wim-hof', label: 'Wim Hof', icon: '🧊' },
+  { href: '/alongamento', label: 'Alongamento', icon: '🤸' },
   { href: '/workouts', label: 'Treinos', icon: '🏋️' },
   { href: '/activities', label: 'Atividades', icon: '🧘' },
   { href: '/exercises', label: 'Exercicios', icon: '💪' },

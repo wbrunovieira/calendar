@@ -53,6 +53,23 @@ func RegisterHealthRoutes(router *mux.Router, db *sql.DB) {
 	router.HandleFunc("/body-measurements", h.ListBodyMeasurements).Methods("GET")
 	router.HandleFunc("/body-measurements", h.CreateBodyMeasurement).Methods("POST")
 	router.HandleFunc("/body-measurements/{id}", h.DeleteBodyMeasurement).Methods("DELETE")
+
+	// Stretch Sequences
+	router.HandleFunc("/stretch-sequences", h.ListStretchSequences).Methods("GET")
+	router.HandleFunc("/stretch-sequences", h.CreateStretchSequence).Methods("POST")
+	router.HandleFunc("/stretch-sequences/{id}", h.GetStretchSequence).Methods("GET")
+	router.HandleFunc("/stretch-sequences/{id}", h.UpdateStretchSequence).Methods("PUT")
+	router.HandleFunc("/stretch-sequences/{id}", h.DeleteStretchSequence).Methods("DELETE")
+	router.HandleFunc("/stretch-sequences/{id}/movements", h.AddStretchMovement).Methods("POST")
+
+	// Stretch Movements
+	router.HandleFunc("/stretch-movements/{id}", h.UpdateStretchMovement).Methods("PUT")
+	router.HandleFunc("/stretch-movements/{id}", h.DeleteStretchMovement).Methods("DELETE")
+
+	// Stretch Sessions
+	router.HandleFunc("/stretch-sessions", h.ListStretchSessions).Methods("GET")
+	router.HandleFunc("/stretch-sessions", h.CreateStretchSession).Methods("POST")
+	router.HandleFunc("/stretch-sessions/{id}", h.GetStretchSession).Methods("GET")
 }
 
 type HealthHandlers struct {

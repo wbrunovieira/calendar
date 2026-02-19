@@ -8,6 +8,9 @@ import {
   Activity,
   PersonalRecord,
   BodyMeasurement,
+  StretchSequence,
+  StretchMovement,
+  StretchSession,
   WorkoutFormData,
   ActivityFormData,
   ExerciseFormData,
@@ -229,5 +232,81 @@ export const recordsApi = {
   delete: (id: string) =>
     fetchApi<void>(`/personal-records/${id}`, {
       method: 'DELETE',
+    }),
+};
+
+// Stretch Sequences
+export const stretchSequencesApi = {
+  list: (profileId?: string) => {
+    const query = profileId ? `?profileId=${profileId}` : '';
+    return fetchApi<StretchSequence[]>(`/stretch-sequences${query}`);
+  },
+  get: (id: string) => fetchApi<StretchSequence>(`/stretch-sequences/${id}`),
+  create: (data: { profileId: string; name: string; description?: string }) =>
+    fetchApi<StretchSequence>('/stretch-sequences', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: { name: string; description?: string; isActive?: boolean }) =>
+    fetchApi<StretchSequence>(`/stretch-sequences/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    fetchApi<void>(`/stretch-sequences/${id}`, {
+      method: 'DELETE',
+    }),
+  addMovement: (sequenceId: string, data: { name: string; description?: string; durationSeconds: number; orderIndex: number }) =>
+    fetchApi<StretchMovement>(`/stretch-sequences/${sequenceId}/movements`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+};
+
+// Stretch Movements
+export const stretchMovementsApi = {
+  update: (id: string, data: { name: string; description?: string; durationSeconds: number; orderIndex: number }) =>
+    fetchApi<StretchMovement>(`/stretch-movements/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    fetchApi<void>(`/stretch-movements/${id}`, {
+      method: 'DELETE',
+    }),
+};
+
+// Stretch Sessions
+export const stretchSessionsApi = {
+  list: (params?: { profileId?: string; sequenceId?: string; startDate?: string; endDate?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.profileId) searchParams.set('profileId', params.profileId);
+    if (params?.sequenceId) searchParams.set('sequenceId', params.sequenceId);
+    if (params?.startDate) searchParams.set('startDate', params.startDate);
+    if (params?.endDate) searchParams.set('endDate', params.endDate);
+    const query = searchParams.toString();
+    return fetchApi<StretchSession[]>(`/stretch-sessions${query ? `?${query}` : ''}`);
+  },
+  get: (id: string) => fetchApi<StretchSession>(`/stretch-sessions/${id}`),
+  create: (data: {
+    profileId: string;
+    sequenceId?: string;
+    sessionDate: string;
+    durationSeconds?: number;
+    rating?: number;
+    notes?: string;
+    movements?: Array<{
+      movementId?: string;
+      movementName: string;
+      plannedDurationSeconds: number;
+      actualDurationSeconds?: number;
+      reps: number;
+      skipped: boolean;
+      orderIndex: number;
+    }>;
+  }) =>
+    fetchApi<StretchSession>('/stretch-sessions', {
+      method: 'POST',
+      body: JSON.stringify(data),
     }),
 };

@@ -152,6 +152,55 @@ export const ACTIVITY_TYPES = [
   { value: 'OTHER', label: 'Outro', icon: '💪' },
 ] as const;
 
+// Stretch types
+export interface StretchSequence {
+  id: string;
+  profileId: string;
+  name: string;
+  description?: string;
+  isActive: boolean;
+  movements?: StretchMovement[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StretchMovement {
+  id: string;
+  sequenceId: string;
+  name: string;
+  description?: string;
+  durationSeconds: number;
+  orderIndex: number;
+  imageUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StretchSession {
+  id: string;
+  profileId: string;
+  sequenceId?: string;
+  sequenceName?: string;
+  sessionDate: string;
+  durationSeconds?: number;
+  rating?: number;
+  notes?: string;
+  movements?: StretchSessionMovement[];
+  createdAt: string;
+}
+
+export interface StretchSessionMovement {
+  id: string;
+  sessionId: string;
+  movementId?: string;
+  movementName: string;
+  plannedDurationSeconds: number;
+  actualDurationSeconds?: number;
+  reps: number;
+  skipped: boolean;
+  orderIndex: number;
+}
+
 // Exercise muscle groups
 export const MUSCLE_GROUPS = [
   'Peito',

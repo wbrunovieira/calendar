@@ -211,6 +211,69 @@ func RunMigrations(db *sql.DB) error {
 			description: "add index on body_measurements profile+date",
 			sql: `CREATE INDEX IF NOT EXISTS idx_health_body_measurements_profile_date ON health.body_measurements(profile_id, measured_at DESC)`,
 		},
+		{
+			version:     4,
+			description: "create stretch_sequences and stretch_movements tables",
+			sql: `CREATE TABLE IF NOT EXISTS health.stretch_sequences (
+				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+				profile_id UUID NOT NULL REFERENCES health.profiles(id) ON DELETE CASCADE,
+				name VARCHAR(255) NOT NULL,
+				description TEXT,
+				is_active BOOLEAN NOT NULL DEFAULT true,
+				created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+				updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+			);
+			CREATE TABLE IF NOT EXISTS health.stretch_movements (
+				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+				sequence_id UUID NOT NULL REFERENCES health.stretch_sequences(id) ON DELETE CASCADE,
+				name VARCHAR(255) NOT NULL,
+				description TEXT,
+				duration_seconds INTEGER NOT NULL DEFAULT 30,
+				order_index INTEGER NOT NULL DEFAULT 0,
+				image_url TEXT,
+				created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+				updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+			);
+			CREATE INDEX IF NOT EXISTS idx_stretch_sequences_profile ON health.stretch_sequences(profile_id);
+			CREATE INDEX IF NOT EXISTS idx_stretch_movements_sequence ON health.stretch_movements(sequence_id)`,
+		},
+		{
+			version:     5,
+			description: "create stretch_sessions and stretch_session_movements tables",
+			sql: `CREATE TABLE IF NOT EXISTS health.stretch_sessions (
+				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+				profile_id UUID NOT NULL REFERENCES health.profiles(id) ON DELETE CASCADE,
+				sequence_id UUID REFERENCES health.stretch_sequences(id) ON DELETE SET NULL,
+				session_date DATE NOT NULL,
+				duration_seconds INTEGER,
+				rating INTEGER CHECK (rating >= 1 AND rating <= 5),
+				notes TEXT,
+				created_at TIMESTAMP NOT NULL DEFAULT NOW()
+			);
+			CREATE TABLE IF NOT EXISTS health.stretch_session_movements (
+				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+				session_id UUID NOT NULL REFERENCES health.stretch_sessions(id) ON DELETE CASCADE,
+				movement_id UUID REFERENCES health.stretch_movements(id) ON DELETE SET NULL,
+				movement_name VARCHAR(255) NOT NULL,
+				planned_duration_seconds INTEGER NOT NULL,
+				actual_duration_seconds INTEGER,
+				reps INTEGER DEFAULT 1,
+				skipped BOOLEAN NOT NULL DEFAULT false,
+				order_index INTEGER NOT NULL DEFAULT 0,
+				created_at TIMESTAMP NOT NULL DEFAULT NOW()
+			);
+			CREATE INDEX IF NOT EXISTS idx_stretch_sessions_profile_date ON health.stretch_sessions(profile_id, session_date DESC);
+			CREATE INDEX IF NOT EXISTS idx_stretch_session_movements_session ON health.stretch_session_movements(session_id)`,
+		},
+		{
+			version:     6,
+			description: "add missing activity types to CHECK constraint",
+			sql: `DO $$ BEGIN
+				ALTER TABLE health.activities DROP CONSTRAINT IF EXISTS activities_activity_type_check;
+				ALTER TABLE health.activities ADD CONSTRAINT activities_activity_type_check
+					CHECK (activity_type IN ('BREATHING','COLD_EXPOSURE','MEDITATION','HIIT','CARDIO','STRETCHING','OTHER','WIM_HOF','YOGA','RUNNING','CYCLING','SWIMMING'));
+			END $$`,
+		},
 	}
 
 	// Create migration tracking table
