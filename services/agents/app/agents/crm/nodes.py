@@ -169,7 +169,7 @@ def _build_supervisor_messages(
 # ── Tavily search ─────────────────────────────────────────
 
 
-async def _tavily_search(queries: list[str], max_results: int = 5) -> list[dict]:
+async def _tavily_search(queries: list[str], max_results: int = 5, search_depth: str = "basic") -> list[dict]:
     """Run Tavily searches and return combined results."""
     all_results: list[dict] = []
     async with httpx.AsyncClient(timeout=30) as client:
@@ -181,7 +181,7 @@ async def _tavily_search(queries: list[str], max_results: int = 5) -> list[dict]
                         "api_key": settings.tavily_api_key,
                         "query": query,
                         "max_results": max_results,
-                        "search_depth": "basic",
+                        "search_depth": search_depth,
                         "include_answer": True,
                     },
                 )
@@ -1166,7 +1166,7 @@ async def enrich_contacts(state: CRMLeadState) -> dict:
         ]
 
         try:
-            tavily_data = await _tavily_search(phase1_queries, max_results=5)
+            tavily_data = await _tavily_search(phase1_queries, max_results=5, search_depth="advanced")
         except Exception:
             logger.warning("Contact enrichment search failed for %s", company_name)
             newly_rejected.append({
@@ -1211,7 +1211,7 @@ async def enrich_contacts(state: CRMLeadState) -> dict:
             if len(contact_name.split()) >= 2:
                 try:
                     linkedin_results = await _tavily_search(
-                        [f'"{contact_name}" {company_name} LinkedIn'], max_results=3,
+                        [f'"{contact_name}" {company_name} LinkedIn'], max_results=3, search_depth="advanced",
                     )
                     tavily_data.extend(linkedin_results)
                 except Exception:
@@ -1270,7 +1270,7 @@ async def enrich_contacts(state: CRMLeadState) -> dict:
                 for c in missing_linkedin
             ]
             try:
-                linkedin_data = await _tavily_search(linkedin_queries, max_results=3)
+                linkedin_data = await _tavily_search(linkedin_queries, max_results=3, search_depth="advanced")
                 linkedin_context = _format_tavily_results(linkedin_data)
                 if linkedin_context.strip():
                     # Quick Haiku call to match LinkedIn URLs to contacts
