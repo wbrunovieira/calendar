@@ -1,9 +1,16 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "3"
+
 services:
   calendar-core:
     build:
       context: ./services/calendar-core
       dockerfile: Dockerfile.dev
     container_name: calendar-core
+    logging: *default-logging
     ports:
       - "3334:3334"
     volumes:
@@ -25,6 +32,7 @@ services:
       context: ./services/calendar-finances
       dockerfile: Dockerfile
     container_name: calendar-finances
+    logging: *default-logging
     ports:
       - "3335:3335"
     environment:
@@ -41,6 +49,7 @@ services:
       context: ./services/calendar-health
       dockerfile: Dockerfile
     container_name: calendar-health
+    logging: *default-logging
     ports:
       - "3336:3336"
     environment:
@@ -57,6 +66,7 @@ services:
       context: ./services/agents
       dockerfile: Dockerfile
     container_name: agents
+    logging: *default-logging
     ports:
       - "3337:3337"
     environment:
@@ -89,6 +99,7 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: calendar-postgres
+    logging: *default-logging
     ports:
       - "5433:5432"
     environment:
@@ -105,6 +116,7 @@ services:
   langfuse-postgres:
     image: postgres:17-alpine
     container_name: langfuse-postgres
+    logging: *default-logging
     ports:
       - "127.0.0.1:5434:5432"
     environment:
@@ -124,6 +136,11 @@ services:
   langfuse-clickhouse:
     image: clickhouse/clickhouse-server
     container_name: langfuse-clickhouse
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     ports:
       - "127.0.0.1:8123:8123"
       - "127.0.0.1:9001:9000"
@@ -145,6 +162,7 @@ services:
   langfuse-minio:
     image: cgr.dev/chainguard/minio
     container_name: langfuse-minio
+    logging: *default-logging
     ports:
       - "9090:9000"
       - "127.0.0.1:9091:9001"
@@ -165,6 +183,7 @@ services:
   langfuse-minio-init:
     image: cgr.dev/chainguard/minio
     container_name: langfuse-minio-init
+    logging: *default-logging
     entrypoint: /bin/sh
     command:
       - -c
@@ -186,6 +205,7 @@ services:
   langfuse-redis:
     image: redis:7
     container_name: langfuse-redis
+    logging: *default-logging
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -197,6 +217,7 @@ services:
   langfuse-web:
     image: langfuse/langfuse:3
     container_name: langfuse-web
+    logging: *default-logging
     ports:
       - "3100:3000"
     environment:
@@ -244,6 +265,7 @@ services:
   langfuse-worker:
     image: langfuse/langfuse-worker:3
     container_name: langfuse-worker
+    logging: *default-logging
     ports:
       - "127.0.0.1:3030:3030"
     environment:
@@ -284,6 +306,7 @@ services:
   authelia:
     image: authelia/authelia:latest
     container_name: authelia
+    logging: *default-logging
     volumes:
       - ./config/authelia:/config:ro
       - authelia_data:/data
@@ -298,6 +321,7 @@ services:
   nginx:
     image: nginx:alpine
     container_name: nginx-proxy
+    logging: *default-logging
     ports:
       - "80:80"
       - "443:443"
