@@ -5,7 +5,8 @@ import AppLayout, { useProfile } from '@/components/layout/AppLayout';
 import BankAccountModal from '@/components/finances/BankAccountModal';
 import CreditCardInfo from '@/components/finances/CreditCardInfo';
 import InvestmentAccountInfo from '@/components/finances/InvestmentAccountInfo';
-import type { BankAccount, Invoice, Transaction, Category } from '@/types/finances';
+import TransactionForm from '@/components/finances/TransactionForm';
+import type { BankAccount, Invoice, Transaction, TransactionFormData, Category } from '@/types/finances';
 import { API_BASE } from '@/lib/api';
 import {
   DndContext,
@@ -44,36 +45,21 @@ function TransactionHistory({
   accountId,
   profileId,
   categories,
-  invoices,
+  selectedInvoiceId,
 }: {
   accountId: string;
   profileId: string;
   categories: Category[];
-  invoices?: Invoice[];
+  selectedInvoiceId?: string;
 }) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>('');
 
   const categoryMap = useMemo(() => {
     const map: Record<string, string> = {};
     categories.forEach((c) => { map[c.id] = c.name; });
     return map;
   }, [categories]);
-
-  const sortedInvoices = useMemo(() => {
-    if (!invoices || invoices.length === 0) return [];
-    return [...invoices].sort((a, b) => b.referenceDate.localeCompare(a.referenceDate));
-  }, [invoices]);
-
-  const formatInvoiceLabel = (inv: Invoice) => {
-    const ref = inv.referenceDate.split('T')[0];
-    const [year, month] = ref.split('-').map(Number);
-    const monthNames = ['', 'Janeiro', 'Fevereiro', 'Marco', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-    const due = inv.dueDate.split('T')[0];
-    const [, dueMonth, dueDay] = due.split('-').map(Number);
-    return `${monthNames[month]} ${year} — vence ${dueDay}/${String(dueMonth).padStart(2, '0')}`;
-  };
 
   useEffect(() => {
     const fetchTransactions = async () => {
@@ -114,23 +100,6 @@ function TransactionHistory({
   }
 
   return (
-    <div>
-      {sortedInvoices.length > 0 && (
-        <div className="mb-3">
-          <select
-            value={selectedInvoiceId}
-            onChange={(e) => setSelectedInvoiceId(e.target.value)}
-            className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm"
-          >
-            <option value="" className="bg-slate-900">Todas as faturas</option>
-            {sortedInvoices.map((inv) => (
-              <option key={inv.id} value={inv.id} className="bg-slate-900">
-                {formatInvoiceLabel(inv)} — {inv.status === 'PAID' ? 'Paga' : inv.status === 'CLOSED' ? 'Fechada' : 'Aberta'}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
     <div className="space-y-1.5 max-h-[28rem] overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
       {transactions.map((tx) => {
         const status = statusConfig[tx.status] || statusConfig.PLANNED;
@@ -166,7 +135,6 @@ function TransactionHistory({
           </div>
         );
       })}
-    </div>
     </div>
   );
 }
@@ -218,6 +186,9 @@ export default function ContasPage() {
   const [isBankAccountModalOpen, setIsBankAccountModalOpen] = useState(false);
   const [editingBankAccount, setEditingBankAccount] = useState<BankAccount | null>(null);
   const [expandedAccountId, setExpandedAccountId] = useState<string | null>(null);
+  const [selectedInvoiceByAccount, setSelectedInvoiceByAccount] = useState<Record<string, string>>({});
+  const [isTransactionFormOpen, setIsTransactionFormOpen] = useState(false);
+  const [preselectedAccountId, setPreselectedAccountId] = useState<string>('');
 
   const [invoicesByAccount, setInvoicesByAccount] = useState<Record<string, Invoice[]>>({});
   const [currentInvoices, setCurrentInvoices] = useState<Record<string, Invoice>>({});
@@ -438,6 +409,41 @@ export default function ContasPage() {
     }
   };
 
+  const handleInvoiceSelect = (accountId: string, invoiceId: string) => {
+    setSelectedInvoiceByAccount((prev) => ({
+      ...prev,
+      [accountId]: invoiceId,
+    }));
+  };
+
+  const handleAddTransaction = (accountId: string) => {
+    setPreselectedAccountId(accountId);
+    setIsTransactionFormOpen(true);
+  };
+
+  const handleSaveTransaction = async (payload: TransactionFormData) => {
+    try {
+      const response = await fetch(`${API_BASE}/transactions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const errorMessage = await response.text();
+        throw new Error(errorMessage || 'Erro ao criar transacao');
+      }
+      setIsTransactionFormOpen(false);
+      await fetchBankAccounts();
+      // Re-expand to refresh transaction history
+      const currentExpanded = expandedAccountId;
+      setExpandedAccountId(null);
+      setTimeout(() => setExpandedAccountId(currentExpanded), 50);
+    } catch (error) {
+      console.error('Erro ao criar transacao:', error);
+      alert('Erro ao criar transacao');
+    }
+  };
+
   const openEditModal = (account: BankAccount) => {
     setEditingBankAccount(account);
     setIsBankAccountModalOpen(true);
@@ -614,17 +620,28 @@ export default function ContasPage() {
                                     invoices={invoicesByAccount[account.id] || []}
                                     onPayInvoice={handlePayInvoice}
                                     onEdit={() => openEditModal(account)}
+                                    selectedInvoiceId={selectedInvoiceByAccount[account.id] || ''}
+                                    onInvoiceSelect={(invoiceId) => handleInvoiceSelect(account.id, invoiceId)}
                                   />
                                 </div>
                               </div>
                               {isExpanded && selectedProfileId && (
                                 <div className="bg-white/[0.03] border border-white/10 border-t-0 rounded-b-xl p-4 ml-7">
-                                  <p className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-3">Historico de transacoes</p>
+                                  <div className="flex items-center justify-between mb-3">
+                                    <p className="text-white/60 text-xs font-semibold uppercase tracking-wider">Historico de transacoes</p>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleAddTransaction(account.id); }}
+                                      className="flex items-center gap-1 px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 rounded-lg text-emerald-400 text-xs font-medium transition-colors"
+                                    >
+                                      <span>+</span>
+                                      <span>Lancamento</span>
+                                    </button>
+                                  </div>
                                   <TransactionHistory
                                     accountId={account.id}
                                     profileId={selectedProfileId}
                                     categories={categories}
-                                    invoices={invoicesByAccount[account.id] || []}
+                                    selectedInvoiceId={selectedInvoiceByAccount[account.id] || ''}
                                   />
                                 </div>
                               )}
@@ -666,7 +683,16 @@ export default function ContasPage() {
                             </div>
                             {isExpanded && selectedProfileId && (
                               <div className="bg-white/[0.03] border border-white/10 border-t-0 rounded-b-xl p-4">
-                                <p className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-3">Historico de transacoes</p>
+                                <div className="flex items-center justify-between mb-3">
+                                  <p className="text-white/60 text-xs font-semibold uppercase tracking-wider">Historico de transacoes</p>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleAddTransaction(account.id); }}
+                                    className="flex items-center gap-1 px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 rounded-lg text-emerald-400 text-xs font-medium transition-colors"
+                                  >
+                                    <span>+</span>
+                                    <span>Lancamento</span>
+                                  </button>
+                                </div>
                                 <TransactionHistory
                                   accountId={account.id}
                                   profileId={selectedProfileId}
@@ -730,7 +756,16 @@ export default function ContasPage() {
                               </div>
                               {isExpanded && selectedProfileId && (
                                 <div className="bg-white/[0.03] border border-white/10 border-t-0 rounded-b-xl p-4 ml-7">
-                                  <p className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-3">Historico de transacoes</p>
+                                  <div className="flex items-center justify-between mb-3">
+                                    <p className="text-white/60 text-xs font-semibold uppercase tracking-wider">Historico de transacoes</p>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleAddTransaction(account.id); }}
+                                      className="flex items-center gap-1 px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 rounded-lg text-emerald-400 text-xs font-medium transition-colors"
+                                    >
+                                      <span>+</span>
+                                      <span>Lancamento</span>
+                                    </button>
+                                  </div>
                                   <TransactionHistory
                                     accountId={account.id}
                                     profileId={selectedProfileId}
@@ -750,6 +785,19 @@ export default function ContasPage() {
           </>
         )}
       </div>
+
+      {selectedProfileId && (
+        <TransactionForm
+          isOpen={isTransactionFormOpen}
+          onClose={() => setIsTransactionFormOpen(false)}
+          onSave={handleSaveTransaction}
+          accounts={bankAccounts}
+          categories={categories}
+          defaultProfileId={selectedProfileId}
+          defaultBankAccountId={preselectedAccountId}
+          profiles={profiles.map((p) => ({ id: p.id, name: p.name }))}
+        />
+      )}
 
       <BankAccountModal
         isOpen={isBankAccountModalOpen}

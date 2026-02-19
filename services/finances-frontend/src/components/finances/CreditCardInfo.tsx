@@ -9,6 +9,8 @@ interface CreditCardInfoProps {
   invoices: Invoice[];
   onPayInvoice?: (invoiceId: string, amount: number) => Promise<void>;
   onEdit?: () => void;
+  selectedInvoiceId?: string;
+  onInvoiceSelect?: (invoiceId: string) => void;
 }
 
 const formatCurrency = (value: number, currency = 'BRL') =>
@@ -43,6 +45,8 @@ export default function CreditCardInfo({
   invoices,
   onPayInvoice,
   onEdit,
+  selectedInvoiceId,
+  onInvoiceSelect,
 }: CreditCardInfoProps) {
   const [showHistory, setShowHistory] = useState(false);
   const [payingInvoice, setPayingInvoice] = useState<string | null>(null);
@@ -231,10 +235,19 @@ export default function CreditCardInfo({
             {invoices.map((invoice) => {
               const status = getStatusLabel(invoice.status);
               const canPay = invoice.status !== 'PAID' && invoice.amount > 0;
+              const isSelected = selectedInvoiceId === invoice.id;
               return (
                 <div
                   key={invoice.id}
-                  className="flex items-center justify-between py-2 px-3 bg-white/5 rounded-lg"
+                  className={`flex items-center justify-between py-2 px-3 rounded-lg transition-colors ${
+                    isSelected
+                      ? 'bg-emerald-500/20 border border-emerald-500/40'
+                      : 'bg-white/5 border border-transparent hover:bg-white/10 cursor-pointer'
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onInvoiceSelect?.(isSelected ? '' : invoice.id);
+                  }}
                 >
                   <div>
                     <p className="text-white text-sm capitalize">{getMonthName(invoice.referenceDate)}</p>
@@ -249,7 +262,7 @@ export default function CreditCardInfo({
                     </div>
                     {canPay && onPayInvoice && (
                       <button
-                        onClick={() => handlePayInvoice(invoice)}
+                        onClick={(e) => { e.stopPropagation(); handlePayInvoice(invoice); }}
                         disabled={payingInvoice === invoice.id}
                         className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-600 text-white text-xs rounded-lg transition-colors"
                       >

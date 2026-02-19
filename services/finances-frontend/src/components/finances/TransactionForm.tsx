@@ -20,6 +20,7 @@ interface TransactionFormProps {
   accounts: BankAccount[];
   categories: Category[];
   defaultProfileId: string;
+  defaultBankAccountId?: string;
   loading?: boolean;
   profiles: { id: string; name: string }[];
   editingTransaction?: Transaction | null;
@@ -80,6 +81,7 @@ export default function TransactionForm({
   loading = false,
   profiles,
   editingTransaction,
+  defaultBankAccountId,
 }: TransactionFormProps) {
   const [formData, setFormData] = useState<TransactionFormData>(() => defaultForm(defaultProfileId));
   const [tagsInput, setTagsInput] = useState('');
@@ -124,7 +126,7 @@ export default function TransactionForm({
         setSelectedProfileId(defaultProfileId);
         setDestProfileId(defaultProfileId);
         setDestCategories([]);
-        const initialAccount = accounts.find((account) => account.profileId === defaultProfileId)?.id || '';
+        const initialAccount = defaultBankAccountId || accounts.find((account) => account.profileId === defaultProfileId)?.id || '';
         setFormData({
           ...defaultForm(defaultProfileId, 'CONFIRMED'),
           bankAccountId: initialAccount,
@@ -132,7 +134,7 @@ export default function TransactionForm({
         setTagsInput('');
       }
     }
-  }, [isOpen, defaultProfileId, accounts, categories, editingTransaction]);
+  }, [isOpen, defaultProfileId, defaultBankAccountId, accounts, categories, editingTransaction]);
 
   const availableCategories = useMemo(() => {
     // For cross-profile transfers, source side uses EXPENSE categories
