@@ -141,6 +141,13 @@ func (uc *UpdateTransactionUseCase) Execute(id string, input UpdateTransactionIn
 		}
 	}
 
+	// Capture old state for balance adjustment
+	oldAmount := existing.Amount
+	oldType := existing.Type
+	oldAccountID := existing.BankAccountID
+	oldStatus := existing.Status
+	oldDestAccountID := existing.DestinationAccountID
+
 	// Update the transaction fields
 	existing.BankAccountID = input.BankAccountID
 	existing.DestinationAccountID = destinationAccountID
@@ -170,7 +177,90 @@ func (uc *UpdateTransactionUseCase) Execute(id string, input UpdateTransactionIn
 		return nil, err
 	}
 
+	// Adjust bank account balances
+	if err := uc.adjustBalances(oldAccountID, oldType, oldAmount, oldStatus, oldDestAccountID,
+		input.BankAccountID, typeValue, input.Amount, status, destinationAccountID); err != nil {
+		return nil, err
+	}
+
 	return existing, nil
+}
+
+func (uc *UpdateTransactionUseCase) adjustBalances(
+	oldAccountID string, oldType transaction.Type, oldAmount float64, oldStatus transaction.Status, oldDestAccountID *string,
+	newAccountID string, newType transaction.Type, newAmount float64, newStatus transaction.Status, newDestAccountID *string,
+) error {
+	// Reverse old impact if it was CONFIRMED
+	if oldStatus == transaction.StatusConfirmed {
+		oldAccount, err := uc.accountRepo.FindByID(oldAccountID)
+		if err == nil && oldAccount.Type != bankaccount.AccountTypeCreditCard {
+			uc.reverseBalance(oldAccount, oldType, oldAmount)
+			oldAccount.UpdatedAt = time.Now()
+			if err := uc.accountRepo.Update(oldAccount); err != nil {
+				return err
+			}
+
+			// Reverse destination for transfers
+			if oldType == transaction.TypeTransfer && oldDestAccountID != nil {
+				oldDest, err := uc.accountRepo.FindByID(*oldDestAccountID)
+				if err == nil {
+					oldDest.CurrentBalance -= oldAmount
+					oldDest.UpdatedAt = time.Now()
+					if err := uc.accountRepo.Update(oldDest); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+
+	// Apply new impact if it is CONFIRMED
+	if newStatus == transaction.StatusConfirmed {
+		newAccount, err := uc.accountRepo.FindByID(newAccountID)
+		if err == nil && newAccount.Type != bankaccount.AccountTypeCreditCard {
+			uc.applyBalance(newAccount, newType, newAmount)
+			newAccount.UpdatedAt = time.Now()
+			if err := uc.accountRepo.Update(newAccount); err != nil {
+				return err
+			}
+
+			// Apply destination for transfers
+			if newType == transaction.TypeTransfer && newDestAccountID != nil {
+				newDest, err := uc.accountRepo.FindByID(*newDestAccountID)
+				if err == nil {
+					newDest.CurrentBalance += newAmount
+					newDest.UpdatedAt = time.Now()
+					if err := uc.accountRepo.Update(newDest); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func (uc *UpdateTransactionUseCase) reverseBalance(account *bankaccount.BankAccount, txType transaction.Type, amount float64) {
+	switch txType {
+	case transaction.TypeExpense:
+		account.CurrentBalance += amount
+	case transaction.TypeIncome:
+		account.CurrentBalance -= amount
+	case transaction.TypeTransfer:
+		account.CurrentBalance += amount
+	}
+}
+
+func (uc *UpdateTransactionUseCase) applyBalance(account *bankaccount.BankAccount, txType transaction.Type, amount float64) {
+	switch txType {
+	case transaction.TypeExpense:
+		account.CurrentBalance -= amount
+	case transaction.TypeIncome:
+		account.CurrentBalance += amount
+	case transaction.TypeTransfer:
+		account.CurrentBalance -= amount
+	}
 }
 
 func sanitizeTags(tags []string) []string {

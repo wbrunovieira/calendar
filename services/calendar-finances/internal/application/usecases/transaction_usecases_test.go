@@ -177,6 +177,29 @@ func (f *fakeTransactionRepo) SumByInvoiceID(invoiceID string) (float64, error) 
 	return total, nil
 }
 
+func (f *fakeTransactionRepo) CalculateBalanceByBankAccountID(bankAccountID string) (float64, error) {
+	var balance float64
+	for _, tx := range f.created {
+		if tx.Status != transaction.StatusConfirmed {
+			continue
+		}
+		if tx.BankAccountID == bankAccountID {
+			switch tx.Type {
+			case transaction.TypeIncome:
+				balance += tx.Amount
+			case transaction.TypeExpense:
+				balance -= tx.Amount
+			case transaction.TypeTransfer:
+				balance -= tx.Amount
+			}
+		}
+		if tx.DestinationAccountID != nil && *tx.DestinationAccountID == bankAccountID && tx.Type == transaction.TypeTransfer {
+			balance += tx.Amount
+		}
+	}
+	return balance, nil
+}
+
 type fakeInvoiceRepo struct {
 	invoices map[string]*invoice.Invoice
 }
@@ -3140,5 +3163,643 @@ func TestUpdateTransactionStatus_CrossProfileCancel_ShouldReverseBoth(t *testing
 	linkedTx, _ := txRepo.GetByID(destTxID)
 	if linkedTx.Status != transaction.StatusCancelled {
 		t.Fatalf("expected linked CANCELLED, got %s", linkedTx.Status)
+	}
+}
+
+// ===== UpdateTransaction Balance Adjustment Tests (TDD) =====
+
+func TestUpdateTransaction_AmountChange_AdjustsBalance(t *testing.T) {
+	profileID := "profile-1"
+	accountID := "account-1"
+	categoryID := "cat-1"
+	txID := "tx-1"
+	now := time.Now()
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Conta Corrente",
+			Type:           bankaccount.AccountTypeChecking,
+			CurrentBalance: 800, // Started at 1000, had 200 expense confirmed
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{
+		categoryID: {
+			ID:        categoryID,
+			ProfileID: profileID,
+			Name:      "Software",
+			Type:      category.TypeExpense,
+			IsActive:  true,
+		},
+	}}
+
+	existingTx := &transaction.Transaction{
+		ID:            txID,
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		CategoryID:    &categoryID,
+		Type:          transaction.TypeExpense,
+		Status:        transaction.StatusConfirmed,
+		Amount:        200, // Old amount
+		Currency:      "BRL",
+		Description:   "SaaS",
+		OccurredOn:    now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo)
+
+	confirmedStatus := "CONFIRMED"
+	_, err := useCase.Execute(txID, UpdateTransactionInput{
+		BankAccountID: accountID,
+		CategoryID:    &categoryID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        300, // New amount: 100 more
+		Currency:      "BRL",
+		Description:   "SaaS",
+		OccurredOn:    now.Format("2006-01-02"),
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Balance should go from 800 to 700 (reverse +200, apply -300 = net -100)
+	acc := accountRepo.accounts[accountID]
+	if acc.CurrentBalance != 700 {
+		t.Fatalf("expected balance 700, got %.2f", acc.CurrentBalance)
+	}
+}
+
+func TestUpdateTransaction_TypeChange_AdjustsBalance(t *testing.T) {
+	profileID := "profile-1"
+	accountID := "account-1"
+	categoryID := "cat-1"
+	txID := "tx-1"
+	now := time.Now()
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Conta Corrente",
+			Type:           bankaccount.AccountTypeChecking,
+			CurrentBalance: 900, // Started at 1000, had 100 expense
+			Currency:       "BRL",
+			IsActive:       true,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{
+		categoryID: {
+			ID:        categoryID,
+			ProfileID: profileID,
+			Name:      "Reembolso",
+			Type:      category.TypeIncome,
+			IsActive:  true,
+		},
+	}}
+
+	existingTx := &transaction.Transaction{
+		ID:            txID,
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		CategoryID:    &categoryID,
+		Type:          transaction.TypeExpense,
+		Status:        transaction.StatusConfirmed,
+		Amount:        100,
+		Currency:      "BRL",
+		Description:   "Compra",
+		OccurredOn:    now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo)
+
+	confirmedStatus := "CONFIRMED"
+	_, err := useCase.Execute(txID, UpdateTransactionInput{
+		BankAccountID: accountID,
+		CategoryID:    &categoryID,
+		Type:          "INCOME", // Changed from EXPENSE to INCOME
+		Status:        &confirmedStatus,
+		Amount:        100,
+		Currency:      "BRL",
+		Description:   "Reembolso",
+		OccurredOn:    now.Format("2006-01-02"),
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Balance: 900 + 100 (reverse expense) + 100 (apply income) = 1100
+	acc := accountRepo.accounts[accountID]
+	if acc.CurrentBalance != 1100 {
+		t.Fatalf("expected balance 1100, got %.2f", acc.CurrentBalance)
+	}
+}
+
+func TestUpdateTransaction_AccountSwitch_MovesBalance(t *testing.T) {
+	profileID := "profile-1"
+	accountA := "account-a"
+	accountB := "account-b"
+	categoryID := "cat-1"
+	txID := "tx-1"
+	now := time.Now()
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountA: {
+			ID:             accountA,
+			ProfileID:      profileID,
+			Name:           "Nubank",
+			Type:           bankaccount.AccountTypeChecking,
+			CurrentBalance: 800, // Had 200 expense
+			Currency:       "BRL",
+			IsActive:       true,
+		},
+		accountB: {
+			ID:             accountB,
+			ProfileID:      profileID,
+			Name:           "Mercado Pago",
+			Type:           bankaccount.AccountTypeChecking,
+			CurrentBalance: 500,
+			Currency:       "BRL",
+			IsActive:       true,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{
+		categoryID: {
+			ID:        categoryID,
+			ProfileID: profileID,
+			Name:      "Software",
+			Type:      category.TypeExpense,
+			IsActive:  true,
+		},
+	}}
+
+	existingTx := &transaction.Transaction{
+		ID:            txID,
+		ProfileID:     profileID,
+		BankAccountID: accountA,
+		CategoryID:    &categoryID,
+		Type:          transaction.TypeExpense,
+		Status:        transaction.StatusConfirmed,
+		Amount:        200,
+		Currency:      "BRL",
+		Description:   "SaaS",
+		OccurredOn:    now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo)
+
+	confirmedStatus := "CONFIRMED"
+	_, err := useCase.Execute(txID, UpdateTransactionInput{
+		BankAccountID: accountB, // Moved to account B
+		CategoryID:    &categoryID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        200,
+		Currency:      "BRL",
+		Description:   "SaaS",
+		OccurredOn:    now.Format("2006-01-02"),
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Account A: 800 + 200 (reverse) = 1000
+	accA := accountRepo.accounts[accountA]
+	if accA.CurrentBalance != 1000 {
+		t.Fatalf("expected account A balance 1000, got %.2f", accA.CurrentBalance)
+	}
+
+	// Account B: 500 - 200 (apply) = 300
+	accB := accountRepo.accounts[accountB]
+	if accB.CurrentBalance != 300 {
+		t.Fatalf("expected account B balance 300, got %.2f", accB.CurrentBalance)
+	}
+}
+
+func TestUpdateTransaction_CreditCard_NoBalanceChange(t *testing.T) {
+	profileID := "profile-1"
+	accountID := "account-cc"
+	categoryID := "cat-1"
+	txID := "tx-1"
+	now := time.Now()
+	limit := 5000.0
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Cartao",
+			Type:           bankaccount.AccountTypeCreditCard,
+			CurrentBalance: 0,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreditLimit:    &limit,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{
+		categoryID: {
+			ID:        categoryID,
+			ProfileID: profileID,
+			Name:      "Software",
+			Type:      category.TypeExpense,
+			IsActive:  true,
+		},
+	}}
+
+	existingTx := &transaction.Transaction{
+		ID:            txID,
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		CategoryID:    &categoryID,
+		Type:          transaction.TypeExpense,
+		Status:        transaction.StatusConfirmed,
+		Amount:        100,
+		Currency:      "BRL",
+		Description:   "Compra",
+		OccurredOn:    now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo)
+
+	confirmedStatus := "CONFIRMED"
+	_, err := useCase.Execute(txID, UpdateTransactionInput{
+		BankAccountID: accountID,
+		CategoryID:    &categoryID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        300, // Changed amount
+		Currency:      "BRL",
+		Description:   "Compra maior",
+		OccurredOn:    now.Format("2006-01-02"),
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Credit card balance should NOT change
+	acc := accountRepo.accounts[accountID]
+	if acc.CurrentBalance != 0 {
+		t.Fatalf("expected credit card balance 0, got %.2f", acc.CurrentBalance)
+	}
+}
+
+func TestUpdateTransaction_PlannedToConfirmed_AppliesBalance(t *testing.T) {
+	profileID := "profile-1"
+	accountID := "account-1"
+	categoryID := "cat-1"
+	txID := "tx-1"
+	now := time.Now()
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Conta Corrente",
+			Type:           bankaccount.AccountTypeChecking,
+			CurrentBalance: 1000,
+			Currency:       "BRL",
+			IsActive:       true,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{
+		categoryID: {
+			ID:        categoryID,
+			ProfileID: profileID,
+			Name:      "Software",
+			Type:      category.TypeExpense,
+			IsActive:  true,
+		},
+	}}
+
+	existingTx := &transaction.Transaction{
+		ID:            txID,
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		CategoryID:    &categoryID,
+		Type:          transaction.TypeExpense,
+		Status:        transaction.StatusPlanned, // Was PLANNED
+		Amount:        200,
+		Currency:      "BRL",
+		Description:   "SaaS",
+		OccurredOn:    now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo)
+
+	confirmedStatus := "CONFIRMED"
+	_, err := useCase.Execute(txID, UpdateTransactionInput{
+		BankAccountID: accountID,
+		CategoryID:    &categoryID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus, // Now CONFIRMED
+		Amount:        200,
+		Currency:      "BRL",
+		Description:   "SaaS",
+		OccurredOn:    now.Format("2006-01-02"),
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Balance: 1000 - 200 = 800 (PLANNED had no impact, CONFIRMED applies)
+	acc := accountRepo.accounts[accountID]
+	if acc.CurrentBalance != 800 {
+		t.Fatalf("expected balance 800, got %.2f", acc.CurrentBalance)
+	}
+}
+
+func TestUpdateTransaction_ConfirmedToPlanned_ReversesBalance(t *testing.T) {
+	profileID := "profile-1"
+	accountID := "account-1"
+	categoryID := "cat-1"
+	txID := "tx-1"
+	now := time.Now()
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Conta Corrente",
+			Type:           bankaccount.AccountTypeChecking,
+			CurrentBalance: 800, // 1000 - 200 expense
+			Currency:       "BRL",
+			IsActive:       true,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{
+		categoryID: {
+			ID:        categoryID,
+			ProfileID: profileID,
+			Name:      "Software",
+			Type:      category.TypeExpense,
+			IsActive:  true,
+		},
+	}}
+
+	existingTx := &transaction.Transaction{
+		ID:            txID,
+		ProfileID:     profileID,
+		BankAccountID: accountID,
+		CategoryID:    &categoryID,
+		Type:          transaction.TypeExpense,
+		Status:        transaction.StatusConfirmed,
+		Amount:        200,
+		Currency:      "BRL",
+		Description:   "SaaS",
+		OccurredOn:    now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo)
+
+	plannedStatus := "PLANNED"
+	_, err := useCase.Execute(txID, UpdateTransactionInput{
+		BankAccountID: accountID,
+		CategoryID:    &categoryID,
+		Type:          "EXPENSE",
+		Status:        &plannedStatus, // Changed to PLANNED
+		Amount:        200,
+		Currency:      "BRL",
+		Description:   "SaaS",
+		OccurredOn:    now.Format("2006-01-02"),
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Balance: 800 + 200 (reverse confirmed expense) = 1000
+	acc := accountRepo.accounts[accountID]
+	if acc.CurrentBalance != 1000 {
+		t.Fatalf("expected balance 1000, got %.2f", acc.CurrentBalance)
+	}
+}
+
+func TestUpdateTransaction_TransferDestinationChange_AdjustsBothDests(t *testing.T) {
+	profileID := "profile-1"
+	sourceID := "account-src"
+	oldDestID := "account-old-dest"
+	newDestID := "account-new-dest"
+	categoryID := "cat-1"
+	txID := "tx-1"
+	now := time.Now()
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		sourceID: {
+			ID:             sourceID,
+			ProfileID:      profileID,
+			Name:           "Nubank",
+			Type:           bankaccount.AccountTypeChecking,
+			CurrentBalance: 800, // 1000 - 200 transfer
+			Currency:       "BRL",
+			IsActive:       true,
+		},
+		oldDestID: {
+			ID:             oldDestID,
+			ProfileID:      profileID,
+			Name:           "Mercado Pago",
+			Type:           bankaccount.AccountTypeChecking,
+			CurrentBalance: 700, // 500 + 200 transfer
+			Currency:       "BRL",
+			IsActive:       true,
+		},
+		newDestID: {
+			ID:             newDestID,
+			ProfileID:      profileID,
+			Name:           "Clear",
+			Type:           bankaccount.AccountTypeChecking,
+			CurrentBalance: 300,
+			Currency:       "BRL",
+			IsActive:       true,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{
+		categoryID: {
+			ID:        categoryID,
+			ProfileID: profileID,
+			Name:      "Transferencia",
+			Type:      category.TypeTransfer,
+			IsActive:  true,
+		},
+	}}
+
+	existingTx := &transaction.Transaction{
+		ID:                   txID,
+		ProfileID:            profileID,
+		BankAccountID:        sourceID,
+		DestinationAccountID: &oldDestID,
+		CategoryID:           &categoryID,
+		Type:                 transaction.TypeTransfer,
+		Status:               transaction.StatusConfirmed,
+		Amount:               200,
+		Currency:              "BRL",
+		Description:          "Transferencia",
+		OccurredOn:           now,
+		CreatedAt:            now,
+		UpdatedAt:            now,
+	}
+
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo)
+
+	confirmedStatus := "CONFIRMED"
+	_, err := useCase.Execute(txID, UpdateTransactionInput{
+		BankAccountID:        sourceID,
+		DestinationAccountID: &newDestID, // Changed destination
+		CategoryID:           &categoryID,
+		Type:                 "TRANSFER",
+		Status:               &confirmedStatus,
+		Amount:               200,
+		Currency:             "BRL",
+		Description:          "Transferencia",
+		OccurredOn:           now.Format("2006-01-02"),
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Source stays the same: 800 (reverse +200, apply -200 = net 0)
+	src := accountRepo.accounts[sourceID]
+	if src.CurrentBalance != 800 {
+		t.Fatalf("expected source balance 800, got %.2f", src.CurrentBalance)
+	}
+
+	// Old dest: 700 - 200 (reverse credit) = 500
+	oldDest := accountRepo.accounts[oldDestID]
+	if oldDest.CurrentBalance != 500 {
+		t.Fatalf("expected old dest balance 500, got %.2f", oldDest.CurrentBalance)
+	}
+
+	// New dest: 300 + 200 (apply credit) = 500
+	newDest := accountRepo.accounts[newDestID]
+	if newDest.CurrentBalance != 500 {
+		t.Fatalf("expected new dest balance 500, got %.2f", newDest.CurrentBalance)
+	}
+}
+
+// ===== RecalculateBalance Tests (TDD) =====
+
+func TestRecalculateBalance_SumsConfirmedTransactions(t *testing.T) {
+	profileID := "profile-1"
+	accountID := "account-1"
+	otherAccountID := "account-2"
+	now := time.Now()
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Mercado Pago",
+			Type:           bankaccount.AccountTypeChecking,
+			CurrentBalance: 999, // Wrong balance (drifted)
+			Currency:       "BRL",
+			IsActive:       true,
+		},
+		otherAccountID: {
+			ID:             otherAccountID,
+			ProfileID:      profileID,
+			Name:           "Nubank",
+			Type:           bankaccount.AccountTypeChecking,
+			CurrentBalance: 500,
+			Currency:       "BRL",
+			IsActive:       true,
+		},
+	}}
+
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{
+		{
+			ID:            "tx-1",
+			ProfileID:     profileID,
+			BankAccountID: accountID,
+			Type:          transaction.TypeIncome,
+			Status:        transaction.StatusConfirmed,
+			Amount:        1000,
+			OccurredOn:    now,
+		},
+		{
+			ID:            "tx-2",
+			ProfileID:     profileID,
+			BankAccountID: accountID,
+			Type:          transaction.TypeExpense,
+			Status:        transaction.StatusConfirmed,
+			Amount:        300,
+			OccurredOn:    now,
+		},
+		{
+			ID:            "tx-3",
+			ProfileID:     profileID,
+			BankAccountID: accountID,
+			Type:          transaction.TypeExpense,
+			Status:        transaction.StatusPlanned, // Should be ignored
+			Amount:        9999,
+			OccurredOn:    now,
+		},
+		{
+			ID:                   "tx-4",
+			ProfileID:            profileID,
+			BankAccountID:        otherAccountID,
+			DestinationAccountID: &accountID,
+			Type:                 transaction.TypeTransfer,
+			Status:               transaction.StatusConfirmed,
+			Amount:               200, // Incoming transfer
+			OccurredOn:           now,
+		},
+	}}
+
+	useCase := NewRecalculateBalanceUseCase(accountRepo, txRepo)
+
+	result, err := useCase.Execute(accountID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Expected: +1000 (income) -300 (expense) +200 (incoming transfer) = 900
+	if result.NewBalance != 900 {
+		t.Fatalf("expected new balance 900, got %.2f", result.NewBalance)
+	}
+
+	if result.OldBalance != 999 {
+		t.Fatalf("expected old balance 999, got %.2f", result.OldBalance)
+	}
+
+	// Account should be updated
+	acc := accountRepo.accounts[accountID]
+	if acc.CurrentBalance != 900 {
+		t.Fatalf("expected account balance 900, got %.2f", acc.CurrentBalance)
 	}
 }

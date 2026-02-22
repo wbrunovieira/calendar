@@ -98,6 +98,10 @@ func (f *fakeTxRepoForBudget) SumByInvoiceID(invoiceID string) (float64, error) 
 	return 0, nil
 }
 
+func (f *fakeTxRepoForBudget) CalculateBalanceByBankAccountID(bankAccountID string) (float64, error) {
+	return 0, nil
+}
+
 type fakeCategoryRepoForBudget struct {
 	categories map[string]*category.Category
 }

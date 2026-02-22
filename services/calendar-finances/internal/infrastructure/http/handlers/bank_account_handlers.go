@@ -9,12 +9,13 @@ import (
 )
 
 type BankAccountHandlers struct {
-	createUseCase  *usecases.CreateBankAccountUseCase
-	listUseCase    *usecases.ListBankAccountsUseCase
-	getUseCase     *usecases.GetBankAccountUseCase
-	updateUseCase  *usecases.UpdateBankAccountUseCase
-	deleteUseCase  *usecases.DeleteBankAccountUseCase
-	reorderUseCase *usecases.ReorderBankAccountsUseCase
+	createUseCase              *usecases.CreateBankAccountUseCase
+	listUseCase                *usecases.ListBankAccountsUseCase
+	getUseCase                 *usecases.GetBankAccountUseCase
+	updateUseCase              *usecases.UpdateBankAccountUseCase
+	deleteUseCase              *usecases.DeleteBankAccountUseCase
+	reorderUseCase             *usecases.ReorderBankAccountsUseCase
+	recalculateBalanceUseCase  *usecases.RecalculateBalanceUseCase
 }
 
 func NewBankAccountHandlers(
@@ -24,14 +25,16 @@ func NewBankAccountHandlers(
 	updateUC *usecases.UpdateBankAccountUseCase,
 	deleteUC *usecases.DeleteBankAccountUseCase,
 	reorderUC *usecases.ReorderBankAccountsUseCase,
+	recalculateBalanceUC *usecases.RecalculateBalanceUseCase,
 ) *BankAccountHandlers {
 	return &BankAccountHandlers{
-		createUseCase:  createUC,
-		listUseCase:    listUC,
-		getUseCase:     getUC,
-		updateUseCase:  updateUC,
-		deleteUseCase:  deleteUC,
-		reorderUseCase: reorderUC,
+		createUseCase:              createUC,
+		listUseCase:                listUC,
+		getUseCase:                 getUC,
+		updateUseCase:              updateUC,
+		deleteUseCase:              deleteUC,
+		reorderUseCase:             reorderUC,
+		recalculateBalanceUseCase:  recalculateBalanceUC,
 	}
 }
 
@@ -136,6 +139,27 @@ func (h *BankAccountHandlers) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// RecalculateBalance handles POST /api/v1/bank-accounts/{id}/recalculate-balance
+func (h *BankAccountHandlers) RecalculateBalance(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	result, err := h.recalculateBalanceUseCase.Execute(id)
+	if err != nil {
+		if err == usecases.ErrBankAccountNotFound {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"data": result,
+	})
 }
 
 // Reorder handles PUT /api/v1/bank-accounts/reorder

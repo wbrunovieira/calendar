@@ -78,6 +78,29 @@ func (f *FakeTransactionRepository) SumByInvoiceID(invoiceID string) (float64, e
 	return 0, nil
 }
 
+func (f *FakeTransactionRepository) CalculateBalanceByBankAccountID(bankAccountID string) (float64, error) {
+	var balance float64
+	for _, tx := range f.transactions {
+		if tx.Status != transaction.StatusConfirmed {
+			continue
+		}
+		if tx.BankAccountID == bankAccountID {
+			switch tx.Type {
+			case transaction.TypeIncome:
+				balance += tx.Amount
+			case transaction.TypeExpense:
+				balance -= tx.Amount
+			case transaction.TypeTransfer:
+				balance -= tx.Amount
+			}
+		}
+		if tx.DestinationAccountID != nil && *tx.DestinationAccountID == bankAccountID && tx.Type == transaction.TypeTransfer {
+			balance += tx.Amount
+		}
+	}
+	return balance, nil
+}
+
 func TestListTransactions_FilterByDateRange_ShouldReturnOnlyTransactionsInRange(t *testing.T) {
 	// Arrange
 	profileID := "profile-1"

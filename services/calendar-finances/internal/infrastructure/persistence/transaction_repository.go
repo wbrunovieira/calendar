@@ -735,3 +735,39 @@ func (r *TransactionRepository) SumByInvoiceID(invoiceID string) (float64, error
 
 	return round2(total), nil
 }
+
+// CalculateBalanceByBankAccountID calculates the net balance from all CONFIRMED
+// transactions for a given bank account, including incoming transfers.
+func (r *TransactionRepository) CalculateBalanceByBankAccountID(bankAccountID string) (float64, error) {
+	if strings.TrimSpace(bankAccountID) == "" {
+		return 0, errors.New("bankAccountID is required")
+	}
+
+	query := `
+		SELECT
+			COALESCE((
+				SELECT SUM(CASE
+					WHEN type = 'INCOME' THEN amount
+					WHEN type = 'EXPENSE' THEN -amount
+					WHEN type = 'TRANSFER' THEN -amount
+					ELSE 0
+				END)
+				FROM finance.transactions
+				WHERE bank_account_id = $1 AND status = 'CONFIRMED'
+			), 0)
+			+
+			COALESCE((
+				SELECT SUM(amount)
+				FROM finance.transactions
+				WHERE destination_account_id = $1 AND status = 'CONFIRMED' AND type = 'TRANSFER'
+			), 0)
+	`
+
+	var balance float64
+	err := r.db.QueryRow(query, bankAccountID).Scan(&balance)
+	if err != nil {
+		return 0, err
+	}
+
+	return round2(balance), nil
+}

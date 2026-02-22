@@ -65,17 +65,20 @@ func main() {
 		deleteProfileUC,
 	)
 
-	// Initialize Bank Account repository and use cases
+	// Initialize repositories
 	bankAccountRepo := persistence.NewBankAccountRepository(db)
+	categoryRepo := persistence.NewCategoryRepository(db)
+	invoiceRepo := persistence.NewInvoiceRepository(db)
+	transactionRepo := persistence.NewTransactionRepository(db)
+
+	// Initialize Bank Account use cases and handlers
 	createBankAccountUC := usecases.NewCreateBankAccountUseCase(bankAccountRepo)
 	listBankAccountsUC := usecases.NewListBankAccountsUseCase(bankAccountRepo)
 	getBankAccountUC := usecases.NewGetBankAccountUseCase(bankAccountRepo)
 	updateBankAccountUC := usecases.NewUpdateBankAccountUseCase(bankAccountRepo)
 	deleteBankAccountUC := usecases.NewDeleteBankAccountUseCase(bankAccountRepo)
-
 	reorderBankAccountsUC := usecases.NewReorderBankAccountsUseCase(bankAccountRepo)
-
-	// Initialize Bank Account handlers
+	recalculateBalanceUC := usecases.NewRecalculateBalanceUseCase(bankAccountRepo, transactionRepo)
 	bankAccountHandler := httpHandlers.NewBankAccountHandlers(
 		createBankAccountUC,
 		listBankAccountsUC,
@@ -83,9 +86,10 @@ func main() {
 		updateBankAccountUC,
 		deleteBankAccountUC,
 		reorderBankAccountsUC,
+		recalculateBalanceUC,
 	)
-	// Initialize Category repository and use cases
-	categoryRepo := persistence.NewCategoryRepository(db)
+
+	// Initialize Category use cases and handlers
 	createCategoryUC := usecases.NewCreateCategoryUseCase(profileRepo, categoryRepo)
 	listCategoriesUC := usecases.NewListCategoriesUseCase(categoryRepo)
 	updateCategoryUC := usecases.NewUpdateCategoryUseCase(categoryRepo)
@@ -97,11 +101,7 @@ func main() {
 		deleteCategoryUC,
 	)
 
-	// Initialize Invoice repository
-	invoiceRepo := persistence.NewInvoiceRepository(db)
-
-	// Initialize Transaction repository and use cases
-	transactionRepo := persistence.NewTransactionRepository(db)
+	// Initialize Transaction use cases and handlers
 	createTransactionUC := usecases.NewCreateTransactionUseCase(profileRepo, bankAccountRepo, categoryRepo, transactionRepo, invoiceRepo)
 	listTransactionsUC := usecases.NewListTransactionsUseCase(transactionRepo)
 	getTransactionUC := usecases.NewGetTransactionUseCase(transactionRepo)
@@ -163,6 +163,7 @@ func main() {
 	apiRouter.HandleFunc("/bank-accounts/{id}", bankAccountHandler.Get).Methods("GET")
 	apiRouter.HandleFunc("/bank-accounts/{id}", bankAccountHandler.Update).Methods("PUT")
 	apiRouter.HandleFunc("/bank-accounts/{id}", bankAccountHandler.Delete).Methods("DELETE")
+	apiRouter.HandleFunc("/bank-accounts/{id}/recalculate-balance", bankAccountHandler.RecalculateBalance).Methods("POST")
 
 	// Accounts routes (placeholder)
 	apiRouter.HandleFunc("/accounts", handlers.NotImplemented).Methods("GET", "POST")

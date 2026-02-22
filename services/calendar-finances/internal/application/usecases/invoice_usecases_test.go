@@ -171,6 +171,10 @@ func (f *fakeTransactionRepoWithInvoice) SumByInvoiceID(invoiceID string) (float
 	return total, nil
 }
 
+func (f *fakeTransactionRepoWithInvoice) CalculateBalanceByBankAccountID(bankAccountID string) (float64, error) {
+	return 0, nil
+}
+
 // Test: Transaction before closing day should go to current month's invoice
 func TestCreditCardTransaction_BeforeClosingDay_GoesToCurrentMonthInvoice(t *testing.T) {
 	f := newTestFixtures()
