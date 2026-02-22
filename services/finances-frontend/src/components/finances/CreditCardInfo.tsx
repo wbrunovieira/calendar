@@ -239,19 +239,28 @@ export default function CreditCardInfo({
               return (
                 <div
                   key={invoice.id}
-                  className={`flex items-center justify-between py-2 px-3 rounded-lg transition-all duration-200 ${
+                  className={`flex items-center justify-between py-2 px-3 rounded-lg cursor-pointer transition-all duration-200 ${
                     isSelected
-                      ? 'bg-emerald-500/15 border-2 border-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.25)] ring-1 ring-emerald-400/30'
-                      : 'bg-white/5 border border-transparent hover:bg-white/10 cursor-pointer'
+                      ? 'bg-emerald-500/15'
+                      : 'bg-white/5 hover:bg-white/10'
                   }`}
+                  style={{
+                    border: isSelected ? '2px solid #34d399' : '1px solid rgba(255,255,255,0.06)',
+                    boxShadow: isSelected ? '0 0 20px rgba(52, 211, 153, 0.4), inset 0 0 12px rgba(52, 211, 153, 0.08)' : 'none',
+                  }}
                   onClick={(e) => {
                     e.stopPropagation();
                     onInvoiceSelect?.(isSelected ? '' : invoice.id);
                   }}
                 >
-                  <div>
-                    <p className="text-white text-sm capitalize">{getMonthName(invoice.referenceDate)}</p>
-                    <p className="text-white/50 text-xs">Fecha {formatDate(invoice.closingDate)} | Vence {formatDate(invoice.dueDate)}</p>
+                  <div className="flex items-center gap-2">
+                    {isSelected && (
+                      <span className="text-emerald-400 text-sm">&#10003;</span>
+                    )}
+                    <div>
+                      <p className={`text-sm capitalize ${isSelected ? 'text-emerald-300 font-semibold' : 'text-white'}`}>{getMonthName(invoice.referenceDate)}</p>
+                      <p className="text-white/50 text-xs">Fecha {formatDate(invoice.closingDate)} | Vence {formatDate(invoice.dueDate)}</p>
+                    </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="text-right">

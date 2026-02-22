@@ -611,7 +611,10 @@ export default function ContasPage() {
                               <div className="flex items-center gap-1">
                                 <DragHandle listeners={listeners} attributes={attributes} />
                                 <div
-                                  className="cursor-pointer flex-1"
+                                  className="cursor-pointer flex-1 rounded-xl transition-all duration-300"
+                                  style={isExpanded ? {
+                                    boxShadow: '0 0 20px rgba(52, 211, 153, 0.3), 0 0 0 2px #34d399',
+                                  } : undefined}
                                   onClick={() => toggleExpand(account.id)}
                                 >
                                   <CreditCardInfo
@@ -656,9 +659,15 @@ export default function ContasPage() {
                         {({ listeners, attributes }) => (
                           <div>
                             <div
-                              className={`border border-white/10 p-4 bg-white/5 cursor-pointer hover:bg-white/10 transition-colors ${
+                              className={`p-4 bg-white/5 cursor-pointer hover:bg-white/10 transition-all duration-300 ${
                                 isExpanded ? 'rounded-t-xl' : 'rounded-xl'
                               }`}
+                              style={isExpanded ? {
+                                border: '2px solid #34d399',
+                                boxShadow: '0 0 20px rgba(52, 211, 153, 0.3)',
+                              } : {
+                                border: '1px solid rgba(255, 255, 255, 0.1)',
+                              }}
                               onClick={() => toggleExpand(account.id)}
                             >
                               <div className="flex items-center justify-between">
@@ -741,7 +750,10 @@ export default function ContasPage() {
                               <div className="flex items-center gap-1">
                                 <DragHandle listeners={listeners} attributes={attributes} />
                                 <div
-                                  className="cursor-pointer flex-1"
+                                  className="cursor-pointer flex-1 rounded-xl transition-all duration-300"
+                                  style={isExpanded ? {
+                                    boxShadow: '0 0 20px rgba(52, 211, 153, 0.3), 0 0 0 2px #34d399',
+                                  } : undefined}
                                   onClick={() => toggleExpand(account.id)}
                                 >
                                   <InvestmentAccountInfo
