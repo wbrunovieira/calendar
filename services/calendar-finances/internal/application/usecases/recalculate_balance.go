@@ -35,11 +35,12 @@ func (uc *RecalculateBalanceUseCase) Execute(accountID string) (*RecalculateBala
 
 	oldBalance := account.CurrentBalance
 
-	newBalance, err := uc.transactionRepo.CalculateBalanceByBankAccountID(accountID)
+	transactionBalance, err := uc.transactionRepo.CalculateBalanceByBankAccountID(accountID)
 	if err != nil {
 		return nil, err
 	}
 
+	newBalance := account.InitialBalance + transactionBalance
 	account.CurrentBalance = newBalance
 	account.UpdatedAt = time.Now()
 

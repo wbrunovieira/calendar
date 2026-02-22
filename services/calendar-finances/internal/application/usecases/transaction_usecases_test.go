@@ -3788,7 +3788,7 @@ func TestRecalculateBalance_SumsConfirmedTransactions(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Expected: +1000 (income) -300 (expense) +200 (incoming transfer) = 900
+	// Expected: 0 (initial) + 1000 (income) - 300 (expense) + 200 (incoming transfer) = 900
 	if result.NewBalance != 900 {
 		t.Fatalf("expected new balance 900, got %.2f", result.NewBalance)
 	}
@@ -3801,5 +3801,48 @@ func TestRecalculateBalance_SumsConfirmedTransactions(t *testing.T) {
 	acc := accountRepo.accounts[accountID]
 	if acc.CurrentBalance != 900 {
 		t.Fatalf("expected account balance 900, got %.2f", acc.CurrentBalance)
+	}
+}
+
+func TestRecalculateBalance_IncludesInitialBalance(t *testing.T) {
+	profileID := "profile-1"
+	accountID := "account-1"
+	now := time.Now()
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Nubank Juridica",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 1000, // Started with 1000
+			CurrentBalance: 999,  // Drifted
+			Currency:       "BRL",
+			IsActive:       true,
+		},
+	}}
+
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{
+		{
+			ID:            "tx-1",
+			ProfileID:     profileID,
+			BankAccountID: accountID,
+			Type:          transaction.TypeExpense,
+			Status:        transaction.StatusConfirmed,
+			Amount:        300,
+			OccurredOn:    now,
+		},
+	}}
+
+	useCase := NewRecalculateBalanceUseCase(accountRepo, txRepo)
+
+	result, err := useCase.Execute(accountID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Expected: 1000 (initial) - 300 (expense) = 700
+	if result.NewBalance != 700 {
+		t.Fatalf("expected new balance 700, got %.2f", result.NewBalance)
 	}
 }
