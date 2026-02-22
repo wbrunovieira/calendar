@@ -145,7 +145,7 @@ export default function CreditCardInfo({
             <p className="text-white font-bold text-lg">{formatCurrency(currentAmount)}</p>
             {currentInvoice && (
               <p className="text-white/50 text-xs">
-                Vence {formatDate(currentInvoice.dueDate)}
+                Fecha {formatDate(currentInvoice.closingDate)} | Vence {formatDate(currentInvoice.dueDate)}
               </p>
             )}
           </div>
@@ -197,7 +197,7 @@ export default function CreditCardInfo({
                       <div className="text-left">
                         <p className="text-white text-sm capitalize">{getMonthName(invoice.referenceDate)}</p>
                         <p className="text-white/50 text-xs">
-                          Vence {formatDate(invoice.dueDate)}
+                          Fecha {formatDate(invoice.closingDate)} | Vence {formatDate(invoice.dueDate)}
                           <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] ${status.color}`}>
                             {status.label}
                           </span>
@@ -239,9 +239,9 @@ export default function CreditCardInfo({
               return (
                 <div
                   key={invoice.id}
-                  className={`flex items-center justify-between py-2 px-3 rounded-lg transition-colors ${
+                  className={`flex items-center justify-between py-2 px-3 rounded-lg transition-all duration-200 ${
                     isSelected
-                      ? 'bg-emerald-500/20 border border-emerald-500/40'
+                      ? 'bg-emerald-500/15 border-2 border-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.25)] ring-1 ring-emerald-400/30'
                       : 'bg-white/5 border border-transparent hover:bg-white/10 cursor-pointer'
                   }`}
                   onClick={(e) => {
@@ -251,7 +251,7 @@ export default function CreditCardInfo({
                 >
                   <div>
                     <p className="text-white text-sm capitalize">{getMonthName(invoice.referenceDate)}</p>
-                    <p className="text-white/50 text-xs">Venceu {formatDate(invoice.dueDate)}</p>
+                    <p className="text-white/50 text-xs">Fecha {formatDate(invoice.closingDate)} | Vence {formatDate(invoice.dueDate)}</p>
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="text-right">
