@@ -9,11 +9,15 @@ import (
 )
 
 type RecurringTransactionHandlers struct {
-	service *usecases.RecurringTransactionsService
+	service   *usecases.RecurringTransactionsService
+	processUC *usecases.ProcessRecurringTransactionsUseCase
 }
 
-func NewRecurringTransactionHandlers(service *usecases.RecurringTransactionsService) *RecurringTransactionHandlers {
-	return &RecurringTransactionHandlers{service: service}
+func NewRecurringTransactionHandlers(
+	service *usecases.RecurringTransactionsService,
+	processUC *usecases.ProcessRecurringTransactionsUseCase,
+) *RecurringTransactionHandlers {
+	return &RecurringTransactionHandlers{service: service, processUC: processUC}
 }
 
 // List handles GET /api/v1/recurring-transactions?profileId=...
@@ -113,6 +117,17 @@ func (h *RecurringTransactionHandlers) Delete(w http.ResponseWriter, r *http.Req
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Process handles POST /api/v1/recurring-transactions/process
+func (h *RecurringTransactionHandlers) Process(w http.ResponseWriter, r *http.Request) {
+	result, err := h.processUC.Execute()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	respondJSON(w, map[string]any{"data": result})
 }
 
 func respondJSON(w http.ResponseWriter, payload any) {

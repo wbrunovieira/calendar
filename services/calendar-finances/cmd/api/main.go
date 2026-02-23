@@ -140,7 +140,8 @@ func main() {
 
 	recurringRepo := persistence.NewRecurringTransactionRepository(db)
 	recurringService := usecases.NewRecurringTransactionsService(recurringRepo)
-	recurringHandler := httpHandlers.NewRecurringTransactionHandlers(recurringService)
+	processRecurringUC := usecases.NewProcessRecurringTransactionsUseCase(recurringRepo, createTransactionUC)
+	recurringHandler := httpHandlers.NewRecurringTransactionHandlers(recurringService, processRecurringUC)
 
 	budgetRepo := persistence.NewBudgetTargetRepository(db)
 	budgetService := usecases.NewBudgetTargetsService(budgetRepo, transactionRepo, categoryRepo)
@@ -182,6 +183,7 @@ func main() {
 	apiRouter.HandleFunc("/transactions/{id}/status", transactionHandler.UpdateStatus).Methods("PUT")
 	apiRouter.HandleFunc("/recurring-transactions", recurringHandler.List).Methods("GET")
 	apiRouter.HandleFunc("/recurring-transactions", recurringHandler.Create).Methods("POST")
+	apiRouter.HandleFunc("/recurring-transactions/process", recurringHandler.Process).Methods("POST")
 	apiRouter.HandleFunc("/recurring-transactions/{id}", recurringHandler.Update).Methods("PUT")
 	apiRouter.HandleFunc("/recurring-transactions/{id}/status", recurringHandler.UpdateStatus).Methods("PATCH")
 	apiRouter.HandleFunc("/recurring-transactions/{id}", recurringHandler.Delete).Methods("DELETE")

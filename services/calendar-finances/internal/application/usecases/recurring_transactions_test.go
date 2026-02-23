@@ -46,6 +46,16 @@ func (f *fakeRecurringRepo) ListByProfile(profileID string) ([]*recurringtransac
 	return list, nil
 }
 
+func (f *fakeRecurringRepo) FindDueRecurring(before time.Time) ([]*recurringtransaction.RecurringTransaction, error) {
+	var list []*recurringtransaction.RecurringTransaction
+	for _, entity := range f.items {
+		if entity.Status == recurringtransaction.StatusActive && !entity.NextOccurrence.After(before) {
+			list = append(list, entity)
+		}
+	}
+	return list, nil
+}
+
 func (f *fakeRecurringRepo) Delete(id string) error {
 	if _, ok := f.items[id]; !ok {
 		return errors.New("not found")

@@ -140,6 +140,33 @@ func (r *RecurringTransactionRepository) ListByProfile(profileID string) ([]*rec
 	return items, nil
 }
 
+func (r *RecurringTransactionRepository) FindDueRecurring(before time.Time) ([]*recurringtransaction.RecurringTransaction, error) {
+	query := `
+		SELECT id, profile_id, bank_account_id, category_id, type, amount, currency, description,
+			recurrence_rule, start_on, end_on, next_occurrence, status, review_on, notes, created_at, updated_at
+		FROM finance.recurring_transactions
+		WHERE status = 'ACTIVE' AND next_occurrence <= $1
+		ORDER BY next_occurrence ASC
+	`
+
+	rows, err := r.db.Query(query, before)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []*recurringtransaction.RecurringTransaction
+	for rows.Next() {
+		item, err := scanRecurring(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+
+	return items, nil
+}
+
 func (r *RecurringTransactionRepository) Delete(id string) error {
 	result, err := r.db.Exec(`DELETE FROM finance.recurring_transactions WHERE id = $1`, id)
 	if err != nil {
