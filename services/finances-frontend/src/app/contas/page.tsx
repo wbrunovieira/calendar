@@ -95,17 +95,18 @@ function TransactionHistory({
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
   }, [transactions]);
 
-  // Running balance: derive backwards from currentBalance so last day always matches
+  // Running balance: derive backwards from currentBalance (only confirmed count)
   const dayBalances = useMemo(() => {
-    // Sum all visible transactions to find what the starting point must be
-    let totalFromTxs = 0;
+    // Only confirmed transactions affect currentBalance
+    let confirmedTotal = 0;
     for (const [, dayTxs] of groupedByDay) {
       for (const tx of dayTxs) {
-        if (tx.type === 'INCOME') totalFromTxs += tx.amount;
-        else totalFromTxs -= tx.amount;
+        if (tx.status === 'PLANNED' || tx.status === 'CANCELLED') continue;
+        if (tx.type === 'INCOME') confirmedTotal += tx.amount;
+        else confirmedTotal -= tx.amount;
       }
     }
-    const startBalance = currentBalance - totalFromTxs;
+    const startBalance = currentBalance - confirmedTotal;
 
     const balances: Record<string, number> = {};
     let running = startBalance;
