@@ -46,13 +46,13 @@ function TransactionHistory({
   profileId,
   categories,
   selectedInvoiceId,
-  initialBalance = 0,
+  currentBalance = 0,
 }: {
   accountId: string;
   profileId: string;
   categories: Category[];
   selectedInvoiceId?: string;
-  initialBalance?: number;
+  currentBalance?: number;
 }) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,19 +95,29 @@ function TransactionHistory({
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
   }, [transactions]);
 
-  // Running balance: start from initialBalance, accumulate chronologically
+  // Running balance: derive backwards from currentBalance so last day always matches
   const dayBalances = useMemo(() => {
+    // Sum all visible transactions to find what the starting point must be
+    let totalFromTxs = 0;
+    for (const [, dayTxs] of groupedByDay) {
+      for (const tx of dayTxs) {
+        if (tx.type === 'INCOME') totalFromTxs += tx.amount;
+        else totalFromTxs -= tx.amount;
+      }
+    }
+    const startBalance = currentBalance - totalFromTxs;
+
     const balances: Record<string, number> = {};
-    let running = initialBalance;
+    let running = startBalance;
     for (const [dateKey, dayTxs] of groupedByDay) {
       for (const tx of dayTxs) {
         if (tx.type === 'INCOME') running += tx.amount;
-        else running -= tx.amount; // EXPENSE and TRANSFER (outgoing)
+        else running -= tx.amount;
       }
       balances[dateKey] = running;
     }
     return balances;
-  }, [groupedByDay, initialBalance]);
+  }, [groupedByDay, currentBalance]);
 
   // Display newest first
   const groupedByDayDesc = useMemo(
@@ -698,7 +708,7 @@ export default function ContasPage() {
                                     profileId={selectedProfileId}
                                     categories={categories}
                                     selectedInvoiceId={selectedInvoiceByAccount[account.id] || ''}
-                                    initialBalance={account.initialBalance}
+                                    currentBalance={account.currentBalance}
                                   />
                                 </div>
                               )}
@@ -760,7 +770,7 @@ export default function ContasPage() {
                                   accountId={account.id}
                                   profileId={selectedProfileId}
                                   categories={categories}
-                                  initialBalance={account.initialBalance}
+                                  currentBalance={account.currentBalance}
                                 />
                               </div>
                             )}
@@ -837,7 +847,7 @@ export default function ContasPage() {
                                     accountId={account.id}
                                     profileId={selectedProfileId}
                                     categories={categories}
-                                    initialBalance={account.initialBalance}
+                                    currentBalance={account.currentBalance}
                                   />
                                 </div>
                               )}
