@@ -19,7 +19,7 @@ func TestCalculateDailyBalances_SimpleExpensesAndIncome(t *testing.T) {
 	}
 
 	// currentBalance = 1000 - 200 - 300 = 500
-	result := CalculateDailyBalances(txs, 500)
+	result := CalculateDailyBalances(txs, 500, "acc-1")
 
 	if len(result) != 2 {
 		t.Fatalf("expected 2 days, got %d", len(result))
@@ -55,7 +55,7 @@ func TestCalculateDailyBalances_LastDayMatchesCurrentBalance(t *testing.T) {
 	}
 
 	currentBalance := 1204.99
-	result := CalculateDailyBalances(txs, currentBalance)
+	result := CalculateDailyBalances(txs, currentBalance, "acc-1")
 
 	lastDay := result[len(result)-1]
 	if lastDay.Balance != currentBalance {
@@ -73,7 +73,7 @@ func TestCalculateDailyBalances_PlannedTransactionsExcludedFromDerivation(t *tes
 
 	// currentBalance reflects only confirmed: 1000 - 500 = 500
 	currentBalance := 500.0
-	result := CalculateDailyBalances(txs, currentBalance)
+	result := CalculateDailyBalances(txs, currentBalance, "acc-1")
 
 	if len(result) != 4 {
 		t.Fatalf("expected 4 days, got %d", len(result))
@@ -106,7 +106,7 @@ func TestCalculateDailyBalances_CancelledTransactionsIgnored(t *testing.T) {
 	}
 
 	currentBalance := 1000.0
-	result := CalculateDailyBalances(txs, currentBalance)
+	result := CalculateDailyBalances(txs, currentBalance, "acc-1")
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 day, got %d", len(result))
@@ -127,7 +127,7 @@ func TestCalculateDailyBalances_TransferSubtractsFromSource(t *testing.T) {
 	}
 
 	// currentBalance = 5000 - 3000 = 2000
-	result := CalculateDailyBalances(txs, 2000)
+	result := CalculateDailyBalances(txs, 2000, "acc-1")
 
 	if result[0].Balance != 5000 {
 		t.Errorf("day 1 balance should be 5000, got %.2f", result[0].Balance)
@@ -140,8 +140,34 @@ func TestCalculateDailyBalances_TransferSubtractsFromSource(t *testing.T) {
 	}
 }
 
+func TestCalculateDailyBalances_IncomingTransferAddsToDestination(t *testing.T) {
+	source := "acc-source"
+	dest := "acc-1"
+	txs := []*Transaction{
+		{ID: "1", BankAccountID: "acc-1", Type: TypeIncome, Status: StatusConfirmed, Amount: 1000, OccurredOn: date(2026, 1, 1)},
+		{ID: "2", BankAccountID: source, Type: TypeTransfer, Status: StatusConfirmed, Amount: 4000, OccurredOn: date(2026, 1, 2), DestinationAccountID: &dest},
+	}
+
+	// currentBalance = 1000 + 4000 = 5000
+	result := CalculateDailyBalances(txs, 5000, "acc-1")
+
+	if len(result) != 2 {
+		t.Fatalf("expected 2 days, got %d", len(result))
+	}
+	if result[0].Balance != 1000 {
+		t.Errorf("day 1 balance should be 1000, got %.2f", result[0].Balance)
+	}
+	// Incoming transfer: +4000
+	if result[1].Balance != 5000 {
+		t.Errorf("day 2 after incoming transfer should be 5000, got %.2f", result[1].Balance)
+	}
+	if result[1].DayTotal != 4000 {
+		t.Errorf("incoming transfer dayTotal should be +4000, got %.2f", result[1].DayTotal)
+	}
+}
+
 func TestCalculateDailyBalances_EmptyTransactions(t *testing.T) {
-	result := CalculateDailyBalances(nil, 1000)
+	result := CalculateDailyBalances(nil, 1000, "acc-1")
 
 	if len(result) != 0 {
 		t.Errorf("expected 0 days for empty transactions, got %d", len(result))
@@ -156,7 +182,7 @@ func TestCalculateDailyBalances_MultipleDaysSameDate(t *testing.T) {
 	}
 
 	// currentBalance = 100 - 30 - 20 = 50
-	result := CalculateDailyBalances(txs, 50)
+	result := CalculateDailyBalances(txs, 50, "acc-1")
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 day (all same date), got %d", len(result))
@@ -175,7 +201,7 @@ func TestCalculateDailyBalances_FloatingPointPrecision(t *testing.T) {
 		{ID: "2", BankAccountID: "acc-1", Type: TypeIncome, Status: StatusConfirmed, Amount: 0.2, OccurredOn: date(2026, 1, 1)},
 	}
 
-	result := CalculateDailyBalances(txs, 0.3)
+	result := CalculateDailyBalances(txs, 0.3, "acc-1")
 
 	if result[0].Balance != 0.3 {
 		t.Errorf("expected 0.3 (rounded), got %.20f", result[0].Balance)

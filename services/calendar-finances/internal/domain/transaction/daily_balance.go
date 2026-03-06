@@ -10,7 +10,10 @@ type DailyBalance struct {
 	DayTotal float64 `json:"dayTotal"`
 }
 
-func CalculateDailyBalances(txs []*Transaction, currentBalance float64) []DailyBalance {
+// CalculateDailyBalances computes running daily balances for a specific bank account.
+// bankAccountID is used to determine the sign of transfers (outgoing vs incoming).
+// If empty, transfers with DestinationAccountID are treated as outgoing.
+func CalculateDailyBalances(txs []*Transaction, currentBalance float64, bankAccountID string) []DailyBalance {
 	if len(txs) == 0 {
 		return nil
 	}
@@ -34,7 +37,7 @@ func CalculateDailyBalances(txs []*Transaction, currentBalance float64) []DailyB
 			days[dateStr] = &dayEntry{}
 		}
 
-		amount := txAmount(tx)
+		amount := txAmountForAccount(tx, bankAccountID)
 
 		if tx.Status == StatusConfirmed {
 			days[dateStr].confirmedTotal += amount
@@ -72,13 +75,18 @@ func CalculateDailyBalances(txs []*Transaction, currentBalance float64) []DailyB
 	return result
 }
 
-func txAmount(tx *Transaction) float64 {
+func txAmountForAccount(tx *Transaction, bankAccountID string) float64 {
 	switch tx.Type {
 	case TypeIncome:
 		return tx.Amount
 	case TypeExpense:
 		return -tx.Amount
 	case TypeTransfer:
+		// If this account is the destination, the transfer is incoming (+)
+		if bankAccountID != "" && tx.DestinationAccountID != nil && *tx.DestinationAccountID == bankAccountID {
+			return tx.Amount
+		}
+		// Otherwise it's outgoing (-)
 		if tx.DestinationAccountID != nil {
 			return -tx.Amount
 		}

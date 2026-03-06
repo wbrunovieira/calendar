@@ -34,10 +34,11 @@ func (uc *GetDailyBalancesUseCase) Execute(input GetDailyBalancesInput) ([]trans
 		return nil, err
 	}
 
-	// List transactions for the bank account
+	// List transactions for the bank account (including incoming transfers)
 	filter := transaction.ListFilter{
-		ProfileID:     input.ProfileID,
-		BankAccountID: &bankAccountID,
+		ProfileID:            input.ProfileID,
+		BankAccountID:        &bankAccountID,
+		IncludeAsDestination: true,
 	}
 
 	if input.OccurredFrom != nil {
@@ -61,5 +62,5 @@ func (uc *GetDailyBalancesUseCase) Execute(input GetDailyBalancesInput) ([]trans
 		return nil, err
 	}
 
-	return transaction.CalculateDailyBalances(txs, currentBalance), nil
+	return transaction.CalculateDailyBalances(txs, currentBalance, bankAccountID), nil
 }

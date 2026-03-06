@@ -4,13 +4,14 @@ import "time"
 
 // ListFilter encapsulates query options for fetching transactions.
 type ListFilter struct {
-	ProfileID     string
-	BankAccountID *string
-	InvoiceID     *string
-	Status        *Status
-	Type          *Type
-	OccurredFrom  *time.Time
-	OccurredTo    *time.Time
+	ProfileID            string
+	BankAccountID        *string
+	InvoiceID            *string
+	Status               *Status
+	Type                 *Type
+	OccurredFrom         *time.Time
+	OccurredTo           *time.Time
+	IncludeAsDestination bool // Also match transfers where BankAccountID is the destination
 }
 
 // Repository represents the persistence contract for transactions.

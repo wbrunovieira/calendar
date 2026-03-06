@@ -190,7 +190,14 @@ func (r *TransactionRepository) List(filter transaction.ListFilter) ([]*transact
 	if filter.BankAccountID != nil {
 		trimmed := strings.TrimSpace(*filter.BankAccountID)
 		if trimmed != "" {
-			addCondition("bank_account_id", "=", trimmed)
+			if filter.IncludeAsDestination {
+				placeholder1 := fmt.Sprintf("$%d", len(args)+1)
+				placeholder2 := fmt.Sprintf("$%d", len(args)+2)
+				conditions = append(conditions, fmt.Sprintf("(bank_account_id = %s OR destination_account_id = %s)", placeholder1, placeholder2))
+				args = append(args, trimmed, trimmed)
+			} else {
+				addCondition("bank_account_id", "=", trimmed)
+			}
 		}
 	}
 
