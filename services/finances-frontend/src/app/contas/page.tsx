@@ -46,15 +46,14 @@ function TransactionHistory({
   profileId,
   categories,
   selectedInvoiceId,
-  currentBalance = 0,
 }: {
   accountId: string;
   profileId: string;
   categories: Category[];
   selectedInvoiceId?: string;
-  currentBalance?: number;
 }) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [dayBalances, setDayBalances] = useState<Record<string, { balance: number; dayTotal: number }>>({});
   const [loading, setLoading] = useState(true);
 
   const categoryMap = useMemo(() => {
@@ -64,17 +63,31 @@ function TransactionHistory({
   }, [categories]);
 
   useEffect(() => {
-    const fetchTransactions = async () => {
+    const fetchData = async () => {
       try {
         setLoading(true);
         const params = new URLSearchParams({ profileId, bankAccountId: accountId });
         if (selectedInvoiceId) {
           params.set('invoiceId', selectedInvoiceId);
         }
-        const response = await fetch(`${API_BASE}/transactions?${params}`);
-        if (response.ok) {
-          const data = await response.json();
+
+        const [txResponse, balanceResponse] = await Promise.all([
+          fetch(`${API_BASE}/transactions?${params}`),
+          fetch(`${API_BASE}/transactions/daily-balances?${params}`),
+        ]);
+
+        if (txResponse.ok) {
+          const data = await txResponse.json();
           setTransactions(data.data || []);
+        }
+
+        if (balanceResponse.ok) {
+          const data = await balanceResponse.json();
+          const balMap: Record<string, { balance: number; dayTotal: number }> = {};
+          for (const entry of (data.data || [])) {
+            balMap[entry.date] = { balance: entry.balance, dayTotal: entry.dayTotal };
+          }
+          setDayBalances(balMap);
         }
       } catch (error) {
         console.warn('Erro ao carregar historico:', error);
@@ -82,7 +95,7 @@ function TransactionHistory({
         setLoading(false);
       }
     };
-    fetchTransactions();
+    fetchData();
   }, [accountId, profileId, selectedInvoiceId]);
 
   const groupedByDay = useMemo(() => {
@@ -94,34 +107,6 @@ function TransactionHistory({
     }
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
   }, [transactions]);
-
-  // Running balance: derive start from currentBalance, then accumulate
-  const dayBalances = useMemo(() => {
-    const delta = (tx: Transaction) => {
-      if (tx.status === 'CANCELLED') return 0;
-      return tx.type === 'INCOME' ? tx.amount : -tx.amount;
-    };
-
-    // currentBalance only reflects CONFIRMED, so derive start from confirmed only
-    let confirmedSum = 0;
-    for (const [, dayTxs] of groupedByDay) {
-      for (const tx of dayTxs) {
-        if (tx.status === 'CONFIRMED') confirmedSum += delta(tx);
-      }
-    }
-    const startBalance = currentBalance - confirmedSum;
-
-    // Accumulate all (confirmed + planned), skip cancelled
-    const balances: Record<string, number> = {};
-    let running = startBalance;
-    for (const [dateKey, dayTxs] of groupedByDay) {
-      for (const tx of dayTxs) {
-        running += delta(tx);
-      }
-      balances[dateKey] = Math.round(running * 100) / 100;
-    }
-    return balances;
-  }, [groupedByDay, currentBalance]);
 
   // Display newest first
   const groupedByDayDesc = useMemo(
@@ -148,11 +133,9 @@ function TransactionHistory({
   return (
     <div className="space-y-3 max-h-[28rem] overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
       {groupedByDayDesc.map(([dateKey, dayTransactions]) => {
-        const dayTotal = dayTransactions.reduce((sum, tx) => {
-          if (tx.type === 'INCOME') return sum + tx.amount;
-          return sum - tx.amount; // EXPENSE and TRANSFER
-        }, 0);
-        const endOfDayBalance = dayBalances[dateKey] ?? 0;
+        const balEntry = dayBalances[dateKey];
+        const dayTotal = balEntry?.dayTotal ?? 0;
+        const endOfDayBalance = balEntry?.balance ?? 0;
 
         return (
           <div key={dateKey}>
@@ -712,7 +695,7 @@ export default function ContasPage() {
                                     profileId={selectedProfileId}
                                     categories={categories}
                                     selectedInvoiceId={selectedInvoiceByAccount[account.id] || ''}
-                                    currentBalance={account.currentBalance}
+
                                   />
                                 </div>
                               )}
@@ -851,7 +834,7 @@ export default function ContasPage() {
                                     accountId={account.id}
                                     profileId={selectedProfileId}
                                     categories={categories}
-                                    currentBalance={account.currentBalance}
+
                                   />
                                 </div>
                               )}
