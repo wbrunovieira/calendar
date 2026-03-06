@@ -215,6 +215,42 @@ func TestCalculateDailyBalances_ExpenseWithDestinationShouldNotAffectDestBalance
 	}
 }
 
+func TestCalculateDailyBalances_PlannedBeforeLastConfirmedShouldNotAffectBalance(t *testing.T) {
+	txs := []*Transaction{
+		{ID: "1", BankAccountID: "acc-1", Type: TypeIncome, Status: StatusConfirmed, Amount: 1000, OccurredOn: date(2026, 1, 1)},
+		// Planned in the past (before last confirmed) - should NOT shift the balance
+		{ID: "2", BankAccountID: "acc-1", Type: TypeExpense, Status: StatusPlanned, Amount: 184, OccurredOn: date(2026, 1, 15)},
+		{ID: "3", BankAccountID: "acc-1", Type: TypeExpense, Status: StatusConfirmed, Amount: 300, OccurredOn: date(2026, 2, 1)},
+		// Planned in the future (after last confirmed) - SHOULD project forward
+		{ID: "4", BankAccountID: "acc-1", Type: TypeExpense, Status: StatusPlanned, Amount: 500, OccurredOn: date(2026, 3, 1)},
+	}
+
+	// currentBalance = 1000 - 300 = 700 (only confirmed)
+	result := CalculateDailyBalances(txs, 700, "acc-1")
+
+	// Last confirmed day (02-01) must equal currentBalance
+	var lastConfirmedBalance float64
+	for _, d := range result {
+		if d.Date == "2026-02-01" {
+			lastConfirmedBalance = d.Balance
+		}
+	}
+	if lastConfirmedBalance != 700 {
+		t.Errorf("last confirmed day should equal currentBalance 700, got %.2f", lastConfirmedBalance)
+	}
+
+	// Future planned projects: 700 - 500 = 200
+	var futureBalance float64
+	for _, d := range result {
+		if d.Date == "2026-03-01" {
+			futureBalance = d.Balance
+		}
+	}
+	if futureBalance != 200 {
+		t.Errorf("future planned should project from currentBalance, expected 200 got %.2f", futureBalance)
+	}
+}
+
 func TestCalculateDailyBalances_FloatingPointPrecision(t *testing.T) {
 	txs := []*Transaction{
 		{ID: "1", BankAccountID: "acc-1", Type: TypeIncome, Status: StatusConfirmed, Amount: 0.1, OccurredOn: date(2026, 1, 1)},

@@ -18,6 +18,21 @@ func CalculateDailyBalances(txs []*Transaction, currentBalance float64, bankAcco
 		return nil
 	}
 
+	// Find the last confirmed date so we can ignore stale planned transactions
+	var lastConfirmedDate string
+	for _, tx := range txs {
+		if tx.Status == StatusConfirmed {
+			amount := txAmountForAccount(tx, bankAccountID)
+			if amount == 0 {
+				continue
+			}
+			dateStr := tx.OccurredOn.Format("2006-01-02")
+			if dateStr > lastConfirmedDate {
+				lastConfirmedDate = dateStr
+			}
+		}
+	}
+
 	// Separate confirmed and planned, ignore cancelled
 	type dayEntry struct {
 		confirmedTotal float64
@@ -38,6 +53,12 @@ func CalculateDailyBalances(txs []*Transaction, currentBalance float64, bankAcco
 		}
 
 		dateStr := tx.OccurredOn.Format("2006-01-02")
+
+		// Planned transactions before or on the last confirmed date are stale — skip them
+		if tx.Status == StatusPlanned && dateStr <= lastConfirmedDate {
+			continue
+		}
+
 		if days[dateStr] == nil {
 			days[dateStr] = &dayEntry{}
 		}
