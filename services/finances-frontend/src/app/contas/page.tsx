@@ -757,7 +757,6 @@ export default function ContasPage() {
                                   accountId={account.id}
                                   profileId={selectedProfileId}
                                   categories={categories}
-                                  currentBalance={account.currentBalance}
                                 />
                               </div>
                             )}
