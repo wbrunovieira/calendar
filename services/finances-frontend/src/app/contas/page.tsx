@@ -102,7 +102,7 @@ function TransactionHistory({
     for (const [dateKey, dayTxs] of groupedByDay) {
       for (const tx of dayTxs) {
         if (tx.type === 'INCOME') running += tx.amount;
-        else if (tx.type === 'EXPENSE') running -= tx.amount;
+        else running -= tx.amount; // EXPENSE and TRANSFER (outgoing)
       }
       balances[dateKey] = running;
     }
@@ -135,9 +135,8 @@ function TransactionHistory({
     <div className="space-y-3 max-h-[28rem] overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
       {groupedByDayDesc.map(([dateKey, dayTransactions]) => {
         const dayTotal = dayTransactions.reduce((sum, tx) => {
-          if (tx.type === 'EXPENSE') return sum - tx.amount;
           if (tx.type === 'INCOME') return sum + tx.amount;
-          return sum;
+          return sum - tx.amount; // EXPENSE and TRANSFER
         }, 0);
         const endOfDayBalance = dayBalances[dateKey] ?? 0;
 
