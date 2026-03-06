@@ -32,12 +32,15 @@ func CalculateDailyBalances(txs []*Transaction, currentBalance float64, bankAcco
 			continue
 		}
 
+		amount := txAmountForAccount(tx, bankAccountID)
+		if amount == 0 {
+			continue
+		}
+
 		dateStr := tx.OccurredOn.Format("2006-01-02")
 		if days[dateStr] == nil {
 			days[dateStr] = &dayEntry{}
 		}
-
-		amount := txAmountForAccount(tx, bankAccountID)
 
 		if tx.Status == StatusConfirmed {
 			days[dateStr].confirmedTotal += amount
@@ -76,17 +79,21 @@ func CalculateDailyBalances(txs []*Transaction, currentBalance float64, bankAcco
 }
 
 func txAmountForAccount(tx *Transaction, bankAccountID string) float64 {
+	// If bankAccountID is set and this tx belongs to a different account,
+	// only incoming transfers affect our balance.
+	if bankAccountID != "" && tx.BankAccountID != bankAccountID {
+		if tx.Type == TypeTransfer && tx.DestinationAccountID != nil && *tx.DestinationAccountID == bankAccountID {
+			return tx.Amount
+		}
+		return 0
+	}
+
 	switch tx.Type {
 	case TypeIncome:
 		return tx.Amount
 	case TypeExpense:
 		return -tx.Amount
 	case TypeTransfer:
-		// If this account is the destination, the transfer is incoming (+)
-		if bankAccountID != "" && tx.DestinationAccountID != nil && *tx.DestinationAccountID == bankAccountID {
-			return tx.Amount
-		}
-		// Otherwise it's outgoing (-)
 		if tx.DestinationAccountID != nil {
 			return -tx.Amount
 		}

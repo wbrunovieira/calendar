@@ -195,6 +195,26 @@ func TestCalculateDailyBalances_MultipleDaysSameDate(t *testing.T) {
 	}
 }
 
+func TestCalculateDailyBalances_ExpenseWithDestinationShouldNotAffectDestBalance(t *testing.T) {
+	dest := "acc-1"
+	txs := []*Transaction{
+		{ID: "1", BankAccountID: "acc-1", Type: TypeIncome, Status: StatusConfirmed, Amount: 1000, OccurredOn: date(2026, 1, 1)},
+		// This expense is FROM another account but has destination_account_id = acc-1.
+		// It should NOT affect acc-1's balance (only transfers do).
+		{ID: "2", BankAccountID: "acc-other", Type: TypeExpense, Status: StatusConfirmed, Amount: 500, OccurredOn: date(2026, 1, 2), DestinationAccountID: &dest},
+	}
+
+	// currentBalance = 1000 (the expense from acc-other doesn't affect acc-1)
+	result := CalculateDailyBalances(txs, 1000, "acc-1")
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 day (expense from other account ignored), got %d", len(result))
+	}
+	if result[0].Balance != 1000 {
+		t.Errorf("expense from other account should not affect balance, expected 1000 got %.2f", result[0].Balance)
+	}
+}
+
 func TestCalculateDailyBalances_FloatingPointPrecision(t *testing.T) {
 	txs := []*Transaction{
 		{ID: "1", BankAccountID: "acc-1", Type: TypeIncome, Status: StatusConfirmed, Amount: 0.1, OccurredOn: date(2026, 1, 1)},
