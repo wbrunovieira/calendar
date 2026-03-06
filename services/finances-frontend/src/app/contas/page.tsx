@@ -85,22 +85,6 @@ function TransactionHistory({
     fetchTransactions();
   }, [accountId, profileId, selectedInvoiceId]);
 
-  if (loading) {
-    return (
-      <div className="py-4 text-center text-white/50 text-sm">
-        Carregando historico...
-      </div>
-    );
-  }
-
-  if (transactions.length === 0) {
-    return (
-      <div className="py-4 text-center text-white/40 text-sm">
-        Nenhuma transacao encontrada para esta conta.
-      </div>
-    );
-  }
-
   const groupedByDay = useMemo(() => {
     const groups: Record<string, Transaction[]> = {};
     for (const tx of transactions) {
@@ -130,6 +114,22 @@ function TransactionHistory({
     () => [...groupedByDay].reverse(),
     [groupedByDay],
   );
+
+  if (loading) {
+    return (
+      <div className="py-4 text-center text-white/50 text-sm">
+        Carregando historico...
+      </div>
+    );
+  }
+
+  if (transactions.length === 0) {
+    return (
+      <div className="py-4 text-center text-white/40 text-sm">
+        Nenhuma transacao encontrada para esta conta.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3 max-h-[28rem] overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
