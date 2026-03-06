@@ -95,27 +95,30 @@ function TransactionHistory({
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
   }, [transactions]);
 
-  // Running balance: derive backwards from currentBalance (only confirmed count)
+  // Running balance: derive start from currentBalance, then accumulate
   const dayBalances = useMemo(() => {
-    // Only confirmed transactions affect currentBalance
-    let confirmedTotal = 0;
+    const delta = (tx: Transaction) => {
+      if (tx.status === 'CANCELLED') return 0;
+      return tx.type === 'INCOME' ? tx.amount : -tx.amount;
+    };
+
+    // currentBalance only reflects CONFIRMED, so derive start from confirmed only
+    let confirmedSum = 0;
     for (const [, dayTxs] of groupedByDay) {
       for (const tx of dayTxs) {
-        if (tx.status === 'PLANNED' || tx.status === 'CANCELLED') continue;
-        if (tx.type === 'INCOME') confirmedTotal += tx.amount;
-        else confirmedTotal -= tx.amount;
+        if (tx.status === 'CONFIRMED') confirmedSum += delta(tx);
       }
     }
-    const startBalance = currentBalance - confirmedTotal;
+    const startBalance = currentBalance - confirmedSum;
 
+    // Accumulate all (confirmed + planned), skip cancelled
     const balances: Record<string, number> = {};
     let running = startBalance;
     for (const [dateKey, dayTxs] of groupedByDay) {
       for (const tx of dayTxs) {
-        if (tx.type === 'INCOME') running += tx.amount;
-        else running -= tx.amount;
+        running += delta(tx);
       }
-      balances[dateKey] = running;
+      balances[dateKey] = Math.round(running * 100) / 100;
     }
     return balances;
   }, [groupedByDay, currentBalance]);
