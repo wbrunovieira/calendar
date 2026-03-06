@@ -46,11 +46,13 @@ function TransactionHistory({
   profileId,
   categories,
   selectedInvoiceId,
+  initialBalance = 0,
 }: {
   accountId: string;
   profileId: string;
   categories: Category[];
   selectedInvoiceId?: string;
+  initialBalance?: number;
 }) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -99,38 +101,90 @@ function TransactionHistory({
     );
   }
 
+  const groupedByDay = useMemo(() => {
+    const groups: Record<string, Transaction[]> = {};
+    for (const tx of transactions) {
+      const dateKey = tx.occurredOn.split('T')[0];
+      if (!groups[dateKey]) groups[dateKey] = [];
+      groups[dateKey].push(tx);
+    }
+    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+  }, [transactions]);
+
+  // Running balance: start from initialBalance, accumulate chronologically
+  const dayBalances = useMemo(() => {
+    const balances: Record<string, number> = {};
+    let running = initialBalance;
+    for (const [dateKey, dayTxs] of groupedByDay) {
+      for (const tx of dayTxs) {
+        if (tx.type === 'INCOME') running += tx.amount;
+        else if (tx.type === 'EXPENSE') running -= tx.amount;
+      }
+      balances[dateKey] = running;
+    }
+    return balances;
+  }, [groupedByDay, initialBalance]);
+
+  // Display newest first
+  const groupedByDayDesc = useMemo(
+    () => [...groupedByDay].reverse(),
+    [groupedByDay],
+  );
+
   return (
-    <div className="space-y-1.5 max-h-[28rem] overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-      {transactions.map((tx) => {
-        const status = statusConfig[tx.status] || statusConfig.PLANNED;
-        const isExpense = tx.type === 'EXPENSE';
-        const isIncome = tx.type === 'INCOME';
+    <div className="space-y-3 max-h-[28rem] overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+      {groupedByDayDesc.map(([dateKey, dayTransactions]) => {
+        const dayTotal = dayTransactions.reduce((sum, tx) => {
+          if (tx.type === 'EXPENSE') return sum - tx.amount;
+          if (tx.type === 'INCOME') return sum + tx.amount;
+          return sum;
+        }, 0);
+        const endOfDayBalance = dayBalances[dateKey] ?? 0;
+
         return (
-          <div
-            key={tx.id}
-            className="flex items-center justify-between py-2 px-3 bg-white/5 rounded-lg"
-          >
-            <div className="flex-1 min-w-0">
-              <p className="text-white text-sm truncate">{tx.description}</p>
-              <div className="flex items-center gap-2 text-white/40 text-xs">
-                <span>{formatDate(tx.occurredOn)}</span>
-                {tx.categoryId && categoryMap[tx.categoryId] && (
-                  <>
-                    <span>·</span>
-                    <span className="truncate">{categoryMap[tx.categoryId]}</span>
-                  </>
-                )}
+          <div key={dateKey}>
+            <div className="flex items-center justify-between px-3 py-1.5 bg-white/10 rounded-t-lg border-b border-white/10">
+              <span className="text-white/70 text-xs font-semibold">{formatDate(dateKey)}</span>
+              <div className="flex items-center gap-3">
+                <span className={`text-xs font-semibold ${dayTotal >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {dayTotal >= 0 ? '+' : ''}{formatCurrency(Math.abs(dayTotal))}
+                </span>
+                <span className={`text-xs font-medium ${endOfDayBalance >= 0 ? 'text-white/60' : 'text-red-300'}`}>
+                  Saldo: {formatCurrency(endOfDayBalance)}
+                </span>
               </div>
             </div>
-            <div className="flex items-center gap-2 ml-3 shrink-0">
-              <div className="text-right">
-                <p className={`text-sm font-semibold ${isExpense ? 'text-red-400' : isIncome ? 'text-emerald-400' : 'text-blue-400'}`}>
-                  {isExpense ? '-' : isIncome ? '+' : ''}{formatCurrency(tx.amount, tx.currency)}
-                </p>
-              </div>
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${status.color}`}>
-                {status.label}
-              </span>
+            <div className="space-y-1 mt-1">
+              {dayTransactions.map((tx) => {
+                const status = statusConfig[tx.status] || statusConfig.PLANNED;
+                const isExpense = tx.type === 'EXPENSE';
+                const isIncome = tx.type === 'INCOME';
+                return (
+                  <div
+                    key={tx.id}
+                    className="flex items-center justify-between py-2 px-3 bg-white/5 rounded-lg"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-sm truncate">{tx.description}</p>
+                      <div className="flex items-center gap-2 text-white/40 text-xs">
+                        {tx.categoryId && categoryMap[tx.categoryId] && (
+                          <span className="truncate">{categoryMap[tx.categoryId]}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 ml-3 shrink-0">
+                      <div className="text-right">
+                        <p className={`text-sm font-semibold ${isExpense ? 'text-red-400' : isIncome ? 'text-emerald-400' : 'text-blue-400'}`}>
+                          {isExpense ? '-' : isIncome ? '+' : ''}{formatCurrency(tx.amount, tx.currency)}
+                        </p>
+                      </div>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${status.color}`}>
+                        {status.label}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         );
@@ -645,6 +699,7 @@ export default function ContasPage() {
                                     profileId={selectedProfileId}
                                     categories={categories}
                                     selectedInvoiceId={selectedInvoiceByAccount[account.id] || ''}
+                                    initialBalance={account.initialBalance}
                                   />
                                 </div>
                               )}
@@ -706,6 +761,7 @@ export default function ContasPage() {
                                   accountId={account.id}
                                   profileId={selectedProfileId}
                                   categories={categories}
+                                  initialBalance={account.initialBalance}
                                 />
                               </div>
                             )}
@@ -782,6 +838,7 @@ export default function ContasPage() {
                                     accountId={account.id}
                                     profileId={selectedProfileId}
                                     categories={categories}
+                                    initialBalance={account.initialBalance}
                                   />
                                 </div>
                               )}
