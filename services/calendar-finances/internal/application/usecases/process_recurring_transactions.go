@@ -84,7 +84,7 @@ func (uc *ProcessRecurringTransactionsUseCase) Execute() (*ProcessRecurringOutpu
 }
 
 func buildTransactionInput(rec *recurringtransaction.RecurringTransaction) CreateTransactionInput {
-	status := "CONFIRMED"
+	status := "PLANNED"
 	occurredOn := rec.NextOccurrence.Format("2006-01-02")
 
 	var bankAccountID string

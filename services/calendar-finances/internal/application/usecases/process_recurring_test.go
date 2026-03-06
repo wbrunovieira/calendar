@@ -139,8 +139,8 @@ func TestProcessRecurring_SingleExpense_CreatesTransaction(t *testing.T) {
 	if tx.BankAccountID != acct.ID {
 		t.Errorf("expected bankAccountId %s, got %s", acct.ID, tx.BankAccountID)
 	}
-	if tx.Status != transaction.StatusConfirmed {
-		t.Errorf("expected status CONFIRMED, got %s", tx.Status)
+	if tx.Status != transaction.StatusPlanned {
+		t.Errorf("expected status PLANNED, got %s", tx.Status)
 	}
 
 	// Verify next_occurrence was advanced
@@ -181,8 +181,8 @@ func TestProcessRecurring_Income_CreatesTransaction(t *testing.T) {
 	if tx.Type != transaction.TypeIncome {
 		t.Errorf("expected type INCOME, got %s", tx.Type)
 	}
-	if tx.Status != transaction.StatusConfirmed {
-		t.Errorf("expected status CONFIRMED, got %s", tx.Status)
+	if tx.Status != transaction.StatusPlanned {
+		t.Errorf("expected status PLANNED, got %s", tx.Status)
 	}
 	if tx.Amount != 1500.00 {
 		t.Errorf("expected amount 1500.00, got %.2f", tx.Amount)
@@ -327,10 +327,10 @@ func TestProcessRecurring_CreditCard_CreatesTransaction(t *testing.T) {
 	}
 
 	tx := txRepo.created[0]
-	if tx.Status != transaction.StatusConfirmed {
-		t.Errorf("expected CONFIRMED, got %s", tx.Status)
+	if tx.Status != transaction.StatusPlanned {
+		t.Errorf("expected PLANNED, got %s", tx.Status)
 	}
-	// Credit card balance should NOT change (handled by invoice)
+	// Credit card balance should NOT change (PLANNED doesn't affect balance)
 	if ccAcct.CurrentBalance != 0 {
 		t.Errorf("expected credit card balance unchanged at 0, got %.2f", ccAcct.CurrentBalance)
 	}

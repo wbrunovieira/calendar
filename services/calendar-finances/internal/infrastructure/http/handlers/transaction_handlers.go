@@ -9,12 +9,13 @@ import (
 )
 
 type TransactionHandlers struct {
-	createUseCase       *usecases.CreateTransactionUseCase
-	listUseCase         *usecases.ListTransactionsUseCase
-	getUseCase          *usecases.GetTransactionUseCase
-	updateUseCase       *usecases.UpdateTransactionUseCase
-	updateStatusUseCase *usecases.UpdateTransactionStatusUseCase
-	deleteUseCase       *usecases.DeleteTransactionUseCase
+	createUseCase        *usecases.CreateTransactionUseCase
+	listUseCase          *usecases.ListTransactionsUseCase
+	getUseCase           *usecases.GetTransactionUseCase
+	updateUseCase        *usecases.UpdateTransactionUseCase
+	updateStatusUseCase  *usecases.UpdateTransactionStatusUseCase
+	deleteUseCase        *usecases.DeleteTransactionUseCase
+	dailyBalancesUseCase *usecases.GetDailyBalancesUseCase
 }
 
 func NewTransactionHandlers(
@@ -33,6 +34,10 @@ func NewTransactionHandlers(
 		updateStatusUseCase: updateStatusUC,
 		deleteUseCase:       deleteUC,
 	}
+}
+
+func (h *TransactionHandlers) SetDailyBalancesUseCase(uc *usecases.GetDailyBalancesUseCase) {
+	h.dailyBalancesUseCase = uc
 }
 
 // List handles GET /api/v1/transactions
@@ -177,6 +182,44 @@ func (h *TransactionHandlers) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// DailyBalances handles GET /api/v1/transactions/daily-balances
+func (h *TransactionHandlers) DailyBalances(w http.ResponseWriter, r *http.Request) {
+	if h.dailyBalancesUseCase == nil {
+		http.Error(w, "daily balances not available", http.StatusNotImplemented)
+		return
+	}
+
+	profileID := r.URL.Query().Get("profileId")
+	bankAccountID := r.URL.Query().Get("bankAccountId")
+	occurredFrom := r.URL.Query().Get("occurredFrom")
+	occurredTo := r.URL.Query().Get("occurredTo")
+
+	var fromPtr, toPtr *string
+	if occurredFrom != "" {
+		fromPtr = &occurredFrom
+	}
+	if occurredTo != "" {
+		toPtr = &occurredTo
+	}
+
+	balances, err := h.dailyBalancesUseCase.Execute(usecases.GetDailyBalancesInput{
+		ProfileID:     profileID,
+		BankAccountID: bankAccountID,
+		OccurredFrom:  fromPtr,
+		OccurredTo:    toPtr,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"data":  balances,
+		"total": len(balances),
+	})
 }
 
 func mapTransactionError(err error) int {

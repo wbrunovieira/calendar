@@ -108,6 +108,7 @@ func main() {
 	updateTransactionUC := usecases.NewUpdateTransactionUseCase(bankAccountRepo, categoryRepo, transactionRepo)
 	updateTransactionStatusUC := usecases.NewUpdateTransactionStatusUseCase(transactionRepo, bankAccountRepo)
 	deleteTransactionUC := usecases.NewDeleteTransactionUseCase(transactionRepo, bankAccountRepo)
+	dailyBalancesUC := usecases.NewGetDailyBalancesUseCase(transactionRepo)
 	transactionHandler := httpHandlers.NewTransactionHandlers(
 		createTransactionUC,
 		listTransactionsUC,
@@ -116,6 +117,7 @@ func main() {
 		updateTransactionStatusUC,
 		deleteTransactionUC,
 	)
+	transactionHandler.SetDailyBalancesUseCase(dailyBalancesUC)
 
 	// Initialize Invoice use cases and handlers
 	createInvoiceUC := usecases.NewCreateInvoiceUseCase(invoiceRepo, bankAccountRepo)
@@ -176,6 +178,7 @@ func main() {
 	apiRouter.HandleFunc("/categories/{id}", categoryHandler.Delete).Methods("DELETE")
 
 	// Transaction routes
+	apiRouter.HandleFunc("/transactions/daily-balances", transactionHandler.DailyBalances).Methods("GET")
 	apiRouter.HandleFunc("/transactions", transactionHandler.List).Methods("GET")
 	apiRouter.HandleFunc("/transactions", transactionHandler.Create).Methods("POST")
 	apiRouter.HandleFunc("/transactions/{id}", transactionHandler.Get).Methods("GET")
