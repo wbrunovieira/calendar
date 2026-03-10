@@ -1497,13 +1497,26 @@ func TestGetOrCreateInvoice_HighClosingDay_ShouldCreateNextInvoiceWhenCurrentExi
 		t.Errorf("expected April invoice, got %s", newInv.ReferenceDate.Month())
 	}
 
-	// The April invoice dates should cover the period after March's closing
-	// With invoice.New convention: ref=April, closingDay=24 → opening=Mar 24, closing=Apr 24
-	// The transaction on Mar 4 falls between the old March invoice's closing (Feb 24)
-	// and the new April invoice's opening (Mar 24). This is expected with
-	// mixed conventions (Nubank vs invoice.New). The key behavior is that
-	// the transaction IS assigned to an invoice without errors.
-	if newInv.ClosingDate.Month() != time.April || newInv.ClosingDate.Day() != 24 {
-		t.Errorf("expected April invoice closing on Apr 24, got %s", newInv.ClosingDate.Format("2006-01-02"))
+	// The April invoice opening should be Feb 25 (day after March invoice closing Feb 24)
+	expectedOpening := time.Date(2026, 2, 25, 0, 0, 0, 0, time.UTC)
+	if !newInv.OpeningDate.Equal(expectedOpening) {
+		t.Errorf("expected April invoice opening on %s, got %s", expectedOpening.Format("2006-01-02"), newInv.OpeningDate.Format("2006-01-02"))
+	}
+
+	// The invoice should now contain the transaction date Mar 4
+	if !newInv.ContainsDate(time.Date(2026, 3, 4, 0, 0, 0, 0, time.UTC)) {
+		t.Error("expected April invoice to contain transaction date Mar 4")
+	}
+
+	// A second transaction on the same date should reuse the same invoice
+	input2 := input
+	input2.Description = "Cerveja SESC"
+	input2.Amount = 15.00
+	tx2, err := useCase.Execute(input2)
+	if err != nil {
+		t.Fatalf("expected no error for second transaction, got: %v", err)
+	}
+	if *tx2.InvoiceID != *tx.InvoiceID {
+		t.Errorf("expected same invoice ID for second transaction, got different: %s vs %s", *tx2.InvoiceID, *tx.InvoiceID)
 	}
 }

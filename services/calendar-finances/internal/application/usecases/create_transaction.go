@@ -369,16 +369,51 @@ func (uc *CreateTransactionUseCase) getOrCreateInvoiceForDate(account *bankaccou
 
 	if err := uc.invoiceRepo.Create(inv); err != nil {
 		if isUniqueViolation(err) {
-			// Reference month already has an invoice with different date range.
-			// This happens with high closing days (e.g. Nubank closingDay=24)
-			// where the convention differs. Try next month.
+			// Reference month already has an invoice with different date range
+			// (e.g. Nubank closingDay=24 uses a different convention).
+			// Find the existing invoice for this account to get its closing date,
+			// then create the next month's invoice with correct opening date.
+			existingInvoices, listErr := uc.invoiceRepo.FindByBankAccountID(account.ID)
+			if listErr != nil {
+				return nil, listErr
+			}
+
+			// Find the existing invoice for this reference month
+			var existingInv *invoice.Invoice
+			for _, ei := range existingInvoices {
+				if ei.ReferenceDate.Year() == refDate.Year() && ei.ReferenceDate.Month() == refDate.Month() {
+					existingInv = ei
+					break
+				}
+			}
+
+			// If the transaction date is within the existing invoice, return it
+			if existingInv != nil && existingInv.ContainsDate(txDate) {
+				return existingInv, nil
+			}
+
+			// Create next month's invoice
 			nextMonth := refDate.AddDate(0, 1, 0)
 			params.ReferenceDate = nextMonth
 			inv, err = invoice.New(params)
 			if err != nil {
 				return nil, err
 			}
+
+			// Fix opening date: should be the day after the existing invoice's closing
+			if existingInv != nil {
+				inv.OpeningDate = existingInv.ClosingDate.AddDate(0, 0, 1)
+			}
+
 			if err := uc.invoiceRepo.Create(inv); err != nil {
+				if isUniqueViolation(err) {
+					// Next month invoice already exists too — find and return it
+					for _, ei := range existingInvoices {
+						if ei.ReferenceDate.Year() == nextMonth.Year() && ei.ReferenceDate.Month() == nextMonth.Month() {
+							return ei, nil
+						}
+					}
+				}
 				return nil, err
 			}
 			return inv, nil
