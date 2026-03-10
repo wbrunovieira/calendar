@@ -18,6 +18,7 @@ const navItems = [
   { href: '/categories', label: 'Categorias' },
   { href: '/recurring', label: 'Fixas' },
   { href: '/budgets', label: 'Orcamentos' },
+  { href: '/goals', label: 'Metas' },
   { href: '/plan', label: 'Planejamento' },
   { href: '/visao', label: 'Visao Mensal' },
   { href: '/configuracoes', label: 'Configuracoes' },

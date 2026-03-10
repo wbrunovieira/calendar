@@ -415,6 +415,24 @@ func RunMigrations(db *sql.DB) error {
 			END IF;
 		END $$`,
 		`CREATE INDEX IF NOT EXISTS idx_transactions_linked ON finance.transactions(linked_transaction_id) WHERE linked_transaction_id IS NOT NULL`,
+
+		// Goals table
+		`CREATE TABLE IF NOT EXISTS finance.goals (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			profile_id UUID NOT NULL REFERENCES finance.profiles(id) ON DELETE CASCADE,
+			category_id UUID REFERENCES finance.categories(id) ON DELETE SET NULL,
+			name VARCHAR(255) NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			target_amount NUMERIC(15, 2) NOT NULL CHECK (target_amount > 0),
+			current_amount NUMERIC(15, 2) NOT NULL DEFAULT 0 CHECK (current_amount >= 0),
+			priority VARCHAR(10) NOT NULL DEFAULT 'MEDIUM' CHECK (priority IN ('HIGH', 'MEDIUM', 'LOW')),
+			target_date DATE,
+			status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'COMPLETED', 'CANCELLED')),
+			link TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_goals_profile ON finance.goals(profile_id)`,
 	}
 
 	for i, migration := range migrations {

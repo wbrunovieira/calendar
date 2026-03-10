@@ -153,6 +153,10 @@ func main() {
 	budgetService := usecases.NewBudgetTargetsService(budgetRepo, transactionRepo, categoryRepo)
 	budgetHandler := httpHandlers.NewBudgetHandlers(budgetService)
 
+	goalRepo := persistence.NewGoalRepository(db)
+	goalService := usecases.NewGoalsService(goalRepo)
+	goalHandler := httpHandlers.NewGoalHandlers(goalService)
+
 	// API v1 routes
 	apiRouter := router.PathPrefix("/api/v1").Subrouter()
 
@@ -200,6 +204,14 @@ func main() {
 	apiRouter.HandleFunc("/budgets", budgetHandler.Create).Methods("POST")
 	apiRouter.HandleFunc("/budgets/{id}", budgetHandler.Update).Methods("PUT")
 	apiRouter.HandleFunc("/budgets/{id}", budgetHandler.Delete).Methods("DELETE")
+
+	// Goal routes
+	apiRouter.HandleFunc("/goals", goalHandler.List).Methods("GET")
+	apiRouter.HandleFunc("/goals", goalHandler.Create).Methods("POST")
+	apiRouter.HandleFunc("/goals/{id}", goalHandler.Update).Methods("PUT")
+	apiRouter.HandleFunc("/goals/{id}", goalHandler.Delete).Methods("DELETE")
+	apiRouter.HandleFunc("/goals/{id}/add-amount", goalHandler.AddAmount).Methods("POST")
+	apiRouter.HandleFunc("/goals/{id}/status", goalHandler.UpdateStatus).Methods("PATCH")
 
 	apiRouter.HandleFunc("/transactions/{id}", transactionHandler.Delete).Methods("DELETE")
 

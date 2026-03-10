@@ -21,4 +21,5 @@ var (
 	ErrInvoiceAlreadyPaid     = errors.New("invoice is already paid")
 	ErrNotCreditCard              = errors.New("bank account is not a credit card")
 	ErrDestinationCategoryRequired = errors.New("destination category is required for cross-profile transfer")
+	ErrGoalNotFound                = errors.New("goal not found")
 )

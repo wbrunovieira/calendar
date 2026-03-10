@@ -237,3 +237,22 @@ export interface Invoice {
   createdAt: string;
   updatedAt: string;
 }
+
+export type GoalPriority = 'HIGH' | 'MEDIUM' | 'LOW';
+export type GoalStatus = 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
+
+export interface Goal {
+  id: string;
+  profileId: string;
+  categoryId?: string;
+  name: string;
+  description: string;
+  targetAmount: number;
+  currentAmount: number;
+  priority: GoalPriority;
+  targetDate?: string;
+  status: GoalStatus;
+  link?: string;
+  createdAt: string;
+  updatedAt: string;
+}
