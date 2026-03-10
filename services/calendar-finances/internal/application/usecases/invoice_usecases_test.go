@@ -566,7 +566,7 @@ func TestInvoiceDatesCalculation(t *testing.T) {
 	// - Closing: January 9, 2026
 	// - Due: January 14, 2026
 
-	expectedOpening := time.Date(2025, 12, 10, 0, 0, 0, 0, time.UTC)
+	expectedOpening := time.Date(2025, 12, 9, 0, 0, 0, 0, time.UTC)
 	expectedClosing := time.Date(2026, 1, 9, 0, 0, 0, 0, time.UTC)
 	expectedDue := time.Date(2026, 1, 14, 0, 0, 0, 0, time.UTC)
 

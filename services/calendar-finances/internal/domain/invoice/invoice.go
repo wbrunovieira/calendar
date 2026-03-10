@@ -70,7 +70,7 @@ func New(params CreateParams) (*Invoice, error) {
 		prevYear--
 	}
 	prevClosingDate := safeDate(prevYear, prevMonth, params.ClosingDay)
-	openingDate := prevClosingDate.AddDate(0, 0, 1)
+	openingDate := prevClosingDate
 
 	// Due date is typically in the same month as closing, but after closing
 	// If dueDay <= closingDay, due date is in the next month

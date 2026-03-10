@@ -46,8 +46,8 @@ func TestNew(t *testing.T) {
 		if !inv.DueDate.Equal(expectedDue) {
 			t.Errorf("Expected due date %v, got %v", expectedDue, inv.DueDate)
 		}
-		// Opening date should be December 10th (day after previous closing)
-		expectedOpening := time.Date(2025, 12, 10, 0, 0, 0, 0, time.UTC)
+		// Opening date should be December 9th (previous closing day = opening of next cycle)
+		expectedOpening := time.Date(2025, 12, 9, 0, 0, 0, 0, time.UTC)
 		if !inv.OpeningDate.Equal(expectedOpening) {
 			t.Errorf("Expected opening date %v, got %v", expectedOpening, inv.OpeningDate)
 		}
@@ -91,8 +91,8 @@ func TestNew(t *testing.T) {
 		if !inv.DueDate.Equal(expectedDue) {
 			t.Errorf("Expected due date %v, got %v", expectedDue, inv.DueDate)
 		}
-		// Opening date should be November 26th
-		expectedOpening := time.Date(2025, 11, 26, 0, 0, 0, 0, time.UTC)
+		// Opening date should be November 25th (previous closing day)
+		expectedOpening := time.Date(2025, 11, 25, 0, 0, 0, 0, time.UTC)
 		if !inv.OpeningDate.Equal(expectedOpening) {
 			t.Errorf("Expected opening date %v, got %v", expectedOpening, inv.OpeningDate)
 		}
