@@ -208,6 +208,14 @@ func (f *fakeInvoiceRepo) Create(inv *invoice.Invoice) error {
 	if f.invoices == nil {
 		f.invoices = make(map[string]*invoice.Invoice)
 	}
+	// Check for duplicate reference month + bank account (like real DB constraint)
+	for _, existing := range f.invoices {
+		if existing.BankAccountID == inv.BankAccountID &&
+			existing.ReferenceDate.Year() == inv.ReferenceDate.Year() &&
+			existing.ReferenceDate.Month() == inv.ReferenceDate.Month() {
+			return errors.New("pq: duplicate key value violates unique constraint \"uq_invoice_account_reference\"")
+		}
+	}
 	f.invoices[inv.ID] = inv
 	return nil
 }

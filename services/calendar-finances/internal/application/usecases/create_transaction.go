@@ -368,6 +368,21 @@ func (uc *CreateTransactionUseCase) getOrCreateInvoiceForDate(account *bankaccou
 	}
 
 	if err := uc.invoiceRepo.Create(inv); err != nil {
+		if isUniqueViolation(err) {
+			// Reference month already has an invoice with different date range.
+			// This happens with high closing days (e.g. Nubank closingDay=24)
+			// where the convention differs. Try next month.
+			nextMonth := refDate.AddDate(0, 1, 0)
+			params.ReferenceDate = nextMonth
+			inv, err = invoice.New(params)
+			if err != nil {
+				return nil, err
+			}
+			if err := uc.invoiceRepo.Create(inv); err != nil {
+				return nil, err
+			}
+			return inv, nil
+		}
 		return nil, err
 	}
 

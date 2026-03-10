@@ -1,6 +1,7 @@
 package usecases
 
 import (
+	"strings"
 	"time"
 
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
@@ -181,10 +182,30 @@ func (uc *GetOrCreateInvoiceForDateUseCase) Execute(bankAccountID string, txDate
 	}
 
 	if err := uc.invoiceRepo.Create(inv); err != nil {
+		// If duplicate key (invoice for this reference month already exists but with
+		// different dates that don't contain our txDate), try the next month
+		if isUniqueViolation(err) {
+			nextMonth := refDate.AddDate(0, 1, 0)
+			params.ReferenceDate = nextMonth
+			inv, err = invoice.New(params)
+			if err != nil {
+				return nil, err
+			}
+			if err := uc.invoiceRepo.Create(inv); err != nil {
+				return nil, err
+			}
+			return inv, nil
+		}
 		return nil, err
 	}
 
 	return inv, nil
+}
+
+// isUniqueViolation checks if the error is a unique constraint violation
+func isUniqueViolation(err error) bool {
+	return err != nil && (strings.Contains(err.Error(), "duplicate key") ||
+		strings.Contains(err.Error(), "unique constraint"))
 }
 
 // calculateReferenceMonth determines which invoice month a transaction date belongs to
