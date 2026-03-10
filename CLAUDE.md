@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Multi-container calendar application integrating Google Calendar accounts (professional and personal), Linear task management, and financial tracking with AI-powered agents. Single-user personal project.
+Multi-container calendar application integrating Google Calendar accounts (professional and personal), Linear task management, financial tracking, and health/fitness tracking with AI-powered agents. Single-user personal project.
 
 ## Quick Start
 
@@ -17,6 +17,9 @@ cd services/calendar-frontend && npm install && npm run dev
 
 # 3. Start finances frontend (new terminal, optional)
 cd services/finances-frontend && npm install && npm run dev
+
+# 4. Start health frontend (new terminal, optional)
+cd services/health-frontend && npm install && npm run dev
 ```
 
 ## Architecture
@@ -26,6 +29,8 @@ cd services/finances-frontend && npm install && npm run dev
 - **calendar-frontend** (Next.js 15.5 + React 19): Calendar web interface on port 3000 - Runs locally
 - **calendar-finances** (Go 1.23 + Gorilla Mux): Financial service on port 3335 - Runs in Docker
 - **finances-frontend** (Next.js 15.5): Financial dashboard on port 3003 - Runs locally
+- **calendar-health** (Go 1.23 + Gorilla Mux): Health & fitness tracking service on port 3336 - Runs in Docker
+- **health-frontend** (Next.js 15.5): Health dashboard on port 3004 - Runs locally
 - **agents** (Python 3.12 + FastAPI + LangGraph): AI agent service on port 3337 - Runs in Docker
 - **postgres** (PostgreSQL 15): Database on port 5433 (host) / 5432 (container)
 - **Langfuse v3**: 6 containers for LLM observability (web on port 3100, plus worker, postgres, clickhouse, minio, redis)
@@ -134,10 +139,18 @@ curl "http://localhost:3337/health?deep=1"                     # Deep check (exe
 docker-compose exec agents pip install <package>      # Install package
 ```
 
+### calendar-health (Go) - Run inside Docker
+```bash
+docker-compose exec calendar-health go test ./...                      # All tests
+docker-compose exec calendar-health go test -v ./internal/domain/...   # Specific package
+docker-compose exec calendar-health go test -cover ./...               # Coverage
+```
+
 ### Frontends - Run locally
 ```bash
 cd services/calendar-frontend && npm run dev     # Port 3000
 cd services/finances-frontend && npm run dev     # Port 3003
+cd services/health-frontend && npm run dev       # Port 3004
 ```
 
 ### Database
