@@ -110,10 +110,10 @@ func (uc *ListInvoicesUseCase) Execute(bankAccountID string) ([]*invoice.Invoice
 		return nil, err
 	}
 
-	// Recalculate amounts from transactions if repo is available
+	// Recalculate amounts from transactions only for OPEN invoices
 	if uc.transactionRepo != nil {
 		for _, inv := range invoices {
-			if inv.Status != invoice.StatusPaid {
+			if inv.Status == invoice.StatusOpen {
 				total, err := uc.transactionRepo.SumByInvoiceID(inv.ID)
 				if err == nil {
 					inv.Amount = total
@@ -294,8 +294,8 @@ func (uc *GetInvoiceUseCase) Execute(invoiceID string) (*invoice.Invoice, error)
 		return nil, ErrInvoiceNotFound
 	}
 
-	// Recalculate amount from transactions if repo is available
-	if uc.transactionRepo != nil && inv.Status != invoice.StatusPaid {
+	// Recalculate amount from transactions only for OPEN invoices
+	if uc.transactionRepo != nil && inv.Status == invoice.StatusOpen {
 		total, err := uc.transactionRepo.SumByInvoiceID(invoiceID)
 		if err == nil {
 			inv.Amount = total
@@ -342,8 +342,8 @@ func (uc *GetCurrentInvoiceUseCase) Execute(bankAccountID string) (*invoice.Invo
 		return nil, err
 	}
 
-	// Recalculate amount from transactions if repo is available
-	if inv != nil && uc.transactionRepo != nil && inv.Status != invoice.StatusPaid {
+	// Recalculate amount from transactions only for OPEN invoices
+	if inv != nil && uc.transactionRepo != nil && inv.Status == invoice.StatusOpen {
 		total, err := uc.transactionRepo.SumByInvoiceID(inv.ID)
 		if err == nil {
 			inv.Amount = total

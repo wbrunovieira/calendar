@@ -1274,3 +1274,161 @@ func TestUpdateInvoice_PaidInvoice_ShouldReturnError(t *testing.T) {
 		t.Errorf("expected ErrInvoiceAlreadyPaid, got %v", err)
 	}
 }
+
+// Test: ListInvoices should NOT recalculate amount for CLOSED invoices
+func TestListInvoices_ShouldNotRecalculateClosedInvoiceAmount(t *testing.T) {
+	f := newTestFixtures()
+	createTxUC := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo)
+
+	confirmedStatus := "CONFIRMED"
+
+	// Create an expense transaction (creates invoice automatically)
+	input := CreateTransactionInput{
+		ProfileID:     f.profileID,
+		BankAccountID: f.cardID,
+		CategoryID:    &f.categoryID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        200.00,
+		Currency:      "BRL",
+		Description:   "Compra",
+		OccurredOn:    "2026-01-05",
+	}
+	tx, err := createTxUC.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error creating transaction: %v", err)
+	}
+
+	// Get the invoice and close it
+	inv, _ := f.invoiceRepo.FindByID(*tx.InvoiceID)
+	inv.Close()
+
+	// Manually set the amount to a different value (simulating credit/adjustment)
+	inv.Amount = 150.00
+	f.invoiceRepo.Update(inv)
+
+	// List invoices with transaction repo (which would recalculate)
+	listUC := NewListInvoicesUseCase(f.invoiceRepo, f.accountRepo, f.txRepo)
+	invoices, err := listUC.Execute(f.cardID)
+	if err != nil {
+		t.Fatalf("unexpected error listing invoices: %v", err)
+	}
+
+	// The CLOSED invoice should keep the manually set amount (150), NOT the transaction sum (200)
+	var found *invoice.Invoice
+	for _, i := range invoices {
+		if i.ID == inv.ID {
+			found = i
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected to find the invoice")
+	}
+	if found.Amount != 150.00 {
+		t.Errorf("expected closed invoice amount 150.00, got %.2f (should not recalculate closed invoices)", found.Amount)
+	}
+}
+
+// Test: ListInvoices SHOULD recalculate amount for OPEN invoices
+func TestListInvoices_ShouldRecalculateOpenInvoiceAmount(t *testing.T) {
+	f := newTestFixtures()
+	createTxUC := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo)
+
+	confirmedStatus := "CONFIRMED"
+
+	// Create two expense transactions
+	input1 := CreateTransactionInput{
+		ProfileID:     f.profileID,
+		BankAccountID: f.cardID,
+		CategoryID:    &f.categoryID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        100.00,
+		Currency:      "BRL",
+		Description:   "Compra 1",
+		OccurredOn:    "2026-01-05",
+	}
+	tx, err := createTxUC.Execute(input1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	input2 := CreateTransactionInput{
+		ProfileID:     f.profileID,
+		BankAccountID: f.cardID,
+		CategoryID:    &f.categoryID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        75.00,
+		Currency:      "BRL",
+		Description:   "Compra 2",
+		OccurredOn:    "2026-01-06",
+	}
+	createTxUC.Execute(input2)
+
+	// Manually corrupt the invoice amount
+	inv, _ := f.invoiceRepo.FindByID(*tx.InvoiceID)
+	inv.Amount = 999.99
+	f.invoiceRepo.Update(inv)
+
+	// List should recalculate OPEN invoice amount from transactions
+	listUC := NewListInvoicesUseCase(f.invoiceRepo, f.accountRepo, f.txRepo)
+	invoices, err := listUC.Execute(f.cardID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var found *invoice.Invoice
+	for _, i := range invoices {
+		if i.ID == inv.ID {
+			found = i
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected to find the invoice")
+	}
+	if found.Amount != 175.00 {
+		t.Errorf("expected open invoice amount 175.00 (recalculated), got %.2f", found.Amount)
+	}
+}
+
+// Test: GetInvoice should NOT recalculate amount for CLOSED invoices
+func TestGetInvoice_ShouldNotRecalculateClosedInvoiceAmount(t *testing.T) {
+	f := newTestFixtures()
+	createTxUC := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo)
+
+	confirmedStatus := "CONFIRMED"
+	input := CreateTransactionInput{
+		ProfileID:     f.profileID,
+		BankAccountID: f.cardID,
+		CategoryID:    &f.categoryID,
+		Type:          "EXPENSE",
+		Status:        &confirmedStatus,
+		Amount:        200.00,
+		Currency:      "BRL",
+		Description:   "Compra",
+		OccurredOn:    "2026-01-05",
+	}
+	tx, err := createTxUC.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Close and set custom amount
+	inv, _ := f.invoiceRepo.FindByID(*tx.InvoiceID)
+	inv.Close()
+	inv.Amount = 150.00
+	f.invoiceRepo.Update(inv)
+
+	// Get should respect the stored amount
+	getUC := NewGetInvoiceUseCase(f.invoiceRepo, f.txRepo)
+	result, err := getUC.Execute(inv.ID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Amount != 150.00 {
+		t.Errorf("expected closed invoice amount 150.00, got %.2f", result.Amount)
+	}
+}
