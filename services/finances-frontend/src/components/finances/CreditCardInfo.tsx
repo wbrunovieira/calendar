@@ -23,7 +23,8 @@ const formatCurrency = (value: number, currency = 'BRL') =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value);
 
 const formatDate = (dateStr: string) => {
-  const date = new Date(dateStr);
+  const raw = dateStr.includes('T') ? dateStr.replace('Z', '') : dateStr + 'T12:00:00';
+  const date = new Date(raw);
   return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 };
 
