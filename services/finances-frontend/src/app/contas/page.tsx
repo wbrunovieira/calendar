@@ -459,6 +459,26 @@ export default function ContasPage() {
     }
   };
 
+  const handleUpdateInvoice = async (invoiceId: string, data: { closingDate?: string; dueDate?: string }) => {
+    try {
+      const response = await fetch(`${API_BASE}/invoices/${invoiceId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        const errorMessage = await response.text();
+        throw new Error(errorMessage || 'Erro ao atualizar fatura');
+      }
+
+      await fetchInvoicesForCreditCards(filteredAccounts);
+    } catch (error) {
+      console.error('Erro ao atualizar fatura:', error);
+      alert('Erro ao atualizar fatura');
+    }
+  };
+
   const handleInvoiceSelect = (accountId: string, invoiceId: string) => {
     setSelectedInvoiceByAccount((prev) => ({
       ...prev,
@@ -673,6 +693,7 @@ export default function ContasPage() {
                                     invoices={invoicesByAccount[account.id] || []}
                                     onPayInvoice={handlePayInvoice}
                                     onEdit={() => openEditModal(account)}
+                                    onUpdateInvoice={handleUpdateInvoice}
                                     selectedInvoiceId={selectedInvoiceByAccount[account.id] || ''}
                                     onInvoiceSelect={(invoiceId) => handleInvoiceSelect(account.id, invoiceId)}
                                   />

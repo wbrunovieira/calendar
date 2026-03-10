@@ -3,12 +3,18 @@
 import { useState, useMemo } from 'react';
 import { BankAccount, Invoice } from '@/types/finances';
 
+interface InvoiceUpdateData {
+  closingDate?: string;
+  dueDate?: string;
+}
+
 interface CreditCardInfoProps {
   account: BankAccount;
   currentInvoice?: Invoice;
   invoices: Invoice[];
   onPayInvoice?: (invoiceId: string, amount: number) => Promise<void>;
   onEdit?: () => void;
+  onUpdateInvoice?: (invoiceId: string, data: InvoiceUpdateData) => Promise<void>;
   selectedInvoiceId?: string;
   onInvoiceSelect?: (invoiceId: string) => void;
 }
@@ -45,12 +51,43 @@ export default function CreditCardInfo({
   invoices,
   onPayInvoice,
   onEdit,
+  onUpdateInvoice,
   selectedInvoiceId,
   onInvoiceSelect,
 }: CreditCardInfoProps) {
   const [showHistory, setShowHistory] = useState(false);
   const [payingInvoice, setPayingInvoice] = useState<string | null>(null);
   const [showPaymentOptions, setShowPaymentOptions] = useState(false);
+  const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
+  const [editClosingDate, setEditClosingDate] = useState('');
+  const [editDueDate, setEditDueDate] = useState('');
+  const [savingInvoice, setSavingInvoice] = useState(false);
+
+  const startEditInvoice = (invoice: Invoice) => {
+    setEditingInvoiceId(invoice.id);
+    setEditClosingDate(invoice.closingDate.split('T')[0]);
+    setEditDueDate(invoice.dueDate.split('T')[0]);
+  };
+
+  const cancelEditInvoice = () => {
+    setEditingInvoiceId(null);
+    setEditClosingDate('');
+    setEditDueDate('');
+  };
+
+  const saveEditInvoice = async () => {
+    if (!editingInvoiceId || !onUpdateInvoice) return;
+    setSavingInvoice(true);
+    try {
+      await onUpdateInvoice(editingInvoiceId, {
+        closingDate: editClosingDate,
+        dueDate: editDueDate,
+      });
+      setEditingInvoiceId(null);
+    } finally {
+      setSavingInvoice(false);
+    }
+  };
 
   const limit = account.creditLimit || 0;
   const currentAmount = currentInvoice?.amount || 0;
@@ -236,49 +273,109 @@ export default function CreditCardInfo({
               const status = getStatusLabel(invoice.status);
               const canPay = invoice.status !== 'PAID' && invoice.amount > 0;
               const isSelected = selectedInvoiceId === invoice.id;
+              const isEditing = editingInvoiceId === invoice.id;
               return (
-                <div
-                  key={invoice.id}
-                  className={`flex items-center justify-between py-2 px-3 rounded-lg cursor-pointer transition-all duration-200 ${
-                    isSelected
-                      ? 'bg-emerald-500/15'
-                      : 'bg-white/5 hover:bg-white/10'
-                  }`}
-                  style={{
-                    border: isSelected ? '2px solid #34d399' : '1px solid rgba(255,255,255,0.06)',
-                    boxShadow: isSelected ? '0 0 20px rgba(52, 211, 153, 0.4), inset 0 0 12px rgba(52, 211, 153, 0.08)' : 'none',
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onInvoiceSelect?.(isSelected ? '' : invoice.id);
-                  }}
-                >
-                  <div className="flex items-center gap-2">
-                    {isSelected && (
-                      <span className="text-emerald-400 text-sm">&#10003;</span>
-                    )}
-                    <div>
-                      <p className={`text-sm capitalize ${isSelected ? 'text-emerald-300 font-semibold' : 'text-white'}`}>{getMonthName(invoice.referenceDate)}</p>
-                      <p className="text-white/50 text-xs">Fecha {formatDate(invoice.closingDate)} | Vence {formatDate(invoice.dueDate)}</p>
+                <div key={invoice.id}>
+                  <div
+                    className={`flex items-center justify-between py-2 px-3 rounded-lg cursor-pointer transition-all duration-200 ${
+                      isSelected
+                        ? 'bg-emerald-500/15'
+                        : 'bg-white/5 hover:bg-white/10'
+                    }`}
+                    style={{
+                      border: isSelected ? '2px solid #34d399' : '1px solid rgba(255,255,255,0.06)',
+                      boxShadow: isSelected ? '0 0 20px rgba(52, 211, 153, 0.4), inset 0 0 12px rgba(52, 211, 153, 0.08)' : 'none',
+                      borderRadius: isEditing ? '0.5rem 0.5rem 0 0' : undefined,
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!isEditing) onInvoiceSelect?.(isSelected ? '' : invoice.id);
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      {isSelected && (
+                        <span className="text-emerald-400 text-sm">&#10003;</span>
+                      )}
+                      <div>
+                        <p className={`text-sm capitalize ${isSelected ? 'text-emerald-300 font-semibold' : 'text-white'}`}>{getMonthName(invoice.referenceDate)}</p>
+                        <p className="text-white/50 text-xs">Fecha {formatDate(invoice.closingDate)} | Vence {formatDate(invoice.dueDate)}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-right">
+                        <p className="text-white font-semibold text-sm">{formatCurrency(invoice.amount)}</p>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${status.color}`}>
+                          {status.label}
+                        </span>
+                      </div>
+                      {onUpdateInvoice && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isEditing) cancelEditInvoice();
+                            else startEditInvoice(invoice);
+                          }}
+                          className="p-1 rounded-lg hover:bg-white/10 transition-colors text-white/30 hover:text-white/70"
+                          title="Editar fatura"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                        </button>
+                      )}
+                      {canPay && onPayInvoice && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handlePayInvoice(invoice); }}
+                          disabled={payingInvoice === invoice.id}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-600 text-white text-xs rounded-lg transition-colors"
+                        >
+                          {payingInvoice === invoice.id ? '...' : 'Pagar'}
+                        </button>
+                      )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-right">
-                      <p className="text-white font-semibold text-sm">{formatCurrency(invoice.amount)}</p>
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${status.color}`}>
-                        {status.label}
-                      </span>
+                  {isEditing && (
+                    <div
+                      className="bg-white/5 border border-white/10 border-t-0 rounded-b-lg p-3 space-y-2"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-white/50 text-[10px] block mb-0.5">Fechamento</label>
+                          <input
+                            type="date"
+                            value={editClosingDate}
+                            onChange={(e) => setEditClosingDate(e.target.value)}
+                            className="w-full bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-emerald-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-white/50 text-[10px] block mb-0.5">Vencimento</label>
+                          <input
+                            type="date"
+                            value={editDueDate}
+                            onChange={(e) => setEditDueDate(e.target.value)}
+                            className="w-full bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-emerald-400"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={cancelEditInvoice}
+                          className="px-3 py-1 text-white/50 hover:text-white/80 text-xs transition-colors"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          onClick={saveEditInvoice}
+                          disabled={savingInvoice}
+                          className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-600 text-white text-xs rounded-lg transition-colors"
+                        >
+                          {savingInvoice ? 'Salvando...' : 'Salvar'}
+                        </button>
+                      </div>
                     </div>
-                    {canPay && onPayInvoice && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handlePayInvoice(invoice); }}
-                        disabled={payingInvoice === invoice.id}
-                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-600 text-white text-xs rounded-lg transition-colors"
-                      >
-                        {payingInvoice === invoice.id ? '...' : 'Pagar'}
-                      </button>
-                    )}
-                  </div>
+                  )}
                 </div>
               );
             })}
