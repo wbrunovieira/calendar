@@ -164,7 +164,17 @@ func (f *fakeTransactionRepoWithInvoice) SumByCategories(profileID string, categ
 func (f *fakeTransactionRepoWithInvoice) SumByInvoiceID(invoiceID string) (float64, error) {
 	var total float64
 	for _, tx := range f.transactions {
-		if tx.InvoiceID != nil && *tx.InvoiceID == invoiceID {
+		if tx.InvoiceID != nil && *tx.InvoiceID == invoiceID && tx.Status != transaction.StatusCancelled {
+			total += tx.Amount
+		}
+	}
+	return total, nil
+}
+
+func (f *fakeTransactionRepoWithInvoice) SumByInvoiceIDByStatus(invoiceID string, status transaction.Status) (float64, error) {
+	var total float64
+	for _, tx := range f.transactions {
+		if tx.InvoiceID != nil && *tx.InvoiceID == invoiceID && tx.Status == status {
 			total += tx.Amount
 		}
 	}
@@ -173,6 +183,86 @@ func (f *fakeTransactionRepoWithInvoice) SumByInvoiceID(invoiceID string) (float
 
 func (f *fakeTransactionRepoWithInvoice) CalculateBalanceByBankAccountID(bankAccountID string) (float64, error) {
 	return 0, nil
+}
+
+// Test: GetCurrentInvoice should return confirmed and planned amounts separately
+func TestGetCurrentInvoice_ShouldReturnConfirmedAndPlannedAmounts(t *testing.T) {
+	f := newTestFixtures()
+
+	invoiceID := "inv-april"
+	now := time.Now()
+
+	// Create an open invoice
+	f.invoiceRepo.invoices[invoiceID] = &invoice.Invoice{
+		ID:            invoiceID,
+		BankAccountID: f.cardID,
+		ReferenceDate: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
+		OpeningDate:   time.Date(2026, 3, 2, 0, 0, 0, 0, time.UTC),
+		ClosingDate:   time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
+		DueDate:       time.Date(2026, 4, 3, 0, 0, 0, 0, time.UTC),
+		Amount:        0,
+		Status:        invoice.StatusOpen,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+
+	// Add confirmed transactions (R$449.99 + R$109.99 = R$559.98)
+	invID := invoiceID
+	f.txRepo.transactions = append(f.txRepo.transactions,
+		&transaction.Transaction{
+			ID:            "tx-confirmed-1",
+			ProfileID:     f.profileID,
+			BankAccountID: f.cardID,
+			InvoiceID:     &invID,
+			Type:          transaction.TypeExpense,
+			Status:        transaction.StatusConfirmed,
+			Amount:        449.99,
+			OccurredOn:    time.Date(2026, 3, 3, 0, 0, 0, 0, time.UTC),
+		},
+		&transaction.Transaction{
+			ID:            "tx-confirmed-2",
+			ProfileID:     f.profileID,
+			BankAccountID: f.cardID,
+			InvoiceID:     &invID,
+			Type:          transaction.TypeExpense,
+			Status:        transaction.StatusConfirmed,
+			Amount:        109.99,
+			OccurredOn:    time.Date(2026, 3, 8, 0, 0, 0, 0, time.UTC),
+		},
+		// Add planned transaction (R$87.90)
+		&transaction.Transaction{
+			ID:            "tx-planned-1",
+			ProfileID:     f.profileID,
+			BankAccountID: f.cardID,
+			InvoiceID:     &invID,
+			Type:          transaction.TypeExpense,
+			Status:        transaction.StatusPlanned,
+			Amount:        87.90,
+			OccurredOn:    time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC),
+		},
+	)
+
+	uc := NewGetCurrentInvoiceUseCase(f.invoiceRepo, f.accountRepo, f.txRepo)
+	result, err := uc.Execute(f.cardID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Total should be confirmed + planned = 647.88
+	expectedTotal := 559.98 + 87.90
+	if result.Amount != expectedTotal {
+		t.Errorf("Amount: expected %.2f, got %.2f", expectedTotal, result.Amount)
+	}
+
+	// ConfirmedAmount should be 559.98
+	if result.ConfirmedAmount != 559.98 {
+		t.Errorf("ConfirmedAmount: expected 559.98, got %.2f", result.ConfirmedAmount)
+	}
+
+	// PlannedAmount should be 87.90
+	if result.PlannedAmount != 87.90 {
+		t.Errorf("PlannedAmount: expected 87.90, got %.2f", result.PlannedAmount)
+	}
 }
 
 // Test: Transaction before closing day should go to current month's invoice

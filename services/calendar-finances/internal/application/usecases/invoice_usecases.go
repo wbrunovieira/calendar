@@ -119,6 +119,14 @@ func (uc *ListInvoicesUseCase) Execute(bankAccountID string) ([]*invoice.Invoice
 				if err == nil {
 					inv.Amount = total
 				}
+				confirmed, err := uc.transactionRepo.SumByInvoiceIDByStatus(inv.ID, transactionPkg.StatusConfirmed)
+				if err == nil {
+					inv.ConfirmedAmount = confirmed
+				}
+				planned, err := uc.transactionRepo.SumByInvoiceIDByStatus(inv.ID, transactionPkg.StatusPlanned)
+				if err == nil {
+					inv.PlannedAmount = planned
+				}
 			}
 		}
 	}
@@ -315,11 +323,19 @@ func (uc *GetInvoiceUseCase) Execute(invoiceID string) (*invoice.Invoice, error)
 		return nil, ErrInvoiceNotFound
 	}
 
-	// Recalculate amount from transactions only for OPEN invoices
+	// Recalculate amounts from transactions only for OPEN invoices
 	if uc.transactionRepo != nil && inv.Status == invoice.StatusOpen {
 		total, err := uc.transactionRepo.SumByInvoiceID(invoiceID)
 		if err == nil {
 			inv.Amount = total
+		}
+		confirmed, err := uc.transactionRepo.SumByInvoiceIDByStatus(invoiceID, transactionPkg.StatusConfirmed)
+		if err == nil {
+			inv.ConfirmedAmount = confirmed
+		}
+		planned, err := uc.transactionRepo.SumByInvoiceIDByStatus(invoiceID, transactionPkg.StatusPlanned)
+		if err == nil {
+			inv.PlannedAmount = planned
 		}
 	}
 
@@ -363,11 +379,19 @@ func (uc *GetCurrentInvoiceUseCase) Execute(bankAccountID string) (*invoice.Invo
 		return nil, err
 	}
 
-	// Recalculate amount from transactions only for OPEN invoices
+	// Recalculate amounts from transactions only for OPEN invoices
 	if inv != nil && uc.transactionRepo != nil && inv.Status == invoice.StatusOpen {
 		total, err := uc.transactionRepo.SumByInvoiceID(inv.ID)
 		if err == nil {
 			inv.Amount = total
+		}
+		confirmed, err := uc.transactionRepo.SumByInvoiceIDByStatus(inv.ID, transactionPkg.StatusConfirmed)
+		if err == nil {
+			inv.ConfirmedAmount = confirmed
+		}
+		planned, err := uc.transactionRepo.SumByInvoiceIDByStatus(inv.ID, transactionPkg.StatusPlanned)
+		if err == nil {
+			inv.PlannedAmount = planned
 		}
 	}
 

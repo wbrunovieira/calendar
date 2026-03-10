@@ -177,6 +177,16 @@ func (f *fakeTransactionRepo) SumByInvoiceID(invoiceID string) (float64, error) 
 	return total, nil
 }
 
+func (f *fakeTransactionRepo) SumByInvoiceIDByStatus(invoiceID string, status transaction.Status) (float64, error) {
+	var total float64
+	for _, tx := range f.created {
+		if tx.InvoiceID != nil && *tx.InvoiceID == invoiceID && tx.Status == status {
+			total += tx.Amount
+		}
+	}
+	return total, nil
+}
+
 func (f *fakeTransactionRepo) CalculateBalanceByBankAccountID(bankAccountID string) (float64, error) {
 	var balance float64
 	for _, tx := range f.created {

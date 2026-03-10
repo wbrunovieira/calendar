@@ -73,6 +73,10 @@ func (f *FakeTransactionRepository) SumByInvoiceID(invoiceID string) (float64, e
 	return 0, nil
 }
 
+func (f *FakeTransactionRepository) SumByInvoiceIDByStatus(invoiceID string, status transaction.Status) (float64, error) {
+	return 0, nil
+}
+
 func (f *FakeTransactionRepository) CalculateBalanceByBankAccountID(bankAccountID string) (float64, error) {
 	return 0, nil
 }

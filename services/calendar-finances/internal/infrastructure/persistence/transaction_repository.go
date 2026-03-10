@@ -743,6 +743,27 @@ func (r *TransactionRepository) SumByInvoiceID(invoiceID string) (float64, error
 	return round2(total), nil
 }
 
+// SumByInvoiceIDByStatus returns the sum of transaction amounts for a given invoice filtered by status
+func (r *TransactionRepository) SumByInvoiceIDByStatus(invoiceID string, status transaction.Status) (float64, error) {
+	if strings.TrimSpace(invoiceID) == "" {
+		return 0, errors.New("invoiceID is required")
+	}
+
+	query := `
+		SELECT COALESCE(SUM(amount), 0)
+		FROM finance.transactions
+		WHERE invoice_id = $1 AND status = $2
+	`
+
+	var total float64
+	err := r.db.QueryRow(query, invoiceID, string(status)).Scan(&total)
+	if err != nil {
+		return 0, err
+	}
+
+	return round2(total), nil
+}
+
 // CalculateBalanceByBankAccountID calculates the net balance from all CONFIRMED
 // transactions for a given bank account, including incoming transfers.
 func (r *TransactionRepository) CalculateBalanceByBankAccountID(bankAccountID string) (float64, error) {

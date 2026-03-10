@@ -92,6 +92,8 @@ export default function CreditCardInfo({
 
   const limit = account.creditLimit || 0;
   const currentAmount = currentInvoice?.amount || 0;
+  const confirmedAmount = currentInvoice?.confirmedAmount || 0;
+  const plannedAmount = currentInvoice?.plannedAmount || 0;
   const available = limit - currentAmount;
   const usagePercent = limit > 0 ? (currentAmount / limit) * 100 : 0;
 
@@ -180,7 +182,12 @@ export default function CreditCardInfo({
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-white/5 rounded-lg p-3">
             <p className="text-white/50 text-xs mb-1">Fatura Atual</p>
-            <p className="text-white font-bold text-lg">{formatCurrency(currentAmount)}</p>
+            <p className="text-white font-bold text-lg">{formatCurrency(confirmedAmount || currentAmount)}</p>
+            {plannedAmount > 0 && (
+              <p className="text-yellow-400/70 text-xs">
+                + {formatCurrency(plannedAmount)} previsto
+              </p>
+            )}
             {currentInvoice && (
               <p className="text-white/50 text-xs">
                 Fecha {formatDate(currentInvoice.closingDate)} | Vence {formatDate(currentInvoice.dueDate)}

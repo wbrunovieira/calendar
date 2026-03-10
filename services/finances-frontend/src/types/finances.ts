@@ -229,6 +229,8 @@ export interface Invoice {
   closingDate: string;
   dueDate: string;
   amount: number;
+  confirmedAmount: number;
+  plannedAmount: number;
   status: InvoiceStatus;
   paidAt?: string;
   paidAmount?: number;

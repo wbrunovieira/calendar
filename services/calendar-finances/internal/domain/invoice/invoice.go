@@ -24,8 +24,10 @@ type Invoice struct {
 	OpeningDate   time.Time `json:"openingDate"`   // When this invoice started accepting transactions
 	ClosingDate   time.Time `json:"closingDate"`   // When this invoice closes
 	DueDate       time.Time `json:"dueDate"`       // Payment due date
-	Amount        float64   `json:"amount"`        // Total invoice amount
-	Status        Status    `json:"status"`
+	Amount          float64   `json:"amount"`          // Total invoice amount (confirmed + planned)
+	ConfirmedAmount float64   `json:"confirmedAmount"` // Sum of CONFIRMED transactions only
+	PlannedAmount   float64   `json:"plannedAmount"`   // Sum of PLANNED transactions only
+	Status          Status    `json:"status"`
 	PaidAt        *time.Time `json:"paidAt,omitempty"`
 	PaidAmount    *float64   `json:"paidAmount,omitempty"`
 	CreatedAt     time.Time `json:"createdAt"`

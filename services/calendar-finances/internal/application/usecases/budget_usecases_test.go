@@ -98,6 +98,10 @@ func (f *fakeTxRepoForBudget) SumByInvoiceID(invoiceID string) (float64, error) 
 	return 0, nil
 }
 
+func (f *fakeTxRepoForBudget) SumByInvoiceIDByStatus(invoiceID string, status transaction.Status) (float64, error) {
+	return 0, nil
+}
+
 func (f *fakeTxRepoForBudget) CalculateBalanceByBankAccountID(bankAccountID string) (float64, error) {
 	return 0, nil
 }
