@@ -115,7 +115,7 @@ func (r *InvoiceRepository) FindByBankAccountAndDate(bankAccountID string, txDat
 		FROM finance.credit_card_invoices
 		WHERE bank_account_id = $1
 			AND opening_date <= $2
-			AND closing_date >= $2
+			AND closing_date > $2
 		LIMIT 1
 	`
 	inv := &invoice.Invoice{}

@@ -193,8 +193,8 @@ func calculateReferenceMonth(txDate time.Time, closingDay int) time.Time {
 	month := txDate.Month()
 	day := txDate.Day()
 
-	// If transaction day is after closing day, it goes to next month's invoice
-	if day > closingDay {
+	// If transaction day is on or after closing day, it goes to next month's invoice
+	if day >= closingDay {
 		month++
 		if month > 12 {
 			month = 1

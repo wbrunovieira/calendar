@@ -201,7 +201,7 @@ func (i *Invoice) ContainsDate(txDate time.Time) bool {
 	closingOnly := time.Date(i.ClosingDate.Year(), i.ClosingDate.Month(), i.ClosingDate.Day(), 0, 0, 0, 0, time.UTC)
 
 	return (txDateOnly.Equal(openingOnly) || txDateOnly.After(openingOnly)) &&
-		(txDateOnly.Equal(closingOnly) || txDateOnly.Before(closingOnly))
+		txDateOnly.Before(closingOnly)
 }
 
 // GetReferenceName returns a human-readable name for the invoice (e.g., "Janeiro 2026")

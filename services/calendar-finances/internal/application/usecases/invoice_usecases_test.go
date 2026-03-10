@@ -220,8 +220,8 @@ func TestCreditCardTransaction_BeforeClosingDay_GoesToCurrentMonthInvoice(t *tes
 	}
 }
 
-// Test: Transaction on closing day should go to current month's invoice
-func TestCreditCardTransaction_OnClosingDay_GoesToCurrentMonthInvoice(t *testing.T) {
+// Test: Transaction on closing day should go to next month's invoice
+func TestCreditCardTransaction_OnClosingDay_GoesToNextMonthInvoice(t *testing.T) {
 	f := newTestFixtures()
 	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo)
 
@@ -252,8 +252,8 @@ func TestCreditCardTransaction_OnClosingDay_GoesToCurrentMonthInvoice(t *testing
 		t.Fatalf("failed to find invoice: %v", err)
 	}
 
-	if inv.ReferenceDate.Month() != time.January {
-		t.Errorf("expected January invoice (closing day), got %s", inv.ReferenceDate.Month())
+	if inv.ReferenceDate.Month() != time.February {
+		t.Errorf("expected February invoice (on closing day goes to next), got %s", inv.ReferenceDate.Month())
 	}
 }
 
@@ -648,10 +648,10 @@ func TestCalculateReferenceMonth(t *testing.T) {
 			expectedRef: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		},
 		{
-			name:        "On closing day - same month",
+			name:        "On closing day - next month",
 			txDate:      time.Date(2026, 1, 9, 0, 0, 0, 0, time.UTC),
 			closingDay:  9,
-			expectedRef: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			expectedRef: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
 		},
 		{
 			name:        "After closing day - next month",
@@ -730,7 +730,7 @@ func TestInvoiceContainsDate(t *testing.T) {
 		{"Before opening", time.Date(2025, 12, 9, 0, 0, 0, 0, time.UTC), false},
 		{"On opening", time.Date(2025, 12, 10, 0, 0, 0, 0, time.UTC), true},
 		{"Middle of cycle", time.Date(2025, 12, 25, 0, 0, 0, 0, time.UTC), true},
-		{"On closing", time.Date(2026, 1, 9, 0, 0, 0, 0, time.UTC), true},
+		{"On closing", time.Date(2026, 1, 9, 0, 0, 0, 0, time.UTC), false},
 		{"After closing", time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC), false},
 	}
 

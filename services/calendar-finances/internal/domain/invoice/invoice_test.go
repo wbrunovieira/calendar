@@ -453,7 +453,7 @@ func TestContainsDate(t *testing.T) {
 			time.Date(2025, 12, 10, 0, 0, 0, 0, time.UTC),  // Opening date
 			time.Date(2025, 12, 25, 0, 0, 0, 0, time.UTC),  // Middle of cycle
 			time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),    // New year
-			time.Date(2026, 1, 9, 0, 0, 0, 0, time.UTC),    // Closing date
+			time.Date(2026, 1, 8, 0, 0, 0, 0, time.UTC),    // Day before closing
 			time.Date(2025, 12, 15, 10, 30, 0, 0, time.UTC), // With time component
 		}
 
