@@ -3,6 +3,7 @@ package usecases
 import (
 	"strings"
 
+	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
 )
 
@@ -15,10 +16,11 @@ type GetDailyBalancesInput struct {
 
 type GetDailyBalancesUseCase struct {
 	transactionRepo transaction.Repository
+	accountRepo     bankaccount.Repository
 }
 
-func NewGetDailyBalancesUseCase(txRepo transaction.Repository) *GetDailyBalancesUseCase {
-	return &GetDailyBalancesUseCase{transactionRepo: txRepo}
+func NewGetDailyBalancesUseCase(txRepo transaction.Repository, accountRepo bankaccount.Repository) *GetDailyBalancesUseCase {
+	return &GetDailyBalancesUseCase{transactionRepo: txRepo, accountRepo: accountRepo}
 }
 
 func (uc *GetDailyBalancesUseCase) Execute(input GetDailyBalancesInput) ([]transaction.DailyBalance, error) {
@@ -28,11 +30,22 @@ func (uc *GetDailyBalancesUseCase) Execute(input GetDailyBalancesInput) ([]trans
 
 	bankAccountID := strings.TrimSpace(input.BankAccountID)
 
-	// Get current balance for the bank account
-	currentBalance, err := uc.transactionRepo.CalculateBalanceByBankAccountID(bankAccountID)
+	// Get current balance for the bank account (sum of confirmed transactions)
+	txBalance, err := uc.transactionRepo.CalculateBalanceByBankAccountID(bankAccountID)
 	if err != nil {
 		return nil, err
 	}
+
+	// Add initial_balance from the bank account
+	account, err := uc.accountRepo.FindByID(bankAccountID)
+	if err != nil {
+		return nil, err
+	}
+	var initialBalance float64
+	if account != nil {
+		initialBalance = account.InitialBalance
+	}
+	currentBalance := txBalance + initialBalance
 
 	// List transactions for the bank account (including incoming transfers)
 	filter := transaction.ListFilter{
