@@ -428,6 +428,70 @@ func (uc *RecalculateInvoiceAmountUseCase) Execute(invoiceID string) (*invoice.I
 	return inv, nil
 }
 
+// UpdateInvoiceInput contains the parameters to update an invoice
+type UpdateInvoiceInput struct {
+	DueDate     *string  `json:"dueDate"`
+	ClosingDate *string  `json:"closingDate"`
+	OpeningDate *string  `json:"openingDate"`
+	Amount      *float64 `json:"amount"`
+}
+
+// UpdateInvoiceUseCase updates an invoice's editable fields
+type UpdateInvoiceUseCase struct {
+	invoiceRepo invoice.Repository
+}
+
+func NewUpdateInvoiceUseCase(invoiceRepo invoice.Repository) *UpdateInvoiceUseCase {
+	return &UpdateInvoiceUseCase{invoiceRepo: invoiceRepo}
+}
+
+func (uc *UpdateInvoiceUseCase) Execute(invoiceID string, input UpdateInvoiceInput) (*invoice.Invoice, error) {
+	inv, err := uc.invoiceRepo.FindByID(invoiceID)
+	if err != nil {
+		return nil, ErrInvoiceNotFound
+	}
+
+	if inv.Status == invoice.StatusPaid {
+		return nil, ErrInvoiceAlreadyPaid
+	}
+
+	if input.DueDate != nil {
+		d, err := parseDate(*input.DueDate)
+		if err != nil {
+			return nil, ErrInvalidInput
+		}
+		inv.DueDate = d
+	}
+
+	if input.ClosingDate != nil {
+		d, err := parseDate(*input.ClosingDate)
+		if err != nil {
+			return nil, ErrInvalidInput
+		}
+		inv.ClosingDate = d
+	}
+
+	if input.OpeningDate != nil {
+		d, err := parseDate(*input.OpeningDate)
+		if err != nil {
+			return nil, ErrInvalidInput
+		}
+		inv.OpeningDate = d
+	}
+
+	if input.Amount != nil {
+		inv.Amount = *input.Amount
+	}
+
+	inv.UpdatedAt = time.Now()
+
+	if err := uc.invoiceRepo.Update(inv); err != nil {
+		return nil, err
+	}
+
+	return inv, nil
+}
+
 // parseYearMonth parses a date in format "2006-01"
 func parseYearMonth(value string) (time.Time, error) {
 	t, err := time.Parse("2006-01", value)

@@ -24,6 +24,7 @@ type InvoiceHandlers struct {
 	payUC            PayInvoiceExecutor
 	addAmountUC      *usecases.AddAmountToInvoiceUseCase
 	recalculateUC    *usecases.RecalculateInvoiceAmountUseCase
+	updateUC         *usecases.UpdateInvoiceUseCase
 }
 
 func NewInvoiceHandlers(
@@ -199,6 +200,34 @@ func (h *InvoiceHandlers) AddAmount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, map[string]any{"data": invoice})
+}
+
+// SetUpdateUseCase sets the update invoice use case
+func (h *InvoiceHandlers) SetUpdateUseCase(uc *usecases.UpdateInvoiceUseCase) {
+	h.updateUC = uc
+}
+
+// Update handles PUT /api/v1/invoices/{id}
+func (h *InvoiceHandlers) Update(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+
+	var input usecases.UpdateInvoiceInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	inv, err := h.updateUC.Execute(id, input)
+	if err != nil {
+		status := http.StatusBadRequest
+		if err == usecases.ErrInvoiceNotFound {
+			status = http.StatusNotFound
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+
+	respondJSON(w, map[string]any{"data": inv})
 }
 
 // Recalculate handles POST /api/v1/invoices/{id}/recalculate

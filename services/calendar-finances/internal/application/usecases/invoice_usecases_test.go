@@ -990,3 +990,145 @@ func TestPayInvoice_PartialPayment_ShouldCreateTransactionWithPaidAmount(t *test
 		t.Errorf("expected checking balance %.2f, got %.2f", expectedBalance, checking.CurrentBalance)
 	}
 }
+
+// =============================================================================
+// Update Invoice Tests (TDD)
+// =============================================================================
+
+func TestUpdateInvoice_ShouldUpdateDueDate(t *testing.T) {
+	f := newTestFixtures()
+
+	inv, _ := invoice.New(invoice.CreateParams{
+		BankAccountID: f.cardID,
+		ClosingDay:    f.closingDay,
+		DueDay:        f.dueDay,
+		ReferenceDate: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+	})
+	f.invoiceRepo.Create(inv)
+
+	useCase := NewUpdateInvoiceUseCase(f.invoiceRepo)
+
+	newDueDate := "2026-03-16"
+	input := UpdateInvoiceInput{
+		DueDate: &newDueDate,
+	}
+
+	updated, err := useCase.Execute(inv.ID, input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expectedDue := time.Date(2026, 3, 16, 0, 0, 0, 0, time.UTC)
+	if !updated.DueDate.Equal(expectedDue) {
+		t.Errorf("expected due date %v, got %v", expectedDue, updated.DueDate)
+	}
+}
+
+func TestUpdateInvoice_ShouldUpdateAmount(t *testing.T) {
+	f := newTestFixtures()
+
+	inv, _ := invoice.New(invoice.CreateParams{
+		BankAccountID: f.cardID,
+		ClosingDay:    f.closingDay,
+		DueDay:        f.dueDay,
+		ReferenceDate: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+	})
+	f.invoiceRepo.Create(inv)
+
+	useCase := NewUpdateInvoiceUseCase(f.invoiceRepo)
+
+	newAmount := 1883.53
+	input := UpdateInvoiceInput{
+		Amount: &newAmount,
+	}
+
+	updated, err := useCase.Execute(inv.ID, input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if updated.Amount != 1883.53 {
+		t.Errorf("expected amount 1883.53, got %.2f", updated.Amount)
+	}
+}
+
+func TestUpdateInvoice_ShouldUpdateMultipleFields(t *testing.T) {
+	f := newTestFixtures()
+
+	inv, _ := invoice.New(invoice.CreateParams{
+		BankAccountID: f.cardID,
+		ClosingDay:    f.closingDay,
+		DueDay:        f.dueDay,
+		ReferenceDate: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+	})
+	f.invoiceRepo.Create(inv)
+
+	useCase := NewUpdateInvoiceUseCase(f.invoiceRepo)
+
+	newDueDate := "2026-03-16"
+	newAmount := 1883.53
+	newClosingDate := "2026-03-09"
+	input := UpdateInvoiceInput{
+		DueDate:     &newDueDate,
+		Amount:      &newAmount,
+		ClosingDate: &newClosingDate,
+	}
+
+	updated, err := useCase.Execute(inv.ID, input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expectedDue := time.Date(2026, 3, 16, 0, 0, 0, 0, time.UTC)
+	expectedClosing := time.Date(2026, 3, 9, 0, 0, 0, 0, time.UTC)
+
+	if !updated.DueDate.Equal(expectedDue) {
+		t.Errorf("expected due date %v, got %v", expectedDue, updated.DueDate)
+	}
+	if updated.Amount != 1883.53 {
+		t.Errorf("expected amount 1883.53, got %.2f", updated.Amount)
+	}
+	if !updated.ClosingDate.Equal(expectedClosing) {
+		t.Errorf("expected closing date %v, got %v", expectedClosing, updated.ClosingDate)
+	}
+}
+
+func TestUpdateInvoice_NotFound_ShouldReturnError(t *testing.T) {
+	f := newTestFixtures()
+	useCase := NewUpdateInvoiceUseCase(f.invoiceRepo)
+
+	newAmount := 100.0
+	input := UpdateInvoiceInput{
+		Amount: &newAmount,
+	}
+
+	_, err := useCase.Execute("non-existent-id", input)
+	if err != ErrInvoiceNotFound {
+		t.Errorf("expected ErrInvoiceNotFound, got %v", err)
+	}
+}
+
+func TestUpdateInvoice_PaidInvoice_ShouldReturnError(t *testing.T) {
+	f := newTestFixtures()
+
+	inv, _ := invoice.New(invoice.CreateParams{
+		BankAccountID: f.cardID,
+		ClosingDay:    f.closingDay,
+		DueDay:        f.dueDay,
+		ReferenceDate: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+	})
+	inv.Pay(500, time.Now())
+	f.invoiceRepo.Create(inv)
+
+	useCase := NewUpdateInvoiceUseCase(f.invoiceRepo)
+
+	newAmount := 100.0
+	input := UpdateInvoiceInput{
+		Amount: &newAmount,
+	}
+
+	_, err := useCase.Execute(inv.ID, input)
+	if err != ErrInvoiceAlreadyPaid {
+		t.Errorf("expected ErrInvoiceAlreadyPaid, got %v", err)
+	}
+}
