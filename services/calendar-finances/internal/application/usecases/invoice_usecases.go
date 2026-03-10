@@ -492,6 +492,46 @@ func (uc *UpdateInvoiceUseCase) Execute(invoiceID string, input UpdateInvoiceInp
 	return inv, nil
 }
 
+// AutoCloseInvoicesOutput contains the result of auto-closing invoices
+type AutoCloseInvoicesOutput struct {
+	Closed int      `json:"closed"`
+	Failed int      `json:"failed"`
+	IDs    []string `json:"ids"`
+}
+
+// AutoCloseInvoicesUseCase automatically closes open invoices past their closing date
+type AutoCloseInvoicesUseCase struct {
+	invoiceRepo invoice.Repository
+}
+
+func NewAutoCloseInvoicesUseCase(invoiceRepo invoice.Repository) *AutoCloseInvoicesUseCase {
+	return &AutoCloseInvoicesUseCase{invoiceRepo: invoiceRepo}
+}
+
+func (uc *AutoCloseInvoicesUseCase) Execute(now time.Time) (*AutoCloseInvoicesOutput, error) {
+	invoices, err := uc.invoiceRepo.FindOpenPastClosingDate(now)
+	if err != nil {
+		return nil, err
+	}
+
+	output := &AutoCloseInvoicesOutput{}
+
+	for _, inv := range invoices {
+		if err := inv.Close(); err != nil {
+			output.Failed++
+			continue
+		}
+		if err := uc.invoiceRepo.Update(inv); err != nil {
+			output.Failed++
+			continue
+		}
+		output.Closed++
+		output.IDs = append(output.IDs, inv.ID)
+	}
+
+	return output, nil
+}
+
 // parseYearMonth parses a date in format "2006-01"
 func parseYearMonth(value string) (time.Time, error) {
 	t, err := time.Parse("2006-01", value)

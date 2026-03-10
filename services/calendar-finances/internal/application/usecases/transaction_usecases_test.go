@@ -260,6 +260,20 @@ func (f *fakeInvoiceRepo) Delete(id string) error {
 	return nil
 }
 
+func (f *fakeInvoiceRepo) FindOpenPastClosingDate(now time.Time) ([]*invoice.Invoice, error) {
+	var list []*invoice.Invoice
+	nowDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	for _, inv := range f.invoices {
+		if inv.Status == invoice.StatusOpen {
+			closingDate := time.Date(inv.ClosingDate.Year(), inv.ClosingDate.Month(), inv.ClosingDate.Day(), 0, 0, 0, 0, time.UTC)
+			if nowDate.After(closingDate) {
+				list = append(list, inv)
+			}
+		}
+	}
+	return list, nil
+}
+
 func TestCreateTransactionUseCaseExpense(t *testing.T) {
 	profileID := "profile-1"
 	accountID := "account-1"

@@ -141,6 +141,8 @@ func main() {
 		recalculateInvoiceUC,
 	)
 	invoiceHandler.SetUpdateUseCase(updateInvoiceUC)
+	autoCloseInvoicesUC := usecases.NewAutoCloseInvoicesUseCase(invoiceRepo)
+	invoiceHandler.SetAutoCloseUseCase(autoCloseInvoicesUC)
 
 	recurringRepo := persistence.NewRecurringTransactionRepository(db)
 	recurringService := usecases.NewRecurringTransactionsService(recurringRepo)
@@ -204,6 +206,7 @@ func main() {
 	// Invoice routes
 	apiRouter.HandleFunc("/invoices", invoiceHandler.List).Methods("GET")
 	apiRouter.HandleFunc("/invoices", invoiceHandler.Create).Methods("POST")
+	apiRouter.HandleFunc("/invoices/auto-close", invoiceHandler.AutoClose).Methods("POST")
 	apiRouter.HandleFunc("/invoices/current", invoiceHandler.GetCurrent).Methods("GET")
 	apiRouter.HandleFunc("/invoices/{id}", invoiceHandler.Get).Methods("GET")
 	apiRouter.HandleFunc("/invoices/{id}", invoiceHandler.Update).Methods("PUT")
@@ -233,6 +236,30 @@ func main() {
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
+
+	// Background job: auto-close invoices daily
+	go func() {
+		// Run once at startup
+		result, err := autoCloseInvoicesUC.Execute(time.Now())
+		if err != nil {
+			log.Printf("Auto-close invoices startup error: %v", err)
+		} else if result.Closed > 0 {
+			log.Printf("Auto-close invoices: closed %d invoices at startup", result.Closed)
+		}
+
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			result, err := autoCloseInvoicesUC.Execute(time.Now())
+			if err != nil {
+				log.Printf("Auto-close invoices error: %v", err)
+				continue
+			}
+			if result.Closed > 0 {
+				log.Printf("Auto-close invoices: closed %d invoices", result.Closed)
+			}
+		}
+	}()
 
 	log.Printf("🚀 Calendar Finances API starting on port %s", port)
 	if err := server.ListenAndServe(); err != nil {

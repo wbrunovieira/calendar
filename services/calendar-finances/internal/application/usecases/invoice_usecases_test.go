@@ -1108,6 +1108,148 @@ func TestUpdateInvoice_NotFound_ShouldReturnError(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// Auto-Close Invoice Tests (TDD)
+// =============================================================================
+
+func TestAutoCloseInvoices_ShouldCloseOpenInvoicesPastClosingDate(t *testing.T) {
+	f := newTestFixtures()
+
+	// Create an OPEN invoice with closing date 2026-03-09 (already past)
+	inv, _ := invoice.New(invoice.CreateParams{
+		BankAccountID: f.cardID,
+		ClosingDay:    f.closingDay,
+		DueDay:        f.dueDay,
+		ReferenceDate: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+	})
+	inv.Amount = 1883.53
+	f.invoiceRepo.Create(inv)
+
+	useCase := NewAutoCloseInvoicesUseCase(f.invoiceRepo)
+
+	// Run auto-close as of 2026-03-10 (one day after closing)
+	result, err := useCase.Execute(time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Closed != 1 {
+		t.Errorf("expected 1 invoice closed, got %d", result.Closed)
+	}
+
+	// Verify invoice is now CLOSED
+	updated, _ := f.invoiceRepo.FindByID(inv.ID)
+	if updated.Status != invoice.StatusClosed {
+		t.Errorf("expected CLOSED status, got %s", updated.Status)
+	}
+}
+
+func TestAutoCloseInvoices_ShouldNotCloseInvoiceBeforeClosingDate(t *testing.T) {
+	f := newTestFixtures()
+
+	// Create an OPEN invoice with closing date 2026-03-09
+	inv, _ := invoice.New(invoice.CreateParams{
+		BankAccountID: f.cardID,
+		ClosingDay:    f.closingDay,
+		DueDay:        f.dueDay,
+		ReferenceDate: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+	})
+	f.invoiceRepo.Create(inv)
+
+	useCase := NewAutoCloseInvoicesUseCase(f.invoiceRepo)
+
+	// Run auto-close as of 2026-03-08 (before closing)
+	result, err := useCase.Execute(time.Date(2026, 3, 8, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Closed != 0 {
+		t.Errorf("expected 0 invoices closed, got %d", result.Closed)
+	}
+
+	// Verify invoice is still OPEN
+	updated, _ := f.invoiceRepo.FindByID(inv.ID)
+	if updated.Status != invoice.StatusOpen {
+		t.Errorf("expected OPEN status, got %s", updated.Status)
+	}
+}
+
+func TestAutoCloseInvoices_ShouldNotCloseAlreadyClosedOrPaid(t *testing.T) {
+	f := newTestFixtures()
+
+	// Create a CLOSED invoice
+	inv1, _ := invoice.New(invoice.CreateParams{
+		BankAccountID: f.cardID,
+		ClosingDay:    f.closingDay,
+		DueDay:        f.dueDay,
+		ReferenceDate: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+	})
+	inv1.Close()
+	f.invoiceRepo.Create(inv1)
+
+	// Create a PAID invoice
+	inv2, _ := invoice.New(invoice.CreateParams{
+		BankAccountID: f.cardID,
+		ClosingDay:    f.closingDay,
+		DueDay:        f.dueDay,
+		ReferenceDate: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	})
+	inv2.Pay(500, time.Now())
+	f.invoiceRepo.Create(inv2)
+
+	useCase := NewAutoCloseInvoicesUseCase(f.invoiceRepo)
+
+	result, err := useCase.Execute(time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Neither should be affected
+	if result.Closed != 0 {
+		t.Errorf("expected 0 invoices closed (already closed/paid), got %d", result.Closed)
+	}
+}
+
+func TestAutoCloseInvoices_ShouldCloseMultipleInvoices(t *testing.T) {
+	f := newTestFixtures()
+
+	// Add a second credit card
+	closingDay2 := 25
+	dueDay2 := 5
+	limit := 3000.0
+	f.accountRepo.accounts["card-nubank"] = &bankaccount.BankAccount{
+		ID: "card-nubank", ProfileID: f.profileID, Name: "Cartao Nubank",
+		Type: bankaccount.AccountTypeCreditCard, Currency: "BRL", IsActive: true,
+		CreditLimit: &limit, ClosingDay: &closingDay2, DueDay: &dueDay2,
+	}
+
+	// Invoice 1: MP closing 09/03
+	inv1, _ := invoice.New(invoice.CreateParams{
+		BankAccountID: f.cardID, ClosingDay: f.closingDay, DueDay: f.dueDay,
+		ReferenceDate: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+	})
+	f.invoiceRepo.Create(inv1)
+
+	// Invoice 2: Nubank closing 25/02
+	inv2, _ := invoice.New(invoice.CreateParams{
+		BankAccountID: "card-nubank", ClosingDay: closingDay2, DueDay: dueDay2,
+		ReferenceDate: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+	})
+	f.invoiceRepo.Create(inv2)
+
+	useCase := NewAutoCloseInvoicesUseCase(f.invoiceRepo)
+
+	result, err := useCase.Execute(time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Closed != 2 {
+		t.Errorf("expected 2 invoices closed, got %d", result.Closed)
+	}
+}
+
 func TestUpdateInvoice_PaidInvoice_ShouldReturnError(t *testing.T) {
 	f := newTestFixtures()
 

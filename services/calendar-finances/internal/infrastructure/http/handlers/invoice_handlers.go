@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/brunovieira/calendar-finances/internal/application/usecases"
 	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
@@ -25,6 +26,7 @@ type InvoiceHandlers struct {
 	addAmountUC      *usecases.AddAmountToInvoiceUseCase
 	recalculateUC    *usecases.RecalculateInvoiceAmountUseCase
 	updateUC         *usecases.UpdateInvoiceUseCase
+	autoCloseUC      *usecases.AutoCloseInvoicesUseCase
 }
 
 func NewInvoiceHandlers(
@@ -200,6 +202,22 @@ func (h *InvoiceHandlers) AddAmount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, map[string]any{"data": invoice})
+}
+
+// SetAutoCloseUseCase sets the auto-close invoices use case
+func (h *InvoiceHandlers) SetAutoCloseUseCase(uc *usecases.AutoCloseInvoicesUseCase) {
+	h.autoCloseUC = uc
+}
+
+// AutoClose handles POST /api/v1/invoices/auto-close
+func (h *InvoiceHandlers) AutoClose(w http.ResponseWriter, r *http.Request) {
+	result, err := h.autoCloseUC.Execute(time.Now())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	respondJSON(w, map[string]any{"data": result})
 }
 
 // SetUpdateUseCase sets the update invoice use case

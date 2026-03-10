@@ -229,4 +229,5 @@ type Repository interface {
 	FindByBankAccountAndDate(bankAccountID string, txDate time.Time) (*Invoice, error)
 	Update(invoice *Invoice) error
 	Delete(id string) error
+	FindOpenPastClosingDate(now time.Time) ([]*Invoice, error)
 }

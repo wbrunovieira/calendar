@@ -158,6 +158,36 @@ func (r *InvoiceRepository) Update(inv *invoice.Invoice) error {
 	return nil
 }
 
+func (r *InvoiceRepository) FindOpenPastClosingDate(now time.Time) ([]*invoice.Invoice, error) {
+	nowDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	query := `
+		SELECT id, bank_account_id, reference_date, opening_date, closing_date, due_date,
+			amount, status, paid_at, paid_amount, created_at, updated_at
+		FROM finance.credit_card_invoices
+		WHERE status = 'OPEN' AND closing_date < $1
+		ORDER BY closing_date ASC
+	`
+	rows, err := r.db.Query(query, nowDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var invoices []*invoice.Invoice
+	for rows.Next() {
+		inv := &invoice.Invoice{}
+		err := rows.Scan(
+			&inv.ID, &inv.BankAccountID, &inv.ReferenceDate, &inv.OpeningDate, &inv.ClosingDate, &inv.DueDate,
+			&inv.Amount, &inv.Status, &inv.PaidAt, &inv.PaidAmount, &inv.CreatedAt, &inv.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		invoices = append(invoices, inv)
+	}
+	return invoices, nil
+}
+
 func (r *InvoiceRepository) Delete(id string) error {
 	query := `DELETE FROM finance.credit_card_invoices WHERE id = $1`
 	result, err := r.db.Exec(query, id)
