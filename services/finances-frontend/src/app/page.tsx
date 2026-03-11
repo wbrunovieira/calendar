@@ -406,11 +406,25 @@ export default function FinancesPage() {
 
 
   // Handle search result selection
-  const handleSearchSelectTransaction = useCallback((id: string) => {
+  const handleSearchSelectTransaction = useCallback(async (id: string) => {
+    // Try local list first
     const tx = transactions.find((t) => t.id === id);
     if (tx) {
       setEditingTransaction(tx);
       setIsTransactionModalOpen(true);
+      return;
+    }
+    // Fetch from API if not in current filtered list
+    try {
+      const res = await fetch(`${API_BASE}/transactions/${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        const remoteTx = data.data || data;
+        setEditingTransaction(remoteTx);
+        setIsTransactionModalOpen(true);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar transacao:', error);
     }
   }, [transactions]);
 
