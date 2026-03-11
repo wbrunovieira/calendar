@@ -112,7 +112,7 @@ export default function TransactionForm({
           notes: editingTransaction.notes,
           costCenter: editingTransaction.costCenter,
           occurredOn: editingTransaction.occurredOn.slice(0, 10),
-          dueOn: editingTransaction.dueOn?.slice(0, 10),
+          dueOn: editingTransaction.dueOn?.slice(0, 10) || (editingTransaction.status === 'PLANNED' ? editingTransaction.occurredOn.slice(0, 10) : undefined),
           reminderOn: editingTransaction.reminderOn?.slice(0, 10),
           recurrenceRule: editingTransaction.recurrenceRule,
           installmentNumber: editingTransaction.installmentNumber,
@@ -687,30 +687,74 @@ export default function TransactionForm({
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between pt-4 border-t border-white/10">
-            <label className="flex items-center gap-3 cursor-pointer group">
-              <input
-                type="checkbox"
-                checked={formData.status === 'CONFIRMED'}
-                onChange={(e) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    status: e.target.checked ? 'CONFIRMED' : 'PLANNED',
-                  }))
-                }
-                className="w-5 h-5 rounded border-2 border-white/30 bg-white/10 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-0 cursor-pointer"
-              />
+          {/* Quick confirm banner for PLANNED transactions in edit mode */}
+          {isEditing && editingTransaction?.status === 'PLANNED' && formData.status === 'PLANNED' && (
+            <div className="bg-amber-500/15 border border-amber-400/30 rounded-xl p-4 space-y-3">
               <div>
-                <span className="text-white/90 text-sm font-medium group-hover:text-white transition-colors">
-                  {formData.status === 'CONFIRMED' ? '✅ Já confirmado' : '🗓️ Planejado (aguardando confirmação)'}
-                </span>
-                <p className="text-white/50 text-xs">
-                  {formData.status === 'CONFIRMED'
-                    ? 'O lançamento já ocorreu e será registrado como efetivado'
-                    : 'O lançamento será salvo como pendente para confirmar depois'}
+                <p className="text-amber-200 font-semibold text-sm">Confirmar pagamento?</p>
+                <p className="text-amber-200/60 text-xs mt-0.5">
+                  Marcar como pago e atualizar a data de ocorrencia
                 </p>
               </div>
-            </label>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFormData((prev) => ({
+                      ...prev,
+                      status: 'CONFIRMED',
+                      occurredOn: getLocalDateString(),
+                    }));
+                  }}
+                  className="px-5 py-2 rounded-lg bg-emerald-500/80 hover:bg-emerald-500 text-white font-semibold text-sm transition-colors whitespace-nowrap"
+                >
+                  Paguei hoje ({new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })})
+                </button>
+                <div className="flex items-center gap-2">
+                  <span className="text-amber-200/60 text-xs">ou em</span>
+                  <input
+                    type="date"
+                    className="px-3 py-2 bg-white/10 border border-amber-400/30 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        setFormData((prev) => ({
+                          ...prev,
+                          status: 'CONFIRMED',
+                          occurredOn: e.target.value,
+                        }));
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between pt-4 border-t border-white/10">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setFormData((prev) => ({ ...prev, status: 'CONFIRMED' }))}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  formData.status === 'CONFIRMED'
+                    ? 'bg-emerald-500/30 border border-emerald-400/50 text-emerald-200'
+                    : 'bg-white/5 border border-white/10 text-white/50 hover:bg-white/10'
+                }`}
+              >
+                Confirmado
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormData((prev) => ({ ...prev, status: 'PLANNED' }))}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  formData.status === 'PLANNED'
+                    ? 'bg-amber-500/30 border border-amber-400/50 text-amber-200'
+                    : 'bg-white/5 border border-white/10 text-white/50 hover:bg-white/10'
+                }`}
+              >
+                Planejado
+              </button>
+            </div>
             <div className="flex gap-3">
               <button
                 type="button"
