@@ -52,6 +52,7 @@ interface GlobalSearchProps {
   accounts: BankAccount[];
   onSelectTransaction?: (id: string) => void;
   onSelectRecurring?: (id: string) => void;
+  refreshKey?: number;
 }
 
 const formatCurrency = (value: number) =>
@@ -85,6 +86,7 @@ export default function GlobalSearch({
   accounts,
   onSelectTransaction,
   onSelectRecurring,
+  refreshKey,
 }: GlobalSearchProps) {
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -135,7 +137,7 @@ export default function GlobalSearch({
     };
 
     fetchData();
-  }, [profileId]);
+  }, [profileId, refreshKey]);
 
   // Search logic
   const searchResults = useCallback(
