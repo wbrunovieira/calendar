@@ -13,6 +13,7 @@ interface TodayAlertsProps {
   onPayInvoice?: (invoiceId: string, amount: number) => Promise<void>;
   onConfirmTransaction?: (id: string) => void;
   onConfirmRecurring?: (recurring: RecurringTransaction) => Promise<void>;
+  onEditTransaction?: (transaction: Transaction) => void;
 }
 
 const formatCurrency = (value: number, currency = 'BRL') =>
@@ -72,6 +73,7 @@ export default function TodayAlerts({
   onPayInvoice,
   onConfirmTransaction,
   onConfirmRecurring,
+  onEditTransaction,
 }: TodayAlertsProps) {
   const today = formatLocalDate(new Date());
 
@@ -461,6 +463,14 @@ export default function TodayAlerts({
                     <span className={tx.type === 'INCOME' ? 'text-emerald-400' : 'text-red-400'} style={{ fontWeight: 600 }}>
                       {tx.type === 'INCOME' ? '+' : '-'}{formatCurrency(tx.amount, tx.currency)}
                     </span>
+                    {onEditTransaction && (
+                      <button
+                        onClick={() => onEditTransaction(tx)}
+                        className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white/70 text-xs rounded-lg transition-colors"
+                      >
+                        Editar
+                      </button>
+                    )}
                     {onConfirmTransaction && (
                       <button
                         onClick={() => onConfirmTransaction(tx.id)}
@@ -587,6 +597,14 @@ export default function TodayAlerts({
                   <span className={tx.type === 'INCOME' ? 'text-emerald-400' : 'text-red-400'} style={{ fontWeight: 600 }}>
                     {tx.type === 'INCOME' ? '+' : '-'}{formatCurrency(tx.amount, tx.currency)}
                   </span>
+                  {onEditTransaction && (
+                    <button
+                      onClick={() => onEditTransaction(tx)}
+                      className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white/70 text-xs rounded-lg transition-colors"
+                    >
+                      Editar
+                    </button>
+                  )}
                   {onConfirmTransaction && (
                     <button
                       onClick={() => onConfirmTransaction(tx.id)}
@@ -726,6 +744,14 @@ export default function TodayAlerts({
                     >
                       Ignorar
                     </button>
+                    {onEditTransaction && (
+                      <button
+                        onClick={() => onEditTransaction(tx)}
+                        className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white/70 text-xs rounded-lg transition-colors"
+                      >
+                        Editar
+                      </button>
+                    )}
                     {onConfirmTransaction && (
                       <button
                         onClick={() => onConfirmTransaction(tx.id)}

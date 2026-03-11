@@ -503,6 +503,7 @@ export default function FinancesPage() {
             onPayInvoice={handlePayInvoice}
             onConfirmTransaction={(id) => updateTransactionStatus(id, 'CONFIRMED')}
             onConfirmRecurring={handleConfirmRecurring}
+            onEditTransaction={handleEditTransaction}
           />
         )}
 
