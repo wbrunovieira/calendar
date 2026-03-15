@@ -69,6 +69,33 @@ func TestNewBankAccount(t *testing.T) {
 			currency:       "",
 			wantErr:        true,
 		},
+		{
+			name:           "valid USD currency",
+			profileID:      "profile-123",
+			accountName:    "Binance",
+			accountType:    AccountTypeInvestment,
+			initialBalance: 100.00,
+			currency:       "USD",
+			wantErr:        false,
+		},
+		{
+			name:           "valid EUR currency",
+			profileID:      "profile-123",
+			accountName:    "Euro Account",
+			accountType:    AccountTypeChecking,
+			initialBalance: 50.00,
+			currency:       "EUR",
+			wantErr:        false,
+		},
+		{
+			name:           "invalid currency",
+			profileID:      "profile-123",
+			accountName:    "Test Account",
+			accountType:    AccountTypeChecking,
+			initialBalance: 100.00,
+			currency:       "GBP",
+			wantErr:        true,
+		},
 	}
 
 	for _, tt := range tests {

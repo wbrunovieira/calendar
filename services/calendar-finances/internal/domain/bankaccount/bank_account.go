@@ -118,8 +118,8 @@ func NewBankAccount(
 	if !isValidAccountType(accountType) {
 		return nil, errors.New("invalid account type")
 	}
-	if currency == "" {
-		return nil, errors.New("currency is required")
+	if !IsValidCurrency(currency) {
+		return nil, errors.New("invalid currency: must be BRL, USD, or EUR")
 	}
 
 	now := time.Now()
@@ -135,6 +135,16 @@ func NewBankAccount(
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}, nil
+}
+
+// IsValidCurrency checks if the currency is supported (BRL, USD, EUR)
+func IsValidCurrency(currency string) bool {
+	switch currency {
+	case "BRL", "USD", "EUR":
+		return true
+	default:
+		return false
+	}
 }
 
 func isValidAccountType(accountType AccountType) bool {

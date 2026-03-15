@@ -46,11 +46,13 @@ function TransactionHistory({
   profileId,
   categories,
   selectedInvoiceId,
+  accountCurrency = 'BRL',
 }: {
   accountId: string;
   profileId: string;
   categories: Category[];
   selectedInvoiceId?: string;
+  accountCurrency?: string;
 }) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [dayBalances, setDayBalances] = useState<Record<string, { balance: number; dayTotal: number }>>({});
@@ -143,10 +145,10 @@ function TransactionHistory({
               <span className="text-white/70 text-xs font-semibold">{formatDate(dateKey)}</span>
               <div className="flex items-center gap-3">
                 <span className={`text-xs font-semibold ${dayTotal >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {dayTotal >= 0 ? '+' : ''}{formatCurrency(Math.abs(dayTotal))}
+                  {dayTotal >= 0 ? '+' : ''}{formatCurrency(Math.abs(dayTotal), accountCurrency)}
                 </span>
                 <span className={`text-xs font-medium ${endOfDayBalance >= 0 ? 'text-white/60' : 'text-red-300'}`}>
-                  Saldo: {formatCurrency(endOfDayBalance)}
+                  Saldo: {formatCurrency(endOfDayBalance, accountCurrency)}
                 </span>
               </div>
             </div>
@@ -260,10 +262,28 @@ export default function ContasPage() {
     [filteredAccounts],
   );
 
+  const totalsByCurrency = useMemo(() => {
+    const totals: Record<string, number> = {};
+    regularAccounts.filter((a) => a.type !== 'CREDIT_CARD').forEach((a) => {
+      const cur = a.currency || 'BRL';
+      totals[cur] = (totals[cur] || 0) + a.currentBalance;
+    });
+    return totals;
+  }, [regularAccounts]);
+
   const totalBalance = useMemo(
     () => regularAccounts.filter((a) => a.type !== 'CREDIT_CARD').reduce((sum, a) => sum + a.currentBalance, 0),
     [regularAccounts],
   );
+
+  const investedByCurrency = useMemo(() => {
+    const totals: Record<string, number> = {};
+    investmentAccounts.forEach((a) => {
+      const cur = a.currency || 'BRL';
+      totals[cur] = (totals[cur] || 0) + a.currentBalance;
+    });
+    return totals;
+  }, [investmentAccounts]);
 
   const totalInvested = useMemo(
     () => investmentAccounts.reduce((sum, a) => sum + a.currentBalance, 0),
@@ -615,7 +635,14 @@ export default function ContasPage() {
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="bg-white/5 border border-white/10 rounded-2xl p-5 backdrop-blur-sm">
                 <p className="text-white/50 text-sm mb-1">Saldo em contas</p>
-                <p className="text-2xl font-bold text-white">{formatCurrency(totalBalance)}</p>
+                <div className="space-y-0.5">
+                  {Object.entries(totalsByCurrency).map(([cur, total]) => (
+                    <p key={cur} className="text-2xl font-bold text-white">{formatCurrency(total, cur)}</p>
+                  ))}
+                  {Object.keys(totalsByCurrency).length === 0 && (
+                    <p className="text-2xl font-bold text-white">{formatCurrency(0)}</p>
+                  )}
+                </div>
                 <div className="mt-2 space-y-1">
                   {regularAccounts.filter((a) => a.type !== 'CREDIT_CARD').map((a) => (
                     <div key={a.id} className="flex items-center justify-between text-xs">
@@ -628,7 +655,11 @@ export default function ContasPage() {
               {investmentAccounts.length > 0 && (
                 <div className="bg-gradient-to-br from-purple-900/30 to-indigo-900/30 border border-purple-500/20 rounded-2xl p-5 backdrop-blur-sm">
                   <p className="text-purple-300/70 text-sm mb-1">Total investido</p>
-                  <p className="text-2xl font-bold text-white">{formatCurrency(totalInvested)}</p>
+                  <div className="space-y-0.5">
+                    {Object.entries(investedByCurrency).map(([cur, total]) => (
+                      <p key={cur} className="text-2xl font-bold text-white">{formatCurrency(total, cur)}</p>
+                    ))}
+                  </div>
                   <p className="text-white/40 text-xs mt-1">
                     {investmentAccounts.length} {investmentAccounts.length === 1 ? 'investimento' : 'investimentos'}
                   </p>
@@ -716,7 +747,7 @@ export default function ContasPage() {
                                     profileId={selectedProfileId}
                                     categories={categories}
                                     selectedInvoiceId={selectedInvoiceByAccount[account.id] || ''}
-
+                                    accountCurrency={account.currency}
                                   />
                                 </div>
                               )}
@@ -778,6 +809,7 @@ export default function ContasPage() {
                                   accountId={account.id}
                                   profileId={selectedProfileId}
                                   categories={categories}
+                                  accountCurrency={account.currency}
                                 />
                               </div>
                             )}
@@ -799,9 +831,11 @@ export default function ContasPage() {
                     <h3 className="text-lg font-semibold text-white">Investimentos</h3>
                   </div>
                   <div className="text-right">
-                    <p className="text-purple-300 text-sm font-semibold">
-                      {formatCurrency(totalInvested)}
-                    </p>
+                    {Object.entries(investedByCurrency).map(([cur, total]) => (
+                      <p key={cur} className="text-purple-300 text-sm font-semibold">
+                        {formatCurrency(total, cur)}
+                      </p>
+                    ))}
                     <span className="text-white/50 text-xs">
                       {investmentAccounts.length} {investmentAccounts.length === 1 ? 'investimento' : 'investimentos'}
                     </span>
@@ -854,7 +888,7 @@ export default function ContasPage() {
                                     accountId={account.id}
                                     profileId={selectedProfileId}
                                     categories={categories}
-
+                                    accountCurrency={account.currency}
                                   />
                                 </div>
                               )}

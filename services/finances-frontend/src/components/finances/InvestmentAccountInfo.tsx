@@ -124,7 +124,7 @@ export default function InvestmentAccountInfo({
         </div>
         <div className="flex items-center gap-3">
           <div className="text-right">
-            <p className="text-white font-bold text-lg">{formatCurrency(account.currentBalance)}</p>
+            <p className="text-white font-bold text-lg">{formatCurrency(account.currentBalance, account.currency)}</p>
             {yieldDescription && (
               <p className="text-white/50 text-xs">{yieldDescription}</p>
             )}
@@ -155,12 +155,12 @@ export default function InvestmentAccountInfo({
             <div className="bg-white/5 rounded-lg p-3">
               <p className="text-white/50 text-xs mb-1">Preço/Cota</p>
               <p className="text-white font-semibold">
-                {account.quotaPrice ? formatCurrency(account.quotaPrice) : '-'}
+                {account.quotaPrice ? formatCurrency(account.quotaPrice, account.currency) : '-'}
               </p>
             </div>
             <div className="bg-white/5 rounded-lg p-3">
               <p className="text-white/50 text-xs mb-1">Total</p>
-              <p className="text-white font-semibold">{formatCurrency(account.currentBalance)}</p>
+              <p className="text-white font-semibold">{formatCurrency(account.currentBalance, account.currency)}</p>
             </div>
           </div>
         )}
@@ -169,12 +169,12 @@ export default function InvestmentAccountInfo({
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-white/5 rounded-lg p-3">
             <p className="text-white/50 text-xs mb-1">Aplicado</p>
-            <p className="text-white font-semibold">{formatCurrency(account.initialBalance)}</p>
+            <p className="text-white font-semibold">{formatCurrency(account.initialBalance, account.currency)}</p>
           </div>
           <div className="bg-white/5 rounded-lg p-3">
             <p className="text-white/50 text-xs mb-1">Rendimento</p>
             <p className={`font-bold ${isPositiveReturn ? 'text-emerald-400' : 'text-red-400'}`}>
-              {isPositiveReturn ? '+' : ''}{formatCurrency(returnAmount)}
+              {isPositiveReturn ? '+' : ''}{formatCurrency(returnAmount, account.currency)}
             </p>
             <p className={`text-xs ${isPositiveReturn ? 'text-emerald-400/70' : 'text-red-400/70'}`}>
               {isPositiveReturn ? '+' : ''}{formatPercent(returnPercent)}
