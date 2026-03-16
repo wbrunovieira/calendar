@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   BankAccount,
   Category,
@@ -9,6 +9,7 @@ import type {
   TransactionStatus,
   TransactionType,
 } from '@/types/finances';
+import { API_BASE } from '@/lib/api';
 
 interface TransactionsTableProps {
   transactions: Transaction[];
@@ -67,6 +68,7 @@ export default function TransactionsTable({
 }: TransactionsTableProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [dayBalances, setDayBalances] = useState<Record<string, { balance: number; dayTotal: number }>>({});
 
   const categoryMap = useMemo(() => {
     const map = new Map<string, Category>();
@@ -94,6 +96,50 @@ export default function TransactionsTable({
   useEffect(() => {
     setCurrentPage(1);
   }, [transactions.length]);
+
+  // Fetch daily balances when a single bank account is selected
+  const fetchDailyBalances = useCallback(async () => {
+    if (!filters.bankAccountId) {
+      setDayBalances({});
+      return;
+    }
+    try {
+      const params = new URLSearchParams({
+        profileId: transactions[0]?.profileId || '',
+        bankAccountId: filters.bankAccountId,
+      });
+      const response = await fetch(`${API_BASE}/transactions/daily-balances?${params}`);
+      if (response.ok) {
+        const data = await response.json();
+        const balMap: Record<string, { balance: number; dayTotal: number }> = {};
+        for (const entry of (data.data || [])) {
+          balMap[entry.date] = { balance: entry.balance, dayTotal: entry.dayTotal };
+        }
+        setDayBalances(balMap);
+      }
+    } catch {
+      setDayBalances({});
+    }
+  }, [filters.bankAccountId, transactions]);
+
+  useEffect(() => {
+    fetchDailyBalances();
+  }, [fetchDailyBalances]);
+
+  // Group paginated transactions by day
+  const groupedByDay = useMemo(() => {
+    const groups: { dateKey: string; txs: typeof paginatedTransactions }[] = [];
+    let currentDate = '';
+    for (const tx of paginatedTransactions) {
+      const dateKey = tx.occurredOn.split('T')[0];
+      if (dateKey !== currentDate) {
+        currentDate = dateKey;
+        groups.push({ dateKey, txs: [] });
+      }
+      groups[groups.length - 1].txs.push(tx);
+    }
+    return groups;
+  }, [paginatedTransactions]);
 
   const handleFilterChange = (partial: Partial<TransactionFilters>) => {
     setCurrentPage(1);
@@ -242,118 +288,153 @@ export default function TransactionsTable({
               </tr>
             )}
 
-            {paginatedTransactions.map((transaction) => {
-              const account = accountMap.get(transaction.bankAccountId);
-              const category = transaction.categoryId
-                ? categoryMap.get(transaction.categoryId)
-                : undefined;
-              const parentCategory = category?.parentId
-                ? categoryMap.get(category.parentId)
-                : undefined;
-              const destination = transaction.destinationAccountId
-                ? accountMap.get(transaction.destinationAccountId)
-                : undefined;
-
-              // Build category display with hierarchy
-              const categoryDisplay = (() => {
-                if (!category) {
-                  return transaction.type === 'TRANSFER' ? 'Transferência' : '-';
-                }
-                if (parentCategory) {
-                  return (
-                    <span className="flex flex-col">
-                      <span className="text-white/50 text-xs">{parentCategory.name}</span>
-                      <span>↳ {category.name}</span>
-                    </span>
-                  );
-                }
-                return category.name;
-              })();
+            {groupedByDay.map(({ dateKey, txs }) => {
+              const balEntry = dayBalances[dateKey];
+              // Calculate day total from transactions if no API balance
+              const dayTotal = balEntry?.dayTotal ?? txs.reduce((sum, tx) => {
+                if (tx.type === 'INCOME') return sum + tx.amount;
+                if (tx.type === 'EXPENSE' || tx.type === 'TRANSFER') return sum - tx.amount;
+                return sum;
+              }, 0);
+              const endOfDayBalance = balEntry?.balance;
 
               return (
-                <tr key={transaction.id} className="hover:bg-white/5 transition-colors">
-                  <td className="px-6 py-4 whitespace-nowrap text-white/80 text-sm">
-                    {formatDate(transaction.occurredOn)}
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col">
-                      <span className="text-white font-semibold text-sm">
-                        {transaction.description}
-                      </span>
-                      <span className="text-white/50 text-xs">
-                        {typeLabels[transaction.type]}
-                        {transaction.type === 'TRANSFER' && destination
-                          ? ` para ${destination.name}`
-                          : ''}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-white/70 text-sm">
-                    {account ? account.name : 'Conta removida'}
-                  </td>
-                  <td className="px-6 py-4 text-white/70 text-sm">
-                    {categoryDisplay}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`font-semibold ${
-                        transaction.type === 'INCOME' ? 'text-emerald-300' : 'text-rose-300'
-                      }`}
-                    >
-                      {transaction.type === 'EXPENSE' ? '-' : ''}
-                      {formatCurrency(transaction.amount, transaction.currency)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`px-3 py-1 rounded-full text-xs font-semibold inline-flex items-center gap-2 ${
-                        statusStyles[transaction.status]
-                      }`}
-                    >
-                      {transaction.status === 'CONFIRMED' && '✅'}
-                      {transaction.status === 'PLANNED' && '🗓️'}
-                      {transaction.status === 'CANCELLED' && '🛑'}
-                      {transaction.status === 'CONFIRMED'
-                        ? 'Confirmado'
-                        : transaction.status === 'PLANNED'
-                        ? 'Planejado'
-                        : 'Cancelado'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-wrap gap-2 text-xs">
-                      <button
-                        onClick={() => onEdit(transaction)}
-                        className="px-3 py-1 rounded-lg bg-white/10 text-white/80 border border-white/20 hover:bg-white/20"
-                        title="Editar"
-                      >
-                        Editar
-                      </button>
-                      {transaction.status === 'PLANNED' && (
-                        <button
-                          onClick={() => onConfirm(transaction.id)}
-                          className="px-3 py-1 rounded-lg bg-emerald-500/20 text-emerald-200 border border-emerald-500/40 hover:bg-emerald-500/30"
-                        >
-                          Confirmar
-                        </button>
-                      )}
-                      {transaction.status === 'CONFIRMED' && (
-                        <button
-                          onClick={() => onCancel(transaction.id)}
-                          className="px-3 py-1 rounded-lg bg-amber-500/20 text-amber-200 border border-amber-500/40 hover:bg-amber-500/30"
-                        >
-                          Cancelar
-                        </button>
-                      )}
-                      <button
-                        onClick={() => onDelete(transaction.id)}
-                        className="px-3 py-1 rounded-lg bg-rose-500/20 text-rose-200 border border-rose-500/40 hover:bg-rose-500/30"
-                      >
-                        Excluir
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+                <React.Fragment key={dateKey}>
+                  {/* Day header row */}
+                  <tr className="bg-white/[0.08] border-t border-white/20">
+                    <td colSpan={7} className="px-6 py-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-white/80 text-sm font-semibold">
+                          {formatDate(dateKey + 'T00:00:00')}
+                        </span>
+                        <div className="flex items-center gap-4">
+                          <span className={`text-xs font-semibold ${dayTotal >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {dayTotal >= 0 ? '+' : ''}{formatCurrency(dayTotal)}
+                          </span>
+                          {endOfDayBalance !== undefined && (
+                            <span className="text-xs text-white/50">
+                              Saldo: {formatCurrency(endOfDayBalance)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+
+                  {txs.map((transaction) => {
+                    const account = accountMap.get(transaction.bankAccountId);
+                    const category = transaction.categoryId
+                      ? categoryMap.get(transaction.categoryId)
+                      : undefined;
+                    const parentCategory = category?.parentId
+                      ? categoryMap.get(category.parentId)
+                      : undefined;
+                    const destination = transaction.destinationAccountId
+                      ? accountMap.get(transaction.destinationAccountId)
+                      : undefined;
+
+                    const categoryDisplay = (() => {
+                      if (!category) {
+                        return transaction.type === 'TRANSFER' ? 'Transferência' : '-';
+                      }
+                      if (parentCategory) {
+                        return (
+                          <span className="flex flex-col">
+                            <span className="text-white/50 text-xs">{parentCategory.name}</span>
+                            <span>↳ {category.name}</span>
+                          </span>
+                        );
+                      }
+                      return category.name;
+                    })();
+
+                    return (
+                      <tr key={transaction.id} className="hover:bg-white/5 transition-colors">
+                        <td className="px-6 py-4 whitespace-nowrap text-white/80 text-sm">
+                          {formatDate(transaction.occurredOn)}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col">
+                            <span className="text-white font-semibold text-sm">
+                              {transaction.description}
+                            </span>
+                            <span className="text-white/50 text-xs">
+                              {typeLabels[transaction.type]}
+                              {transaction.type === 'TRANSFER' && destination
+                                ? ` para ${destination.name}`
+                                : ''}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-white/70 text-sm">
+                          {account ? account.name : 'Conta removida'}
+                        </td>
+                        <td className="px-6 py-4 text-white/70 text-sm">
+                          {categoryDisplay}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span
+                            className={`font-semibold ${
+                              transaction.type === 'INCOME' ? 'text-emerald-300' : 'text-rose-300'
+                            }`}
+                          >
+                            {transaction.type === 'EXPENSE' ? '-' : ''}
+                            {formatCurrency(transaction.amount, transaction.currency)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span
+                            className={`px-3 py-1 rounded-full text-xs font-semibold inline-flex items-center gap-2 ${
+                              statusStyles[transaction.status]
+                            }`}
+                          >
+                            {transaction.status === 'CONFIRMED' && '✅'}
+                            {transaction.status === 'PLANNED' && '🗓️'}
+                            {transaction.status === 'CANCELLED' && '🛑'}
+                            {transaction.status === 'CONFIRMED'
+                              ? 'Confirmado'
+                              : transaction.status === 'PLANNED'
+                              ? 'Planejado'
+                              : 'Cancelado'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-wrap gap-2 text-xs">
+                            <button
+                              onClick={() => onEdit(transaction)}
+                              className="px-3 py-1 rounded-lg bg-white/10 text-white/80 border border-white/20 hover:bg-white/20"
+                              title="Editar"
+                            >
+                              Editar
+                            </button>
+                            {transaction.status === 'PLANNED' && (
+                              <button
+                                onClick={() => onConfirm(transaction.id)}
+                                className="px-3 py-1 rounded-lg bg-emerald-500/20 text-emerald-200 border border-emerald-500/40 hover:bg-emerald-500/30"
+                              >
+                                Confirmar
+                              </button>
+                            )}
+                            {transaction.status === 'CONFIRMED' && (
+                              <button
+                                onClick={() => onCancel(transaction.id)}
+                                className="px-3 py-1 rounded-lg bg-amber-500/20 text-amber-200 border border-amber-500/40 hover:bg-amber-500/30"
+                              >
+                                Cancelar
+                              </button>
+                            )}
+                            <button
+                              onClick={() => onDelete(transaction.id)}
+                              className="px-3 py-1 rounded-lg bg-rose-500/20 text-rose-200 border border-rose-500/40 hover:bg-rose-500/30"
+                            >
+                              Excluir
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </React.Fragment>
               );
             })}
 
