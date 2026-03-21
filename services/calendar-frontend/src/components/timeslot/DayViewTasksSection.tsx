@@ -192,10 +192,6 @@ export default function DayViewTasksSection({ date, onTaskToggled, onEditTask }:
 
     try {
       await api.events.toggleExecution(task.id, dateString, !isCompleted);
-
-      if (onTaskToggled) {
-        onTaskToggled();
-      }
     } catch (error) {
       console.error('Failed to toggle task:', error);
       // Revert on error

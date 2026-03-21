@@ -304,7 +304,7 @@ export function TimeSlotView({
         {/* Today's Habits, Reminders and Tasks Sections - only show in single day view */}
         {isSingleDay && (
           <>
-            <DayViewHabitsSection date={days[0]} onHabitToggled={onEventUpdate} />
+            <DayViewHabitsSection date={days[0]} />
             <DayViewRemindersSection date={days[0]} onReminderToggled={onEventUpdate} />
             <DayViewTasksSection
               date={days[0]}

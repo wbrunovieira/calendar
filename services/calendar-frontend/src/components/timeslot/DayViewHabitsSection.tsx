@@ -15,10 +15,9 @@ import type { Event } from '@/types/calendar';
 
 interface DayViewHabitsSectionProps {
   date: Date;
-  onHabitToggled?: () => void;
 }
 
-export default function DayViewHabitsSection({ date, onHabitToggled }: DayViewHabitsSectionProps) {
+export default function DayViewHabitsSection({ date }: DayViewHabitsSectionProps) {
   const [habits, setHabits] = useState<Event[]>([]);
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -111,10 +110,6 @@ export default function DayViewHabitsSection({ date, onHabitToggled }: DayViewHa
 
     try {
       await api.events.toggleExecution(habitId, dateString, !isCompleted);
-
-      if (onHabitToggled) {
-        onHabitToggled();
-      }
     } catch (error) {
       console.error('Failed to toggle habit:', error);
       // Revert on error

@@ -176,9 +176,6 @@ export default function DayViewRemindersSection({ date, onReminderToggled }: Day
         return next;
       });
 
-      if (onReminderToggled) {
-        onReminderToggled();
-      }
     } catch (error) {
       console.error('Failed to toggle reminder:', error);
     } finally {
