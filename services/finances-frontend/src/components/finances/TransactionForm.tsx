@@ -89,6 +89,7 @@ export default function TransactionForm({
   const [destProfileId, setDestProfileId] = useState<string>(defaultProfileId);
   const [localCategories, setLocalCategories] = useState<Category[]>(categories);
   const [destCategories, setDestCategories] = useState<Category[]>([]);
+  const [continueAdding, setContinueAdding] = useState(false);
 
   const isEditing = !!editingTransaction;
 
@@ -252,10 +253,22 @@ export default function TransactionForm({
 
     if (isEditing && onUpdate && editingTransaction) {
       await Promise.resolve(onUpdate(editingTransaction.id, payload));
+      onClose();
     } else {
       await Promise.resolve(onSave(payload));
+      if (continueAdding) {
+        const keepBankAccountId = formData.bankAccountId;
+        setFormData({
+          ...defaultForm(selectedProfileId, 'CONFIRMED'),
+          bankAccountId: keepBankAccountId,
+        });
+        setTagsInput('');
+        setDestProfileId(selectedProfileId);
+        setDestCategories([]);
+      } else {
+        onClose();
+      }
     }
-    onClose();
   };
 
   if (!isOpen) return null;
@@ -755,7 +768,18 @@ export default function TransactionForm({
                 Planejado
               </button>
             </div>
-            <div className="flex gap-3">
+            <div className="flex items-center gap-3">
+              {!isEditing && (
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={continueAdding}
+                    onChange={(e) => setContinueAdding(e.target.checked)}
+                    className="w-4 h-4 rounded border-white/30 bg-white/10 text-emerald-500 focus:ring-emerald-500 accent-emerald-500"
+                  />
+                  <span className="text-white/60 text-sm">Continuar lançando</span>
+                </label>
+              )}
               <button
                 type="button"
                 onClick={onClose}
