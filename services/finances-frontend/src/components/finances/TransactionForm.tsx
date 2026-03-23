@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { API_BASE } from '@/lib/api';
 import type {
   BankAccount,
@@ -90,6 +90,7 @@ export default function TransactionForm({
   const [localCategories, setLocalCategories] = useState<Category[]>(categories);
   const [destCategories, setDestCategories] = useState<Category[]>([]);
   const [continueAdding, setContinueAdding] = useState(false);
+  const keepBankAccountRef = useRef<string | null>(null);
 
   const isEditing = !!editingTransaction;
 
@@ -124,15 +125,22 @@ export default function TransactionForm({
         setTagsInput((editingTransaction.tags || []).join(', '));
       } else {
         // Create mode - use defaults (CONFIRMED by default for quick daily transactions)
-        setSelectedProfileId(defaultProfileId);
-        setDestProfileId(defaultProfileId);
-        setDestCategories([]);
-        const initialAccount = defaultBankAccountId || accounts.find((account) => account.profileId === defaultProfileId)?.id || '';
-        setFormData({
-          ...defaultForm(defaultProfileId, 'CONFIRMED'),
-          bankAccountId: initialAccount,
-        });
-        setTagsInput('');
+        if (keepBankAccountRef.current) {
+          // "Continuar lançando" mode: keep the bank account, just update categories
+          const kept = keepBankAccountRef.current;
+          keepBankAccountRef.current = null;
+          setFormData((prev) => ({ ...prev, bankAccountId: kept }));
+        } else {
+          setSelectedProfileId(defaultProfileId);
+          setDestProfileId(defaultProfileId);
+          setDestCategories([]);
+          const initialAccount = defaultBankAccountId || accounts.find((account) => account.profileId === defaultProfileId)?.id || '';
+          setFormData({
+            ...defaultForm(defaultProfileId, 'CONFIRMED'),
+            bankAccountId: initialAccount,
+          });
+          setTagsInput('');
+        }
       }
     }
   }, [isOpen, defaultProfileId, defaultBankAccountId, accounts, categories, editingTransaction]);
@@ -257,10 +265,10 @@ export default function TransactionForm({
     } else {
       await Promise.resolve(onSave(payload));
       if (continueAdding) {
-        const keepBankAccountId = formData.bankAccountId;
+        keepBankAccountRef.current = formData.bankAccountId;
         setFormData({
           ...defaultForm(selectedProfileId, 'CONFIRMED'),
-          bankAccountId: keepBankAccountId,
+          bankAccountId: formData.bankAccountId,
         });
         setTagsInput('');
         setDestProfileId(selectedProfileId);
