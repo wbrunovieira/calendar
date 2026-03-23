@@ -47,12 +47,14 @@ function TransactionHistory({
   categories,
   selectedInvoiceId,
   accountCurrency = 'BRL',
+  onEdit,
 }: {
   accountId: string;
   profileId: string;
   categories: Category[];
   selectedInvoiceId?: string;
   accountCurrency?: string;
+  onEdit?: (tx: Transaction) => void;
 }) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [dayBalances, setDayBalances] = useState<Record<string, { balance: number; dayTotal: number }>>({});
@@ -179,6 +181,18 @@ function TransactionHistory({
                       <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${status.color}`}>
                         {status.label}
                       </span>
+                      {onEdit && (
+                        <button
+                          type="button"
+                          onClick={() => onEdit(tx)}
+                          className="text-white/30 hover:text-white/70 transition-colors p-1"
+                          title="Editar lançamento"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -241,6 +255,7 @@ export default function ContasPage() {
   const [selectedInvoiceByAccount, setSelectedInvoiceByAccount] = useState<Record<string, string>>({});
   const [isTransactionFormOpen, setIsTransactionFormOpen] = useState(false);
   const [preselectedAccountId, setPreselectedAccountId] = useState<string>('');
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
 
   const [invoicesByAccount, setInvoicesByAccount] = useState<Record<string, Invoice[]>>({});
   const [currentInvoices, setCurrentInvoices] = useState<Record<string, Invoice>>({});
@@ -534,6 +549,38 @@ export default function ContasPage() {
     }
   };
 
+  const handleUpdateTransaction = async (id: string, payload: TransactionFormData) => {
+    try {
+      const cleanPayload = Object.fromEntries(
+        Object.entries(payload).filter(([, v]) => v !== undefined && v !== null)
+      );
+      const response = await fetch(`${API_BASE}/transactions/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cleanPayload),
+      });
+      if (!response.ok) {
+        const errorMessage = await response.text();
+        throw new Error(errorMessage || 'Erro ao atualizar transacao');
+      }
+      setIsTransactionFormOpen(false);
+      setEditingTransaction(null);
+      await fetchBankAccounts();
+      const currentExpanded = expandedAccountId;
+      setExpandedAccountId(null);
+      setTimeout(() => setExpandedAccountId(currentExpanded), 50);
+    } catch (error) {
+      console.error('Erro ao atualizar transacao:', error);
+      alert('Erro ao atualizar transacao');
+    }
+  };
+
+  const handleEditTransaction = (tx: Transaction) => {
+    setEditingTransaction(tx);
+    setPreselectedAccountId(tx.bankAccountId);
+    setIsTransactionFormOpen(true);
+  };
+
   const openEditModal = (account: BankAccount) => {
     setEditingBankAccount(account);
     setIsBankAccountModalOpen(true);
@@ -748,6 +795,7 @@ export default function ContasPage() {
                                     categories={categories}
                                     selectedInvoiceId={selectedInvoiceByAccount[account.id] || ''}
                                     accountCurrency={account.currency}
+                                    onEdit={handleEditTransaction}
                                   />
                                 </div>
                               )}
@@ -810,6 +858,7 @@ export default function ContasPage() {
                                   profileId={selectedProfileId}
                                   categories={categories}
                                   accountCurrency={account.currency}
+                                  onEdit={handleEditTransaction}
                                 />
                               </div>
                             )}
@@ -889,6 +938,7 @@ export default function ContasPage() {
                                     profileId={selectedProfileId}
                                     categories={categories}
                                     accountCurrency={account.currency}
+                                    onEdit={handleEditTransaction}
                                   />
                                 </div>
                               )}
@@ -908,13 +958,18 @@ export default function ContasPage() {
       {selectedProfileId && (
         <TransactionForm
           isOpen={isTransactionFormOpen}
-          onClose={() => setIsTransactionFormOpen(false)}
+          onClose={() => {
+            setIsTransactionFormOpen(false);
+            setEditingTransaction(null);
+          }}
           onSave={handleSaveTransaction}
+          onUpdate={handleUpdateTransaction}
           accounts={bankAccounts}
           categories={categories}
           defaultProfileId={selectedProfileId}
           defaultBankAccountId={preselectedAccountId}
           profiles={profiles.map((p) => ({ id: p.id, name: p.name }))}
+          editingTransaction={editingTransaction}
         />
       )}
 
