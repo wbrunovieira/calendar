@@ -90,6 +90,8 @@ export default function TransactionForm({
   const [localCategories, setLocalCategories] = useState<Category[]>(categories);
   const [destCategories, setDestCategories] = useState<Category[]>([]);
   const [continueAdding, setContinueAdding] = useState(false);
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchEntries, setBatchEntries] = useState<{ date: string; amount: number }[]>([]);
   const keepBankAccountRef = useRef<string | null>(null);
 
   const isEditing = !!editingTransaction;
@@ -134,6 +136,8 @@ export default function TransactionForm({
           setSelectedProfileId(defaultProfileId);
           setDestProfileId(defaultProfileId);
           setDestCategories([]);
+          setBatchMode(false);
+          setBatchEntries([]);
           const initialAccount = defaultBankAccountId || accounts.find((account) => account.profileId === defaultProfileId)?.id || '';
           setFormData({
             ...defaultForm(defaultProfileId, 'CONFIRMED'),
@@ -238,44 +242,55 @@ export default function TransactionForm({
     }
   };
 
+  const buildPayload = (overrides?: { amount?: number; occurredOn?: string }): TransactionFormData => ({
+    ...formData,
+    amount: overrides?.amount ?? Number(formData.amount),
+    occurredOn: overrides?.occurredOn ?? formData.occurredOn,
+    tags: tagsInput
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter(Boolean),
+    destinationAccountId:
+      formData.type === 'TRANSFER' ? formData.destinationAccountId : undefined,
+    destinationCategoryId:
+      isCrossProfile ? formData.destinationCategoryId : undefined,
+    categoryId:
+      isCrossProfile ? formData.categoryId : (formData.type === 'TRANSFER' ? formData.categoryId ?? availableCategories[0]?.id : formData.categoryId),
+    installmentNumber: formData.installmentNumber && formData.installmentNumber > 0 ? formData.installmentNumber : undefined,
+    installmentTotal: formData.installmentTotal && formData.installmentTotal > 0 ? formData.installmentTotal : undefined,
+  });
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    const payload: TransactionFormData = {
-      ...formData,
-      amount: Number(formData.amount),
-      tags: tagsInput
-        .split(',')
-        .map((tag) => tag.trim())
-        .filter(Boolean),
-      destinationAccountId:
-        formData.type === 'TRANSFER' ? formData.destinationAccountId : undefined,
-      destinationCategoryId:
-        isCrossProfile ? formData.destinationCategoryId : undefined,
-      categoryId:
-        isCrossProfile ? formData.categoryId : (formData.type === 'TRANSFER' ? formData.categoryId ?? availableCategories[0]?.id : formData.categoryId),
-      // Only include installment fields if they have valid positive values
-      installmentNumber: formData.installmentNumber && formData.installmentNumber > 0 ? formData.installmentNumber : undefined,
-      installmentTotal: formData.installmentTotal && formData.installmentTotal > 0 ? formData.installmentTotal : undefined,
-    };
-
     if (isEditing && onUpdate && editingTransaction) {
-      await Promise.resolve(onUpdate(editingTransaction.id, payload));
+      await Promise.resolve(onUpdate(editingTransaction.id, buildPayload()));
       onClose();
-    } else {
-      await Promise.resolve(onSave(payload));
-      if (continueAdding) {
-        keepBankAccountRef.current = formData.bankAccountId;
-        setFormData({
-          ...defaultForm(selectedProfileId, 'CONFIRMED'),
-          bankAccountId: formData.bankAccountId,
-        });
-        setTagsInput('');
-        setDestProfileId(selectedProfileId);
-        setDestCategories([]);
-      } else {
-        onClose();
+      return;
+    }
+
+    if (batchMode && batchEntries.length > 0) {
+      for (const entry of batchEntries) {
+        if (entry.amount > 0 && entry.date) {
+          await Promise.resolve(onSave(buildPayload({ amount: entry.amount, occurredOn: entry.date })));
+        }
       }
+    } else {
+      await Promise.resolve(onSave(buildPayload()));
+    }
+
+    if (continueAdding) {
+      keepBankAccountRef.current = formData.bankAccountId;
+      setFormData({
+        ...defaultForm(selectedProfileId, 'CONFIRMED'),
+        bankAccountId: formData.bankAccountId,
+      });
+      setTagsInput('');
+      setBatchEntries([]);
+      setDestProfileId(selectedProfileId);
+      setDestCategories([]);
+    } else {
+      onClose();
     }
   };
 
@@ -531,42 +546,114 @@ export default function TransactionForm({
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-white/80 text-sm font-semibold mb-2">Valor</label>
+              {!isEditing && (
+                <label className="flex items-center gap-2 cursor-pointer select-none mb-1">
                   <input
-                    type="number"
-                    inputMode="decimal"
-                    step="0.01"
-                    min="0"
-                    value={formData.amount || ''}
-                    onChange={(event) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        amount: Number(event.target.value) || 0,
-                      }))
-                    }
-                    required
-                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="0,00"
+                    type="checkbox"
+                    checked={batchMode}
+                    onChange={(e) => {
+                      setBatchMode(e.target.checked);
+                      if (e.target.checked && batchEntries.length === 0) {
+                        setBatchEntries([{ date: formData.occurredOn || getLocalDateString(), amount: 0 }]);
+                      }
+                    }}
+                    className="w-4 h-4 rounded border-white/30 bg-white/10 accent-emerald-500"
                   />
+                  <span className="text-white/60 text-sm">Lançamento em lote</span>
+                </label>
+              )}
+
+              {batchMode && !isEditing ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-white/80 text-sm font-semibold">Entradas</span>
+                    <span className="text-white/40 text-xs">({batchEntries.length})</span>
+                  </div>
+                  {batchEntries.map((entry, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <input
+                        type="date"
+                        value={entry.date}
+                        onChange={(e) => {
+                          const updated = [...batchEntries];
+                          updated[idx] = { ...updated[idx], date: e.target.value };
+                          setBatchEntries(updated);
+                        }}
+                        required
+                        className="flex-1 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.01"
+                        min="0"
+                        value={entry.amount || ''}
+                        onChange={(e) => {
+                          const updated = [...batchEntries];
+                          updated[idx] = { ...updated[idx], amount: Number(e.target.value) || 0 };
+                          setBatchEntries(updated);
+                        }}
+                        required
+                        placeholder="0,00"
+                        className="w-28 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                      {batchEntries.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setBatchEntries(batchEntries.filter((_, i) => i !== idx))}
+                          className="text-red-400 hover:text-red-300 text-lg px-1"
+                        >
+                          &times;
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setBatchEntries([...batchEntries, { date: batchEntries[batchEntries.length - 1]?.date || getLocalDateString(), amount: 0 }])}
+                    className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-sm font-medium mt-1"
+                  >
+                    <span className="text-lg leading-none">+</span> Adicionar entrada
+                  </button>
                 </div>
-                <div>
-                  <label className="block text-white/80 text-sm font-semibold mb-2">Data</label>
-                  <input
-                    type="date"
-                    value={formData.occurredOn}
-                    onChange={(event) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        occurredOn: event.target.value,
-                      }))
-                    }
-                    required
-                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-white/80 text-sm font-semibold mb-2">Valor</label>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.01"
+                      min="0"
+                      value={formData.amount || ''}
+                      onChange={(event) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          amount: Number(event.target.value) || 0,
+                        }))
+                      }
+                      required={!batchMode}
+                      className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      placeholder="0,00"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-white/80 text-sm font-semibold mb-2">Data</label>
+                    <input
+                      type="date"
+                      value={formData.occurredOn}
+                      onChange={(event) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          occurredOn: event.target.value,
+                        }))
+                      }
+                      required={!batchMode}
+                      className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             <div className="space-y-4">
