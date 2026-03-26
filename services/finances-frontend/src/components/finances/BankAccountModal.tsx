@@ -39,6 +39,8 @@ const accountTypes: { value: AccountType; label: string; icon: string }[] = [
   { value: 'SAVINGS', label: 'Conta Poupança', icon: '💰' },
   { value: 'INVESTMENT', label: 'Investimentos', icon: '📈' },
   { value: 'CREDIT_CARD', label: 'Cartão de Crédito', icon: '💳' },
+  { value: 'EXCHANGE', label: 'Corretora Cripto', icon: '🪙' },
+  { value: 'WALLET', label: 'Carteira Cripto', icon: '🔐' },
   { value: 'CASH', label: 'Dinheiro', icon: '💵' },
   { value: 'OTHER', label: 'Outro', icon: '🔹' },
 ];

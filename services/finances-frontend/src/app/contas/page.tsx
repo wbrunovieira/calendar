@@ -268,12 +268,17 @@ export default function ContasPage() {
   );
 
   const regularAccounts = useMemo(
-    () => filteredAccounts.filter((a) => a.type !== 'INVESTMENT'),
+    () => filteredAccounts.filter((a) => a.type !== 'INVESTMENT' && a.type !== 'EXCHANGE' && a.type !== 'WALLET'),
     [filteredAccounts],
   );
 
   const investmentAccounts = useMemo(
     () => filteredAccounts.filter((a) => a.type === 'INVESTMENT'),
+    [filteredAccounts],
+  );
+
+  const cryptoAccounts = useMemo(
+    () => filteredAccounts.filter((a) => a.type === 'EXCHANGE' || a.type === 'WALLET'),
     [filteredAccounts],
   );
 
@@ -919,6 +924,94 @@ export default function ContasPage() {
                                     }
                                     onEdit={() => openEditModal(account)}
                                   />
+                                </div>
+                              </div>
+                              {isExpanded && selectedProfileId && (
+                                <div className="bg-white/[0.03] border border-white/10 border-t-0 rounded-b-xl p-4 ml-7">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <p className="text-white/60 text-xs font-semibold uppercase tracking-wider">Historico de transacoes</p>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleAddTransaction(account.id); }}
+                                      className="flex items-center gap-1 px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 rounded-lg text-emerald-400 text-xs font-medium transition-colors"
+                                    >
+                                      <span>+</span>
+                                      <span>Lancamento</span>
+                                    </button>
+                                  </div>
+                                  <TransactionHistory
+                                    accountId={account.id}
+                                    profileId={selectedProfileId}
+                                    categories={categories}
+                                    accountCurrency={account.currency}
+                                    onEdit={handleEditTransaction}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </SortableItem>
+                      );
+                    })}
+                  </SortableContext>
+                </DndContext>
+              </div>
+            )}
+
+            {cryptoAccounts.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">🪙</span>
+                    <h3 className="text-lg font-semibold text-white">Cripto</h3>
+                  </div>
+                  <span className="text-white/50 text-xs">
+                    {cryptoAccounts.length} {cryptoAccounts.length === 1 ? 'conta' : 'contas'}
+                  </span>
+                </div>
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={(event) => handleDragEnd(event, cryptoAccounts)}
+                >
+                  <SortableContext items={cryptoAccounts.map((a) => a.id)} strategy={verticalListSortingStrategy}>
+                    {cryptoAccounts.map((account) => {
+                      const isExpanded = expandedAccountId === account.id;
+                      const typeLabel = account.type === 'EXCHANGE' ? 'Corretora' : 'Carteira';
+                      return (
+                        <SortableItem key={account.id} id={account.id}>
+                          {({ listeners, attributes }) => (
+                            <div>
+                              <div className="flex items-center gap-1">
+                                <DragHandle listeners={listeners} attributes={attributes} />
+                                <div
+                                  className="cursor-pointer flex-1 rounded-xl bg-gradient-to-r from-white/[0.06] to-white/[0.02] border border-white/10 p-4 transition-all duration-300 hover:border-white/20"
+                                  style={isExpanded ? {
+                                    boxShadow: '0 0 20px rgba(52, 211, 153, 0.3), 0 0 0 2px #34d399',
+                                  } : undefined}
+                                  onClick={() => toggleExpand(account.id)}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <div>
+                                      <div className="flex items-center gap-2">
+                                        <p className="text-white font-semibold">{account.name}</p>
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400">
+                                          {typeLabel}
+                                        </span>
+                                      </div>
+                                      {account.broker && (
+                                        <p className="text-white/40 text-xs">{account.broker}</p>
+                                      )}
+                                    </div>
+                                    <div className="text-right">
+                                      <p className="text-white font-bold">{formatCurrency(account.currentBalance, account.currency)}</p>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); openEditModal(account); }}
+                                        className="text-white/30 hover:text-white/70 text-xs transition-colors"
+                                      >
+                                        Editar
+                                      </button>
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
                               {isExpanded && selectedProfileId && (

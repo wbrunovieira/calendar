@@ -16,6 +16,8 @@ export type AccountType =
   | 'INVESTMENT'
   | 'CREDIT_CARD'
   | 'CASH'
+  | 'EXCHANGE'
+  | 'WALLET'
   | 'OTHER';
 
 export type InvestmentType =
