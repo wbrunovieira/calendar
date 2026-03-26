@@ -711,6 +711,8 @@ func TestBankAccount_RequiresLinking(t *testing.T) {
 		{AccountTypeSavings, false},
 		{AccountTypeCash, false},
 		{AccountTypeOther, false},
+		{AccountTypeExchange, false},
+		{AccountTypeWallet, false},
 	}
 
 	for _, tt := range tests {
@@ -734,6 +736,8 @@ func TestBankAccount_IsValidLinkTarget(t *testing.T) {
 		{AccountTypeInvestment, false},
 		{AccountTypeCreditCard, false},
 		{AccountTypeOther, false},
+		{AccountTypeExchange, false},
+		{AccountTypeWallet, false},
 	}
 
 	for _, tt := range tests {
@@ -938,6 +942,92 @@ func TestBankAccount_SupportsQuotas(t *testing.T) {
 		account, _ := NewBankAccount("profile-123", "Test", AccountTypeInvestment, 1000, "BRL")
 		if account.SupportsQuotas() {
 			t.Error("SupportsQuotas() = true, want false for nil investment type")
+		}
+	})
+}
+
+func TestNewBankAccount_ExchangeAndWallet(t *testing.T) {
+	t.Run("valid exchange account", func(t *testing.T) {
+		account, err := NewBankAccount("profile-123", "Binance", AccountTypeExchange, 0, "BRL")
+		if err != nil {
+			t.Fatalf("NewBankAccount() unexpected error: %v", err)
+		}
+		if account.Type != AccountTypeExchange {
+			t.Errorf("Type = %v, want %v", account.Type, AccountTypeExchange)
+		}
+		if !account.IsExchange() {
+			t.Error("IsExchange() = false, want true")
+		}
+	})
+
+	t.Run("valid wallet account", func(t *testing.T) {
+		account, err := NewBankAccount("profile-123", "Ledger BTC", AccountTypeWallet, 0, "BRL")
+		if err != nil {
+			t.Fatalf("NewBankAccount() unexpected error: %v", err)
+		}
+		if account.Type != AccountTypeWallet {
+			t.Errorf("Type = %v, want %v", account.Type, AccountTypeWallet)
+		}
+		if !account.IsWallet() {
+			t.Error("IsWallet() = false, want true")
+		}
+	})
+}
+
+func TestBankAccount_ExchangeIsValidLinkTarget(t *testing.T) {
+	// Exchange accounts can receive transfers from checking/savings (deposit BRL)
+	exchange, _ := NewBankAccount("profile-123", "Binance", AccountTypeExchange, 0, "BRL")
+	if exchange.IsValidLinkTarget() {
+		t.Error("IsValidLinkTarget() = true, want false for exchange")
+	}
+	// Exchange does not require linking (it's standalone, not like credit card)
+	if exchange.RequiresLinking() {
+		t.Error("RequiresLinking() = true, want false for exchange")
+	}
+}
+
+func TestBankAccount_WalletLinking(t *testing.T) {
+	// Wallet does not require linking
+	wallet, _ := NewBankAccount("profile-123", "Ledger", AccountTypeWallet, 0, "BRL")
+	if wallet.RequiresLinking() {
+		t.Error("RequiresLinking() = true, want false for wallet")
+	}
+	if wallet.IsValidLinkTarget() {
+		t.Error("IsValidLinkTarget() = true, want false for wallet")
+	}
+}
+
+func TestBankAccount_ExchangeSupportsQuotas(t *testing.T) {
+	// Exchange accounts support quotas (for tracking crypto holdings)
+	account, _ := NewBankAccount("profile-123", "Binance", AccountTypeExchange, 0, "BRL")
+	invType := InvestmentTypeCrypto
+	account.InvestmentType = &invType
+	if !account.SupportsQuotas() {
+		t.Error("SupportsQuotas() = false, want true for exchange with crypto investment type")
+	}
+}
+
+func TestBankAccount_ExchangeSetQuotas(t *testing.T) {
+	// Exchange and wallet accounts can set quotas (like investment accounts)
+	t.Run("exchange can set quotas", func(t *testing.T) {
+		account, _ := NewBankAccount("profile-123", "Binance SOL", AccountTypeExchange, 0, "BRL")
+		err := account.SetQuotasFromPrice(2.5, 800.00)
+		if err != nil {
+			t.Errorf("SetQuotasFromPrice() unexpected error: %v", err)
+		}
+		if account.NumberOfQuotas == nil || *account.NumberOfQuotas != 2.5 {
+			t.Errorf("NumberOfQuotas = %v, want 2.5", account.NumberOfQuotas)
+		}
+	})
+
+	t.Run("wallet can set quotas", func(t *testing.T) {
+		account, _ := NewBankAccount("profile-123", "Ledger BTC", AccountTypeWallet, 0, "BRL")
+		err := account.SetQuotasFromPrice(0.5, 350000.00)
+		if err != nil {
+			t.Errorf("SetQuotasFromPrice() unexpected error: %v", err)
+		}
+		if account.NumberOfQuotas == nil || *account.NumberOfQuotas != 0.5 {
+			t.Errorf("NumberOfQuotas = %v, want 0.5", account.NumberOfQuotas)
 		}
 	})
 }

@@ -433,6 +433,13 @@ func RunMigrations(db *sql.DB) error {
 			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_goals_profile ON finance.goals(profile_id)`,
+		// Migration: Add EXCHANGE and WALLET account types
+		`DO $$
+		BEGIN
+			ALTER TABLE finance.bank_accounts DROP CONSTRAINT IF EXISTS bank_accounts_type_check;
+			ALTER TABLE finance.bank_accounts ADD CONSTRAINT bank_accounts_type_check
+				CHECK (type IN ('CHECKING', 'SAVINGS', 'INVESTMENT', 'CREDIT_CARD', 'CASH', 'EXCHANGE', 'WALLET', 'OTHER'));
+		END $$`,
 	}
 
 	for i, migration := range migrations {

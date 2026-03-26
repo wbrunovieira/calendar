@@ -16,6 +16,8 @@ const (
 	AccountTypeInvestment  AccountType = "INVESTMENT"
 	AccountTypeCreditCard  AccountType = "CREDIT_CARD"
 	AccountTypeCash        AccountType = "CASH"
+	AccountTypeExchange    AccountType = "EXCHANGE" // Corretoras de cripto (Binance, OKX, Rabbit)
+	AccountTypeWallet      AccountType = "WALLET"   // Carteiras de cripto (Ledger, MetaMask)
 	AccountTypeOther       AccountType = "OTHER"
 )
 
@@ -150,7 +152,8 @@ func IsValidCurrency(currency string) bool {
 func isValidAccountType(accountType AccountType) bool {
 	switch accountType {
 	case AccountTypeChecking, AccountTypeSavings, AccountTypeInvestment,
-		AccountTypeCreditCard, AccountTypeCash, AccountTypeOther:
+		AccountTypeCreditCard, AccountTypeCash, AccountTypeExchange,
+		AccountTypeWallet, AccountTypeOther:
 		return true
 	default:
 		return false
@@ -180,6 +183,16 @@ func (ba *BankAccount) IsInvestment() bool {
 // IsCreditCard returns true if the account is a credit card
 func (ba *BankAccount) IsCreditCard() bool {
 	return ba.Type == AccountTypeCreditCard
+}
+
+// IsExchange returns true if the account is a crypto exchange
+func (ba *BankAccount) IsExchange() bool {
+	return ba.Type == AccountTypeExchange
+}
+
+// IsWallet returns true if the account is a crypto wallet
+func (ba *BankAccount) IsWallet() bool {
+	return ba.Type == AccountTypeWallet
 }
 
 // HasFixedMaturity returns true if the investment has a maturity date
@@ -371,8 +384,8 @@ func (ba *BankAccount) HasQuotas() bool {
 // SetQuotasFromTotal sets the number of quotas and calculates the quota price from total value
 // Use this when you know the total invested and number of quotas
 func (ba *BankAccount) SetQuotasFromTotal(numberOfQuotas float64, totalValue float64) error {
-	if ba.Type != AccountTypeInvestment {
-		return errors.New("quotas can only be set for investment accounts")
+	if ba.Type != AccountTypeInvestment && ba.Type != AccountTypeExchange && ba.Type != AccountTypeWallet {
+		return errors.New("quotas can only be set for investment, exchange, or wallet accounts")
 	}
 	if numberOfQuotas <= 0 {
 		return errors.New("number of quotas must be greater than zero")
@@ -395,8 +408,8 @@ func (ba *BankAccount) SetQuotasFromTotal(numberOfQuotas float64, totalValue flo
 // SetQuotasFromPrice sets the number of quotas and quota price, calculating the total value
 // Use this when you know the price per quota and number of quotas
 func (ba *BankAccount) SetQuotasFromPrice(numberOfQuotas float64, pricePerQuota float64) error {
-	if ba.Type != AccountTypeInvestment {
-		return errors.New("quotas can only be set for investment accounts")
+	if ba.Type != AccountTypeInvestment && ba.Type != AccountTypeExchange && ba.Type != AccountTypeWallet {
+		return errors.New("quotas can only be set for investment, exchange, or wallet accounts")
 	}
 	if numberOfQuotas <= 0 {
 		return errors.New("number of quotas must be greater than zero")
