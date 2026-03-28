@@ -35,6 +35,8 @@ services:
     logging: *default-logging
     ports:
       - "3335:3335"
+    env_file:
+      - ./services/calendar-finances/.env
     environment:
       - PORT=3335
       - DATABASE_URL=postgres://calendar:calendar123@postgres:5432/calendar_db?sslmode=disable
