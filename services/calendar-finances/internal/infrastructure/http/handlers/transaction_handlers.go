@@ -49,6 +49,7 @@ func (h *TransactionHandlers) List(w http.ResponseWriter, r *http.Request) {
 	typeValue := r.URL.Query().Get("type")
 	occurredFrom := r.URL.Query().Get("occurredFrom")
 	occurredTo := r.URL.Query().Get("occurredTo")
+	includeAsDestination := r.URL.Query().Get("includeAsDestination") == "true"
 
 	var bankAccountPtr, invoicePtr, statusPtr, typePtr, fromPtr, toPtr *string
 	if bankAccountID != "" {
@@ -71,13 +72,14 @@ func (h *TransactionHandlers) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	transactions, err := h.listUseCase.Execute(usecases.ListTransactionsInput{
-		ProfileID:     profileID,
-		BankAccountID: bankAccountPtr,
-		InvoiceID:     invoicePtr,
-		Status:        statusPtr,
-		Type:          typePtr,
-		OccurredFrom:  fromPtr,
-		OccurredTo:    toPtr,
+		ProfileID:            profileID,
+		BankAccountID:        bankAccountPtr,
+		InvoiceID:            invoicePtr,
+		Status:               statusPtr,
+		Type:                 typePtr,
+		OccurredFrom:         fromPtr,
+		OccurredTo:           toPtr,
+		IncludeAsDestination: includeAsDestination,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

@@ -7,13 +7,14 @@ import (
 )
 
 type ListTransactionsInput struct {
-	ProfileID     string
-	BankAccountID *string
-	InvoiceID     *string
-	Status        *string
-	Type          *string
-	OccurredFrom  *string
-	OccurredTo    *string
+	ProfileID            string
+	BankAccountID        *string
+	InvoiceID            *string
+	Status               *string
+	Type                 *string
+	OccurredFrom         *string
+	OccurredTo           *string
+	IncludeAsDestination bool
 }
 
 type ListTransactionsUseCase struct {
@@ -35,6 +36,7 @@ func (uc *ListTransactionsUseCase) Execute(input ListTransactionsInput) ([]*tran
 		trimmed := strings.TrimSpace(*input.BankAccountID)
 		if trimmed != "" {
 			filter.BankAccountID = &trimmed
+			filter.IncludeAsDestination = input.IncludeAsDestination
 		}
 	}
 

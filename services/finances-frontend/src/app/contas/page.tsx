@@ -69,6 +69,7 @@ function TransactionHistory({
   selectedInvoiceId,
   accountCurrency = 'BRL',
   isCreditCard = false,
+  includeAsDestination = false,
   onEdit,
   onDelete,
 }: {
@@ -78,6 +79,7 @@ function TransactionHistory({
   selectedInvoiceId?: string;
   accountCurrency?: string;
   isCreditCard?: boolean;
+  includeAsDestination?: boolean;
   onEdit?: (tx: Transaction) => void;
   onDelete?: (tx: Transaction) => void;
 }) {
@@ -98,6 +100,9 @@ function TransactionHistory({
         const params = new URLSearchParams({ profileId, bankAccountId: accountId });
         if (selectedInvoiceId) {
           params.set('invoiceId', selectedInvoiceId);
+        }
+        if (includeAsDestination) {
+          params.set('includeAsDestination', 'true');
         }
 
         const [txResponse, balanceResponse] = await Promise.all([
@@ -125,7 +130,7 @@ function TransactionHistory({
       }
     };
     fetchData();
-  }, [accountId, profileId, selectedInvoiceId]);
+  }, [accountId, profileId, selectedInvoiceId, includeAsDestination]);
 
   const groupedByDay = useMemo(() => {
     const groups: Record<string, Transaction[]> = {};
@@ -1267,6 +1272,7 @@ export default function ContasPage() {
                                     profileId={selectedProfileId}
                                     categories={categories}
                                     accountCurrency={account.currency}
+                                    includeAsDestination
                                     onEdit={handleEditTransaction}
                                     onDelete={handleDeleteTransaction}
                                   />
