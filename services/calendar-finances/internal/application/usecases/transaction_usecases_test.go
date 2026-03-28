@@ -492,7 +492,7 @@ func TestUpdateTransactionUseCaseSuccess(t *testing.T) {
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
 
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo)
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{})
 	input := UpdateTransactionInput{
 		BankAccountID: accountID,
 		CategoryID:    &newCategoryID,
@@ -526,7 +526,7 @@ func TestUpdateTransactionUseCaseNotFound(t *testing.T) {
 	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{}}
 
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo)
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{})
 	input := UpdateTransactionInput{
 		BankAccountID: "account-1",
 		Type:          "EXPENSE",
@@ -586,7 +586,7 @@ func TestUpdateTransactionUseCaseWithStatusChange(t *testing.T) {
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
 
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo)
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{})
 	confirmedStatus := "CONFIRMED"
 	input := UpdateTransactionInput{
 		BankAccountID: accountID,
@@ -660,7 +660,7 @@ func TestUpdateTransactionUseCaseInvalidCategory(t *testing.T) {
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
 
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo)
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{})
 	input := UpdateTransactionInput{
 		BankAccountID: accountID,
 		CategoryID:    &wrongCategoryID,
@@ -3247,7 +3247,7 @@ func TestUpdateTransaction_AmountChange_AdjustsBalance(t *testing.T) {
 	}
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo)
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{})
 
 	confirmedStatus := "CONFIRMED"
 	_, err := useCase.Execute(txID, UpdateTransactionInput{
@@ -3317,7 +3317,7 @@ func TestUpdateTransaction_TypeChange_AdjustsBalance(t *testing.T) {
 	}
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo)
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{})
 
 	confirmedStatus := "CONFIRMED"
 	_, err := useCase.Execute(txID, UpdateTransactionInput{
@@ -3397,7 +3397,7 @@ func TestUpdateTransaction_AccountSwitch_MovesBalance(t *testing.T) {
 	}
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo)
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{})
 
 	confirmedStatus := "CONFIRMED"
 	_, err := useCase.Execute(txID, UpdateTransactionInput{
@@ -3475,7 +3475,7 @@ func TestUpdateTransaction_CreditCard_NoBalanceChange(t *testing.T) {
 	}
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo)
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{})
 
 	confirmedStatus := "CONFIRMED"
 	_, err := useCase.Execute(txID, UpdateTransactionInput{
@@ -3545,7 +3545,7 @@ func TestUpdateTransaction_PlannedToConfirmed_AppliesBalance(t *testing.T) {
 	}
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo)
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{})
 
 	confirmedStatus := "CONFIRMED"
 	_, err := useCase.Execute(txID, UpdateTransactionInput{
@@ -3615,7 +3615,7 @@ func TestUpdateTransaction_ConfirmedToPlanned_ReversesBalance(t *testing.T) {
 	}
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo)
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{})
 
 	plannedStatus := "PLANNED"
 	_, err := useCase.Execute(txID, UpdateTransactionInput{
@@ -3706,7 +3706,7 @@ func TestUpdateTransaction_TransferDestinationChange_AdjustsBothDests(t *testing
 	}
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo)
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{})
 
 	confirmedStatus := "CONFIRMED"
 	_, err := useCase.Execute(txID, UpdateTransactionInput{
@@ -3741,6 +3741,307 @@ func TestUpdateTransaction_TransferDestinationChange_AdjustsBothDests(t *testing
 	newDest := accountRepo.accounts[newDestID]
 	if newDest.CurrentBalance != 500 {
 		t.Fatalf("expected new dest balance 500, got %.2f", newDest.CurrentBalance)
+	}
+}
+
+// ===== Invoice Reassignment on Update Tests (TDD) =====
+
+func TestUpdateTransaction_CreditCardAccountChange_ReassignsInvoice(t *testing.T) {
+	profileID := "profile-1"
+	ccAccountA := "cc-account-a"
+	ccAccountB := "cc-account-b"
+	categoryID := "cat-1"
+	txID := "tx-1"
+	invoiceA := "invoice-a"
+	invoiceB := "invoice-b"
+	now := time.Now()
+	closingDay := 24
+	dueDay := 1
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		ccAccountA: {
+			ID:          ccAccountA,
+			ProfileID:   profileID,
+			Name:        "Cartão Nubank",
+			Type:        bankaccount.AccountTypeCreditCard,
+			Currency:    "BRL",
+			IsActive:    true,
+			ClosingDay:  &closingDay,
+			DueDay:      &dueDay,
+		},
+		ccAccountB: {
+			ID:          ccAccountB,
+			ProfileID:   profileID,
+			Name:        "Cartão Mercado Pago",
+			Type:        bankaccount.AccountTypeCreditCard,
+			Currency:    "BRL",
+			IsActive:    true,
+			ClosingDay:  &closingDay,
+			DueDay:      &dueDay,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{
+		categoryID: {
+			ID:        categoryID,
+			ProfileID: profileID,
+			Name:      "Alimentação",
+			Type:      category.TypeExpense,
+			IsActive:  true,
+		},
+	}}
+
+	invoiceRepo := &fakeInvoiceRepo{invoices: map[string]*invoice.Invoice{
+		invoiceA: {
+			ID:            invoiceA,
+			BankAccountID: ccAccountA,
+			ReferenceDate: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
+			OpeningDate:   time.Date(2026, 2, 25, 0, 0, 0, 0, time.UTC),
+			ClosingDate:   time.Date(2026, 3, 24, 0, 0, 0, 0, time.UTC),
+			DueDate:       time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
+			Status:        invoice.StatusOpen,
+		},
+		invoiceB: {
+			ID:            invoiceB,
+			BankAccountID: ccAccountB,
+			ReferenceDate: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
+			OpeningDate:   time.Date(2026, 2, 25, 0, 0, 0, 0, time.UTC),
+			ClosingDate:   time.Date(2026, 3, 24, 0, 0, 0, 0, time.UTC),
+			DueDate:       time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
+			Status:        invoice.StatusOpen,
+		},
+	}}
+
+	existingTx := &transaction.Transaction{
+		ID:            txID,
+		ProfileID:     profileID,
+		BankAccountID: ccAccountA,
+		CategoryID:    &categoryID,
+		InvoiceID:     &invoiceA,
+		Type:          transaction.TypeExpense,
+		Status:        transaction.StatusConfirmed,
+		Amount:        100,
+		Currency:      "BRL",
+		Description:   "Totalpass",
+		OccurredOn:    time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	_, err := useCase.Execute(txID, UpdateTransactionInput{
+		BankAccountID: ccAccountB, // Changed to different credit card
+		CategoryID:    &categoryID,
+		Type:          "EXPENSE",
+		Amount:        100,
+		Currency:      "BRL",
+		Description:   "Totalpass",
+		OccurredOn:    "2026-03-15",
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Transaction should now have invoiceB (from ccAccountB), not invoiceA
+	updatedTx, _ := txRepo.GetByID(txID)
+	if updatedTx.InvoiceID == nil {
+		t.Fatal("expected invoice to be reassigned, got nil")
+	}
+	if *updatedTx.InvoiceID != invoiceB {
+		t.Fatalf("expected invoice %s, got %s", invoiceB, *updatedTx.InvoiceID)
+	}
+}
+
+func TestUpdateTransaction_CreditCardToRegularAccount_ClearsInvoice(t *testing.T) {
+	profileID := "profile-1"
+	ccAccountID := "cc-account"
+	checkingID := "checking-account"
+	categoryID := "cat-1"
+	txID := "tx-1"
+	invoiceID := "invoice-1"
+	now := time.Now()
+	closingDay := 24
+	dueDay := 1
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		ccAccountID: {
+			ID:         ccAccountID,
+			ProfileID:  profileID,
+			Name:       "Cartão Nubank",
+			Type:       bankaccount.AccountTypeCreditCard,
+			Currency:   "BRL",
+			IsActive:   true,
+			ClosingDay: &closingDay,
+			DueDay:     &dueDay,
+		},
+		checkingID: {
+			ID:             checkingID,
+			ProfileID:      profileID,
+			Name:           "Mercado Pago",
+			Type:           bankaccount.AccountTypeChecking,
+			CurrentBalance: 500,
+			Currency:       "BRL",
+			IsActive:       true,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{
+		categoryID: {
+			ID:        categoryID,
+			ProfileID: profileID,
+			Name:      "Alimentação",
+			Type:      category.TypeExpense,
+			IsActive:  true,
+		},
+	}}
+
+	invoiceRepo := &fakeInvoiceRepo{invoices: map[string]*invoice.Invoice{
+		invoiceID: {
+			ID:            invoiceID,
+			BankAccountID: ccAccountID,
+			ReferenceDate: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
+			OpeningDate:   time.Date(2026, 2, 25, 0, 0, 0, 0, time.UTC),
+			ClosingDate:   time.Date(2026, 3, 24, 0, 0, 0, 0, time.UTC),
+			DueDate:       time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
+			Status:        invoice.StatusOpen,
+		},
+	}}
+
+	existingTx := &transaction.Transaction{
+		ID:            txID,
+		ProfileID:     profileID,
+		BankAccountID: ccAccountID,
+		CategoryID:    &categoryID,
+		InvoiceID:     &invoiceID,
+		Type:          transaction.TypeExpense,
+		Status:        transaction.StatusConfirmed,
+		Amount:        100,
+		Currency:      "BRL",
+		Description:   "Compra",
+		OccurredOn:    time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	_, err := useCase.Execute(txID, UpdateTransactionInput{
+		BankAccountID: checkingID, // Changed to regular account
+		CategoryID:    &categoryID,
+		Type:          "EXPENSE",
+		Amount:        100,
+		Currency:      "BRL",
+		Description:   "Compra",
+		OccurredOn:    "2026-03-15",
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	updatedTx, _ := txRepo.GetByID(txID)
+	if updatedTx.InvoiceID != nil {
+		t.Fatalf("expected invoice to be cleared, got %s", *updatedTx.InvoiceID)
+	}
+}
+
+func TestUpdateTransaction_RegularToCreditCard_AssignsInvoice(t *testing.T) {
+	profileID := "profile-1"
+	checkingID := "checking-account"
+	ccAccountID := "cc-account"
+	categoryID := "cat-1"
+	txID := "tx-1"
+	invoiceID := "invoice-1"
+	now := time.Now()
+	closingDay := 24
+	dueDay := 1
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		checkingID: {
+			ID:             checkingID,
+			ProfileID:      profileID,
+			Name:           "Mercado Pago",
+			Type:           bankaccount.AccountTypeChecking,
+			CurrentBalance: 500,
+			Currency:       "BRL",
+			IsActive:       true,
+		},
+		ccAccountID: {
+			ID:         ccAccountID,
+			ProfileID:  profileID,
+			Name:       "Cartão Nubank",
+			Type:       bankaccount.AccountTypeCreditCard,
+			Currency:   "BRL",
+			IsActive:   true,
+			ClosingDay: &closingDay,
+			DueDay:     &dueDay,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{
+		categoryID: {
+			ID:        categoryID,
+			ProfileID: profileID,
+			Name:      "Alimentação",
+			Type:      category.TypeExpense,
+			IsActive:  true,
+		},
+	}}
+
+	invoiceRepo := &fakeInvoiceRepo{invoices: map[string]*invoice.Invoice{
+		invoiceID: {
+			ID:            invoiceID,
+			BankAccountID: ccAccountID,
+			ReferenceDate: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
+			OpeningDate:   time.Date(2026, 2, 25, 0, 0, 0, 0, time.UTC),
+			ClosingDate:   time.Date(2026, 3, 24, 0, 0, 0, 0, time.UTC),
+			DueDate:       time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
+			Status:        invoice.StatusOpen,
+		},
+	}}
+
+	existingTx := &transaction.Transaction{
+		ID:            txID,
+		ProfileID:     profileID,
+		BankAccountID: checkingID,
+		CategoryID:    &categoryID,
+		Type:          transaction.TypeExpense,
+		Status:        transaction.StatusConfirmed,
+		Amount:        100,
+		Currency:      "BRL",
+		Description:   "Compra",
+		OccurredOn:    time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	_, err := useCase.Execute(txID, UpdateTransactionInput{
+		BankAccountID: ccAccountID, // Changed to credit card
+		CategoryID:    &categoryID,
+		Type:          "EXPENSE",
+		Amount:        100,
+		Currency:      "BRL",
+		Description:   "Compra",
+		OccurredOn:    "2026-03-15",
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	updatedTx, _ := txRepo.GetByID(txID)
+	if updatedTx.InvoiceID == nil {
+		t.Fatal("expected invoice to be assigned, got nil")
+	}
+	if *updatedTx.InvoiceID != invoiceID {
+		t.Fatalf("expected invoice %s, got %s", invoiceID, *updatedTx.InvoiceID)
 	}
 }
 

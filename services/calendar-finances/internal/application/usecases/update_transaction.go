@@ -6,6 +6,7 @@ import (
 
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
 	"github.com/brunovieira/calendar-finances/internal/domain/category"
+	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
 )
 
@@ -34,17 +35,20 @@ type UpdateTransactionUseCase struct {
 	accountRepo     bankaccount.Repository
 	categoryRepo    category.Repository
 	transactionRepo transaction.Repository
+	invoiceRepo     invoice.Repository
 }
 
 func NewUpdateTransactionUseCase(
 	accountRepo bankaccount.Repository,
 	categoryRepo category.Repository,
 	transactionRepo transaction.Repository,
+	invoiceRepo invoice.Repository,
 ) *UpdateTransactionUseCase {
 	return &UpdateTransactionUseCase{
 		accountRepo:     accountRepo,
 		categoryRepo:    categoryRepo,
 		transactionRepo: transactionRepo,
+		invoiceRepo:     invoiceRepo,
 	}
 }
 
@@ -141,12 +145,13 @@ func (uc *UpdateTransactionUseCase) Execute(id string, input UpdateTransactionIn
 		}
 	}
 
-	// Capture old state for balance adjustment
+	// Capture old state for balance adjustment and invoice reassignment
 	oldAmount := existing.Amount
 	oldType := existing.Type
 	oldAccountID := existing.BankAccountID
 	oldStatus := existing.Status
 	oldDestAccountID := existing.DestinationAccountID
+	oldOccurredOn := existing.OccurredOn
 
 	// Update the transaction fields
 	existing.BankAccountID = input.BankAccountID
@@ -171,6 +176,25 @@ func (uc *UpdateTransactionUseCase) Execute(id string, input UpdateTransactionIn
 	existing.ExternalID = input.ExternalID
 	existing.Tags = sanitizeTags(input.Tags)
 	existing.UpdatedAt = time.Now()
+
+	// Reassign invoice when bank account or date changes for credit card transactions
+	if existing.BankAccountID != oldAccountID || !existing.OccurredOn.Equal(oldOccurredOn) {
+		if account.Type == bankaccount.AccountTypeCreditCard && typeValue == transaction.TypeExpense {
+			if account.ClosingDay != nil && account.DueDay != nil {
+				inv, invErr := uc.invoiceRepo.FindByBankAccountAndDate(account.ID, occurredOn)
+				if invErr == nil && inv != nil {
+					existing.InvoiceID = &inv.ID
+				} else {
+					existing.InvoiceID = nil
+				}
+			} else {
+				existing.InvoiceID = nil
+			}
+		} else {
+			// Moving to non-credit-card account: clear invoice
+			existing.InvoiceID = nil
+		}
+	}
 
 	// Persist changes
 	if err := uc.transactionRepo.Update(existing); err != nil {
