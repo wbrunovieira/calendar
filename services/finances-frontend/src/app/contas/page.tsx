@@ -1167,8 +1167,26 @@ export default function ContasPage() {
                                     </div>
                                   </div>
                                   {/* Sub-assets inside the exchange card */}
-                                  {subAssets.length > 0 && (
+                                  {(subAssets.length > 0 || account.currentBalance > 0) && (
                                     <div className="mt-3 pt-3 border-t border-white/10 space-y-2">
+                                      {/* BRL balance card */}
+                                      {account.currentBalance > 0 && (
+                                        <div className="px-2 py-2 rounded-lg bg-white/[0.04]">
+                                          <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-emerald-400 text-xs">●</span>
+                                              <span className="text-white/80 text-sm font-medium">Saldo em Reais</span>
+                                              <span className="text-white/40 text-xs">BRL</span>
+                                            </div>
+                                            <div className="text-right">
+                                              <span className="text-white/80 text-sm font-medium">{formatCurrency(account.currentBalance)}</span>
+                                              {cryptoPrices?.usdBrl && (
+                                                <p className="text-white/40 text-xs">{formatCurrency(account.currentBalance / cryptoPrices.usdBrl, 'USD')}</p>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      )}
                                       {subAssets.map((sub) => {
                                         const symbolMatch = sub.name.match(/\(([A-Z]+)\)/);
                                         const symbol = symbolMatch ? symbolMatch[1] : '';
