@@ -29,6 +29,27 @@ import { CSS } from '@dnd-kit/utilities';
 const formatCurrency = (value: number, currency = 'BRL') =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value);
 
+interface CryptoPurchaseWithGains {
+  id: string;
+  asset: string;
+  quantity: number;
+  priceUsd: number;
+  exchangeRate: number;
+  investedBrl: number;
+  investedUsd: number;
+  occurredOn: string;
+  currentPriceUsd: number;
+  currentExchangeRate: number;
+  currentValueUsd: number;
+  currentValueBrl: number;
+  gainCryptoUsd: number;
+  gainCryptoPercent: number;
+  gainExchangeBrl: number;
+  gainExchangePercent: number;
+  gainTotalBrl: number;
+  gainTotalPercent: number;
+}
+
 const formatDate = (dateStr: string) => {
   const raw = dateStr.includes('T') ? dateStr : dateStr + 'T12:00:00';
   const date = new Date(raw);
@@ -295,6 +316,7 @@ export default function ContasPage() {
   const [invoicesByAccount, setInvoicesByAccount] = useState<Record<string, Invoice[]>>({});
   const [currentInvoices, setCurrentInvoices] = useState<Record<string, Invoice>>({});
   const [cryptoPrices, setCryptoPrices] = useState<{ usdBrl: number; prices: Record<string, { priceUsd: number; priceBrl: number }> } | null>(null);
+  const [cryptoPurchases, setCryptoPurchases] = useState<Record<string, CryptoPurchaseWithGains[]>>({});
 
   const filteredAccounts = useMemo(
     () => bankAccounts
@@ -393,8 +415,18 @@ export default function ContasPage() {
           }
         }
         setCryptoPrices({ usdBrl: syncData.usdBrl, prices: pricesMap });
-        // Refresh accounts to get updated balances
         await fetchBankAccounts();
+      }
+      // Fetch structured purchases with gains
+      const purchasesRes = await fetch(`${API_BASE}/crypto/purchases?profileId=${profileId}`);
+      if (purchasesRes.ok) {
+        const pData = await purchasesRes.json();
+        const byAsset: Record<string, CryptoPurchaseWithGains[]> = {};
+        for (const p of (pData.data || [])) {
+          if (!byAsset[p.asset]) byAsset[p.asset] = [];
+          byAsset[p.asset].push(p);
+        }
+        setCryptoPurchases(byAsset);
       }
     } catch (error) {
       console.warn('Erro ao sincronizar precos crypto:', error);
@@ -1121,41 +1153,76 @@ export default function ContasPage() {
                                   {subAssets.length > 0 && (
                                     <div className="mt-3 pt-3 border-t border-white/10 space-y-2">
                                       {subAssets.map((sub) => {
-                                        // Extract symbol from name e.g. "Binance - Solana (SOL)" -> "SOL"
                                         const symbolMatch = sub.name.match(/\(([A-Z]+)\)/);
                                         const symbol = symbolMatch ? symbolMatch[1] : '';
                                         const priceInfo = symbol && cryptoPrices?.prices[symbol];
+                                        const purchases = symbol ? (cryptoPurchases[symbol] || []) : [];
+                                        const totalInvestedBrl = purchases.reduce((sum, p) => sum + p.investedBrl, 0);
+                                        const totalGainBrl = purchases.reduce((sum, p) => sum + p.gainTotalBrl, 0);
+                                        const totalGainPercent = totalInvestedBrl > 0 ? (totalGainBrl / totalInvestedBrl) * 100 : 0;
                                         const valueBrl = priceInfo && sub.numberOfQuotas != null
                                           ? sub.numberOfQuotas * priceInfo.priceBrl
                                           : sub.currency !== 'BRL' && cryptoPrices?.usdBrl
                                             ? sub.currentBalance * cryptoPrices.usdBrl
                                             : null;
+                                        const gainCryptoPercent = purchases.length > 0 ? purchases[0].gainCryptoPercent : null;
+                                        const gainExchangePercent = purchases.length > 0 ? purchases[0].gainExchangePercent : null;
                                         return (
-                                          <div key={sub.id} className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-white/[0.04]">
-                                            <div className="flex items-center gap-2">
-                                              <span className="text-amber-400 text-xs">●</span>
-                                              <span className="text-white/80 text-sm">{sub.name.replace(account.name + ' - ', '')}</span>
-                                              {sub.numberOfQuotas != null && (
-                                                <span className="text-white/40 text-xs">{sub.numberOfQuotas} quotas</span>
-                                              )}
-                                              {priceInfo && (
-                                                <span className="text-white/30 text-xs">@ {formatCurrency(priceInfo.priceUsd, 'USD')}</span>
-                                              )}
-                                            </div>
-                                            <div className="flex items-center gap-3">
-                                              <div className="text-right">
-                                                <span className="text-white/80 text-sm font-medium">{formatCurrency(sub.currentBalance, sub.currency)}</span>
-                                                {valueBrl != null && (
-                                                  <p className="text-white/40 text-xs">{formatCurrency(valueBrl, 'BRL')}</p>
+                                          <div key={sub.id} className="px-2 py-2 rounded-lg bg-white/[0.04]">
+                                            <div className="flex items-center justify-between">
+                                              <div className="flex items-center gap-2">
+                                                <span className="text-amber-400 text-xs">●</span>
+                                                <span className="text-white/80 text-sm font-medium">{sub.name.replace(account.name + ' - ', '')}</span>
+                                                {sub.numberOfQuotas != null && (
+                                                  <span className="text-white/40 text-xs">{sub.numberOfQuotas} quotas</span>
+                                                )}
+                                                {priceInfo && (
+                                                  <span className="text-white/30 text-xs">@ {formatCurrency(priceInfo.priceUsd, 'USD')}</span>
                                                 )}
                                               </div>
-                                              <button
-                                                onClick={(e) => { e.stopPropagation(); openEditModal(sub); }}
-                                                className="text-white/30 hover:text-white/70 text-xs transition-colors"
-                                              >
-                                                Editar
-                                              </button>
+                                              <div className="flex items-center gap-3">
+                                                <div className="text-right">
+                                                  <span className="text-white/80 text-sm font-medium">{formatCurrency(sub.currentBalance, sub.currency)}</span>
+                                                  {valueBrl != null && (
+                                                    <p className="text-white/40 text-xs">{formatCurrency(valueBrl, 'BRL')}</p>
+                                                  )}
+                                                </div>
+                                                <button
+                                                  onClick={(e) => { e.stopPropagation(); openEditModal(sub); }}
+                                                  className="text-white/30 hover:text-white/70 text-xs transition-colors"
+                                                >
+                                                  Editar
+                                                </button>
+                                              </div>
                                             </div>
+                                            {/* Gains breakdown */}
+                                            {purchases.length > 0 && (
+                                              <div className="mt-2 pt-2 border-t border-white/[0.06] grid grid-cols-3 gap-2 text-[10px]">
+                                                <div>
+                                                  <p className="text-white/30 uppercase">Cripto</p>
+                                                  <p className={gainCryptoPercent != null && gainCryptoPercent >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                                                    {gainCryptoPercent != null ? `${gainCryptoPercent >= 0 ? '+' : ''}${gainCryptoPercent.toFixed(1)}%` : '-'}
+                                                  </p>
+                                                  <p className="text-white/25">${purchases[0].priceUsd.toFixed(2)} → ${purchases[0].currentPriceUsd.toFixed(2)}</p>
+                                                </div>
+                                                <div>
+                                                  <p className="text-white/30 uppercase">Cambio</p>
+                                                  <p className={gainExchangePercent != null && gainExchangePercent >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                                                    {gainExchangePercent != null ? `${gainExchangePercent >= 0 ? '+' : ''}${gainExchangePercent.toFixed(1)}%` : '-'}
+                                                  </p>
+                                                  <p className="text-white/25">R${purchases[0].exchangeRate.toFixed(2)} → R${purchases[0].currentExchangeRate.toFixed(2)}</p>
+                                                </div>
+                                                <div>
+                                                  <p className="text-white/30 uppercase">Total BRL</p>
+                                                  <p className={totalGainBrl >= 0 ? 'text-emerald-400 font-semibold' : 'text-red-400 font-semibold'}>
+                                                    {totalGainBrl >= 0 ? '+' : ''}{formatCurrency(totalGainBrl)}
+                                                  </p>
+                                                  <p className={totalGainPercent >= 0 ? 'text-emerald-400/60' : 'text-red-400/60'}>
+                                                    {totalGainPercent >= 0 ? '+' : ''}{totalGainPercent.toFixed(1)}%
+                                                  </p>
+                                                </div>
+                                              </div>
+                                            )}
                                           </div>
                                         );
                                       })}
