@@ -91,7 +91,7 @@ export default function TransactionForm({
   const [destCategories, setDestCategories] = useState<Category[]>([]);
   const [continueAdding, setContinueAdding] = useState(false);
   const [batchMode, setBatchMode] = useState(false);
-  const [batchEntries, setBatchEntries] = useState<{ date: string; amount: number }[]>([]);
+  const [batchEntries, setBatchEntries] = useState<{ date: string; amount: string }[]>([]);
   const keepBankAccountRef = useRef<string | null>(null);
 
   const isEditing = !!editingTransaction;
@@ -271,8 +271,9 @@ export default function TransactionForm({
 
     if (batchMode && batchEntries.length > 0) {
       for (const entry of batchEntries) {
-        if (entry.amount > 0 && entry.date) {
-          await Promise.resolve(onSave(buildPayload({ amount: entry.amount, occurredOn: entry.date })));
+        const parsedAmount = parseFloat(entry.amount);
+        if (parsedAmount > 0 && entry.date) {
+          await Promise.resolve(onSave(buildPayload({ amount: parsedAmount, occurredOn: entry.date })));
         }
       }
     } else {
@@ -554,7 +555,7 @@ export default function TransactionForm({
                     onChange={(e) => {
                       setBatchMode(e.target.checked);
                       if (e.target.checked && batchEntries.length === 0) {
-                        setBatchEntries([{ date: formData.occurredOn || getLocalDateString(), amount: 0 }]);
+                        setBatchEntries([{ date: formData.occurredOn || getLocalDateString(), amount: '' }]);
                       }
                     }}
                     className="w-4 h-4 rounded border-white/30 bg-white/10 accent-emerald-500"
@@ -587,10 +588,10 @@ export default function TransactionForm({
                         inputMode="decimal"
                         step="0.01"
                         min="0"
-                        value={entry.amount || ''}
+                        value={entry.amount}
                         onChange={(e) => {
                           const updated = [...batchEntries];
-                          updated[idx] = { ...updated[idx], amount: Number(e.target.value) || 0 };
+                          updated[idx] = { ...updated[idx], amount: e.target.value };
                           setBatchEntries(updated);
                         }}
                         required
@@ -610,7 +611,7 @@ export default function TransactionForm({
                   ))}
                   <button
                     type="button"
-                    onClick={() => setBatchEntries([...batchEntries, { date: batchEntries[batchEntries.length - 1]?.date || getLocalDateString(), amount: 0 }])}
+                    onClick={() => setBatchEntries([...batchEntries, { date: batchEntries[batchEntries.length - 1]?.date || getLocalDateString(), amount: '' }])}
                     className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-sm font-medium mt-1"
                   >
                     <span className="text-lg leading-none">+</span> Adicionar entrada
