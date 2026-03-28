@@ -106,6 +106,10 @@ func (f *fakeTxRepoForBudget) CalculateBalanceByBankAccountID(bankAccountID stri
 	return 0, nil
 }
 
+func (f *fakeTxRepoForBudget) FindByExternalID(externalID string) (*transaction.Transaction, error) {
+	return nil, nil
+}
+
 type fakeCategoryRepoForBudget struct {
 	categories map[string]*category.Category
 }

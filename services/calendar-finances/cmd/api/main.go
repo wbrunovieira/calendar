@@ -165,11 +165,20 @@ func main() {
 	var cryptoHandler *httpHandlers.CryptoHandlers
 	var cryptoPurchaseHandler *httpHandlers.CryptoPurchaseHandlers
 	var binanceClient *binance.Client
+	var syncTradesUC *usecases.SyncTradesUseCase
 	if binanceKey != "" && binanceSecret != "" {
 		binanceClient = binance.NewClient(binanceKey, binanceSecret)
 		cryptoSyncUC := usecases.NewCryptoSyncUseCase(binanceClient, bankAccountRepo)
 		cryptoHandler = httpHandlers.NewCryptoHandlers(cryptoSyncUC)
 		cryptoPurchaseHandler = httpHandlers.NewCryptoPurchaseHandlers(cryptoPurchaseRepo, binanceClient)
+
+		// Initialize trade sync
+		syncTradesUC = usecases.NewSyncTradesUseCase(
+			binanceClient, bankAccountRepo, transactionRepo, cryptoPurchaseRepo,
+			[]string{"SOLBRL"},
+		)
+		cryptoHandler.SetSyncTradesUseCase(syncTradesUC)
+
 		log.Println("✓ Binance API integration enabled")
 	} else {
 		cryptoPurchaseHandler = httpHandlers.NewCryptoPurchaseHandlers(cryptoPurchaseRepo, nil)
@@ -248,6 +257,7 @@ func main() {
 	// Crypto routes
 	if cryptoHandler != nil {
 		apiRouter.HandleFunc("/crypto/sync", cryptoHandler.Sync).Methods("POST")
+		apiRouter.HandleFunc("/crypto/sync-trades", cryptoHandler.SyncTrades).Methods("POST")
 	}
 	apiRouter.HandleFunc("/crypto/purchases", cryptoPurchaseHandler.List).Methods("GET")
 	apiRouter.HandleFunc("/crypto/purchases", cryptoPurchaseHandler.Create).Methods("POST")
@@ -297,6 +307,40 @@ func main() {
 			}
 		}
 	}()
+
+	// Background job: sync Binance trades every 30 minutes
+	if syncTradesUC != nil {
+		go func() {
+			profileID := os.Getenv("DEFAULT_PROFILE_ID")
+			if profileID == "" {
+				profileID = "259866ac-6f74-4f7f-98b3-9a4896fb6758"
+			}
+
+			// Run once at startup (after a short delay to let things settle)
+			time.Sleep(5 * time.Second)
+			result, err := syncTradesUC.Execute(profileID)
+			if err != nil {
+				log.Printf("Trade sync startup error: %v", err)
+			} else {
+				log.Printf("Trade sync: %d buys, %d sells, %d skipped, %d errors",
+					result.NewBuys, result.NewSells, result.Skipped, result.Errors)
+			}
+
+			ticker := time.NewTicker(30 * time.Minute)
+			defer ticker.Stop()
+			for range ticker.C {
+				result, err := syncTradesUC.Execute(profileID)
+				if err != nil {
+					log.Printf("Trade sync error: %v", err)
+					continue
+				}
+				if result.NewBuys > 0 || result.NewSells > 0 {
+					log.Printf("Trade sync: %d buys, %d sells, %d skipped",
+						result.NewBuys, result.NewSells, result.Skipped)
+				}
+			}
+		}()
+	}
 
 	log.Printf("🚀 Calendar Finances API starting on port %s", port)
 	if err := server.ListenAndServe(); err != nil {

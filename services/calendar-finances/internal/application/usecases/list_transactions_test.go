@@ -105,6 +105,10 @@ func (f *FakeTransactionRepository) CalculateBalanceByBankAccountID(bankAccountI
 	return balance, nil
 }
 
+func (f *FakeTransactionRepository) FindByExternalID(externalID string) (*transaction.Transaction, error) {
+	return nil, nil
+}
+
 func TestListTransactions_FilterByDateRange_ShouldReturnOnlyTransactionsInRange(t *testing.T) {
 	// Arrange
 	profileID := "profile-1"

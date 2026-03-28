@@ -210,6 +210,10 @@ func (f *fakeTransactionRepo) CalculateBalanceByBankAccountID(bankAccountID stri
 	return balance, nil
 }
 
+func (f *fakeTransactionRepo) FindByExternalID(externalID string) (*transaction.Transaction, error) {
+	return nil, nil
+}
+
 type fakeInvoiceRepo struct {
 	invoices map[string]*invoice.Invoice
 }

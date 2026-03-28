@@ -26,4 +26,5 @@ type Repository interface {
 	SumByInvoiceID(invoiceID string) (float64, error)
 	SumByInvoiceIDByStatus(invoiceID string, status Status) (float64, error)
 	CalculateBalanceByBankAccountID(bankAccountID string) (float64, error)
+	FindByExternalID(externalID string) (*Transaction, error)
 }

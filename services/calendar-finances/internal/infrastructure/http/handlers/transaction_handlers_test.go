@@ -81,6 +81,10 @@ func (f *FakeTransactionRepository) CalculateBalanceByBankAccountID(bankAccountI
 	return 0, nil
 }
 
+func (f *FakeTransactionRepository) FindByExternalID(externalID string) (*transaction.Transaction, error) {
+	return nil, nil
+}
+
 func TestTransactionHandlers_List_ShouldAcceptOccurredFromAndOccurredToParams(t *testing.T) {
 	// Arrange
 	profileID := "test-profile"

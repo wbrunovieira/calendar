@@ -35,6 +35,18 @@ type AccountInfo struct {
 	Balances []AccountBalance `json:"balances"`
 }
 
+type Trade struct {
+	ID              int64  `json:"id"`
+	Symbol          string `json:"symbol"`
+	Price           string `json:"price"`
+	Qty             string `json:"qty"`
+	QuoteQty        string `json:"quoteQty"`
+	Commission      string `json:"commission"`
+	CommissionAsset string `json:"commissionAsset"`
+	Time            int64  `json:"time"`
+	IsBuyer         bool   `json:"isBuyer"`
+}
+
 type CryptoPrice struct {
 	Symbol   string  `json:"symbol"`
 	PriceUSD float64 `json:"priceUsd"`
@@ -161,6 +173,38 @@ func (c *Client) FetchPrices() (*SyncResult, error) {
 	}
 
 	return result, nil
+}
+
+// GetMyTrades fetches trade history for a symbol (authenticated)
+func (c *Client) GetMyTrades(symbol string) ([]Trade, error) {
+	timestamp := time.Now().UnixMilli()
+	queryString := fmt.Sprintf("symbol=%s&timestamp=%d", symbol, timestamp)
+
+	signature := c.sign(queryString)
+	url := fmt.Sprintf("%s/api/v3/myTrades?%s&signature=%s", baseURL, queryString, signature)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-MBX-APIKEY", c.apiKey)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch trades: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("binance trades API error: %s", string(body))
+	}
+
+	var trades []Trade
+	if err := json.NewDecoder(resp.Body).Decode(&trades); err != nil {
+		return nil, fmt.Errorf("failed to decode trades: %w", err)
+	}
+	return trades, nil
 }
 
 func (c *Client) sign(data string) string {

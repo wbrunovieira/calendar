@@ -766,6 +766,26 @@ func (r *TransactionRepository) SumByInvoiceIDByStatus(invoiceID string, status 
 	return round2(total), nil
 }
 
+// FindByExternalID looks up a transaction by its external_id field.
+func (r *TransactionRepository) FindByExternalID(externalID string) (*transaction.Transaction, error) {
+	query := `
+		SELECT id, profile_id, bank_account_id, destination_account_id, category_id, invoice_id,
+			type, status, amount, currency, description, notes, cost_center,
+			occurred_on, due_on, reminder_on, recurrence_rule, installment_number, installment_total,
+			external_id, linked_transaction_id, created_at, updated_at
+		FROM finance.transactions
+		WHERE external_id = $1
+	`
+
+	row := r.db.QueryRow(query, externalID)
+	tx, err := scanTransaction(row)
+	if err != nil {
+		return nil, err
+	}
+
+	return tx, nil
+}
+
 // CalculateBalanceByBankAccountID calculates the net balance from all CONFIRMED
 // transactions for a given bank account, including incoming transfers.
 func (r *TransactionRepository) CalculateBalanceByBankAccountID(bankAccountID string) (float64, error) {
