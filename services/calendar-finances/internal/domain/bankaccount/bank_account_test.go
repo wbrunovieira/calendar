@@ -529,6 +529,7 @@ func TestBankAccount_CanLinkToAccount(t *testing.T) {
 	savingsAccount, _ := NewBankAccount("profile-123", "Savings", AccountTypeSavings, 500, "BRL")
 	investmentAccount, _ := NewBankAccount("profile-123", "CDB", AccountTypeInvestment, 5000, "BRL")
 	creditCardAccount, _ := NewBankAccount("profile-123", "Credit Card", AccountTypeCreditCard, 0, "BRL")
+	exchangeAccount, _ := NewBankAccount("profile-123", "Binance", AccountTypeExchange, 0, "BRL")
 	otherProfileAccount, _ := NewBankAccount("profile-456", "Other Checking", AccountTypeChecking, 1000, "BRL")
 
 	tests := []struct {
@@ -572,6 +573,12 @@ func TestBankAccount_CanLinkToAccount(t *testing.T) {
 			account:       investmentAccount,
 			targetAccount: investmentAccount,
 			want:          false,
+		},
+		{
+			name:          "investment can link to exchange",
+			account:       investmentAccount,
+			targetAccount: exchangeAccount,
+			want:          true,
 		},
 		{
 			name:          "cannot link to account from different profile",
@@ -620,6 +627,19 @@ func TestBankAccount_SetLinkedAccount(t *testing.T) {
 		}
 		if creditCard.LinkedAccountID == nil || *creditCard.LinkedAccountID != checking.ID {
 			t.Errorf("LinkedAccountID = %v, want %v", creditCard.LinkedAccountID, checking.ID)
+		}
+	})
+
+	t.Run("investment successfully links to exchange", func(t *testing.T) {
+		investment, _ := NewBankAccount("profile-123", "SOL", AccountTypeInvestment, 0, "USD")
+		exchange, _ := NewBankAccount("profile-123", "Binance", AccountTypeExchange, 0, "BRL")
+
+		err := investment.SetLinkedAccount(exchange)
+		if err != nil {
+			t.Errorf("SetLinkedAccount() unexpected error: %v", err)
+		}
+		if investment.LinkedAccountID == nil || *investment.LinkedAccountID != exchange.ID {
+			t.Errorf("LinkedAccountID = %v, want %v", investment.LinkedAccountID, exchange.ID)
 		}
 	})
 
@@ -736,8 +756,8 @@ func TestBankAccount_IsValidLinkTarget(t *testing.T) {
 		{AccountTypeInvestment, false},
 		{AccountTypeCreditCard, false},
 		{AccountTypeOther, false},
-		{AccountTypeExchange, false},
-		{AccountTypeWallet, false},
+		{AccountTypeExchange, true},
+		{AccountTypeWallet, true},
 	}
 
 	for _, tt := range tests {
@@ -975,10 +995,10 @@ func TestNewBankAccount_ExchangeAndWallet(t *testing.T) {
 }
 
 func TestBankAccount_ExchangeIsValidLinkTarget(t *testing.T) {
-	// Exchange accounts can receive transfers from checking/savings (deposit BRL)
+	// Exchange accounts are valid link targets (sub-assets like SOL link to the exchange)
 	exchange, _ := NewBankAccount("profile-123", "Binance", AccountTypeExchange, 0, "BRL")
-	if exchange.IsValidLinkTarget() {
-		t.Error("IsValidLinkTarget() = true, want false for exchange")
+	if !exchange.IsValidLinkTarget() {
+		t.Error("IsValidLinkTarget() = false, want true for exchange")
 	}
 	// Exchange does not require linking (it's standalone, not like credit card)
 	if exchange.RequiresLinking() {
@@ -992,8 +1012,9 @@ func TestBankAccount_WalletLinking(t *testing.T) {
 	if wallet.RequiresLinking() {
 		t.Error("RequiresLinking() = true, want false for wallet")
 	}
-	if wallet.IsValidLinkTarget() {
-		t.Error("IsValidLinkTarget() = true, want false for wallet")
+	// Wallet is a valid link target (sub-tokens can link to it)
+	if !wallet.IsValidLinkTarget() {
+		t.Error("IsValidLinkTarget() = false, want true for wallet")
 	}
 }
 

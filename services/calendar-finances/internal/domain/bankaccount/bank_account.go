@@ -302,7 +302,7 @@ func (ba *BankAccount) RequiresLinking() bool {
 
 // IsValidLinkTarget returns true if this account can be used as a link target (source of funds)
 func (ba *BankAccount) IsValidLinkTarget() bool {
-	return ba.Type == AccountTypeChecking || ba.Type == AccountTypeSavings || ba.Type == AccountTypeCash
+	return ba.Type == AccountTypeChecking || ba.Type == AccountTypeSavings || ba.Type == AccountTypeCash || ba.Type == AccountTypeExchange || ba.Type == AccountTypeWallet
 }
 
 // IsLinked returns true if this account is linked to another account
@@ -344,7 +344,7 @@ func (ba *BankAccount) SetLinkedAccount(target *BankAccount) error {
 			return errors.New("only investment and credit card accounts can be linked")
 		}
 		if !target.IsValidLinkTarget() {
-			return errors.New("target must be a checking, savings, or cash account")
+			return errors.New("target must be a checking, savings, cash, exchange, or wallet account")
 		}
 		if ba.ProfileID != target.ProfileID {
 			return errors.New("accounts must belong to the same profile")
