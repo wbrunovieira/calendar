@@ -139,7 +139,7 @@ function TransactionHistory({
   }
 
   return (
-    <div className={`space-y-2 max-h-[28rem] overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent ${isCreditCard ? 'mt-2 border-l-2 border-white/10 pl-3' : ''}`}>
+    <div className={`space-y-2 max-h-[28rem] overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent ${isCreditCard ? 'mt-2 border-l-2 border-emerald-500/20 pl-3 mr-6 bg-emerald-950/10 rounded-r-lg py-2 pr-2' : ''}`}>
       {groupedByDayDesc.map(([dateKey, dayTransactions]) => {
         const balEntry = dayBalances[dateKey];
         const endOfDayBalance = balEntry?.balance ?? 0;
