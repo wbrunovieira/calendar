@@ -187,6 +187,9 @@ function TransactionHistory({
                           <span className="truncate">{categoryMap[tx.categoryId]}</span>
                         )}
                       </div>
+                      {tx.notes && (
+                        <p className="text-white/30 text-[10px] mt-0.5 truncate">{tx.notes}</p>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 ml-3 shrink-0">
                       <div className="text-right">
