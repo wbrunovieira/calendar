@@ -299,19 +299,28 @@ export default function ContasPage() {
     [bankAccounts, selectedProfileId],
   );
 
+  const cryptoAccounts = useMemo(
+    () => filteredAccounts.filter((a) => a.type === 'EXCHANGE' || a.type === 'WALLET'),
+    [filteredAccounts],
+  );
+
+  const cryptoAccountIds = useMemo(
+    () => new Set(cryptoAccounts.map((a) => a.id)),
+    [cryptoAccounts],
+  );
+
+  // Sub-assets linked to an exchange/wallet (shown inside parent card)
+  const getSubAssets = (parentId: string) =>
+    filteredAccounts.filter((a) => a.linkedAccountId === parentId);
+
   const regularAccounts = useMemo(
     () => filteredAccounts.filter((a) => a.type !== 'INVESTMENT' && a.type !== 'EXCHANGE' && a.type !== 'WALLET'),
     [filteredAccounts],
   );
 
   const investmentAccounts = useMemo(
-    () => filteredAccounts.filter((a) => a.type === 'INVESTMENT'),
-    [filteredAccounts],
-  );
-
-  const cryptoAccounts = useMemo(
-    () => filteredAccounts.filter((a) => a.type === 'EXCHANGE' || a.type === 'WALLET'),
-    [filteredAccounts],
+    () => filteredAccounts.filter((a) => a.type === 'INVESTMENT' && (!a.linkedAccountId || !cryptoAccountIds.has(a.linkedAccountId))),
+    [filteredAccounts, cryptoAccountIds],
   );
 
   const totalsByCurrency = useMemo(() => {
@@ -1034,6 +1043,7 @@ export default function ContasPage() {
                     {cryptoAccounts.map((account) => {
                       const isExpanded = expandedAccountId === account.id;
                       const typeLabel = account.type === 'EXCHANGE' ? 'Corretora' : 'Carteira';
+                      const subAssets = getSubAssets(account.id);
                       return (
                         <SortableItem key={account.id} id={account.id}>
                           {({ listeners, attributes }) => (
@@ -1054,6 +1064,11 @@ export default function ContasPage() {
                                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400">
                                           {typeLabel}
                                         </span>
+                                        {subAssets.length > 0 && (
+                                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/50">
+                                            {subAssets.length} {subAssets.length === 1 ? 'ativo' : 'ativos'}
+                                          </span>
+                                        )}
                                       </div>
                                       {account.broker && (
                                         <p className="text-white/40 text-xs">{account.broker}</p>
@@ -1069,6 +1084,31 @@ export default function ContasPage() {
                                       </button>
                                     </div>
                                   </div>
+                                  {/* Sub-assets inside the exchange card */}
+                                  {subAssets.length > 0 && (
+                                    <div className="mt-3 pt-3 border-t border-white/10 space-y-2">
+                                      {subAssets.map((sub) => (
+                                        <div key={sub.id} className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-white/[0.04]">
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-amber-400 text-xs">●</span>
+                                            <span className="text-white/80 text-sm">{sub.name.replace(account.name + ' - ', '')}</span>
+                                            {sub.numberOfQuotas != null && (
+                                              <span className="text-white/40 text-xs">{sub.numberOfQuotas} quotas</span>
+                                            )}
+                                          </div>
+                                          <div className="flex items-center gap-3">
+                                            <span className="text-white/80 text-sm font-medium">{formatCurrency(sub.currentBalance, sub.currency)}</span>
+                                            <button
+                                              onClick={(e) => { e.stopPropagation(); openEditModal(sub); }}
+                                              className="text-white/30 hover:text-white/70 text-xs transition-colors"
+                                            >
+                                              Editar
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                               {isExpanded && selectedProfileId && (
