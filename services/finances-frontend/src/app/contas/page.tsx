@@ -47,6 +47,7 @@ function TransactionHistory({
   categories,
   selectedInvoiceId,
   accountCurrency = 'BRL',
+  isCreditCard = false,
   onEdit,
   onDelete,
 }: {
@@ -55,6 +56,7 @@ function TransactionHistory({
   categories: Category[];
   selectedInvoiceId?: string;
   accountCurrency?: string;
+  isCreditCard?: boolean;
   onEdit?: (tx: Transaction) => void;
   onDelete?: (tx: Transaction) => void;
 }) {
@@ -151,9 +153,11 @@ function TransactionHistory({
                 <span className={`text-xs font-semibold ${dayTotal >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                   {dayTotal >= 0 ? '+' : ''}{formatCurrency(Math.abs(dayTotal), accountCurrency)}
                 </span>
-                <span className={`text-xs font-medium ${endOfDayBalance >= 0 ? 'text-white/60' : 'text-red-300'}`}>
-                  Saldo: {formatCurrency(endOfDayBalance, accountCurrency)}
-                </span>
+                {!isCreditCard && (
+                  <span className={`text-xs font-medium ${endOfDayBalance >= 0 ? 'text-white/60' : 'text-red-300'}`}>
+                    Saldo: {formatCurrency(endOfDayBalance, accountCurrency)}
+                  </span>
+                )}
               </div>
             </div>
             <div className="space-y-1 mt-1">
@@ -542,6 +546,9 @@ export default function ContasPage() {
       ...prev,
       [accountId]: invoiceId,
     }));
+    if (invoiceId) {
+      setExpandedAccountId(accountId);
+    }
   };
 
   const handleAddTransaction = (accountId: string) => {
@@ -836,6 +843,7 @@ export default function ContasPage() {
                                     categories={categories}
                                     selectedInvoiceId={selectedInvoiceByAccount[account.id] || ''}
                                     accountCurrency={account.currency}
+                                    isCreditCard
                                     onEdit={handleEditTransaction}
                                     onDelete={handleDeleteTransaction}
                                   />
