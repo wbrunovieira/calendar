@@ -39,8 +39,25 @@ func NewCryptoSyncUseCase(client *binance.Client, accountRepo bankaccount.Reposi
 }
 
 func (uc *CryptoSyncUseCase) Execute(profileID string) (*CryptoSyncResult, error) {
-	// Fetch prices from Binance
-	syncData, err := uc.binanceClient.FetchPrices()
+	// Find crypto accounts first to know which symbols to fetch
+	accounts, err := uc.accountRepo.FindByProfileID(profileID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Collect all crypto asset symbols from sub-accounts
+	var symbols []string
+	symbolSet := map[string]bool{}
+	for _, account := range accounts {
+		asset := detectAsset(account.Name)
+		if asset != "" && !symbolSet[asset] {
+			symbolSet[asset] = true
+			symbols = append(symbols, asset)
+		}
+	}
+
+	// Fetch prices from Binance for all detected symbols
+	syncData, err := uc.binanceClient.FetchPrices(symbols...)
 	if err != nil {
 		return nil, err
 	}
@@ -52,28 +69,13 @@ func (uc *CryptoSyncUseCase) Execute(profileID string) (*CryptoSyncResult, error
 
 	// Build price map: asset -> price in USD
 	priceMap := map[string]float64{}
+	priceBrlMap := map[string]float64{}
 	for _, p := range syncData.Prices {
 		priceMap[p.Symbol] = p.PriceUSD
-	}
-
-	// Find crypto accounts (EXCHANGE/WALLET type or linked to one) and update quotaPrice
-	accounts, err := uc.accountRepo.FindByProfileID(profileID)
-	if err != nil {
-		return result, nil // Return prices even if account update fails
+		priceBrlMap[p.Symbol] = p.PriceBRL
 	}
 
 	for _, account := range accounts {
-		if account.NumberOfQuotas == nil || *account.NumberOfQuotas <= 0 {
-			continue
-		}
-		if account.InvestmentType == nil {
-			continue
-		}
-		if *account.InvestmentType != bankaccount.InvestmentTypeCrypto {
-			continue
-		}
-
-		// Detect asset from account name (e.g., "Binance - Solana (SOL)" -> "SOL")
 		asset := detectAsset(account.Name)
 		if asset == "" {
 			continue
@@ -90,9 +92,15 @@ func (uc *CryptoSyncUseCase) Execute(profileID string) (*CryptoSyncResult, error
 		}
 		oldBalance := account.CurrentBalance
 
-		// Update quota price and balance
+		// Update quota price
 		account.QuotaPrice = &newPriceUSD
-		newBalance := *account.NumberOfQuotas * newPriceUSD
+
+		// Calculate balance in BRL: quotas * priceBRL
+		quotas := float64(0)
+		if account.NumberOfQuotas != nil {
+			quotas = *account.NumberOfQuotas
+		}
+		newBalance := quotas * priceBrlMap[asset]
 		account.CurrentBalance = newBalance
 		account.UpdatedAt = time.Now()
 
@@ -104,7 +112,7 @@ func (uc *CryptoSyncUseCase) Execute(profileID string) (*CryptoSyncResult, error
 			AccountID:   account.ID,
 			AccountName: account.Name,
 			Asset:       asset,
-			Quotas:      *account.NumberOfQuotas,
+			Quotas:      quotas,
 			OldPrice:    oldPrice,
 			NewPrice:    newPriceUSD,
 			OldBalance:  oldBalance,

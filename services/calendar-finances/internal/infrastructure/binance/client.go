@@ -135,8 +135,8 @@ func (c *Client) GetAccountBalances() ([]AccountBalance, error) {
 	return nonZero, nil
 }
 
-// FetchPrices gets current prices for common crypto pairs and USD/BRL
-func (c *Client) FetchPrices() (*SyncResult, error) {
+// FetchPrices gets current prices for given crypto symbols and USD/BRL
+func (c *Client) FetchPrices(symbols ...string) (*SyncResult, error) {
 	result := &SyncResult{}
 
 	// USD/BRL via USDT/BRL
@@ -146,16 +146,39 @@ func (c *Client) FetchPrices() (*SyncResult, error) {
 	}
 	result.UsdBrl = usdtBrl
 
-	// SOL/USDT
-	solUsdt, err := c.GetTickerPrice("SOLUSDT")
-	if err != nil {
-		return nil, fmt.Errorf("failed to get SOL/USDT: %w", err)
+	// Default symbols if none provided
+	if len(symbols) == 0 {
+		symbols = []string{"SOL"}
 	}
-	result.Prices = append(result.Prices, CryptoPrice{
-		Symbol:   "SOL",
-		PriceUSD: solUsdt,
-		PriceBRL: solUsdt * usdtBrl,
-	})
+
+	for _, symbol := range symbols {
+		if symbol == "USDT" || symbol == "BRL" || symbol == "USDC" {
+			// Stablecoins: price is ~1 USD
+			priceBrl := usdtBrl
+			priceUsd := 1.0
+			if symbol == "USDC" {
+				if p, err := c.GetTickerPrice("USDCUSDT"); err == nil {
+					priceUsd = p
+					priceBrl = p * usdtBrl
+				}
+			}
+			result.Prices = append(result.Prices, CryptoPrice{
+				Symbol:   symbol,
+				PriceUSD: priceUsd,
+				PriceBRL: priceBrl,
+			})
+			continue
+		}
+		priceUsdt, err := c.GetTickerPrice(symbol + "USDT")
+		if err != nil {
+			continue
+		}
+		result.Prices = append(result.Prices, CryptoPrice{
+			Symbol:   symbol,
+			PriceUSD: priceUsdt,
+			PriceBRL: priceUsdt * usdtBrl,
+		})
+	}
 
 	// Get account balances
 	balances, err := c.GetAccountBalances()

@@ -1109,6 +1109,15 @@ export default function ContasPage() {
                       const isExpanded = expandedAccountId === account.id;
                       const typeLabel = account.type === 'EXCHANGE' ? 'Corretora' : 'Carteira';
                       const subAssets = getSubAssets(account.id);
+                      // Calculate total value: BRL balance + all sub-account values in BRL
+                      const subAssetsTotalBrl = subAssets.reduce((sum, sub) => {
+                        const sym = sub.name.match(/\(([A-Z]+)\)/)?.[1];
+                        const pi = sym && cryptoPrices?.prices[sym];
+                        if (pi && sub.numberOfQuotas != null) return sum + sub.numberOfQuotas * pi.priceBrl;
+                        return sum + (sub.currentBalance || 0);
+                      }, 0);
+                      const totalBrl = account.currentBalance + subAssetsTotalBrl;
+                      const totalUsd = cryptoPrices?.usdBrl ? totalBrl / cryptoPrices.usdBrl : null;
                       return (
                         <SortableItem key={account.id} id={account.id}>
                           {({ listeners, attributes }) => (
@@ -1140,7 +1149,10 @@ export default function ContasPage() {
                                       )}
                                     </div>
                                     <div className="text-right">
-                                      <p className="text-white font-bold">{formatCurrency(account.currentBalance, account.currency)}</p>
+                                      <p className="text-white font-bold">{formatCurrency(totalBrl)}</p>
+                                      {totalUsd != null && (
+                                        <p className="text-white/40 text-xs">{formatCurrency(totalUsd, 'USD')}</p>
+                                      )}
                                       <button
                                         onClick={(e) => { e.stopPropagation(); openEditModal(account); }}
                                         className="text-white/30 hover:text-white/70 text-xs transition-colors"
@@ -1182,9 +1194,17 @@ export default function ContasPage() {
                                               </div>
                                               <div className="flex items-center gap-3">
                                                 <div className="text-right">
-                                                  <span className="text-white/80 text-sm font-medium">{formatCurrency(sub.currentBalance, sub.currency)}</span>
-                                                  {valueBrl != null && (
-                                                    <p className="text-white/40 text-xs">{formatCurrency(valueBrl, 'BRL')}</p>
+                                                  {priceInfo && sub.numberOfQuotas != null ? (
+                                                    <>
+                                                      <span className="text-white/80 text-sm font-medium">
+                                                        {formatCurrency(sub.numberOfQuotas * priceInfo.priceUsd, 'USD')}
+                                                      </span>
+                                                      <p className="text-white/40 text-xs">
+                                                        {formatCurrency(sub.numberOfQuotas * priceInfo.priceBrl)}
+                                                      </p>
+                                                    </>
+                                                  ) : (
+                                                    <span className="text-white/80 text-sm font-medium">{formatCurrency(sub.currentBalance, sub.currency)}</span>
                                                   )}
                                                 </div>
                                                 <button
