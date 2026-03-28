@@ -9,6 +9,7 @@ import (
 	"github.com/brunovieira/calendar-finances/internal/application/usecases"
 	"github.com/brunovieira/calendar-finances/internal/database"
 	"github.com/brunovieira/calendar-finances/internal/handlers"
+	"github.com/brunovieira/calendar-finances/internal/infrastructure/binance"
 	httpHandlers "github.com/brunovieira/calendar-finances/internal/infrastructure/http/handlers"
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/persistence"
 	"github.com/gorilla/mux"
@@ -157,6 +158,17 @@ func main() {
 	goalService := usecases.NewGoalsService(goalRepo)
 	goalHandler := httpHandlers.NewGoalHandlers(goalService)
 
+	// Initialize Binance client and crypto sync
+	binanceKey := os.Getenv("KEY_BINANCE")
+	binanceSecret := os.Getenv("SECRET_BINANCE")
+	var cryptoHandler *httpHandlers.CryptoHandlers
+	if binanceKey != "" && binanceSecret != "" {
+		binanceClient := binance.NewClient(binanceKey, binanceSecret)
+		cryptoSyncUC := usecases.NewCryptoSyncUseCase(binanceClient, bankAccountRepo)
+		cryptoHandler = httpHandlers.NewCryptoHandlers(cryptoSyncUC)
+		log.Println("✓ Binance API integration enabled")
+	}
+
 	// API v1 routes
 	apiRouter := router.PathPrefix("/api/v1").Subrouter()
 
@@ -226,6 +238,11 @@ func main() {
 	apiRouter.HandleFunc("/invoices/{id}/pay", invoiceHandler.Pay).Methods("POST")
 	apiRouter.HandleFunc("/invoices/{id}/add-amount", invoiceHandler.AddAmount).Methods("POST")
 	apiRouter.HandleFunc("/invoices/{id}/recalculate", invoiceHandler.Recalculate).Methods("POST")
+
+	// Crypto routes
+	if cryptoHandler != nil {
+		apiRouter.HandleFunc("/crypto/sync", cryptoHandler.Sync).Methods("POST")
+	}
 
 	// CORS configuration
 	corsHandler := cors.New(cors.Options{

@@ -291,6 +291,7 @@ export default function ContasPage() {
 
   const [invoicesByAccount, setInvoicesByAccount] = useState<Record<string, Invoice[]>>({});
   const [currentInvoices, setCurrentInvoices] = useState<Record<string, Invoice>>({});
+  const [cryptoPrices, setCryptoPrices] = useState<{ usdBrl: number; prices: Record<string, { priceUsd: number; priceBrl: number }> } | null>(null);
 
   const filteredAccounts = useMemo(
     () => bankAccounts
@@ -362,6 +363,7 @@ export default function ContasPage() {
   useEffect(() => {
     if (selectedProfileId) {
       fetchCategories(selectedProfileId);
+      syncCryptoPrices(selectedProfileId);
     }
   }, [selectedProfileId]);
 
@@ -372,6 +374,27 @@ export default function ContasPage() {
       setBankAccounts(data.data || []);
     } catch (error) {
       console.error('Erro ao carregar contas bancarias:', error);
+    }
+  };
+
+  const syncCryptoPrices = async (profileId: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/crypto/sync?profileId=${profileId}`, { method: 'POST' });
+      if (response.ok) {
+        const data = await response.json();
+        const syncData = data.data;
+        const pricesMap: Record<string, { priceUsd: number; priceBrl: number }> = {};
+        if (syncData.prices) {
+          for (const p of syncData.prices) {
+            pricesMap[p.symbol] = { priceUsd: p.priceUsd, priceBrl: p.priceBrl };
+          }
+        }
+        setCryptoPrices({ usdBrl: syncData.usdBrl, prices: pricesMap });
+        // Refresh accounts to get updated balances
+        await fetchBankAccounts();
+      }
+    } catch (error) {
+      console.warn('Erro ao sincronizar precos crypto:', error);
     }
   };
 
@@ -1030,9 +1053,16 @@ export default function ContasPage() {
                     <span className="text-xl">🪙</span>
                     <h3 className="text-lg font-semibold text-white">Cripto</h3>
                   </div>
-                  <span className="text-white/50 text-xs">
-                    {cryptoAccounts.length} {cryptoAccounts.length === 1 ? 'conta' : 'contas'}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    {cryptoPrices && (
+                      <span className="text-white/40 text-xs">
+                        USD/BRL: {cryptoPrices.usdBrl.toFixed(2)}
+                      </span>
+                    )}
+                    <span className="text-white/50 text-xs">
+                      {cryptoAccounts.length} {cryptoAccounts.length === 1 ? 'conta' : 'contas'}
+                    </span>
+                  </div>
                 </div>
                 <DndContext
                   sensors={sensors}
@@ -1087,26 +1117,45 @@ export default function ContasPage() {
                                   {/* Sub-assets inside the exchange card */}
                                   {subAssets.length > 0 && (
                                     <div className="mt-3 pt-3 border-t border-white/10 space-y-2">
-                                      {subAssets.map((sub) => (
-                                        <div key={sub.id} className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-white/[0.04]">
-                                          <div className="flex items-center gap-2">
-                                            <span className="text-amber-400 text-xs">●</span>
-                                            <span className="text-white/80 text-sm">{sub.name.replace(account.name + ' - ', '')}</span>
-                                            {sub.numberOfQuotas != null && (
-                                              <span className="text-white/40 text-xs">{sub.numberOfQuotas} quotas</span>
-                                            )}
+                                      {subAssets.map((sub) => {
+                                        // Extract symbol from name e.g. "Binance - Solana (SOL)" -> "SOL"
+                                        const symbolMatch = sub.name.match(/\(([A-Z]+)\)/);
+                                        const symbol = symbolMatch ? symbolMatch[1] : '';
+                                        const priceInfo = symbol && cryptoPrices?.prices[symbol];
+                                        const valueBrl = priceInfo && sub.numberOfQuotas != null
+                                          ? sub.numberOfQuotas * priceInfo.priceBrl
+                                          : sub.currency !== 'BRL' && cryptoPrices?.usdBrl
+                                            ? sub.currentBalance * cryptoPrices.usdBrl
+                                            : null;
+                                        return (
+                                          <div key={sub.id} className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-white/[0.04]">
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-amber-400 text-xs">●</span>
+                                              <span className="text-white/80 text-sm">{sub.name.replace(account.name + ' - ', '')}</span>
+                                              {sub.numberOfQuotas != null && (
+                                                <span className="text-white/40 text-xs">{sub.numberOfQuotas} quotas</span>
+                                              )}
+                                              {priceInfo && (
+                                                <span className="text-white/30 text-xs">@ {formatCurrency(priceInfo.priceUsd, 'USD')}</span>
+                                              )}
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                              <div className="text-right">
+                                                <span className="text-white/80 text-sm font-medium">{formatCurrency(sub.currentBalance, sub.currency)}</span>
+                                                {valueBrl != null && (
+                                                  <p className="text-white/40 text-xs">{formatCurrency(valueBrl, 'BRL')}</p>
+                                                )}
+                                              </div>
+                                              <button
+                                                onClick={(e) => { e.stopPropagation(); openEditModal(sub); }}
+                                                className="text-white/30 hover:text-white/70 text-xs transition-colors"
+                                              >
+                                                Editar
+                                              </button>
+                                            </div>
                                           </div>
-                                          <div className="flex items-center gap-3">
-                                            <span className="text-white/80 text-sm font-medium">{formatCurrency(sub.currentBalance, sub.currency)}</span>
-                                            <button
-                                              onClick={(e) => { e.stopPropagation(); openEditModal(sub); }}
-                                              className="text-white/30 hover:text-white/70 text-xs transition-colors"
-                                            >
-                                              Editar
-                                            </button>
-                                          </div>
-                                        </div>
-                                      ))}
+                                        );
+                                      })}
                                     </div>
                                   )}
                                 </div>
