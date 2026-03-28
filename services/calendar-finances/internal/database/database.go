@@ -440,6 +440,25 @@ func RunMigrations(db *sql.DB) error {
 			ALTER TABLE finance.bank_accounts ADD CONSTRAINT bank_accounts_type_check
 				CHECK (type IN ('CHECKING', 'SAVINGS', 'INVESTMENT', 'CREDIT_CARD', 'CASH', 'EXCHANGE', 'WALLET', 'OTHER'));
 		END $$`,
+		// Migration: Create crypto_purchases table for tracking structured purchase data
+		`CREATE TABLE IF NOT EXISTS finance.crypto_purchases (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			transaction_id UUID NOT NULL REFERENCES finance.transactions(id) ON DELETE CASCADE,
+			bank_account_id UUID NOT NULL REFERENCES finance.bank_accounts(id),
+			profile_id UUID NOT NULL REFERENCES finance.profiles(id),
+			asset VARCHAR(20) NOT NULL,
+			quantity DECIMAL(20, 10) NOT NULL,
+			price_usd DECIMAL(20, 8) NOT NULL,
+			exchange_rate DECIMAL(20, 6) NOT NULL,
+			invested_brl DECIMAL(20, 2) NOT NULL,
+			invested_usd DECIMAL(20, 8) NOT NULL,
+			occurred_on DATE NOT NULL,
+			notes TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMP NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_crypto_purchases_account ON finance.crypto_purchases(bank_account_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_crypto_purchases_profile ON finance.crypto_purchases(profile_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_crypto_purchases_asset ON finance.crypto_purchases(asset)`,
 	}
 
 	for i, migration := range migrations {

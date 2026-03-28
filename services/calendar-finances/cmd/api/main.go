@@ -159,14 +159,20 @@ func main() {
 	goalHandler := httpHandlers.NewGoalHandlers(goalService)
 
 	// Initialize Binance client and crypto sync
+	cryptoPurchaseRepo := persistence.NewCryptoPurchaseRepository(db)
 	binanceKey := os.Getenv("KEY_BINANCE")
 	binanceSecret := os.Getenv("SECRET_BINANCE")
 	var cryptoHandler *httpHandlers.CryptoHandlers
+	var cryptoPurchaseHandler *httpHandlers.CryptoPurchaseHandlers
+	var binanceClient *binance.Client
 	if binanceKey != "" && binanceSecret != "" {
-		binanceClient := binance.NewClient(binanceKey, binanceSecret)
+		binanceClient = binance.NewClient(binanceKey, binanceSecret)
 		cryptoSyncUC := usecases.NewCryptoSyncUseCase(binanceClient, bankAccountRepo)
 		cryptoHandler = httpHandlers.NewCryptoHandlers(cryptoSyncUC)
+		cryptoPurchaseHandler = httpHandlers.NewCryptoPurchaseHandlers(cryptoPurchaseRepo, binanceClient)
 		log.Println("✓ Binance API integration enabled")
+	} else {
+		cryptoPurchaseHandler = httpHandlers.NewCryptoPurchaseHandlers(cryptoPurchaseRepo, nil)
 	}
 
 	// API v1 routes
@@ -243,6 +249,8 @@ func main() {
 	if cryptoHandler != nil {
 		apiRouter.HandleFunc("/crypto/sync", cryptoHandler.Sync).Methods("POST")
 	}
+	apiRouter.HandleFunc("/crypto/purchases", cryptoPurchaseHandler.List).Methods("GET")
+	apiRouter.HandleFunc("/crypto/purchases", cryptoPurchaseHandler.Create).Methods("POST")
 
 	// CORS configuration
 	corsHandler := cors.New(cors.Options{
