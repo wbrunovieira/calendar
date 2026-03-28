@@ -139,20 +139,30 @@ function TransactionHistory({
   }
 
   return (
-    <div className="space-y-3 max-h-[28rem] overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+    <div className={`space-y-2 max-h-[28rem] overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent ${isCreditCard ? 'mt-2 border-l-2 border-white/10 pl-3' : ''}`}>
       {groupedByDayDesc.map(([dateKey, dayTransactions]) => {
         const balEntry = dayBalances[dateKey];
-        const dayTotal = balEntry?.dayTotal ?? 0;
         const endOfDayBalance = balEntry?.balance ?? 0;
+
+        // For credit cards, calculate day total from transactions directly
+        const dayTotal = isCreditCard
+          ? dayTransactions.reduce((sum, tx) => sum + tx.amount, 0)
+          : (balEntry?.dayTotal ?? 0);
 
         return (
           <div key={dateKey}>
-            <div className="flex items-center justify-between px-3 py-1.5 bg-white/10 rounded-t-lg border-b border-white/10">
-              <span className="text-white/70 text-xs font-semibold">{formatDate(dateKey)}</span>
+            <div className={`flex items-center justify-between px-3 py-1.5 rounded-t-lg border-b ${isCreditCard ? 'bg-white/[0.04] border-white/[0.06]' : 'bg-white/10 border-white/10'}`}>
+              <span className={`text-xs font-semibold ${isCreditCard ? 'text-white/50' : 'text-white/70'}`}>{formatDate(dateKey)}</span>
               <div className="flex items-center gap-3">
-                <span className={`text-xs font-semibold ${dayTotal >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {dayTotal >= 0 ? '+' : ''}{formatCurrency(Math.abs(dayTotal), accountCurrency)}
-                </span>
+                {isCreditCard ? (
+                  <span className="text-xs font-semibold text-orange-400/80">
+                    {formatCurrency(dayTotal, accountCurrency)}
+                  </span>
+                ) : (
+                  <span className={`text-xs font-semibold ${dayTotal >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {dayTotal >= 0 ? '+' : ''}{formatCurrency(Math.abs(dayTotal), accountCurrency)}
+                  </span>
+                )}
                 {!isCreditCard && (
                   <span className={`text-xs font-medium ${endOfDayBalance >= 0 ? 'text-white/60' : 'text-red-300'}`}>
                     Saldo: {formatCurrency(endOfDayBalance, accountCurrency)}
@@ -160,7 +170,7 @@ function TransactionHistory({
                 )}
               </div>
             </div>
-            <div className="space-y-1 mt-1">
+            <div className="space-y-0.5 mt-0.5">
               {dayTransactions.map((tx) => {
                 const status = statusConfig[tx.status] || statusConfig.PLANNED;
                 const isExpense = tx.type === 'EXPENSE';
@@ -168,10 +178,10 @@ function TransactionHistory({
                 return (
                   <div
                     key={tx.id}
-                    className="flex items-center justify-between py-2 px-3 bg-white/5 rounded-lg"
+                    className={`flex items-center justify-between py-1.5 px-3 rounded-lg ${isCreditCard ? 'bg-white/[0.02] hover:bg-white/[0.05]' : 'bg-white/5'}`}
                   >
                     <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm truncate">{tx.description}</p>
+                      <p className={`truncate ${isCreditCard ? 'text-white/80 text-xs' : 'text-white text-sm'}`}>{tx.description}</p>
                       <div className="flex items-center gap-2 text-white/40 text-xs">
                         {tx.categoryId && categoryMap[tx.categoryId] && (
                           <span className="truncate">{categoryMap[tx.categoryId]}</span>
@@ -180,7 +190,7 @@ function TransactionHistory({
                     </div>
                     <div className="flex items-center gap-2 ml-3 shrink-0">
                       <div className="text-right">
-                        <p className={`text-sm font-semibold ${isExpense ? 'text-red-400' : isIncome ? 'text-emerald-400' : 'text-blue-400'}`}>
+                        <p className={`font-semibold ${isCreditCard ? 'text-xs' : 'text-sm'} ${isExpense ? 'text-red-400' : isIncome ? 'text-emerald-400' : 'text-blue-400'}`}>
                           {isExpense ? '-' : isIncome ? '+' : ''}{formatCurrency(tx.amount, tx.currency)}
                         </p>
                       </div>
