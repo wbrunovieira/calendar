@@ -340,9 +340,20 @@ export default function ContasPage() {
     [cryptoAccounts],
   );
 
-  // Sub-assets linked to an exchange/wallet (shown inside parent card)
+  // Sub-assets linked to a parent account (shown inside parent card)
   const getSubAssets = (parentId: string) =>
     filteredAccounts.filter((a) => a.linkedAccountId === parentId);
+
+  // IDs of accounts that have linked investments (broker accounts like Clear)
+  const brokerAccountIds = useMemo(() => {
+    const parentIds = new Set<string>();
+    filteredAccounts.forEach((a) => {
+      if (a.type === 'INVESTMENT' && a.linkedAccountId) {
+        parentIds.add(a.linkedAccountId);
+      }
+    });
+    return parentIds;
+  }, [filteredAccounts]);
 
   const regularAccounts = useMemo(
     () => filteredAccounts.filter((a) => a.type !== 'INVESTMENT' && a.type !== 'EXCHANGE' && a.type !== 'WALLET'),
@@ -350,8 +361,11 @@ export default function ContasPage() {
   );
 
   const investmentAccounts = useMemo(
-    () => filteredAccounts.filter((a) => a.type === 'INVESTMENT' && (!a.linkedAccountId || !cryptoAccountIds.has(a.linkedAccountId))),
-    [filteredAccounts, cryptoAccountIds],
+    () => filteredAccounts.filter((a) =>
+      a.type === 'INVESTMENT'
+      && (!a.linkedAccountId || (!cryptoAccountIds.has(a.linkedAccountId) && !brokerAccountIds.has(a.linkedAccountId)))
+    ),
+    [filteredAccounts, cryptoAccountIds, brokerAccountIds],
   );
 
   const totalsByCurrency = useMemo(() => {
@@ -937,6 +951,12 @@ export default function ContasPage() {
                       );
                     }
 
+                    const isBroker = brokerAccountIds.has(account.id);
+                    const subInvestments = isBroker ? getSubAssets(account.id) : [];
+                    const brokerTotalBrl = isBroker
+                      ? account.currentBalance + subInvestments.reduce((sum, s) => sum + s.currentBalance, 0)
+                      : account.currentBalance;
+
                     return (
                       <SortableItem key={account.id} id={account.id}>
                         {({ listeners, attributes }) => (
@@ -959,19 +979,70 @@ export default function ContasPage() {
                                   <span className="text-2xl">{account.icon || '🏦'}</span>
                                   <div>
                                     <p className="text-white font-semibold text-sm">{account.name}</p>
-                                    <p className="text-white/50 text-xs">{account.bankName || account.type}</p>
+                                    <div className="flex items-center gap-2">
+                                      <p className="text-white/50 text-xs">{account.bankName || account.type}</p>
+                                      {isBroker && subInvestments.length > 0 && (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-400">
+                                          {subInvestments.length} {subInvestments.length === 1 ? 'ativo' : 'ativos'}
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-3">
                                   <div className="text-right">
                                     <p className="text-white/80 text-sm font-semibold">
-                                      {formatCurrency(account.currentBalance, account.currency)}
+                                      {formatCurrency(isBroker ? brokerTotalBrl : account.currentBalance, account.currency)}
                                     </p>
-                                    <p className="text-white/50 text-xs">Saldo atual</p>
+                                    <p className="text-white/50 text-xs">
+                                      {isBroker ? 'Total' : 'Saldo atual'}
+                                    </p>
                                   </div>
                                   <PencilButton account={account} />
                                 </div>
                               </div>
+                              {/* Sub-investments inside broker card */}
+                              {isBroker && subInvestments.length > 0 && (
+                                <div className="mt-3 pt-3 border-t border-white/10 space-y-2">
+                                  {/* Saldo em conta */}
+                                  {account.currentBalance > 0 && (
+                                    <div className="px-2 py-2 rounded-lg bg-white/[0.04]">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-emerald-400 text-xs">●</span>
+                                          <span className="text-white/80 text-sm font-medium">Saldo em conta</span>
+                                        </div>
+                                        <span className="text-white/80 text-sm font-medium">{formatCurrency(account.currentBalance)}</span>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {subInvestments.map((inv) => (
+                                    <div key={inv.id} className="px-2 py-2 rounded-lg bg-white/[0.04]">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-purple-400 text-xs">●</span>
+                                          <span className="text-white/80 text-sm font-medium">{inv.name}</span>
+                                          {inv.numberOfQuotas != null && (
+                                            <span className="text-white/40 text-xs">{inv.numberOfQuotas} cotas</span>
+                                          )}
+                                          {inv.quotaPrice != null && (
+                                            <span className="text-white/30 text-xs">@ {formatCurrency(inv.quotaPrice)}</span>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                          <span className="text-white/80 text-sm font-medium">{formatCurrency(inv.currentBalance, inv.currency)}</span>
+                                          <button
+                                            onClick={(e) => { e.stopPropagation(); openEditModal(inv); }}
+                                            className="text-white/30 hover:text-white/70 text-xs transition-colors"
+                                          >
+                                            Editar
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                             {isExpanded && selectedProfileId && (
                               <div className="bg-white/[0.03] border border-white/10 border-t-0 rounded-b-xl p-4">
@@ -990,8 +1061,9 @@ export default function ContasPage() {
                                   profileId={selectedProfileId}
                                   categories={categories}
                                   accountCurrency={account.currency}
+                                  includeAsDestination={isBroker}
                                   onEdit={handleEditTransaction}
-                                    onDelete={handleDeleteTransaction}
+                                  onDelete={handleDeleteTransaction}
                                 />
                               </div>
                             )}
