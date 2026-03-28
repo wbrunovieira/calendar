@@ -48,6 +48,7 @@ function TransactionHistory({
   selectedInvoiceId,
   accountCurrency = 'BRL',
   onEdit,
+  onDelete,
 }: {
   accountId: string;
   profileId: string;
@@ -55,6 +56,7 @@ function TransactionHistory({
   selectedInvoiceId?: string;
   accountCurrency?: string;
   onEdit?: (tx: Transaction) => void;
+  onDelete?: (tx: Transaction) => void;
 }) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [dayBalances, setDayBalances] = useState<Record<string, { balance: number; dayTotal: number }>>({});
@@ -190,6 +192,22 @@ function TransactionHistory({
                         >
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                        </button>
+                      )}
+                      {onDelete && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(`Excluir "${tx.description}"?`)) {
+                              onDelete(tx);
+                            }
+                          }}
+                          className="text-white/30 hover:text-red-400 transition-colors p-1"
+                          title="Excluir lançamento"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
                         </button>
                       )}
@@ -586,6 +604,24 @@ export default function ContasPage() {
     setIsTransactionFormOpen(true);
   };
 
+  const handleDeleteTransaction = async (tx: Transaction) => {
+    try {
+      const response = await fetch(`${API_BASE}/transactions/${tx.id}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        throw new Error('Erro ao excluir transacao');
+      }
+      await fetchBankAccounts();
+      const currentExpanded = expandedAccountId;
+      setExpandedAccountId(null);
+      setTimeout(() => setExpandedAccountId(currentExpanded), 50);
+    } catch (error) {
+      console.error('Erro ao excluir transacao:', error);
+      alert('Erro ao excluir transacao');
+    }
+  };
+
   const openEditModal = (account: BankAccount) => {
     setEditingBankAccount(account);
     setIsBankAccountModalOpen(true);
@@ -801,6 +837,7 @@ export default function ContasPage() {
                                     selectedInvoiceId={selectedInvoiceByAccount[account.id] || ''}
                                     accountCurrency={account.currency}
                                     onEdit={handleEditTransaction}
+                                    onDelete={handleDeleteTransaction}
                                   />
                                 </div>
                               )}
@@ -864,6 +901,7 @@ export default function ContasPage() {
                                   categories={categories}
                                   accountCurrency={account.currency}
                                   onEdit={handleEditTransaction}
+                                    onDelete={handleDeleteTransaction}
                                 />
                               </div>
                             )}
@@ -944,6 +982,7 @@ export default function ContasPage() {
                                     categories={categories}
                                     accountCurrency={account.currency}
                                     onEdit={handleEditTransaction}
+                                    onDelete={handleDeleteTransaction}
                                   />
                                 </div>
                               )}
@@ -1032,6 +1071,7 @@ export default function ContasPage() {
                                     categories={categories}
                                     accountCurrency={account.currency}
                                     onEdit={handleEditTransaction}
+                                    onDelete={handleDeleteTransaction}
                                   />
                                 </div>
                               )}
