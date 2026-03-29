@@ -459,6 +459,10 @@ func RunMigrations(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_crypto_purchases_account ON finance.crypto_purchases(bank_account_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_crypto_purchases_profile ON finance.crypto_purchases(profile_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_crypto_purchases_asset ON finance.crypto_purchases(asset)`,
+		// Migration: Add sold_quantity and strategy columns to crypto_purchases
+		`ALTER TABLE finance.crypto_purchases ADD COLUMN IF NOT EXISTS sold_quantity DECIMAL(20, 10) NOT NULL DEFAULT 0`,
+		`ALTER TABLE finance.crypto_purchases ADD COLUMN IF NOT EXISTS strategy VARCHAR(50) NOT NULL DEFAULT 'manual'`,
+		`CREATE INDEX IF NOT EXISTS idx_crypto_purchases_strategy ON finance.crypto_purchases(strategy)`,
 	}
 
 	for i, migration := range migrations {

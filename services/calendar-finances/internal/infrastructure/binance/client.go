@@ -37,6 +37,7 @@ type AccountInfo struct {
 
 type Trade struct {
 	ID              int64  `json:"id"`
+	OrderID         int64  `json:"orderId"`
 	Symbol          string `json:"symbol"`
 	Price           string `json:"price"`
 	Qty             string `json:"qty"`
@@ -45,6 +46,13 @@ type Trade struct {
 	CommissionAsset string `json:"commissionAsset"`
 	Time            int64  `json:"time"`
 	IsBuyer         bool   `json:"isBuyer"`
+}
+
+type Order struct {
+	OrderID       int64  `json:"orderId"`
+	ClientOrderID string `json:"clientOrderId"`
+	Symbol        string `json:"symbol"`
+	Status        string `json:"status"`
 }
 
 type CryptoPrice struct {
@@ -228,6 +236,38 @@ func (c *Client) GetMyTrades(symbol string) ([]Trade, error) {
 		return nil, fmt.Errorf("failed to decode trades: %w", err)
 	}
 	return trades, nil
+}
+
+// GetOrder fetches order details to retrieve clientOrderId (authenticated)
+func (c *Client) GetOrder(symbol string, orderID int64) (*Order, error) {
+	timestamp := time.Now().UnixMilli()
+	queryString := fmt.Sprintf("symbol=%s&orderId=%d&timestamp=%d", symbol, orderID, timestamp)
+
+	signature := c.sign(queryString)
+	url := fmt.Sprintf("%s/api/v3/order?%s&signature=%s", baseURL, queryString, signature)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-MBX-APIKEY", c.apiKey)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch order: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("binance order API error: %s", string(body))
+	}
+
+	var order Order
+	if err := json.NewDecoder(resp.Body).Decode(&order); err != nil {
+		return nil, fmt.Errorf("failed to decode order: %w", err)
+	}
+	return &order, nil
 }
 
 func (c *Client) sign(data string) string {

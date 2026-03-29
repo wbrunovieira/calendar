@@ -176,6 +176,7 @@ func main() {
 		syncTradesUC = usecases.NewSyncTradesUseCase(
 			binanceClient, bankAccountRepo, transactionRepo, cryptoPurchaseRepo,
 			[]string{"SOLBRL", "ETHBRL", "BTCBRL", "USDCBRL", "XRPBRL", "BNBBRL"},
+			"grid-bot-1",
 		)
 		cryptoHandler.SetSyncTradesUseCase(syncTradesUC)
 

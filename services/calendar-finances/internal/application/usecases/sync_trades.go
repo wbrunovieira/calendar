@@ -20,6 +20,7 @@ type SyncTradesUseCase struct {
 	transactionRepo  transaction.Repository
 	purchaseRepo     cryptopurchase.Repository
 	symbols          []string // e.g., ["SOLBRL"]
+	strategy         string   // e.g., "grid-bot-1"
 }
 
 type SyncTradesResult struct {
@@ -35,13 +36,18 @@ func NewSyncTradesUseCase(
 	transactionRepo transaction.Repository,
 	purchaseRepo cryptopurchase.Repository,
 	symbols []string,
+	strategy string,
 ) *SyncTradesUseCase {
+	if strategy == "" {
+		strategy = "manual"
+	}
 	return &SyncTradesUseCase{
 		binanceClient:   client,
 		accountRepo:     accountRepo,
 		transactionRepo: transactionRepo,
 		purchaseRepo:    purchaseRepo,
 		symbols:         symbols,
+		strategy:        strategy,
 	}
 }
 
@@ -80,6 +86,9 @@ func (uc *SyncTradesUseCase) Execute(profileID string) (*SyncTradesResult, error
 		}
 	}
 
+	// Cache orderId -> strategy to avoid duplicate API calls
+	orderStrategyCache := map[int64]string{}
+
 	for _, symbol := range uc.symbols {
 		trades, err := uc.binanceClient.GetMyTrades(symbol)
 		if err != nil {
@@ -103,6 +112,21 @@ func (uc *SyncTradesUseCase) Execute(profileID string) (*SyncTradesResult, error
 				continue
 			}
 
+			// Resolve strategy from clientOrderId via order lookup
+			strategy := uc.strategy // fallback to configured strategy
+			if cachedStrategy, ok := orderStrategyCache[trade.OrderID]; ok {
+				strategy = cachedStrategy
+			} else if trade.OrderID > 0 {
+				order, err := uc.binanceClient.GetOrder(symbol, trade.OrderID)
+				if err == nil && order.ClientOrderID != "" {
+					parsed := parseStrategyFromClientOrderID(order.ClientOrderID)
+					orderStrategyCache[trade.OrderID] = parsed
+					strategy = parsed
+				} else {
+					orderStrategyCache[trade.OrderID] = strategy
+				}
+			}
+
 			qty, _ := strconv.ParseFloat(trade.Qty, 64)
 			price, _ := strconv.ParseFloat(trade.Price, 64)
 			total, _ := strconv.ParseFloat(trade.QuoteQty, 64)
@@ -111,7 +135,7 @@ func (uc *SyncTradesUseCase) Execute(profileID string) (*SyncTradesResult, error
 			if trade.IsBuyer {
 				// BUY: expense on exchange account (BRL out), record crypto purchase
 				err := uc.recordBuy(profileID, exchangeAccount, subAccountMap[asset], asset, quote,
-					externalID, qty, price, total, tradeTime)
+					externalID, qty, price, total, tradeTime, strategy)
 				if err != nil {
 					log.Printf("Failed to record buy trade %d: %v", trade.ID, err)
 					result.Errors++
@@ -121,7 +145,7 @@ func (uc *SyncTradesUseCase) Execute(profileID string) (*SyncTradesResult, error
 			} else {
 				// SELL: income on exchange account (BRL in)
 				err := uc.recordSell(profileID, exchangeAccount, subAccountMap[asset], asset, quote,
-					externalID, qty, price, total, tradeTime)
+					externalID, qty, price, total, tradeTime, strategy)
 				if err != nil {
 					log.Printf("Failed to record sell trade %d: %v", trade.ID, err)
 					result.Errors++
@@ -140,7 +164,7 @@ func (uc *SyncTradesUseCase) Execute(profileID string) (*SyncTradesResult, error
 
 func (uc *SyncTradesUseCase) recordBuy(
 	profileID string, exchange *bankaccount.BankAccount, subAccount *bankaccount.BankAccount,
-	asset, quote, externalID string, qty, price, total float64, occurredOn time.Time,
+	asset, quote, externalID string, qty, price, total float64, occurredOn time.Time, strategy string,
 ) error {
 	// Create EXPENSE transaction on exchange account
 	tx := &transaction.Transaction{
@@ -150,11 +174,11 @@ func (uc *SyncTradesUseCase) recordBuy(
 		Status:        transaction.StatusConfirmed,
 		Amount:        math.Round(total*100) / 100,
 		Currency:      quote,
-		Description:   fmt.Sprintf("Compra %s (bot)", asset),
+		Description:   fmt.Sprintf("Compra %s (%s)", asset, strategy),
 		Notes:         strPtrHelper(fmt.Sprintf("%.8f %s @ %s %s | Trade ID: %s", qty, asset, quote, formatPrice(price), externalID)),
 		OccurredOn:    occurredOn,
 		ExternalID:    &externalID,
-		Tags:          []string{"crypto", "bot", strings.ToLower(asset)},
+		Tags:          []string{"crypto", strings.ToLower(asset), "strategy:" + strategy},
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
 	}
@@ -185,7 +209,8 @@ func (uc *SyncTradesUseCase) recordBuy(
 	cp, err := cryptopurchase.NewCryptoPurchase(
 		tx.ID, exchange.ID, profileID, asset,
 		qty, priceUSD, exchangeRate, occurredOn,
-		fmt.Sprintf("Bot buy @ %s %s", quote, formatPrice(price)),
+		fmt.Sprintf("%s buy @ %s %s", strategy, quote, formatPrice(price)),
+		strategy,
 	)
 	if err != nil {
 		return fmt.Errorf("create crypto purchase: %w", err)
@@ -204,7 +229,7 @@ func (uc *SyncTradesUseCase) recordBuy(
 
 func (uc *SyncTradesUseCase) recordSell(
 	profileID string, exchange *bankaccount.BankAccount, subAccount *bankaccount.BankAccount,
-	asset, quote, externalID string, qty, price, total float64, occurredOn time.Time,
+	asset, quote, externalID string, qty, price, total float64, occurredOn time.Time, strategy string,
 ) error {
 	// Create INCOME transaction on exchange account
 	tx := &transaction.Transaction{
@@ -214,11 +239,11 @@ func (uc *SyncTradesUseCase) recordSell(
 		Status:        transaction.StatusConfirmed,
 		Amount:        math.Round(total*100) / 100,
 		Currency:      quote,
-		Description:   fmt.Sprintf("Venda %s (bot)", asset),
+		Description:   fmt.Sprintf("Venda %s (%s)", asset, strategy),
 		Notes:         strPtrHelper(fmt.Sprintf("%.8f %s @ %s %s | Trade ID: %s", qty, asset, quote, formatPrice(price), externalID)),
 		OccurredOn:    occurredOn,
 		ExternalID:    &externalID,
-		Tags:          []string{"crypto", "bot", strings.ToLower(asset)},
+		Tags:          []string{"crypto", strings.ToLower(asset), "strategy:" + strategy},
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
 	}
@@ -281,6 +306,52 @@ func parseSymbol(symbol string) (string, string) {
 		}
 	}
 	return "", ""
+}
+
+// parseStrategyFromClientOrderID extracts the bot/strategy name from a Binance clientOrderId.
+// Format: {BOT_ID}-{PAIR}-{TIMESTAMP_MS} e.g. "MACross1-SOLBRL-1743271234567" -> "MACross1"
+// Returns "manual" if the format doesn't match (web/app orders, empty, etc.)
+func parseStrategyFromClientOrderID(clientOrderID string) string {
+	if clientOrderID == "" {
+		return "manual"
+	}
+
+	// Known non-bot prefixes from Binance apps
+	for _, prefix := range []string{"web_", "android_", "ios_", "x-"} {
+		if strings.HasPrefix(strings.ToLower(clientOrderID), prefix) {
+			return "manual"
+		}
+	}
+
+	// Format: {BOT_ID}-{PAIR}-{TIMESTAMP_MS}
+	// The timestamp is the last segment, pair is second-to-last
+	// Bot ID is everything before that, and may contain hyphens itself
+	parts := strings.Split(clientOrderID, "-")
+	if len(parts) < 3 {
+		return "manual"
+	}
+
+	// Last part must be a numeric timestamp
+	timestamp := parts[len(parts)-1]
+	isNumeric := len(timestamp) > 0
+	for _, c := range timestamp {
+		if c < '0' || c > '9' {
+			isNumeric = false
+			break
+		}
+	}
+	if !isNumeric {
+		return "manual"
+	}
+
+	// Bot ID is everything before the pair and timestamp
+	// pair is parts[len-2], timestamp is parts[len-1]
+	botParts := parts[:len(parts)-2]
+	if len(botParts) == 0 {
+		return "manual"
+	}
+
+	return strings.Join(botParts, "-")
 }
 
 func formatPrice(p float64) string {

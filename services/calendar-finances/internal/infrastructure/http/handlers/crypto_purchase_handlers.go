@@ -28,6 +28,7 @@ type CreateCryptoPurchaseInput struct {
 	ExchangeRate  float64 `json:"exchangeRate"`
 	OccurredOn    string  `json:"occurredOn"`
 	Notes         string  `json:"notes"`
+	Strategy      string  `json:"strategy"`
 }
 
 func (h *CryptoPurchaseHandlers) Create(w http.ResponseWriter, r *http.Request) {
@@ -46,6 +47,7 @@ func (h *CryptoPurchaseHandlers) Create(w http.ResponseWriter, r *http.Request) 
 	cp, err := cryptopurchase.NewCryptoPurchase(
 		input.TransactionID, input.BankAccountID, input.ProfileID, input.Asset,
 		input.Quantity, input.PriceUSD, input.ExchangeRate, occurredOn, input.Notes,
+		input.Strategy,
 	)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
