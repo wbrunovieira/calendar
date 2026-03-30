@@ -463,21 +463,6 @@ func RunMigrations(db *sql.DB) error {
 		`ALTER TABLE finance.crypto_purchases ADD COLUMN IF NOT EXISTS sold_quantity DECIMAL(20, 10) NOT NULL DEFAULT 0`,
 		`ALTER TABLE finance.crypto_purchases ADD COLUMN IF NOT EXISTS strategy VARCHAR(50) NOT NULL DEFAULT 'manual'`,
 		`CREATE INDEX IF NOT EXISTS idx_crypto_purchases_strategy ON finance.crypto_purchases(strategy)`,
-		// Migration: Create strategy_allocations table for tracking bot budgets
-		`CREATE TABLE IF NOT EXISTS finance.strategy_allocations (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			profile_id UUID NOT NULL REFERENCES finance.profiles(id),
-			strategy VARCHAR(50) NOT NULL,
-			transaction_id UUID NOT NULL REFERENCES finance.transactions(id) ON DELETE CASCADE,
-			amount DECIMAL(20, 2) NOT NULL,
-			status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
-			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_strategy_allocations_profile ON finance.strategy_allocations(profile_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_strategy_allocations_strategy ON finance.strategy_allocations(strategy)`,
-		`CREATE INDEX IF NOT EXISTS idx_strategy_allocations_status ON finance.strategy_allocations(status)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_strategy_allocations_tx ON finance.strategy_allocations(transaction_id)`,
 	}
 
 	for i, migration := range migrations {
