@@ -263,6 +263,21 @@ func main() {
 	apiRouter.HandleFunc("/crypto/purchases", cryptoPurchaseHandler.List).Methods("GET")
 	apiRouter.HandleFunc("/crypto/purchases", cryptoPurchaseHandler.Create).Methods("POST")
 
+	// Strategy allocation routes
+	allocationRepo := persistence.NewStrategyAllocationRepository(db)
+	detectAllocationsUC := usecases.NewDetectPendingAllocationsUseCase(allocationRepo, transactionRepo, bankAccountRepo, "MACross1")
+	approveAllocationUC := usecases.NewApproveAllocationUseCase(allocationRepo)
+	declineAllocationUC := usecases.NewDeclineAllocationUseCase(allocationRepo)
+	strategySummaryUC := usecases.NewGetStrategySummaryUseCase(allocationRepo)
+	allocationHandler := httpHandlers.NewAllocationHandlers(allocationRepo, detectAllocationsUC, approveAllocationUC, declineAllocationUC, strategySummaryUC)
+
+	apiRouter.HandleFunc("/allocations", allocationHandler.List).Methods("GET")
+	apiRouter.HandleFunc("/allocations/pending", allocationHandler.ListPending).Methods("GET")
+	apiRouter.HandleFunc("/allocations/detect", allocationHandler.Detect).Methods("POST")
+	apiRouter.HandleFunc("/allocations/summary", allocationHandler.Summary).Methods("GET")
+	apiRouter.HandleFunc("/allocations/{id}/approve", allocationHandler.Approve).Methods("POST")
+	apiRouter.HandleFunc("/allocations/{id}/decline", allocationHandler.Decline).Methods("POST")
+
 	// CORS configuration
 	corsHandler := cors.New(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:3000", "http://localhost:3002", "http://localhost:3003", "https://finances.wbdigitalsolutions.com", "https://calendar.wbdigitalsolutions.com", "https://finances.app.localhost", "https://calendar.app.localhost"},
@@ -327,6 +342,14 @@ func main() {
 					result.NewBuys, result.NewSells, result.Skipped, result.Errors)
 			}
 
+			// Detect pending allocations after trade sync
+			detectResult, err := detectAllocationsUC.Execute(profileID)
+			if err != nil {
+				log.Printf("Allocation detection error: %v", err)
+			} else if detectResult.NewPending > 0 {
+				log.Printf("Allocation: %d new pending allocations detected", detectResult.NewPending)
+			}
+
 			ticker := time.NewTicker(30 * time.Minute)
 			defer ticker.Stop()
 			for range ticker.C {
@@ -338,6 +361,14 @@ func main() {
 				if result.NewBuys > 0 || result.NewSells > 0 {
 					log.Printf("Trade sync: %d buys, %d sells, %d skipped",
 						result.NewBuys, result.NewSells, result.Skipped)
+				}
+
+				// Detect pending allocations
+				detectResult, err := detectAllocationsUC.Execute(profileID)
+				if err != nil {
+					log.Printf("Allocation detection error: %v", err)
+				} else if detectResult.NewPending > 0 {
+					log.Printf("Allocation: %d new pending allocations detected", detectResult.NewPending)
 				}
 			}
 		}()
