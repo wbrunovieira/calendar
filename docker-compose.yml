@@ -110,6 +110,8 @@ services:
       - POSTGRES_DB=calendar_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./config/postgres/pg_hba.conf:/etc/pg_hba_custom.conf:ro
+    command: ["postgres", "-c", "hba_file=/etc/pg_hba_custom.conf"]
     networks:
       - calendar-network
 
