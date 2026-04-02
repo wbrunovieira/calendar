@@ -305,6 +305,18 @@ services:
       - calendar-network
     restart: unless-stopped
 
+  magic-formula:
+    build:
+      context: ./services/magic-formula
+      dockerfile: Dockerfile
+    container_name: magic-formula
+    logging: *default-logging
+    ports:
+      - "8000:8000"
+    networks:
+      - calendar-network
+    restart: unless-stopped
+
   # ── Auth Gateway (Authelia + Nginx) ─────────────────────
 
   authelia:
