@@ -12,6 +12,7 @@ import (
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/binance"
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/brapi"
 	httpHandlers "github.com/brunovieira/calendar-finances/internal/infrastructure/http/handlers"
+	"github.com/brunovieira/calendar-finances/internal/infrastructure/yahoo"
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/persistence"
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
@@ -276,6 +277,11 @@ func main() {
 	// Stock/FII routes (B3 via brapi.dev)
 	apiRouter.HandleFunc("/stocks/sync-prices", stockHandler.SyncPrices).Methods("POST")
 	apiRouter.HandleFunc("/stocks/sync-dividends", stockHandler.SyncDividends).Methods("POST")
+
+	// Benchmark routes (Yahoo Finance + CDI)
+	yahooClient := yahoo.NewClient()
+	benchmarkHandler := httpHandlers.NewBenchmarkHandler(yahooClient)
+	apiRouter.HandleFunc("/benchmarks/returns", benchmarkHandler.GetReturns()).Methods("GET")
 
 	// CORS configuration
 	corsHandler := cors.New(cors.Options{
