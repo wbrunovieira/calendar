@@ -1020,7 +1020,13 @@ export default function ContasPage() {
                                       </div>
                                     </div>
                                   )}
-                                  {subInvestments.map((inv) => (
+                                  {subInvestments.map((inv) => {
+                                    const valorization = inv.currentBalance - inv.initialBalance;
+                                    const valorizationPct = inv.initialBalance > 0
+                                      ? (valorization / inv.initialBalance) * 100
+                                      : 0;
+                                    const hasValorization = inv.initialBalance > 0 && inv.numberOfQuotas != null;
+                                    return (
                                     <div key={inv.id} className="px-2 py-2 rounded-lg bg-white/[0.04]">
                                       <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-2">
@@ -1043,8 +1049,19 @@ export default function ContasPage() {
                                           </button>
                                         </div>
                                       </div>
+                                      {hasValorization && (
+                                        <div className="flex items-center justify-between mt-1 px-6">
+                                          <span className="text-white/30 text-xs">
+                                            Investido: {formatCurrency(inv.initialBalance)}
+                                          </span>
+                                          <span className={`text-xs font-medium ${valorization >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                            {valorization >= 0 ? '+' : ''}{formatCurrency(valorization)} ({valorizationPct >= 0 ? '+' : ''}{valorizationPct.toFixed(2)}%)
+                                          </span>
+                                        </div>
+                                      )}
                                     </div>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
                               )}
                             </div>
