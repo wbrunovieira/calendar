@@ -118,6 +118,22 @@ services:
         limits:
           memory: 200M
 
+  magic-formula:
+    build:
+      context: ./services/magic-formula
+      dockerfile: Dockerfile
+    container_name: magic-formula
+    logging: *default-logging
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks:
+      - calendar-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 300M
+
   # ── Application frontends ───────────────────────────────────
 
   calendar-frontend:
@@ -156,8 +172,10 @@ services:
     environment:
       - NODE_ENV=production
       - TZ=America/Sao_Paulo
+      - MAGIC_FORMULA_URL=http://magic-formula:8000
     depends_on:
       - calendar-finances
+      - magic-formula
     networks:
       - calendar-network
     restart: unless-stopped

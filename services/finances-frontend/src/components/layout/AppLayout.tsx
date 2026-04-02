@@ -21,6 +21,7 @@ const navItems = [
   { href: '/goals', label: 'Metas' },
   { href: '/plan', label: 'Planejamento' },
   { href: '/visao', label: 'Visao Mensal' },
+  { href: '/mercado', label: 'Mercado' },
   { href: '/configuracoes', label: 'Configuracoes' },
 ];
 
