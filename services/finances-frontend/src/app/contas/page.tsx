@@ -356,8 +356,11 @@ export default function ContasPage() {
   }, [filteredAccounts]);
 
   const regularAccounts = useMemo(
-    () => filteredAccounts.filter((a) => a.type !== 'INVESTMENT' && a.type !== 'EXCHANGE' && a.type !== 'WALLET'),
-    [filteredAccounts],
+    () => filteredAccounts.filter((a) =>
+      (a.type !== 'INVESTMENT' && a.type !== 'EXCHANGE' && a.type !== 'WALLET')
+      || brokerAccountIds.has(a.id) // Broker accounts (e.g., Clear) shown here even if INVESTMENT
+    ),
+    [filteredAccounts, brokerAccountIds],
   );
 
   const investmentAccounts = useMemo(
