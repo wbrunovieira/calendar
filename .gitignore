@@ -149,3 +149,4 @@ config/authelia/users_database.yml
 
 # Added by ggshield
 .cache_ggshield
+services/calendar-finances/api

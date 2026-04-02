@@ -10,6 +10,7 @@ import (
 	"github.com/brunovieira/calendar-finances/internal/database"
 	"github.com/brunovieira/calendar-finances/internal/handlers"
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/binance"
+	"github.com/brunovieira/calendar-finances/internal/infrastructure/brapi"
 	httpHandlers "github.com/brunovieira/calendar-finances/internal/infrastructure/http/handlers"
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/persistence"
 	"github.com/gorilla/mux"
@@ -185,6 +186,15 @@ func main() {
 		cryptoPurchaseHandler = httpHandlers.NewCryptoPurchaseHandlers(cryptoPurchaseRepo, nil)
 	}
 
+	// Initialize brapi.dev client for B3 stocks/FIIs
+	brapiToken := os.Getenv("BRAPI_TOKEN")
+	brapiClient := brapi.NewClient(brapiToken)
+	stockSyncUC := usecases.NewStockSyncUseCase(brapiClient, bankAccountRepo)
+	dividendSyncUC := usecases.NewDividendSyncUseCase(brapiClient, bankAccountRepo, transactionRepo)
+	stockHandler := httpHandlers.NewStockHandlers(stockSyncUC)
+	stockHandler.SetDividendUseCase(dividendSyncUC)
+	log.Println("✓ brapi.dev integration enabled (B3 stocks/FIIs)")
+
 	// API v1 routes
 	apiRouter := router.PathPrefix("/api/v1").Subrouter()
 
@@ -262,6 +272,10 @@ func main() {
 	}
 	apiRouter.HandleFunc("/crypto/purchases", cryptoPurchaseHandler.List).Methods("GET")
 	apiRouter.HandleFunc("/crypto/purchases", cryptoPurchaseHandler.Create).Methods("POST")
+
+	// Stock/FII routes (B3 via brapi.dev)
+	apiRouter.HandleFunc("/stocks/sync-prices", stockHandler.SyncPrices).Methods("POST")
+	apiRouter.HandleFunc("/stocks/sync-dividends", stockHandler.SyncDividends).Methods("POST")
 
 	// CORS configuration
 	corsHandler := cors.New(cors.Options{
@@ -342,6 +356,53 @@ func main() {
 			}
 		}()
 	}
+
+	// Background job: sync B3 stock/FII prices every hour and dividends daily
+	go func() {
+		profileID := os.Getenv("DEFAULT_PROFILE_ID")
+		if profileID == "" {
+			profileID = "259866ac-6f74-4f7f-98b3-9a4896fb6758"
+		}
+
+		// Run price sync at startup (after delay)
+		time.Sleep(10 * time.Second)
+		if result, err := stockSyncUC.Execute(profileID); err != nil {
+			log.Printf("Stock price sync startup error: %v", err)
+		} else if len(result.UpdatedAccounts) > 0 {
+			log.Printf("Stock price sync: updated %d accounts", len(result.UpdatedAccounts))
+		}
+
+		// Run dividend sync at startup
+		since := time.Now().AddDate(0, -3, 0)
+		if result, err := dividendSyncUC.Execute(profileID, since); err != nil {
+			log.Printf("Dividend sync startup error: %v", err)
+		} else if result.NewDividends > 0 {
+			log.Printf("Dividend sync: %d new dividends (R$%.2f)", result.NewDividends, result.TotalAmount)
+		}
+
+		priceTicker := time.NewTicker(1 * time.Hour)
+		dividendTicker := time.NewTicker(24 * time.Hour)
+		defer priceTicker.Stop()
+		defer dividendTicker.Stop()
+
+		for {
+			select {
+			case <-priceTicker.C:
+				if result, err := stockSyncUC.Execute(profileID); err != nil {
+					log.Printf("Stock price sync error: %v", err)
+				} else if len(result.UpdatedAccounts) > 0 {
+					log.Printf("Stock price sync: updated %d accounts", len(result.UpdatedAccounts))
+				}
+			case <-dividendTicker.C:
+				since := time.Now().AddDate(0, -3, 0)
+				if result, err := dividendSyncUC.Execute(profileID, since); err != nil {
+					log.Printf("Dividend sync error: %v", err)
+				} else if result.NewDividends > 0 {
+					log.Printf("Dividend sync: %d new dividends (R$%.2f)", result.NewDividends, result.TotalAmount)
+				}
+			}
+		}
+	}()
 
 	log.Printf("🚀 Calendar Finances API starting on port %s", port)
 	if err := server.ListenAndServe(); err != nil {
