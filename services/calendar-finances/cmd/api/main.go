@@ -357,7 +357,8 @@ func main() {
 		}()
 	}
 
-	// Background job: sync B3 stock/FII prices every hour and dividends daily
+	// Background job: sync B3 stock/FII prices every 2 hours and dividends daily
+	// Rate limit: 15k requests/month, 1 asset per request, data updates every 30min
 	go func() {
 		profileID := os.Getenv("DEFAULT_PROFILE_ID")
 		if profileID == "" {
@@ -380,7 +381,7 @@ func main() {
 			log.Printf("Dividend sync: %d new dividends (R$%.2f)", result.NewDividends, result.TotalAmount)
 		}
 
-		priceTicker := time.NewTicker(1 * time.Hour)
+		priceTicker := time.NewTicker(2 * time.Hour)
 		dividendTicker := time.NewTicker(24 * time.Hour)
 		defer priceTicker.Stop()
 		defer dividendTicker.Stop()

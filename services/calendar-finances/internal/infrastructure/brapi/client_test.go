@@ -45,16 +45,23 @@ func TestGetQuotes_SingleTicker(t *testing.T) {
 }
 
 func TestGetQuotes_MultipleTickers(t *testing.T) {
+	// Each ticker is now fetched individually (1 asset per request limit)
+	prices := map[string]float64{
+		"HGLG11": 158.50,
+		"KNCR11": 104.20,
+		"PETR4":  38.75,
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/quote/HGLG11,KNCR11,PETR4" {
-			t.Errorf("unexpected path: %s", r.URL.Path)
+		// Extract ticker from path like /api/quote/HGLG11
+		ticker := r.URL.Path[len("/api/quote/"):]
+		price, ok := prices[ticker]
+		if !ok {
+			t.Errorf("unexpected ticker: %s", ticker)
+			w.WriteHeader(404)
+			return
 		}
 		json.NewEncoder(w).Encode(QuoteResponse{
-			Results: []QuoteResult{
-				{Symbol: "HGLG11", RegularMarketPrice: 158.50},
-				{Symbol: "KNCR11", RegularMarketPrice: 104.20},
-				{Symbol: "PETR4", RegularMarketPrice: 38.75},
-			},
+			Results: []QuoteResult{{Symbol: ticker, RegularMarketPrice: price}},
 		})
 	}))
 	defer server.Close()
@@ -79,7 +86,7 @@ func TestGetQuotes_NoTickers(t *testing.T) {
 	}
 }
 
-func TestGetQuotes_APIError(t *testing.T) {
+func TestGetQuotes_APIError_ReturnsEmptyResults(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)
 		w.Write([]byte("rate limited"))
@@ -89,9 +96,13 @@ func TestGetQuotes_APIError(t *testing.T) {
 	client := NewClient("")
 	client.baseURL = server.URL
 
-	_, err := client.GetQuotes("PETR4")
-	if err == nil {
-		t.Fatal("expected error for API error response")
+	// With individual requests, failed tickers are skipped (logged), result is empty
+	quotes, err := client.GetQuotes("PETR4")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(quotes) != 0 {
+		t.Errorf("expected 0 quotes for failed request, got %d", len(quotes))
 	}
 }
 
