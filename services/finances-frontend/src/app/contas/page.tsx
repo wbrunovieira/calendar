@@ -366,6 +366,7 @@ export default function ContasPage() {
   const investmentAccounts = useMemo(
     () => filteredAccounts.filter((a) =>
       a.type === 'INVESTMENT'
+      && !brokerAccountIds.has(a.id) // Exclude broker parents (shown in regularAccounts)
       && (!a.linkedAccountId || (!cryptoAccountIds.has(a.linkedAccountId) && !brokerAccountIds.has(a.linkedAccountId)))
     ),
     [filteredAccounts, cryptoAccountIds, brokerAccountIds],
