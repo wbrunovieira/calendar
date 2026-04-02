@@ -65,7 +65,7 @@ export default function MercadoPage() {
   const [recommendationDate, setRecommendationDate] = useState('');
   const [backtest, setBacktest] = useState<BacktestData | null>(null);
   const [rankingHistory, setRankingHistory] = useState<RankingHistory | null>(null);
-  const [selectedTicker, setSelectedTicker] = useState('');
+  const [, setSelectedTicker] = useState('');
   const [searchTicker, setSearchTicker] = useState('');
   const [topN, setTopN] = useState(10);
   const [loading, setLoading] = useState(true);
@@ -456,16 +456,18 @@ export default function MercadoPage() {
                           dataKey="rank"
                           stroke="#f59e0b"
                           strokeWidth={2}
-                          dot={(props: { cx: number; cy: number; payload: { in_top10: boolean } }) => {
-                            const { cx, cy, payload } = props;
+                          dot={(props) => {
+                            const { cx, cy, payload } = props as { cx?: number; cy?: number; payload?: { in_top10?: boolean } };
+                            if (cx == null || cy == null) return <circle r={0} />;
+                            const inTop10 = payload?.in_top10 ?? false;
                             return (
                               <circle
                                 key={`${cx}-${cy}`}
                                 cx={cx}
                                 cy={cy}
-                                r={payload.in_top10 ? 5 : 3}
-                                fill={payload.in_top10 ? '#10b981' : '#f59e0b'}
-                                stroke={payload.in_top10 ? '#10b981' : '#f59e0b'}
+                                r={inTop10 ? 5 : 3}
+                                fill={inTop10 ? '#10b981' : '#f59e0b'}
+                                stroke={inTop10 ? '#10b981' : '#f59e0b'}
                                 strokeWidth={1}
                               />
                             );
@@ -510,7 +512,7 @@ export default function MercadoPage() {
                           tickFormatter={(v) => formatCurrency(v)}
                         />
                         <Tooltip
-                          formatter={(value: number) => [formatCurrency(value), 'Preco']}
+                          formatter={(value) => [formatCurrency(Number(value)), 'Preco']}
                           labelStyle={{ color: '#94a3b8' }}
                           contentStyle={{
                             backgroundColor: '#1e293b',
