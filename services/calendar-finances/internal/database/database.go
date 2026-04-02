@@ -463,6 +463,38 @@ func RunMigrations(db *sql.DB) error {
 		`ALTER TABLE finance.crypto_purchases ADD COLUMN IF NOT EXISTS sold_quantity DECIMAL(20, 10) NOT NULL DEFAULT 0`,
 		`ALTER TABLE finance.crypto_purchases ADD COLUMN IF NOT EXISTS strategy VARCHAR(50) NOT NULL DEFAULT 'manual'`,
 		`CREATE INDEX IF NOT EXISTS idx_crypto_purchases_strategy ON finance.crypto_purchases(strategy)`,
+
+		// Migration: Update Clear broker account from CHECKING to INVESTMENT
+		// and fill investment_type/broker for its sub-accounts (FIIs)
+		`DO $$
+		DECLARE
+			clear_id UUID;
+		BEGIN
+			-- Find the Clear account (CHECKING type, name = 'Clear')
+			SELECT id INTO clear_id FROM finance.bank_accounts
+			WHERE name = 'Clear' AND type = 'CHECKING' LIMIT 1;
+
+			IF clear_id IS NOT NULL THEN
+				-- Change Clear from CHECKING to INVESTMENT (broker account)
+				UPDATE finance.bank_accounts
+				SET type = 'INVESTMENT', broker = 'Clear', updated_at = NOW()
+				WHERE id = clear_id;
+
+				-- Set investment_type = FII for sub-accounts with ticker ending in 11
+				UPDATE finance.bank_accounts
+				SET investment_type = 'FII', yield_type = 'VARIABLE', broker = 'Clear', updated_at = NOW()
+				WHERE linked_account_id = clear_id
+				AND investment_type IS NULL
+				AND name ~ '^[A-Z]{4}11$';
+
+				-- Set investment_type = STOCKS for sub-accounts with ticker ending in 3-8
+				UPDATE finance.bank_accounts
+				SET investment_type = 'STOCKS', yield_type = 'VARIABLE', broker = 'Clear', updated_at = NOW()
+				WHERE linked_account_id = clear_id
+				AND investment_type IS NULL
+				AND name ~ '^[A-Z]{4}[3-8]$';
+			END IF;
+		END $$`,
 	}
 
 	for i, migration := range migrations {
