@@ -13,9 +13,14 @@ import {
   Legend,
   AreaChart,
   Area,
+  BarChart,
+  Bar,
 } from 'recharts';
+import { API_BASE } from '@/lib/api';
 
 const PROXY_BASE = '/api/magic-formula';
+
+type Tab = 'acoes' | 'fiis';
 
 interface Stock {
   rank: number;
@@ -46,6 +51,29 @@ interface RankingHistory {
   }>;
 }
 
+interface FIIMarketItem {
+  ticker: string;
+  segment: string;
+  currentPrice: number;
+  priceChange12M: number;
+  dividendYield: number;
+  dividends12M: number;
+  lastDividend: number;
+  lastDividendDate: string;
+}
+
+const SEGMENT_COLORS: Record<string, string> = {
+  Logistica: '#10b981',
+  Papel: '#3b82f6',
+  Shopping: '#f59e0b',
+  'Lajes Corporativas': '#8b5cf6',
+  Hibrido: '#ec4899',
+  Agro: '#84cc16',
+  'Fundo de Fundos': '#06b6d4',
+  Residencial: '#f97316',
+  Educacional: '#6366f1',
+};
+
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('pt-BR', {
     style: 'currency',
@@ -61,6 +89,7 @@ const formatVolume = (value: number) =>
   }).format(value);
 
 export default function MercadoPage() {
+  const [activeTab, setActiveTab] = useState<Tab>('acoes');
   const [stocks, setStocks] = useState<Stock[]>([]);
   const [recommendationDate, setRecommendationDate] = useState('');
   const [backtest, setBacktest] = useState<BacktestData | null>(null);
@@ -71,6 +100,12 @@ export default function MercadoPage() {
   const [loading, setLoading] = useState(true);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [error, setError] = useState('');
+
+  // FII state
+  const [fiis, setFiis] = useState<FIIMarketItem[]>([]);
+  const [loadingFiis, setLoadingFiis] = useState(false);
+  const [fiiSegmentFilter, setFiiSegmentFilter] = useState<string>('all');
+  const [fiiSortBy, setFiiSortBy] = useState<'dividendYield' | 'priceChange12M' | 'currentPrice'>('dividendYield');
 
   const loadRecommendations = useCallback(async () => {
     try {
@@ -118,6 +153,20 @@ export default function MercadoPage() {
     }
   }, []);
 
+  const loadFIIs = useCallback(async () => {
+    setLoadingFiis(true);
+    try {
+      const res = await fetch(`${API_BASE}/fiis/market`);
+      if (!res.ok) throw new Error('Falha ao carregar FIIs');
+      const json = await res.json();
+      setFiis(json.data || []);
+    } catch (e) {
+      console.warn('Erro FIIs:', e);
+    } finally {
+      setLoadingFiis(false);
+    }
+  }, []);
+
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -125,6 +174,28 @@ export default function MercadoPage() {
       setLoading(false);
     })();
   }, [loadRecommendations, loadBacktest]);
+
+  useEffect(() => {
+    if (activeTab === 'fiis' && fiis.length === 0 && !loadingFiis) {
+      loadFIIs();
+    }
+  }, [activeTab, fiis.length, loadingFiis, loadFIIs]);
+
+  const fiiSegments = [...new Set(fiis.map((f) => f.segment))].sort();
+
+  const filteredFiis = fiis
+    .filter((f) => fiiSegmentFilter === 'all' || f.segment === fiiSegmentFilter)
+    .sort((a, b) => {
+      if (fiiSortBy === 'dividendYield') return b.dividendYield - a.dividendYield;
+      if (fiiSortBy === 'priceChange12M') return b.priceChange12M - a.priceChange12M;
+      return a.currentPrice - b.currentPrice;
+    });
+
+  const fiiDYChartData = filteredFiis.map((f) => ({
+    ticker: f.ticker,
+    dy: f.dividendYield,
+    segment: f.segment,
+  }));
 
   const backtestChartData = backtest
     ? backtest.dates.map((date, i) => ({
@@ -172,11 +243,36 @@ export default function MercadoPage() {
         <div>
           <h1 className="text-3xl font-bold text-white">Analise de Mercado</h1>
           <p className="text-white/60 text-sm">
-            Recomendacoes baseadas na estrategia Magic Formula (Joel Greenblatt)
+            Acoes e Fundos Imobiliarios — dados e indicadores para analise
           </p>
         </div>
 
-        {loading ? (
+        {/* Tabs */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => setActiveTab('acoes')}
+            className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+              activeTab === 'acoes'
+                ? 'bg-emerald-500/20 border border-emerald-400/50 text-emerald-200'
+                : 'bg-white/5 border border-white/10 text-white/60 hover:bg-white/10'
+            }`}
+          >
+            Acoes (Magic Formula)
+          </button>
+          <button
+            onClick={() => setActiveTab('fiis')}
+            className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+              activeTab === 'fiis'
+                ? 'bg-blue-500/20 border border-blue-400/50 text-blue-200'
+                : 'bg-white/5 border border-white/10 text-white/60 hover:bg-white/10'
+            }`}
+          >
+            Fundos Imobiliarios (FIIs)
+          </button>
+        </div>
+
+        {/* ═══ ACOES TAB ═══ */}
+        {activeTab === 'acoes' && (loading ? (
           <div className="text-center py-12 text-white/60">Carregando dados do mercado...</div>
         ) : error && stocks.length === 0 ? (
           <div className="text-center py-12 text-rose-400">{error}</div>
@@ -565,7 +661,187 @@ export default function MercadoPage() {
               </div>
             </div>
           </>
-        )}
+        ))}
+
+        {/* ═══ FIIs TAB ═══ */}
+        {activeTab === 'fiis' && (loadingFiis ? (
+          <div className="text-center py-12 text-white/60">Carregando dados de FIIs do Yahoo Finance...</div>
+        ) : (
+          <>
+            {/* Filters */}
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+              <div className="flex flex-wrap items-center gap-6">
+                <div className="flex items-center gap-2">
+                  <span className="text-white/70 text-sm">Segmento:</span>
+                  <select
+                    value={fiiSegmentFilter}
+                    onChange={(e) => setFiiSegmentFilter(e.target.value)}
+                    className="bg-white/10 border border-white/20 rounded-lg px-3 py-1.5 text-white text-sm"
+                  >
+                    <option value="all" className="bg-gray-800">Todos</option>
+                    {fiiSegments.map((seg) => (
+                      <option key={seg} value={seg} className="bg-gray-800">{seg}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-white/70 text-sm">Ordenar:</span>
+                  <select
+                    value={fiiSortBy}
+                    onChange={(e) => setFiiSortBy(e.target.value as typeof fiiSortBy)}
+                    className="bg-white/10 border border-white/20 rounded-lg px-3 py-1.5 text-white text-sm"
+                  >
+                    <option value="dividendYield" className="bg-gray-800">Dividend Yield</option>
+                    <option value="priceChange12M" className="bg-gray-800">Valorizacao 12M</option>
+                    <option value="currentPrice" className="bg-gray-800">Preco</option>
+                  </select>
+                </div>
+                <span className="text-white/50 text-sm">{filteredFiis.length} FIIs</span>
+              </div>
+            </div>
+
+            {/* DY Chart */}
+            {fiiDYChartData.length > 0 && (
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
+                <h3 className="text-lg font-semibold text-white mb-2">Dividend Yield 12 Meses (%)</h3>
+                <p className="text-white/50 text-xs mb-4">Rendimento dos ultimos 12 meses baseado em dividendos pagos</p>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={fiiDYChartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                      <XAxis dataKey="ticker" tick={{ fill: '#94a3b8', fontSize: 10 }} angle={-45} textAnchor="end" height={60} />
+                      <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} tickFormatter={(v) => `${v}%`} />
+                      <Tooltip
+                        content={({ active, payload }) => {
+                          if (active && payload && payload.length) {
+                            const d = payload[0].payload;
+                            return (
+                              <div className="bg-gray-900/95 border border-white/20 rounded-lg p-3 shadow-xl">
+                                <p className="text-white font-semibold">{d.ticker}</p>
+                                <p className="text-white/60 text-xs">{d.segment}</p>
+                                <p className="text-blue-400 text-sm mt-1">DY: {d.dy.toFixed(2)}%</p>
+                              </div>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                      <Bar
+                        dataKey="dy"
+                        radius={[4, 4, 0, 0]}
+                        fill="#3b82f6"
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            {/* FII Table */}
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
+              <h3 className="text-lg font-semibold text-white mb-4">FIIs do Mercado</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-white/10">
+                      <th className="text-left text-white/60 pb-3 pr-4">Ticker</th>
+                      <th className="text-left text-white/60 pb-3 pr-4">Segmento</th>
+                      <th className="text-right text-white/60 pb-3 pr-4">Preco</th>
+                      <th className="text-right text-white/60 pb-3 pr-4">DY 12M</th>
+                      <th className="text-right text-white/60 pb-3 pr-4">Dividendos 12M</th>
+                      <th className="text-right text-white/60 pb-3 pr-4">Ult. Dividendo</th>
+                      <th className="text-right text-white/60 pb-3 pr-4">Data Ult. Div.</th>
+                      <th className="text-right text-white/60 pb-3">Var. 12M</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredFiis.map((fii) => (
+                      <tr key={fii.ticker} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                        <td className="py-3 pr-4">
+                          <span className="text-white font-semibold">{fii.ticker}</span>
+                        </td>
+                        <td className="py-3 pr-4">
+                          <span
+                            className="px-2 py-0.5 rounded-full text-xs font-medium"
+                            style={{
+                              backgroundColor: `${SEGMENT_COLORS[fii.segment] || '#64748b'}20`,
+                              color: SEGMENT_COLORS[fii.segment] || '#94a3b8',
+                              border: `1px solid ${SEGMENT_COLORS[fii.segment] || '#64748b'}40`,
+                            }}
+                          >
+                            {fii.segment}
+                          </span>
+                        </td>
+                        <td className="py-3 pr-4 text-right text-white/80">
+                          {formatCurrency(fii.currentPrice)}
+                        </td>
+                        <td className="py-3 pr-4 text-right">
+                          <span className={`font-semibold ${
+                            fii.dividendYield >= 10 ? 'text-emerald-400' :
+                            fii.dividendYield >= 7 ? 'text-blue-400' :
+                            'text-white/60'
+                          }`}>
+                            {fii.dividendYield.toFixed(2)}%
+                          </span>
+                        </td>
+                        <td className="py-3 pr-4 text-right text-white/70">
+                          {formatCurrency(fii.dividends12M)}
+                        </td>
+                        <td className="py-3 pr-4 text-right text-white/60">
+                          {formatCurrency(fii.lastDividend)}
+                        </td>
+                        <td className="py-3 pr-4 text-right text-white/50 text-xs">
+                          {fii.lastDividendDate || '-'}
+                        </td>
+                        <td className="py-3 text-right">
+                          <span className={`font-medium ${
+                            fii.priceChange12M >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                          }`}>
+                            {fii.priceChange12M >= 0 ? '+' : ''}{fii.priceChange12M.toFixed(2)}%
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* FII Info */}
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
+              <h3 className="text-lg font-semibold text-white mb-3">Sobre Fundos Imobiliarios</h3>
+              <div className="text-white/60 text-sm space-y-2">
+                <p>
+                  <span className="text-white/80 font-medium">FIIs</span> sao fundos que investem em imoveis ou
+                  titulos imobiliarios e distribuem rendimentos mensais (isentos de IR para pessoa fisica).
+                </p>
+                <div className="grid md:grid-cols-3 gap-4 mt-3">
+                  <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4">
+                    <p className="text-blue-300 font-semibold mb-1">Dividend Yield (DY)</p>
+                    <p className="text-white/50 text-xs">
+                      Rendimento anual em dividendos em relacao ao preco da cota.
+                      Acima de 8-10% e considerado atrativo.
+                    </p>
+                  </div>
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4">
+                    <p className="text-emerald-300 font-semibold mb-1">Tijolo vs Papel</p>
+                    <p className="text-white/50 text-xs">
+                      FIIs de tijolo investem em imoveis fisicos (galpoes, shoppings).
+                      FIIs de papel investem em CRIs e titulos imobiliarios.
+                    </p>
+                  </div>
+                  <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-4">
+                    <p className="text-purple-300 font-semibold mb-1">Valorizacao</p>
+                    <p className="text-white/50 text-xs">
+                      Alem dos dividendos, a cota pode valorizar ou desvalorizar.
+                      O retorno total = dividendos + valorizacao da cota.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        ))}
       </div>
     </AppLayout>
   );

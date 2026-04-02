@@ -283,6 +283,10 @@ func main() {
 	benchmarkHandler := httpHandlers.NewBenchmarkHandler(yahooClient)
 	apiRouter.HandleFunc("/benchmarks/returns", benchmarkHandler.GetReturns()).Methods("GET")
 
+	// FII market analysis routes
+	fiiMarketHandler := httpHandlers.NewFIIMarketHandler(yahooClient)
+	apiRouter.HandleFunc("/fiis/market", fiiMarketHandler.GetMarketFIIs()).Methods("GET")
+
 	// CORS configuration
 	corsHandler := cors.New(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:3000", "http://localhost:3002", "http://localhost:3003", "https://finances.wbdigitalsolutions.com", "https://calendar.wbdigitalsolutions.com", "https://finances.app.localhost", "https://calendar.app.localhost"},
