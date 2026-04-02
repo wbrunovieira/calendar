@@ -65,8 +65,8 @@ func (h *BenchmarkHandler) GetReturns() http.HandlerFunc {
 			resp.Ibovespa = &v
 		}
 
-		// IFIX (FII index)
-		if ifix, err := h.yahoo.GetReturn("IFIX.SA", from, to); err != nil {
+		// IFIX (FII index via XFIX11 ETF)
+		if ifix, err := h.yahoo.GetReturn("XFIX11.SA", from, to); err != nil {
 			log.Printf("benchmark: IFIX fetch failed: %v", err)
 		} else {
 			v := math.Round(ifix*100) / 100
