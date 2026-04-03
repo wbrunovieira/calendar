@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { API_BASE } from '@/lib/api';
+import { api } from '@/lib/api';
+import { getLocalDateString } from '@/utils/format';
 import type { BankAccount, Category, TransactionFormData } from '@/types/finances';
 
 interface QuickExpenseProps {
@@ -11,15 +12,6 @@ interface QuickExpenseProps {
   profiles: { id: string; name: string }[];
   onSave: (payload: TransactionFormData) => Promise<void> | void;
 }
-
-// Get local date in YYYY-MM-DD format (without timezone conversion)
-const getLocalDateString = () => {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
 
 export default function QuickExpense({ accounts, categories = [], defaultProfileId, profiles, onSave }: QuickExpenseProps) {
   const [selectedProfileId, setSelectedProfileId] = useState<string>(defaultProfileId);
@@ -60,13 +52,8 @@ export default function QuickExpense({ accounts, categories = [], defaultProfile
   const changeProfile = async (profileId: string) => {
     setSelectedProfileId(profileId);
     try {
-      const res = await fetch(`${API_BASE}/categories?profileId=${profileId}&type=EXPENSE`);
-      if (res.ok) {
-        const data = await res.json();
-        setLocalCategories(data.data || []);
-      } else {
-        setLocalCategories([]);
-      }
+      const data = await api.get<{ data: Category[] }>(`/categories?profileId=${profileId}&type=EXPENSE`);
+      setLocalCategories(data.data || []);
     } catch {
       setLocalCategories([]);
     }

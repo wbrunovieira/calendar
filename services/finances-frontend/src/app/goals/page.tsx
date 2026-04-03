@@ -2,26 +2,10 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import AppLayout, { useProfile } from '@/components/layout/AppLayout';
-import { API_BASE } from '@/lib/api';
+import { api } from '@/lib/api';
 import { useToast } from '@/components/ui/Toast';
+import { formatCurrency, parseLocalDate } from '@/utils/format';
 import type { Goal, GoalPriority, GoalStatus, Category } from '@/types/finances';
-
-const parseLocalDate = (value: string) => {
-  const datePart = value.split('T')[0];
-  const [year, month, day] = datePart.split('-').map(Number);
-  return new Date(year, month - 1, day);
-};
-
-const getLocalDateString = (date?: Date) => {
-  const d = date || new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-const formatCurrency = (value: number) =>
-  value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 const priorityLabel: Record<GoalPriority, string> = {
   HIGH: 'Alta',
@@ -84,11 +68,8 @@ export default function GoalsPage() {
     if (!selectedProfileId) return;
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/goals?profileId=${selectedProfileId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setGoals(data.data || []);
-      }
+      const data = await api.get<{ data: Goal[] }>(`/goals?profileId=${selectedProfileId}`);
+      setGoals(data.data || []);
     } catch (e) {
       console.warn('Erro ao carregar metas', e);
     } finally {
@@ -99,11 +80,8 @@ export default function GoalsPage() {
   const fetchCategories = useCallback(async () => {
     if (!selectedProfileId) return;
     try {
-      const res = await fetch(`${API_BASE}/categories?profileId=${selectedProfileId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setCategories(data.data || []);
-      }
+      const data = await api.get<{ data: Category[] }>(`/categories?profileId=${selectedProfileId}`);
+      setCategories(data.data || []);
     } catch (e) {
       console.warn('Erro ao carregar categorias', e);
     }
@@ -129,21 +107,16 @@ export default function GoalsPage() {
         categoryId: form.categoryId || undefined,
       };
 
-      const url = editingId ? `${API_BASE}/goals/${editingId}` : `${API_BASE}/goals`;
-      const method = editingId ? 'PUT' : 'POST';
-
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-
-      if (res.ok) {
-        setShowForm(false);
-        setEditingId(null);
-        setForm(emptyForm);
-        fetchGoals();
+      if (editingId) {
+        await api.put(`/goals/${editingId}`, body);
+      } else {
+        await api.post('/goals', body);
       }
+
+      setShowForm(false);
+      setEditingId(null);
+      setForm(emptyForm);
+      fetchGoals();
     } catch (e) {
       console.warn('Erro ao salvar meta', e);
     } finally {
@@ -169,7 +142,7 @@ export default function GoalsPage() {
     const ok = await confirm('Tem certeza que deseja excluir esta meta?');
     if (!ok) return;
     try {
-      await fetch(`${API_BASE}/goals/${id}`, { method: 'DELETE' });
+      await api.delete(`/goals/${id}`);
       fetchGoals();
       toast('Meta excluida com sucesso');
     } catch (e) {
@@ -180,11 +153,7 @@ export default function GoalsPage() {
 
   const handleStatusChange = async (id: string, status: GoalStatus) => {
     try {
-      await fetch(`${API_BASE}/goals/${id}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
-      });
+      await api.patch(`/goals/${id}/status`, { status });
       fetchGoals();
     } catch (e) {
       console.warn('Erro ao atualizar status', e);
@@ -194,11 +163,7 @@ export default function GoalsPage() {
   const handleAddAmount = async () => {
     if (!addAmountId || !addAmountValue) return;
     try {
-      await fetch(`${API_BASE}/goals/${addAmountId}/add-amount`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: parseFloat(addAmountValue) }),
-      });
+      await api.post(`/goals/${addAmountId}/add-amount`, { amount: parseFloat(addAmountValue) });
       setAddAmountId(null);
       setAddAmountValue('');
       fetchGoals();

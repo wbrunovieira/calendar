@@ -19,7 +19,7 @@ import type {
   Invoice,
   RecurringTransaction,
 } from '@/types/finances';
-import { API_BASE } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 
 // Format date to YYYY-MM-DD without timezone conversion
 const formatLocalDate = (date: Date) => {
@@ -85,8 +85,7 @@ export default function FinancesPage() {
 
   const fetchBankAccounts = async () => {
     try {
-      const response = await fetch(`${API_BASE}/bank-accounts`);
-      const data = await response.json();
+      const data = await api.get<{ data: BankAccount[] }>('/bank-accounts');
       setBankAccounts(data.data || []);
     } catch (error) {
       console.error('Erro ao carregar contas bancárias:', error);
@@ -104,19 +103,13 @@ export default function FinancesPage() {
       creditCards.map(async (card) => {
         try {
           // Fetch all invoices for the card
-          const response = await fetch(`${API_BASE}/invoices?bankAccountId=${card.id}`);
-          if (response.ok) {
-            const data = await response.json();
-            invoicesMap[card.id] = data.data || [];
-          }
+          const data = await api.get<{ data: Invoice[] }>(`/invoices?bankAccountId=${card.id}`);
+          invoicesMap[card.id] = data.data || [];
 
           // Fetch current invoice
-          const currentResponse = await fetch(`${API_BASE}/invoices/current?bankAccountId=${card.id}`);
-          if (currentResponse.ok) {
-            const currentData = await currentResponse.json();
-            if (currentData.data) {
-              currentMap[card.id] = currentData.data;
-            }
+          const currentData = await api.get<{ data: Invoice }>(`/invoices/current?bankAccountId=${card.id}`);
+          if (currentData.data) {
+            currentMap[card.id] = currentData.data;
           }
         } catch (error) {
           console.warn(`Erro ao carregar faturas do cartão ${card.name}:`, error);
@@ -130,17 +123,7 @@ export default function FinancesPage() {
 
   const fetchCategories = useCallback(async (profileId: string) => {
     try {
-      const response = await fetch(`${API_BASE}/categories?profileId=${profileId}`);
-      if (response.status === 404) {
-        setCategories([]);
-        return;
-      }
-      if (!response.ok) {
-        console.warn('Erro ao carregar categorias:', response.status);
-        setCategories([]);
-        return;
-      }
-      const data = await response.json();
+      const data = await api.get<{ data: Category[] }>(`/categories?profileId=${profileId}`);
       setCategories(data.data || []);
     } catch (error) {
       console.warn('Erro ao carregar categorias:', error);
@@ -151,12 +134,7 @@ export default function FinancesPage() {
   const fetchBudgetSummary = useCallback(async (profileId: string) => {
     try {
       const month = new Date().toISOString().slice(0, 7);
-      const response = await fetch(`${API_BASE}/budgets/summary?profileId=${profileId}&period=${month}`);
-      if (!response.ok) {
-        setBudgetSummary([]);
-        return;
-      }
-      const data = await response.json();
+      const data = await api.get<{ data: BudgetSummaryItem[] }>(`/budgets/summary?profileId=${profileId}&period=${month}`);
       setBudgetSummary(data.data || []);
     } catch (error) {
       console.warn('Erro ao carregar summary de orçamentos:', error);
@@ -176,21 +154,15 @@ export default function FinancesPage() {
       if (filters.from) params.append('occurredFrom', filters.from);
       if (filters.to) params.append('occurredTo', filters.to);
 
-      const response = await fetch(`${API_BASE}/transactions?${params.toString()}`);
-      if (!response.ok) {
-        if (response.status === 501) {
-          setTransactionsError('NOT_IMPLEMENTED');
-        } else {
-          setTransactionsError('GENERIC');
-        }
-        setTransactions([]);
-        return;
-      }
-      const data = await response.json();
+      const data = await api.get<{ data: Transaction[] }>(`/transactions?${params.toString()}`);
       setTransactions(data.data || []);
     } catch (error) {
       console.warn('Erro ao carregar lançamentos:', error);
-      setTransactionsError('GENERIC');
+      if (error instanceof ApiError && error.status === 501) {
+        setTransactionsError('NOT_IMPLEMENTED');
+      } else {
+        setTransactionsError('GENERIC');
+      }
       setTransactions([]);
     } finally {
       setTransactionsLoading(false);
@@ -199,12 +171,7 @@ export default function FinancesPage() {
 
   const fetchRecurringTransactions = useCallback(async (profileId: string) => {
     try {
-      const response = await fetch(`${API_BASE}/recurring-transactions?profileId=${profileId}`);
-      if (!response.ok) {
-        setRecurringTransactions([]);
-        return;
-      }
-      const data = await response.json();
+      const data = await api.get<{ data: RecurringTransaction[] }>(`/recurring-transactions?profileId=${profileId}`);
       setRecurringTransactions(data.data || []);
     } catch (error) {
       console.warn('Erro ao carregar transacoes recorrentes:', error);
@@ -247,18 +214,7 @@ export default function FinancesPage() {
       const cleanPayload = Object.fromEntries(
         Object.entries(payload).filter(([, v]) => v !== undefined && v !== null)
       );
-      const response = await fetch(`${API_BASE}/transactions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(cleanPayload),
-      });
-
-      if (!response.ok) {
-        const errorMessage = await response.text();
-        throw new Error(errorMessage || 'Erro ao criar lançamento');
-      }
+      await api.post('/transactions', cleanPayload);
 
       await fetchTransactions(selectedProfileId, transactionFilters);
       await fetchBankAccounts();
@@ -280,18 +236,7 @@ export default function FinancesPage() {
       const cleanPayload = Object.fromEntries(
         Object.entries(payload).filter(([, v]) => v !== undefined && v !== null)
       );
-      const response = await fetch(`${API_BASE}/transactions/${id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(cleanPayload),
-      });
-
-      if (!response.ok) {
-        const errorMessage = await response.text();
-        throw new Error(errorMessage || 'Erro ao atualizar lançamento');
-      }
+      await api.put(`/transactions/${id}`, cleanPayload);
 
       await fetchTransactions(selectedProfileId, transactionFilters);
       await fetchBankAccounts();
@@ -318,22 +263,11 @@ export default function FinancesPage() {
     if (!transaction) return;
 
     try {
-      const response = await fetch(`${API_BASE}/transactions/${id}/status`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          status,
-          occurredOn: transaction.occurredOn,
-          reason: status === 'CANCELLED' ? 'Cancelado no painel de finanças' : undefined,
-        }),
+      await api.put(`/transactions/${id}/status`, {
+        status,
+        occurredOn: transaction.occurredOn,
+        reason: status === 'CANCELLED' ? 'Cancelado no painel de finanças' : undefined,
       });
-
-      if (!response.ok) {
-        const errorMessage = await response.text();
-        throw new Error(errorMessage || 'Erro ao atualizar status');
-      }
 
       if (selectedProfileId) {
         await fetchTransactions(selectedProfileId, transactionFilters);
@@ -351,14 +285,7 @@ export default function FinancesPage() {
     if (!ok) return;
 
     try {
-      const response = await fetch(`${API_BASE}/transactions/${id}`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) {
-        const errorMessage = await response.text();
-        throw new Error(errorMessage || 'Erro ao excluir lancamento');
-      }
+      await api.delete(`/transactions/${id}`);
 
       if (selectedProfileId) {
         await fetchTransactions(selectedProfileId, transactionFilters);
@@ -374,16 +301,7 @@ export default function FinancesPage() {
   const handlePayInvoice = async (invoiceId: string, amount: number) => {
     try {
       const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
-      const response = await fetch(`${API_BASE}/invoices/${invoiceId}/pay`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paidAmount: amount, paidAt: today }),
-      });
-
-      if (!response.ok) {
-        const errorMessage = await response.text();
-        throw new Error(errorMessage || 'Erro ao pagar fatura');
-      }
+      await api.post(`/invoices/${invoiceId}/pay`, { paidAmount: amount, paidAt: today });
 
       // Refresh invoices after payment
       await fetchInvoicesForCreditCards(filteredAccounts);
@@ -422,13 +340,10 @@ export default function FinancesPage() {
     }
     // Fetch from API if not in current filtered list
     try {
-      const res = await fetch(`${API_BASE}/transactions/${id}`);
-      if (res.ok) {
-        const data = await res.json();
-        const remoteTx = data.data || data;
-        setEditingTransaction(remoteTx);
-        setIsTransactionModalOpen(true);
-      }
+      const data = await api.get<{ data: Transaction }>(`/transactions/${id}`);
+      const remoteTx = data.data || data;
+      setEditingTransaction(remoteTx as Transaction);
+      setIsTransactionModalOpen(true);
     } catch (error) {
       console.error('Erro ao buscar transacao:', error);
     }
@@ -460,15 +375,7 @@ export default function FinancesPage() {
           : recurring.nextOccurrence,
       };
 
-      const response = await fetch(`${API_BASE}/transactions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(transactionData),
-      });
-
-      if (!response.ok) {
-        throw new Error('Erro ao criar transacao');
-      }
+      await api.post('/transactions', transactionData);
 
       // Refresh transactions and balances to update the alerts
       await fetchTransactions(selectedProfileId, transactionFilters);

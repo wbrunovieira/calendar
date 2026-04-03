@@ -5,7 +5,8 @@ import Link from 'next/link';
 import AppLayout, { useProfile } from '@/components/layout/AppLayout';
 import { useToast } from '@/components/ui/Toast';
 import TransactionForm from '@/components/finances/TransactionForm';
-import { API_BASE } from '@/lib/api';
+import { api } from '@/lib/api';
+import { parseLocalDate } from '@/utils/format';
 import type { BankAccount, RecurringTransaction, BudgetSummaryItem, Category, Transaction, TransactionFormData } from '@/types/finances';
 
 type Range = 'month' | '30' | '90';
@@ -63,23 +64,13 @@ export default function PlanPage() {
       const month = new Date().toISOString().slice(0, 7);
       const fromDate = startDate.toISOString().slice(0, 10);
       const toDate = endDate.toISOString().slice(0, 10);
-      const [accRes, recRes, sumRes, catRes, txRes] = await Promise.all([
-        fetch(`${API_BASE}/bank-accounts`),
-        fetch(`${API_BASE}/recurring-transactions?profileId=${selectedProfileId}`),
-        fetch(`${API_BASE}/budgets/summary?profileId=${selectedProfileId}&period=${month}`),
-        fetch(`${API_BASE}/categories?profileId=${selectedProfileId}`),
-        fetch(`${API_BASE}/transactions?profileId=${selectedProfileId}&from=${fromDate}&to=${toDate}`),
+      const [accData, recData, sumData, catData, txData] = await Promise.all([
+        api.get<{ data: BankAccount[] }>('/bank-accounts'),
+        api.get<{ data: RecurringTransaction[] }>(`/recurring-transactions?profileId=${selectedProfileId}`),
+        api.get<{ data: BudgetSummaryItem[] }>(`/budgets/summary?profileId=${selectedProfileId}&period=${month}`),
+        api.get<{ data: Category[] }>(`/categories?profileId=${selectedProfileId}`),
+        api.get<{ data: Transaction[] }>(`/transactions?profileId=${selectedProfileId}&from=${fromDate}&to=${toDate}`),
       ]);
-      if (!accRes.ok) throw new Error(`accounts ${accRes.status}`);
-      if (!recRes.ok) throw new Error(`recurring ${recRes.status}`);
-      if (!sumRes.ok) throw new Error(`summary ${sumRes.status}`);
-      if (!catRes.ok) throw new Error(`categories ${catRes.status}`);
-      if (!txRes.ok) throw new Error(`transactions ${txRes.status}`);
-      const accData = await accRes.json();
-      const recData = await recRes.json();
-      const sumData = await sumRes.json();
-      const catData = await catRes.json();
-      const txData = await txRes.json();
       setAccounts(accData.data || []);
       setRecurrings(recData.data || []);
       setSummary(sumData.data || []);
@@ -125,12 +116,6 @@ export default function PlanPage() {
       const rule = parseRule(r.recurrenceRule || '');
       const freq = rule.get('FREQ') || 'MONTHLY';
       const byMonthDay = rule.get('BYMONTHDAY');
-
-      // Parse dates - handle timezone by using local date parts
-      const parseLocalDate = (dateStr: string) => {
-        const [year, month, day] = dateStr.slice(0, 10).split('-').map(Number);
-        return new Date(year, month - 1, day, 0, 0, 0, 0);
-      };
 
       const recStartOn = parseLocalDate(r.startOn);
       const recEndOn = r.endOn ? parseLocalDate(r.endOn) : undefined;
@@ -217,16 +202,7 @@ export default function PlanPage() {
 
       if (existingTx) {
         // Update existing transaction status to CONFIRMED
-        const res = await fetch(`${API_BASE}/transactions/${existingTx.id}/status`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'CONFIRMED' }),
-        });
-
-        if (!res.ok) {
-          const errorText = await res.text();
-          throw new Error(errorText || `status ${res.status}`);
-        }
+        await api.put(`/transactions/${existingTx.id}/status`, { status: 'CONFIRMED' });
       } else {
         // Create new confirmed transaction
         const payload = {
@@ -245,16 +221,7 @@ export default function PlanPage() {
           Object.entries(payload).filter(([, v]) => v !== undefined && v !== null)
         );
 
-        const res = await fetch(`${API_BASE}/transactions`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(cleanPayload),
-        });
-
-        if (!res.ok) {
-          const errorText = await res.text();
-          throw new Error(errorText || `status ${res.status}`);
-        }
+        await api.post('/transactions', cleanPayload);
       }
 
       await loadData();
@@ -301,15 +268,7 @@ export default function PlanPage() {
   const handleConfirmPlanned = async (tx: Transaction) => {
     setConfirming(tx.id);
     try {
-      const res = await fetch(`${API_BASE}/transactions/${tx.id}/status`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'CONFIRMED' }),
-      });
-      if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(errorText || `status ${res.status}`);
-      }
+      await api.put(`/transactions/${tx.id}/status`, { status: 'CONFIRMED' });
       await loadData();
     } catch (e) {
       console.warn('Erro ao confirmar', e);
@@ -337,12 +296,7 @@ export default function PlanPage() {
       const cleanPayload = Object.fromEntries(
         Object.entries(payload).filter(([, v]) => v !== undefined && v !== null)
       );
-      const response = await fetch(`${API_BASE}/transactions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cleanPayload),
-      });
-      if (!response.ok) throw new Error('Erro ao criar transacao');
+      await api.post('/transactions', cleanPayload);
       handleTransactionSaved();
     } catch (err) {
       console.error(err);
@@ -359,12 +313,7 @@ export default function PlanPage() {
       const cleanPayload = Object.fromEntries(
         Object.entries(payload).filter(([, v]) => v !== undefined && v !== null)
       );
-      const response = await fetch(`${API_BASE}/transactions/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cleanPayload),
-      });
-      if (!response.ok) throw new Error('Erro ao atualizar transacao');
+      await api.put(`/transactions/${id}`, cleanPayload);
       handleTransactionSaved();
     } catch (err) {
       console.error(err);

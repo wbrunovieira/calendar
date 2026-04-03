@@ -1,15 +1,13 @@
 'use client';
 
 import { BankAccount, InvestmentType, YieldType } from '@/types/finances';
+import { formatCurrency, formatDate } from '@/utils/format';
 
 interface InvestmentAccountInfoProps {
   account: BankAccount;
   linkedAccount?: BankAccount;
   onEdit?: () => void;
 }
-
-const formatCurrency = (value: number, currency = 'BRL') =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value);
 
 const formatPercent = (value: number) => {
   if (value === Math.floor(value)) {
@@ -68,10 +66,9 @@ const getYieldDescription = (yieldType?: YieldType, yieldRate?: number): string 
   }
 };
 
-const formatDate = (dateStr?: string) => {
+const formatDateOptional = (dateStr?: string) => {
   if (!dateStr) return null;
-  const date = new Date(dateStr);
-  return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  return formatDate(dateStr, 'full');
 };
 
 const getDaysToMaturity = (dateStr?: string): number | null => {
@@ -94,7 +91,7 @@ export default function InvestmentAccountInfo({
 
   const yieldDescription = getYieldDescription(account.yieldType, account.yieldRate);
   const daysToMaturity = getDaysToMaturity(account.maturityDate);
-  const maturityDate = formatDate(account.maturityDate);
+  const maturityDate = formatDateOptional(account.maturityDate);
 
   // Calculate return
   const returnAmount = account.currentBalance - account.initialBalance;

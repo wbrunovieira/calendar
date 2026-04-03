@@ -4,15 +4,9 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import AppLayout, { useProfile } from '@/components/layout/AppLayout';
 import { useToast } from '@/components/ui/Toast';
-import { API_BASE } from '@/lib/api';
+import { api } from '@/lib/api';
 import type { BudgetTarget, BudgetSummaryItem, Category, RecurringTransaction, Transaction } from '@/types/finances';
-
-// Parse date without timezone conversion
-const parseLocalDate = (value: string) => {
-  const datePart = value.split('T')[0];
-  const [year, month, day] = datePart.split('-').map(Number);
-  return new Date(year, month - 1, day);
-};
+import { parseLocalDate } from '@/utils/format';
 
 // Calculate pace tracking metrics
 const calculatePaceMetrics = (period: string, spent: number, budget: number, pendingRecurring: number = 0) => {
@@ -84,21 +78,21 @@ export default function BudgetsPage() {
         const lastDay = new Date(year, month, 0).getDate();
         const toDate = `${period}-${String(lastDay).padStart(2, '0')}`;
 
-        const [listRes, sumRes, catRes, recRes, txRes] = await Promise.all([
-          fetch(`${API_BASE}/budgets?profileId=${selectedProfileId}`),
-          fetch(`${API_BASE}/budgets/summary?profileId=${selectedProfileId}&period=${period}`),
-          fetch(`${API_BASE}/categories?profileId=${selectedProfileId}&type=EXPENSE`),
-          fetch(`${API_BASE}/recurring-transactions?profileId=${selectedProfileId}`),
-          fetch(`${API_BASE}/transactions?profileId=${selectedProfileId}&from=${fromDate}&to=${toDate}&type=EXPENSE`),
+        const [listData, sumData, catData] = await Promise.all([
+          api.get<{ data: BudgetTarget[] }>(`/budgets?profileId=${selectedProfileId}`),
+          api.get<{ data: BudgetSummaryItem[] }>(`/budgets/summary?profileId=${selectedProfileId}&period=${period}`),
+          api.get<{ data: Category[] }>(`/categories?profileId=${selectedProfileId}&type=EXPENSE`),
         ]);
-        if (!listRes.ok) throw new Error(`budgets ${listRes.status}`);
-        if (!sumRes.ok) throw new Error(`summary ${sumRes.status}`);
-        if (!catRes.ok) throw new Error(`categories ${catRes.status}`);
-        const listData = await listRes.json();
-        const sumData = await sumRes.json();
-        const catData = await catRes.json();
-        const recData = recRes.ok ? await recRes.json() : { data: [] };
-        const txData = txRes.ok ? await txRes.json() : { data: [] };
+
+        let recData: { data: RecurringTransaction[] } = { data: [] };
+        let txData: { data: Transaction[] } = { data: [] };
+        try {
+          recData = await api.get<{ data: RecurringTransaction[] }>(`/recurring-transactions?profileId=${selectedProfileId}`);
+        } catch { /* optional */ }
+        try {
+          txData = await api.get<{ data: Transaction[] }>(`/transactions?profileId=${selectedProfileId}&from=${fromDate}&to=${toDate}&type=EXPENSE`);
+        } catch { /* optional */ }
+
         setTargets(listData.data || []);
         setSummary(sumData.data || []);
         setCategories(catData.data || []);
@@ -255,20 +249,16 @@ export default function BudgetsPage() {
       isRecurring: form.isRecurring,
     };
     try {
-      const url = editingId ? `${API_BASE}/budgets/${editingId}` : `${API_BASE}/budgets`;
-      const method = editingId ? 'PUT' : 'POST';
-      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || 'Falha ao salvar orçamento');
+      if (editingId) {
+        await api.put(`/budgets/${editingId}`, payload);
+      } else {
+        await api.post('/budgets', payload);
       }
       // reload
-      const [listRes, sumRes] = await Promise.all([
-        fetch(`${API_BASE}/budgets?profileId=${selectedProfileId}`),
-        fetch(`${API_BASE}/budgets/summary?profileId=${selectedProfileId}&period=${period}`),
+      const [listData, sumData] = await Promise.all([
+        api.get<{ data: BudgetTarget[] }>(`/budgets?profileId=${selectedProfileId}`),
+        api.get<{ data: BudgetSummaryItem[] }>(`/budgets/summary?profileId=${selectedProfileId}&period=${period}`),
       ]);
-      const listData = await listRes.json();
-      const sumData = await sumRes.json();
       setTargets(listData.data || []);
       setSummary(sumData.data || []);
       resetForm();

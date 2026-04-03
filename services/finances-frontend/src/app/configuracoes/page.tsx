@@ -6,7 +6,7 @@ import AppLayout from '@/components/layout/AppLayout';
 import { useToast } from '@/components/ui/Toast';
 import ProfileModal from '@/components/finances/ProfileModal';
 import BankAccountModal from '@/components/finances/BankAccountModal';
-import { API_BASE } from '@/lib/api';
+import { api } from '@/lib/api';
 import type { Profile, BankAccount } from '@/types/finances';
 
 interface Calendar {
@@ -37,8 +37,7 @@ export default function ConfiguracoesPage() {
   const fetchProfiles = async () => {
     try {
       setProfilesLoading(true);
-      const response = await fetch(`${API_BASE}/profiles`);
-      const data = await response.json();
+      const data = await api.get<{ data: Profile[] }>('/profiles');
       setProfiles(data.data || []);
     } catch (error) {
       console.error('Erro ao carregar perfis:', error);
@@ -59,8 +58,7 @@ export default function ConfiguracoesPage() {
 
   const fetchBankAccounts = async () => {
     try {
-      const response = await fetch(`${API_BASE}/bank-accounts`);
-      const data = await response.json();
+      const data = await api.get<{ data: BankAccount[] }>('/bank-accounts');
       setBankAccounts(data.data || []);
     } catch (error) {
       console.error('Erro ao carregar contas bancárias:', error);
@@ -71,17 +69,7 @@ export default function ConfiguracoesPage() {
     profileData: Omit<Profile, 'id' | 'isActive' | 'createdAt' | 'updatedAt'>,
   ) => {
     try {
-      const response = await fetch(`${API_BASE}/profiles`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(profileData),
-      });
-
-      if (!response.ok) {
-        const errorMessage = await response.text();
-        throw new Error(errorMessage || 'Erro ao criar perfil');
-      }
-
+      await api.post('/profiles', profileData);
       await fetchProfiles();
     } catch (error) {
       console.error('Erro ao criar perfil:', error);
@@ -95,17 +83,7 @@ export default function ConfiguracoesPage() {
     if (!editingProfile) return;
 
     try {
-      const response = await fetch(`${API_BASE}/profiles/${editingProfile.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(profileData),
-      });
-
-      if (!response.ok) {
-        const errorMessage = await response.text();
-        throw new Error(errorMessage || 'Erro ao atualizar perfil');
-      }
-
+      await api.put(`/profiles/${editingProfile.id}`, profileData);
       await fetchProfiles();
       setEditingProfile(null);
     } catch (error) {
@@ -119,15 +97,7 @@ export default function ConfiguracoesPage() {
     if (!ok) return;
 
     try {
-      const response = await fetch(`${API_BASE}/profiles/${id}`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) {
-        const errorMessage = await response.text();
-        throw new Error(errorMessage || 'Erro ao excluir perfil');
-      }
-
+      await api.delete(`/profiles/${id}`);
       await fetchProfiles();
       toast('Perfil excluido com sucesso');
     } catch (error) {
@@ -152,18 +122,7 @@ export default function ConfiguracoesPage() {
     try {
       const { initialInvoiceAmount, ...bankAccountData } = accountData;
 
-      const response = await fetch(`${API_BASE}/bank-accounts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...bankAccountData, isActive: true }),
-      });
-
-      if (!response.ok) {
-        const errorMessage = await response.text();
-        throw new Error(errorMessage || 'Erro ao criar conta bancária');
-      }
-
-      const createdAccount = await response.json();
+      const createdAccount = await api.post<{ data: BankAccount }>('/bank-accounts', { ...bankAccountData, isActive: true });
 
       // If it's a credit card with an initial invoice amount, create the invoice
       if (
@@ -176,21 +135,9 @@ export default function ConfiguracoesPage() {
         const referenceDate = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
 
         try {
-          const invoiceResponse = await fetch(`${API_BASE}/invoices`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ bankAccountId: createdAccount.data.id, referenceDate }),
-          });
-
-          if (invoiceResponse.ok) {
-            const invoiceData = await invoiceResponse.json();
-            if (invoiceData.data?.id) {
-              await fetch(`${API_BASE}/invoices/${invoiceData.data.id}/add-amount`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ amount: initialInvoiceAmount }),
-              });
-            }
+          const invoiceData = await api.post<{ data: { id: string } }>('/invoices', { bankAccountId: createdAccount.data.id, referenceDate });
+          if (invoiceData.data?.id) {
+            await api.post(`/invoices/${invoiceData.data.id}/add-amount`, { amount: initialInvoiceAmount });
           }
         } catch (invoiceError) {
           console.warn('Erro ao criar fatura inicial:', invoiceError);
@@ -210,17 +157,7 @@ export default function ConfiguracoesPage() {
     if (!editingBankAccount) return;
 
     try {
-      const response = await fetch(`${API_BASE}/bank-accounts/${editingBankAccount.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...accountData, isActive: editingBankAccount.isActive }),
-      });
-
-      if (!response.ok) {
-        const errorMessage = await response.text();
-        throw new Error(errorMessage || 'Erro ao atualizar conta bancária');
-      }
-
+      await api.put(`/bank-accounts/${editingBankAccount.id}`, { ...accountData, isActive: editingBankAccount.isActive });
       await fetchBankAccounts();
       setEditingBankAccount(null);
     } catch (error) {
@@ -234,15 +171,7 @@ export default function ConfiguracoesPage() {
     if (!ok) return;
 
     try {
-      const response = await fetch(`${API_BASE}/bank-accounts/${id}`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) {
-        const errorMessage = await response.text();
-        throw new Error(errorMessage || 'Erro ao excluir conta bancaria');
-      }
-
+      await api.delete(`/bank-accounts/${id}`);
       await fetchBankAccounts();
       toast('Conta bancaria excluida com sucesso');
     } catch (error) {

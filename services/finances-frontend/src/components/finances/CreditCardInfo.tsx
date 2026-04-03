@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { BankAccount, Invoice } from '@/types/finances';
+import { formatCurrency, formatDate } from '@/utils/format';
 
 interface InvoiceUpdateData {
   closingDate?: string;
@@ -18,15 +19,6 @@ interface CreditCardInfoProps {
   selectedInvoiceId?: string;
   onInvoiceSelect?: (invoiceId: string) => void;
 }
-
-const formatCurrency = (value: number, currency = 'BRL') =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value);
-
-const formatDate = (dateStr: string) => {
-  const raw = dateStr.includes('T') ? dateStr.replace('Z', '') : dateStr + 'T12:00:00';
-  const date = new Date(raw);
-  return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-};
 
 const getMonthName = (dateStr: string) => {
   const date = new Date(dateStr);
@@ -190,7 +182,7 @@ export default function CreditCardInfo({
             )}
             {currentInvoice && (
               <p className="text-white/50 text-xs">
-                Fecha {formatDate(currentInvoice.closingDate)} | Vence {formatDate(currentInvoice.dueDate)}
+                Fecha {formatDate(currentInvoice.closingDate, 'short')} | Vence {formatDate(currentInvoice.dueDate, 'short')}
               </p>
             )}
           </div>
@@ -242,7 +234,7 @@ export default function CreditCardInfo({
                       <div className="text-left">
                         <p className="text-white text-sm capitalize">{getMonthName(invoice.referenceDate)}</p>
                         <p className="text-white/50 text-xs">
-                          Fecha {formatDate(invoice.closingDate)} | Vence {formatDate(invoice.dueDate)}
+                          Fecha {formatDate(invoice.closingDate, 'short')} | Vence {formatDate(invoice.dueDate, 'short')}
                           <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] ${status.color}`}>
                             {status.label}
                           </span>
@@ -306,7 +298,7 @@ export default function CreditCardInfo({
                       )}
                       <div>
                         <p className={`text-sm capitalize ${isSelected ? 'text-emerald-300 font-semibold' : 'text-white'}`}>{getMonthName(invoice.referenceDate)}</p>
-                        <p className="text-white/50 text-xs">Fecha {formatDate(invoice.closingDate)} | Vence {formatDate(invoice.dueDate)}</p>
+                        <p className="text-white/50 text-xs">Fecha {formatDate(invoice.closingDate, 'short')} | Vence {formatDate(invoice.dueDate, 'short')}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">

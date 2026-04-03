@@ -21,26 +21,13 @@ import {
   AreaChart,
   Area,
 } from 'recharts';
-import { API_BASE } from '@/lib/api';
+import { api } from '@/lib/api';
+import { formatCurrency, formatCurrencyCompact, parseLocalDate } from '@/utils/format';
 
 const COLORS = [
   '#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444',
   '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1',
 ];
-
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value);
-
-const formatCurrencyFull = (value: number) =>
-  new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  }).format(value);
 
 const MONTHS = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -48,13 +35,6 @@ const MONTHS = [
 ];
 
 const MONTHS_SHORT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-
-// Parse date without timezone conversion
-const parseLocalDate = (value: string) => {
-  const datePart = value.split('T')[0];
-  const [year, month, day] = datePart.split('-').map(Number);
-  return new Date(year, month - 1, day);
-};
 
 export default function DashboardPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -69,8 +49,7 @@ export default function DashboardPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/profiles`);
-        const data = await res.json();
+        const data = await api.get<{ data: Profile[] }>('/profiles');
         const list: Profile[] = data.data || [];
         setProfiles(list);
         if (list.length > 0) setSelectedProfileId(list[0].id);
@@ -88,26 +67,15 @@ export default function DashboardPage() {
       const startDate = `${selectedYear}-01-01`;
       const endDate = `${selectedYear}-12-31`;
 
-      const [catRes, txRes, accRes] = await Promise.all([
-        fetch(`${API_BASE}/categories?profileId=${selectedProfileId}`),
-        fetch(`${API_BASE}/transactions?profileId=${selectedProfileId}&from=${startDate}&to=${endDate}`),
-        fetch(`${API_BASE}/bank-accounts?profileId=${selectedProfileId}`),
+      const [catData, txData, accData] = await Promise.all([
+        api.get<{ data: Category[] }>(`/categories?profileId=${selectedProfileId}`),
+        api.get<{ data: Transaction[] }>(`/transactions?profileId=${selectedProfileId}&from=${startDate}&to=${endDate}`),
+        api.get<{ data: BankAccount[] }>(`/bank-accounts?profileId=${selectedProfileId}`),
       ]);
 
-      if (catRes.ok) {
-        const catData = await catRes.json();
-        setCategories(catData.data || []);
-      }
-
-      if (txRes.ok) {
-        const txData = await txRes.json();
-        setTransactions(txData.data || []);
-      }
-
-      if (accRes.ok) {
-        const accData = await accRes.json();
-        setAccounts(accData.data || []);
-      }
+      setCategories(catData.data || []);
+      setTransactions(txData.data || []);
+      setAccounts(accData.data || []);
     } catch (e) {
       console.warn('Erro ao carregar dados', e);
     } finally {
@@ -272,7 +240,7 @@ export default function DashboardPage() {
           <p className="text-white/80 text-sm font-medium mb-1">{label}</p>
           {payload.map((entry, index) => (
             <p key={index} className="text-sm" style={{ color: entry.color }}>
-              {entry.name}: {formatCurrencyFull(entry.value)}
+              {entry.name}: {formatCurrency(entry.value)}
             </p>
           ))}
         </div>
@@ -363,7 +331,7 @@ export default function DashboardPage() {
                   <span className="text-emerald-300/80 text-sm">Receitas</span>
                 </div>
                 <div className="text-3xl font-bold text-emerald-400">
-                  {formatCurrency(totals.income)}
+                  {formatCurrencyCompact(totals.income)}
                 </div>
                 <p className="text-emerald-300/60 text-xs mt-1">
                   {selectedMonth !== null ? MONTHS[selectedMonth] : 'Ano'} de {selectedYear}
@@ -376,7 +344,7 @@ export default function DashboardPage() {
                   <span className="text-rose-300/80 text-sm">Despesas</span>
                 </div>
                 <div className="text-3xl font-bold text-rose-400">
-                  {formatCurrency(totals.expense)}
+                  {formatCurrencyCompact(totals.expense)}
                 </div>
                 <p className="text-rose-300/60 text-xs mt-1">
                   {selectedMonth !== null ? MONTHS[selectedMonth] : 'Ano'} de {selectedYear}
@@ -389,7 +357,7 @@ export default function DashboardPage() {
                   <span className={`${totals.balance >= 0 ? 'text-blue-300/80' : 'text-amber-300/80'} text-sm`}>Saldo</span>
                 </div>
                 <div className={`text-3xl font-bold ${totals.balance >= 0 ? 'text-blue-400' : 'text-amber-400'}`}>
-                  {formatCurrency(totals.balance)}
+                  {formatCurrencyCompact(totals.balance)}
                 </div>
                 <p className={`${totals.balance >= 0 ? 'text-blue-300/60' : 'text-amber-300/60'} text-xs mt-1`}>
                   Receitas - Despesas
@@ -402,10 +370,10 @@ export default function DashboardPage() {
                   <span className="text-purple-300/80 text-sm">Patrimonio</span>
                 </div>
                 <div className="text-3xl font-bold text-purple-400">
-                  {formatCurrency(accountTotals.total)}
+                  {formatCurrencyCompact(accountTotals.total)}
                 </div>
                 <p className="text-purple-300/60 text-xs mt-1">
-                  {formatCurrency(accountTotals.available)} disponivel + {formatCurrency(accountTotals.investments)} investido
+                  {formatCurrencyCompact(accountTotals.available)} disponivel + {formatCurrencyCompact(accountTotals.investments)} investido
                 </p>
               </div>
             </div>
@@ -420,7 +388,7 @@ export default function DashboardPage() {
                     <BarChart data={monthlyData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                       <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                      <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} tickFormatter={(v) => formatCurrency(v)} />
+                      <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} tickFormatter={(v) => formatCurrencyCompact(v)} />
                       <Tooltip content={<CustomTooltip />} />
                       <Legend />
                       <Bar dataKey="income" name="Receitas" fill="#10b981" radius={[4, 4, 0, 0]} />
@@ -444,7 +412,7 @@ export default function DashboardPage() {
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                       <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                      <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} tickFormatter={(v) => formatCurrency(v)} />
+                      <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} tickFormatter={(v) => formatCurrencyCompact(v)} />
                       <Tooltip content={<CustomTooltip />} />
                       <Area
                         type="monotone"
@@ -490,7 +458,7 @@ export default function DashboardPage() {
                               <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                             ))}
                           </Pie>
-                          <Tooltip formatter={(value) => formatCurrencyFull(Number(value))} />
+                          <Tooltip formatter={(value) => formatCurrency(Number(value))} />
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
@@ -505,14 +473,14 @@ export default function DashboardPage() {
                               />
                               <span className="text-white/80 font-medium">{cat.name}</span>
                             </div>
-                            <span className="text-white/60 font-medium">{formatCurrencyFull(cat.value)}</span>
+                            <span className="text-white/60 font-medium">{formatCurrency(cat.value)}</span>
                           </div>
                           {cat.subcategories && cat.subcategories.length > 0 && (
                             <div className="ml-5 space-y-0.5 border-l border-white/10 pl-3 mb-1">
                               {cat.subcategories.map((sub) => (
                                 <div key={sub.name} className="flex items-center justify-between gap-2 text-xs">
                                   <span className="text-white/50">↳ {sub.name}</span>
-                                  <span className="text-white/40">{formatCurrencyFull(sub.value)}</span>
+                                  <span className="text-white/40">{formatCurrency(sub.value)}</span>
                                 </div>
                               ))}
                             </div>
@@ -552,7 +520,7 @@ export default function DashboardPage() {
                               <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                             ))}
                           </Pie>
-                          <Tooltip formatter={(value) => formatCurrencyFull(Number(value))} />
+                          <Tooltip formatter={(value) => formatCurrency(Number(value))} />
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
@@ -566,7 +534,7 @@ export default function DashboardPage() {
                             />
                             <span className="text-white/80">{cat.name}</span>
                           </div>
-                          <span className="text-white/60 font-medium">{formatCurrencyFull(cat.value)}</span>
+                          <span className="text-white/60 font-medium">{formatCurrency(cat.value)}</span>
                         </div>
                       ))}
                     </div>
@@ -583,7 +551,7 @@ export default function DashboardPage() {
                   <LineChart data={monthlyData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                     <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                    <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} tickFormatter={(v) => formatCurrency(v)} />
+                    <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} tickFormatter={(v) => formatCurrencyCompact(v)} />
                     <Tooltip content={<CustomTooltip />} />
                     <Legend />
                     <Line
@@ -645,7 +613,7 @@ export default function DashboardPage() {
                           </div>
                         </div>
                         <div className="text-rose-400 font-semibold">
-                          -{formatCurrencyFull(tx.amount)}
+                          -{formatCurrency(tx.amount)}
                         </div>
                       </div>
                     ))}
@@ -664,7 +632,7 @@ export default function DashboardPage() {
                   <div className="flex justify-between items-center py-2 border-b border-white/10">
                     <span className="text-white/60">Media Despesa</span>
                     <span className="text-white font-semibold">
-                      {formatCurrencyFull(
+                      {formatCurrency(
                         categoryData.length > 0
                           ? categoryData.reduce((sum, c) => sum + c.value, 0) / categoryData.length
                           : 0

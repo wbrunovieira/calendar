@@ -1,19 +1,13 @@
 'use client';
 
 import type { BankAccount, Transaction, Invoice } from '@/types/finances';
+import { formatCurrency } from '@/utils/format';
 
 interface CashflowSummaryProps {
   transactions: Transaction[];
   accounts: BankAccount[];
   currentInvoices?: Record<string, Invoice>;
 }
-
-const formatCurrency = (value: number, currency = 'BRL') =>
-  new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-  }).format(value);
 
 const getCurrentMonthYear = () => {
   const now = new Date();

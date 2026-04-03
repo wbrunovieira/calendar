@@ -9,7 +9,9 @@ import type {
   TransactionStatus,
   TransactionType,
 } from '@/types/finances';
-import { API_BASE } from '@/lib/api';
+import { api } from '@/lib/api';
+import { formatCurrency, formatDate } from '@/utils/format';
+import { transactionStatusStyles } from '@/utils/constants';
 
 interface TransactionsTableProps {
   transactions: Transaction[];
@@ -23,28 +25,6 @@ interface TransactionsTableProps {
   onEdit: (transaction: Transaction) => void;
   loading?: boolean;
 }
-
-const formatCurrency = (value: number, currency = 'BRL') =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value);
-
-const formatDate = (value: string) => {
-  // Extract date part to avoid timezone conversion (UTC -> local)
-  const datePart = value.split('T')[0];
-  const [year, month, day] = datePart.split('-').map(Number);
-  const date = new Date(year, month - 1, day);
-
-  return new Intl.DateTimeFormat('pt-BR', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  }).format(date);
-};
-
-const statusStyles: Record<TransactionStatus, string> = {
-  PLANNED: 'bg-white/10 text-white',
-  CONFIRMED: 'bg-emerald-500/20 text-emerald-200 border border-emerald-500/50',
-  CANCELLED: 'bg-rose-500/20 text-rose-200 border border-rose-500/30',
-};
 
 const typeLabels: Record<TransactionType, string> = {
   INCOME: 'Receita',
@@ -108,15 +88,12 @@ export default function TransactionsTable({
         profileId: transactions[0]?.profileId || '',
         bankAccountId: filters.bankAccountId,
       });
-      const response = await fetch(`${API_BASE}/transactions/daily-balances?${params}`);
-      if (response.ok) {
-        const data = await response.json();
-        const balMap: Record<string, { balance: number; dayTotal: number }> = {};
-        for (const entry of (data.data || [])) {
-          balMap[entry.date] = { balance: entry.balance, dayTotal: entry.dayTotal };
-        }
-        setDayBalances(balMap);
+      const data = await api.get<{ data: { date: string; balance: number; dayTotal: number }[] }>(`/transactions/daily-balances?${params}`);
+      const balMap: Record<string, { balance: number; dayTotal: number }> = {};
+      for (const entry of (data.data || [])) {
+        balMap[entry.date] = { balance: entry.balance, dayTotal: entry.dayTotal };
       }
+      setDayBalances(balMap);
     } catch {
       setDayBalances({});
     }
@@ -305,7 +282,7 @@ export default function TransactionsTable({
                     <td colSpan={7} className="px-6 py-2">
                       <div className="flex items-center justify-between">
                         <span className="text-white/80 text-sm font-semibold">
-                          {formatDate(dateKey + 'T00:00:00')}
+                          {formatDate(dateKey + 'T00:00:00', 'text')}
                         </span>
                         <div className="flex items-center gap-4">
                           <span className={`text-xs font-semibold ${dayTotal >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
@@ -351,7 +328,7 @@ export default function TransactionsTable({
                     return (
                       <tr key={transaction.id} className="hover:bg-white/5 transition-colors">
                         <td className="px-6 py-4 whitespace-nowrap text-white/80 text-sm">
-                          {formatDate(transaction.occurredOn)}
+                          {formatDate(transaction.occurredOn, 'text')}
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex flex-col">
@@ -385,7 +362,7 @@ export default function TransactionsTable({
                         <td className="px-6 py-4">
                           <span
                             className={`px-3 py-1 rounded-full text-xs font-semibold inline-flex items-center gap-2 ${
-                              statusStyles[transaction.status]
+                              transactionStatusStyles[transaction.status]
                             }`}
                           >
                             {transaction.status === 'CONFIRMED' && '✅'}

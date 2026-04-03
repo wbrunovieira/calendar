@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { Transaction, RecurringTransaction, Invoice, BankAccount, Category } from '@/types/finances';
+import { formatCurrency } from '@/utils/format';
 
 interface TodayAlertsProps {
   transactions: Transaction[];
@@ -15,9 +16,6 @@ interface TodayAlertsProps {
   onConfirmRecurring?: (recurring: RecurringTransaction) => Promise<void>;
   onEditTransaction?: (transaction: Transaction) => void;
 }
-
-const formatCurrency = (value: number, currency = 'BRL') =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value);
 
 const formatLocalDate = (date: Date) => {
   const year = date.getFullYear();

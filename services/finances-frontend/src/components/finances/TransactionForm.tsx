@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { API_BASE } from '@/lib/api';
+import { api } from '@/lib/api';
+import { getLocalDateString } from '@/utils/format';
 import type {
   BankAccount,
   Category,
@@ -36,15 +37,6 @@ const typeToCategory: Record<TransactionType, CategoryType> = {
   INCOME: 'INCOME',
   EXPENSE: 'EXPENSE',
   TRANSFER: 'TRANSFER',
-};
-
-// Get local date in YYYY-MM-DD format (without timezone conversion)
-const getLocalDateString = () => {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
 };
 
 const defaultForm = (profileId: string, status: TransactionStatus = 'CONFIRMED'): TransactionFormData => ({
@@ -206,13 +198,8 @@ export default function TransactionForm({
     }));
     // fetch categories for selected profile
     try {
-      const res = await fetch(`${API_BASE}/categories?profileId=${profileId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setLocalCategories(data.data || []);
-      } else {
-        setLocalCategories([]);
-      }
+      const data = await api.get<{ data: Category[] }>(`/categories?profileId=${profileId}`);
+      setLocalCategories(data.data || []);
     } catch {
       setLocalCategories([]);
     }
@@ -227,13 +214,8 @@ export default function TransactionForm({
     }));
     if (profileId !== selectedProfileId) {
       try {
-        const res = await fetch(`${API_BASE}/categories?profileId=${profileId}`);
-        if (res.ok) {
-          const data = await res.json();
-          setDestCategories(data.data || []);
-        } else {
-          setDestCategories([]);
-        }
+        const data = await api.get<{ data: Category[] }>(`/categories?profileId=${profileId}`);
+        setDestCategories(data.data || []);
       } catch {
         setDestCategories([]);
       }

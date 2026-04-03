@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
 import { useProfile } from '@/contexts/ProfileContext';
-import { API_BASE } from '@/lib/api';
+import { api } from '@/lib/api';
 import type { Category, CategoryType } from '@/types/finances';
 import { useToast } from '@/components/ui/Toast';
 
@@ -77,9 +77,7 @@ export default function CategoriesPage() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch(`${API_BASE}/categories?profileId=${selectedProfileId}`);
-      if (!res.ok) throw new Error(`status ${res.status}`);
-      const data = await res.json();
+      const data = await api.get<{ data: Category[] }>(`/categories?profileId=${selectedProfileId}`);
       setCategories(data.data || []);
     } catch (e) {
       console.warn('Erro ao carregar categorias', e);
@@ -168,22 +166,11 @@ export default function CategoriesPage() {
         payload.parentId = formData.parentId;
       }
 
-      let res: Response;
       if (editingCategory) {
-        res = await fetch(`${API_BASE}/categories/${editingCategory.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
+        await api.put(`/categories/${editingCategory.id}`, payload);
       } else {
-        res = await fetch(`${API_BASE}/categories`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
+        await api.post('/categories', payload);
       }
-
-      if (!res.ok) throw new Error(`status ${res.status}`);
 
       await loadCategories();
       closeModal();
@@ -205,10 +192,7 @@ export default function CategoriesPage() {
     if (!ok) return;
 
     try {
-      const res = await fetch(`${API_BASE}/categories/${cat.id}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) throw new Error(`status ${res.status}`);
+      await api.delete(`/categories/${cat.id}`);
       await loadCategories();
       toast('Categoria excluida com sucesso');
     } catch (e) {

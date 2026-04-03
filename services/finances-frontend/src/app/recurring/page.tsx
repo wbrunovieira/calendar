@@ -4,24 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import AppLayout, { useProfile } from '@/components/layout/AppLayout';
 import { useToast } from '@/components/ui/Toast';
-import { API_BASE } from '@/lib/api';
+import { api } from '@/lib/api';
 import type { RecurringTransaction, BankAccount, Category, TransactionType } from '@/types/finances';
-
-// Parse date without timezone conversion
-const parseLocalDate = (value: string) => {
-  const datePart = value.split('T')[0];
-  const [year, month, day] = datePart.split('-').map(Number);
-  return new Date(year, month - 1, day);
-};
-
-// Get local date in YYYY-MM-DD format (without timezone conversion)
-const getLocalDateString = (date?: Date) => {
-  const d = date || new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
+import { parseLocalDate, getLocalDateString } from '@/utils/format';
 
 // Get date X months from now
 const getDateMonthsFromNow = (months: number) => {
@@ -94,9 +79,7 @@ export default function RecurringPage() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch(`${API_BASE}/recurring-transactions?profileId=${selectedProfileId}`);
-      if (!res.ok) throw new Error(`status ${res.status}`);
-      const data = await res.json();
+      const data = await api.get<{ data: RecurringTransaction[] }>(`/recurring-transactions?profileId=${selectedProfileId}`);
       setItems(data.data || []);
     } catch (e) {
       console.warn('Erro ao carregar recorrentes', e);
@@ -109,11 +92,8 @@ export default function RecurringPage() {
 
   const loadAccounts = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/bank-accounts`);
-      if (res.ok) {
-        const data = await res.json();
-        setAccounts(data.data || []);
-      }
+      const data = await api.get<{ data: BankAccount[] }>('/bank-accounts');
+      setAccounts(data.data || []);
     } catch (e) {
       console.warn('Erro ao carregar contas', e);
     }
@@ -122,11 +102,8 @@ export default function RecurringPage() {
   const loadCategories = useCallback(async () => {
     if (!selectedProfileId) return;
     try {
-      const res = await fetch(`${API_BASE}/categories?profileId=${selectedProfileId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setCategories(data.data || []);
-      }
+      const data = await api.get<{ data: Category[] }>(`/categories?profileId=${selectedProfileId}`);
+      setCategories(data.data || []);
     } catch (e) {
       console.warn('Erro ao carregar categorias', e);
     }
@@ -194,24 +171,10 @@ export default function RecurringPage() {
         Object.entries(payload).filter(([, v]) => v !== undefined)
       );
 
-      let res: Response;
       if (editingId) {
-        res = await fetch(`${API_BASE}/recurring-transactions/${editingId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(cleanPayload),
-        });
+        await api.put(`/recurring-transactions/${editingId}`, cleanPayload);
       } else {
-        res = await fetch(`${API_BASE}/recurring-transactions`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(cleanPayload),
-        });
-      }
-
-      if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(errorText || `status ${res.status}`);
+        await api.post('/recurring-transactions', cleanPayload);
       }
 
       await loadRecurring();
@@ -228,8 +191,7 @@ export default function RecurringPage() {
     const ok = await confirm('Deseja realmente excluir esta transacao recorrente?');
     if (!ok) return;
     try {
-      const res = await fetch(`${API_BASE}/recurring-transactions/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error(`status ${res.status}`);
+      await api.delete(`/recurring-transactions/${id}`);
       await loadRecurring();
       toast('Transacao recorrente excluida');
     } catch (e) {
@@ -248,12 +210,7 @@ export default function RecurringPage() {
       // Resume directly
       setTogglingId(item.id);
       try {
-        const res = await fetch(`${API_BASE}/recurring-transactions/${item.id}/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'ACTIVE' }),
-        });
-        if (!res.ok) throw new Error(`status ${res.status}`);
+        await api.patch(`/recurring-transactions/${item.id}/status`, { status: 'ACTIVE' });
         await loadRecurring();
       } catch (e) {
         console.warn('Erro ao alterar status', e);
@@ -270,12 +227,7 @@ export default function RecurringPage() {
     setPauseModalOpen(false);
     try {
       // First update status to PAUSED
-      const statusRes = await fetch(`${API_BASE}/recurring-transactions/${pausingItem.id}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'PAUSED' }),
-      });
-      if (!statusRes.ok) throw new Error(`status ${statusRes.status}`);
+      await api.patch(`/recurring-transactions/${pausingItem.id}/status`, { status: 'PAUSED' });
 
       // Then update with reviewOn date via PUT
       if (reviewOnDate) {
@@ -300,12 +252,7 @@ export default function RecurringPage() {
         const cleanPayload = Object.fromEntries(
           Object.entries(updatePayload).filter(([, v]) => v !== undefined)
         );
-        const updateRes = await fetch(`${API_BASE}/recurring-transactions/${pausingItem.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(cleanPayload),
-        });
-        if (!updateRes.ok) throw new Error(`status ${updateRes.status}`);
+        await api.put(`/recurring-transactions/${pausingItem.id}`, cleanPayload);
       }
 
       await loadRecurring();

@@ -1,38 +1,9 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { API_BASE } from '@/lib/api';
-
-interface Transaction {
-  id: string;
-  description: string;
-  amount: number;
-  type: 'INCOME' | 'EXPENSE' | 'TRANSFER';
-  status: 'PLANNED' | 'CONFIRMED' | 'CANCELLED';
-  occurredOn: string;
-  categoryId?: string;
-  bankAccountId: string;
-}
-
-interface RecurringTransaction {
-  id: string;
-  description: string;
-  amount: number;
-  type: 'INCOME' | 'EXPENSE';
-  status: 'ACTIVE' | 'INACTIVE';
-  recurrenceRule: string;
-  categoryId?: string;
-}
-
-interface Category {
-  id: string;
-  name: string;
-}
-
-interface BankAccount {
-  id: string;
-  name: string;
-}
+import { api } from '@/lib/api';
+import { formatCurrency, formatDate } from '@/utils/format';
+import type { Transaction, RecurringTransaction, Category, BankAccount } from '@/types/finances';
 
 interface SearchResult {
   id: string;
@@ -54,16 +25,6 @@ interface GlobalSearchProps {
   onSelectRecurring?: (id: string) => void;
   refreshKey?: number;
 }
-
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-
-const formatDate = (value: string) => {
-  const datePart = value.split('T')[0];
-  const [year, month, day] = datePart.split('-').map(Number);
-  const date = new Date(year, month - 1, day);
-  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short' }).format(date);
-};
 
 const highlightMatch = (text: string, query: string) => {
   if (!query.trim()) return text;
@@ -118,19 +79,13 @@ export default function GlobalSearch({
 
     const fetchData = async () => {
       try {
-        const [txRes, recRes] = await Promise.all([
-          fetch(`${API_BASE}/transactions?profileId=${profileId}`),
-          fetch(`${API_BASE}/recurring-transactions?profileId=${profileId}`),
+        const [txData, recData] = await Promise.all([
+          api.get<{ data: Transaction[] }>(`/transactions?profileId=${profileId}`),
+          api.get<{ data: RecurringTransaction[] }>(`/recurring-transactions?profileId=${profileId}`),
         ]);
 
-        if (txRes.ok) {
-          const data = await txRes.json();
-          setTransactions(data.data || []);
-        }
-        if (recRes.ok) {
-          const data = await recRes.json();
-          setRecurrings(data.data || []);
-        }
+        setTransactions(txData.data || []);
+        setRecurrings(recData.data || []);
       } catch (e) {
         console.warn('Error fetching search data:', e);
       }
@@ -464,7 +419,7 @@ export default function GlobalSearch({
                         {result.date && (
                           <>
                             <span>•</span>
-                            <span className="flex-shrink-0">{formatDate(result.date)}</span>
+                            <span className="flex-shrink-0">{formatDate(result.date, 'text-short')}</span>
                           </>
                         )}
                       </div>

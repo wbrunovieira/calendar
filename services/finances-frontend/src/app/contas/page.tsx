@@ -7,7 +7,7 @@ import CreditCardInfo from '@/components/finances/CreditCardInfo';
 import InvestmentAccountInfo from '@/components/finances/InvestmentAccountInfo';
 import TransactionForm from '@/components/finances/TransactionForm';
 import type { BankAccount, Invoice, Transaction, TransactionFormData, Category } from '@/types/finances';
-import { API_BASE } from '@/lib/api';
+import { api } from '@/lib/api';
 import { useToast } from '@/components/ui/Toast';
 import {
   DndContext,
@@ -26,9 +26,8 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-
-const formatCurrency = (value: number, currency = 'BRL') =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value);
+import { formatCurrency, formatDate } from '@/utils/format';
+import { transactionStatusConfig } from '@/utils/constants';
 
 interface CryptoPurchaseWithGains {
   id: string;
@@ -51,17 +50,6 @@ interface CryptoPurchaseWithGains {
   gainTotalPercent: number;
 }
 
-const formatDate = (dateStr: string) => {
-  const raw = dateStr.includes('T') ? dateStr : dateStr + 'T12:00:00';
-  const date = new Date(raw);
-  return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
-};
-
-const statusConfig: Record<string, { label: string; color: string }> = {
-  PLANNED: { label: 'Planejado', color: 'bg-blue-500/20 text-blue-400' },
-  CONFIRMED: { label: 'Confirmado', color: 'bg-emerald-500/20 text-emerald-400' },
-  CANCELLED: { label: 'Cancelado', color: 'bg-red-500/20 text-red-400' },
-};
 
 const formatMonthYear = (dateStr: string) => {
   const raw = dateStr.includes('T') ? dateStr : dateStr + 'T12:00:00';
@@ -91,11 +79,10 @@ function FiiDetailPanel({
           bankAccountId: clearAccountId,
           includeAsDestination: 'true',
         });
-        const txRes = await fetch(`${API_BASE}/transactions?${params}`);
         let firstDate: string | null = null;
 
-        if (txRes.ok) {
-          const data = await txRes.json();
+        {
+          const data = await api.get<{ data: Transaction[] }>(`/transactions?${params}`);
           const allTx: Transaction[] = data.data || [];
 
           const fiiPurchases = allTx
@@ -115,11 +102,8 @@ function FiiDetailPanel({
 
         if (firstDate) {
           try {
-            const benchRes = await fetch(`${API_BASE}/benchmarks/returns?from=${firstDate}`);
-            if (benchRes.ok) {
-              const benchData = await benchRes.json();
-              setBenchmarks(benchData.data);
-            }
+            const benchData = await api.get<{ data: { cdi: number; ibovespa: number | null; poupanca: number; ifix: number | null; days: number } }>(`/benchmarks/returns?from=${firstDate}`);
+            setBenchmarks(benchData.data);
           } catch {
             // Benchmark data is optional
           }
@@ -343,20 +327,16 @@ function TransactionHistory({
           params.set('includeAsDestination', 'true');
         }
 
-        const [txResponse, balanceResponse] = await Promise.all([
-          fetch(`${API_BASE}/transactions?${params}`),
-          fetch(`${API_BASE}/transactions/daily-balances?${params}`),
+        const [txData, balanceData] = await Promise.all([
+          api.get<{ data: Transaction[] }>(`/transactions?${params}`),
+          api.get<{ data: { date: string; balance: number; dayTotal: number }[] }>(`/transactions/daily-balances?${params}`),
         ]);
 
-        if (txResponse.ok) {
-          const data = await txResponse.json();
-          setTransactions(data.data || []);
-        }
+        setTransactions(txData.data || []);
 
-        if (balanceResponse.ok) {
-          const data = await balanceResponse.json();
+        {
           const balMap: Record<string, { balance: number; dayTotal: number }> = {};
-          for (const entry of (data.data || [])) {
+          for (const entry of (balanceData.data || [])) {
             balMap[entry.date] = { balance: entry.balance, dayTotal: entry.dayTotal };
           }
           setDayBalances(balMap);
@@ -436,7 +416,7 @@ function TransactionHistory({
             </div>
             <div className="space-y-0.5 mt-0.5">
               {dayTransactions.map((tx) => {
-                const status = statusConfig[tx.status] || statusConfig.PLANNED;
+                const status = transactionStatusConfig[tx.status] || transactionStatusConfig.PLANNED;
                 const isExpense = tx.type === 'EXPENSE';
                 const isIncome = tx.type === 'INCOME';
                 return (
@@ -667,8 +647,7 @@ export default function ContasPage() {
 
   const fetchBankAccounts = async () => {
     try {
-      const response = await fetch(`${API_BASE}/bank-accounts`);
-      const data = await response.json();
+      const data = await api.get<{ data: BankAccount[] }>('/bank-accounts');
       setBankAccounts(data.data || []);
     } catch (error) {
       console.error('Erro ao carregar contas bancarias:', error);
@@ -677,30 +656,25 @@ export default function ContasPage() {
 
   const syncCryptoPrices = async (profileId: string) => {
     try {
-      const response = await fetch(`${API_BASE}/crypto/sync?profileId=${profileId}`, { method: 'POST' });
-      if (response.ok) {
-        const data = await response.json();
-        const syncData = data.data;
-        const pricesMap: Record<string, { priceUsd: number; priceBrl: number }> = {};
-        if (syncData.prices) {
-          for (const p of syncData.prices) {
-            pricesMap[p.symbol] = { priceUsd: p.priceUsd, priceBrl: p.priceBrl };
-          }
+      const data = await api.post<{ data: { usdBrl: number; prices: { symbol: string; priceUsd: number; priceBrl: number }[] } }>(`/crypto/sync?profileId=${profileId}`, {});
+      const syncData = data.data;
+      const pricesMap: Record<string, { priceUsd: number; priceBrl: number }> = {};
+      if (syncData.prices) {
+        for (const p of syncData.prices) {
+          pricesMap[p.symbol] = { priceUsd: p.priceUsd, priceBrl: p.priceBrl };
         }
-        setCryptoPrices({ usdBrl: syncData.usdBrl, prices: pricesMap });
-        await fetchBankAccounts();
       }
+      setCryptoPrices({ usdBrl: syncData.usdBrl, prices: pricesMap });
+      await fetchBankAccounts();
+
       // Fetch structured purchases with gains
-      const purchasesRes = await fetch(`${API_BASE}/crypto/purchases?profileId=${profileId}`);
-      if (purchasesRes.ok) {
-        const pData = await purchasesRes.json();
-        const byAsset: Record<string, CryptoPurchaseWithGains[]> = {};
-        for (const p of (pData.data || [])) {
-          if (!byAsset[p.asset]) byAsset[p.asset] = [];
-          byAsset[p.asset].push(p);
-        }
-        setCryptoPurchases(byAsset);
+      const pData = await api.get<{ data: CryptoPurchaseWithGains[] }>(`/crypto/purchases?profileId=${profileId}`);
+      const byAsset: Record<string, CryptoPurchaseWithGains[]> = {};
+      for (const p of (pData.data || [])) {
+        if (!byAsset[p.asset]) byAsset[p.asset] = [];
+        byAsset[p.asset].push(p);
       }
+      setCryptoPurchases(byAsset);
     } catch (error) {
       console.warn('Erro ao sincronizar precos crypto:', error);
     }
@@ -708,11 +682,8 @@ export default function ContasPage() {
 
   const fetchCategories = async (profileId: string) => {
     try {
-      const response = await fetch(`${API_BASE}/categories?profileId=${profileId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setCategories(data.data || []);
-      }
+      const data = await api.get<{ data: Category[] }>(`/categories?profileId=${profileId}`);
+      setCategories(data.data || []);
     } catch (error) {
       console.warn('Erro ao carregar categorias:', error);
     }
@@ -728,18 +699,12 @@ export default function ContasPage() {
     await Promise.all(
       creditCards.map(async (card) => {
         try {
-          const response = await fetch(`${API_BASE}/invoices?bankAccountId=${card.id}`);
-          if (response.ok) {
-            const data = await response.json();
-            invoicesMap[card.id] = data.data || [];
-          }
+          const data = await api.get<{ data: Invoice[] }>(`/invoices?bankAccountId=${card.id}`);
+          invoicesMap[card.id] = data.data || [];
 
-          const currentResponse = await fetch(`${API_BASE}/invoices/current?bankAccountId=${card.id}`);
-          if (currentResponse.ok) {
-            const currentData = await currentResponse.json();
-            if (currentData.data) {
-              currentMap[card.id] = currentData.data;
-            }
+          const currentData = await api.get<{ data: Invoice }>(`/invoices/current?bankAccountId=${card.id}`);
+          if (currentData.data) {
+            currentMap[card.id] = currentData.data;
           }
         } catch (error) {
           console.warn(`Erro ao carregar faturas do cartao ${card.name}:`, error);
@@ -763,18 +728,7 @@ export default function ContasPage() {
     try {
       const { initialInvoiceAmount, ...bankAccountData } = accountData;
 
-      const response = await fetch(`${API_BASE}/bank-accounts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...bankAccountData, isActive: true }),
-      });
-
-      if (!response.ok) {
-        const errorMessage = await response.text();
-        throw new Error(errorMessage || 'Erro ao criar conta bancaria');
-      }
-
-      const createdAccount = await response.json();
+      const createdAccount = await api.post<{ data: BankAccount }>('/bank-accounts', { ...bankAccountData, isActive: true });
 
       if (
         accountData.type === 'CREDIT_CARD' &&
@@ -786,21 +740,9 @@ export default function ContasPage() {
         const referenceDate = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
 
         try {
-          const invoiceResponse = await fetch(`${API_BASE}/invoices`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ bankAccountId: createdAccount.data.id, referenceDate }),
-          });
-
-          if (invoiceResponse.ok) {
-            const invoiceData = await invoiceResponse.json();
-            if (invoiceData.data?.id) {
-              await fetch(`${API_BASE}/invoices/${invoiceData.data.id}/add-amount`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ amount: initialInvoiceAmount }),
-              });
-            }
+          const invoiceData = await api.post<{ data: Invoice }>('/invoices', { bankAccountId: createdAccount.data.id, referenceDate });
+          if (invoiceData.data?.id) {
+            await api.post(`/invoices/${invoiceData.data.id}/add-amount`, { amount: initialInvoiceAmount });
           }
         } catch (invoiceError) {
           console.warn('Erro ao criar fatura inicial:', invoiceError);
@@ -820,16 +762,7 @@ export default function ContasPage() {
     if (!editingBankAccount) return;
 
     try {
-      const response = await fetch(`${API_BASE}/bank-accounts/${editingBankAccount.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...accountData, isActive: editingBankAccount.isActive }),
-      });
-
-      if (!response.ok) {
-        const errorMessage = await response.text();
-        throw new Error(errorMessage || 'Erro ao atualizar conta bancaria');
-      }
+      await api.put(`/bank-accounts/${editingBankAccount.id}`, { ...accountData, isActive: editingBankAccount.isActive });
 
       await fetchBankAccounts();
       setEditingBankAccount(null);
@@ -852,16 +785,7 @@ export default function ContasPage() {
   const handlePayInvoice = async (invoiceId: string, amount: number) => {
     try {
       const today = new Date().toISOString().split('T')[0];
-      const response = await fetch(`${API_BASE}/invoices/${invoiceId}/pay`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paidAmount: amount, paidAt: today }),
-      });
-
-      if (!response.ok) {
-        const errorMessage = await response.text();
-        throw new Error(errorMessage || 'Erro ao pagar fatura');
-      }
+      await api.post(`/invoices/${invoiceId}/pay`, { paidAmount: amount, paidAt: today });
 
       await fetchInvoicesForCreditCards(filteredAccounts);
       await fetchBankAccounts();
@@ -873,16 +797,7 @@ export default function ContasPage() {
 
   const handleUpdateInvoice = async (invoiceId: string, data: { closingDate?: string; dueDate?: string }) => {
     try {
-      const response = await fetch(`${API_BASE}/invoices/${invoiceId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-
-      if (!response.ok) {
-        const errorMessage = await response.text();
-        throw new Error(errorMessage || 'Erro ao atualizar fatura');
-      }
+      await api.put(`/invoices/${invoiceId}`, data);
 
       await fetchInvoicesForCreditCards(filteredAccounts);
     } catch (error) {
@@ -908,15 +823,7 @@ export default function ContasPage() {
 
   const handleSaveTransaction = async (payload: TransactionFormData) => {
     try {
-      const response = await fetch(`${API_BASE}/transactions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) {
-        const errorMessage = await response.text();
-        throw new Error(errorMessage || 'Erro ao criar transacao');
-      }
+      await api.post('/transactions', payload);
       setIsTransactionFormOpen(false);
       await fetchBankAccounts();
       // Re-expand to refresh transaction history
@@ -934,15 +841,7 @@ export default function ContasPage() {
       const cleanPayload = Object.fromEntries(
         Object.entries(payload).filter(([, v]) => v !== undefined && v !== null)
       );
-      const response = await fetch(`${API_BASE}/transactions/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cleanPayload),
-      });
-      if (!response.ok) {
-        const errorMessage = await response.text();
-        throw new Error(errorMessage || 'Erro ao atualizar transacao');
-      }
+      await api.put(`/transactions/${id}`, cleanPayload);
       setIsTransactionFormOpen(false);
       setEditingTransaction(null);
       await fetchBankAccounts();
@@ -963,12 +862,7 @@ export default function ContasPage() {
 
   const handleDeleteTransaction = async (tx: Transaction) => {
     try {
-      const response = await fetch(`${API_BASE}/transactions/${tx.id}`, {
-        method: 'DELETE',
-      });
-      if (!response.ok) {
-        throw new Error('Erro ao excluir transacao');
-      }
+      await api.delete(`/transactions/${tx.id}`);
       await fetchBankAccounts();
       const currentExpanded = expandedAccountId;
       setExpandedAccountId(null);
@@ -1014,15 +908,11 @@ export default function ContasPage() {
 
     // Persist to backend
     try {
-      await fetch(`${API_BASE}/bank-accounts/reorder`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          items: reordered.map((account, index) => ({
-            id: account.id,
-            displayOrder: index + 1,
-          })),
-        }),
+      await api.put('/bank-accounts/reorder', {
+        items: reordered.map((account, index) => ({
+          id: account.id,
+          displayOrder: index + 1,
+        })),
       });
     } catch (error) {
       console.error('Erro ao reordenar contas:', error);

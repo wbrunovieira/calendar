@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { API_BASE } from '@/lib/api';
+import { api } from '@/lib/api';
 import type { RecurringTransaction, Transaction, Category, BankAccount, BudgetSummaryItem } from '@/types/finances';
 
 interface MonthlyCostOverviewProps {
@@ -37,24 +37,15 @@ export default function MonthlyCostOverview({ profileId, categories }: MonthlyCo
         const fromDate = currentMonth.start.toISOString().slice(0, 10);
         const toDate = currentMonth.end.toISOString().slice(0, 10);
 
-        const [recRes, txRes, budgetRes] = await Promise.all([
-          fetch(`${API_BASE}/recurring-transactions?profileId=${profileId}`),
-          fetch(`${API_BASE}/transactions?profileId=${profileId}&from=${fromDate}&to=${toDate}`),
-          fetch(`${API_BASE}/budgets/summary?profileId=${profileId}&period=${currentMonth.period}`),
+        const [recData, txData, budgetData] = await Promise.all([
+          api.get<{ data: RecurringTransaction[] }>(`/recurring-transactions?profileId=${profileId}`),
+          api.get<{ data: Transaction[] }>(`/transactions?profileId=${profileId}&from=${fromDate}&to=${toDate}`),
+          api.get<{ data: BudgetSummaryItem[] }>(`/budgets/summary?profileId=${profileId}&period=${currentMonth.period}`),
         ]);
 
-        if (recRes.ok) {
-          const recData = await recRes.json();
-          setRecurrings(recData.data || []);
-        }
-        if (txRes.ok) {
-          const txData = await txRes.json();
-          setTransactions(txData.data || []);
-        }
-        if (budgetRes.ok) {
-          const budgetData = await budgetRes.json();
-          setBudgetSummary(budgetData.data || []);
-        }
+        setRecurrings(recData.data || []);
+        setTransactions(txData.data || []);
+        setBudgetSummary(budgetData.data || []);
       } catch (e) {
         console.warn('Erro ao carregar dados do overview', e);
       } finally {

@@ -5,14 +5,9 @@ import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
 import { useProfile } from '@/contexts/ProfileContext';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-import { API_BASE } from '@/lib/api';
+import { api } from '@/lib/api';
+import { CHART_COLORS } from '@/utils/constants';
 import type { RecurringTransaction, Transaction, Category, BudgetSummaryItem } from '@/types/finances';
-
-const CHART_COLORS = [
-  '#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6',
-  '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1',
-  '#14b8a6', '#a855f7', '#eab308', '#22c55e', '#0ea5e9'
-];
 
 type ViewMode = 1 | 2 | 3 | 6 | 12;
 
@@ -54,19 +49,13 @@ export default function VisaoMensalPage() {
 
     (async () => {
       try {
-        const [catRes, recRes] = await Promise.all([
-          fetch(`${API_BASE}/categories?profileId=${selectedProfileId}`),
-          fetch(`${API_BASE}/recurring-transactions?profileId=${selectedProfileId}`),
+        const [catData, recData] = await Promise.all([
+          api.get<{ data: Category[] }>(`/categories?profileId=${selectedProfileId}`),
+          api.get<{ data: RecurringTransaction[] }>(`/recurring-transactions?profileId=${selectedProfileId}`),
         ]);
 
-        if (catRes.ok) {
-          const catData = await catRes.json();
-          setCategories(catData.data || []);
-        }
-        if (recRes.ok) {
-          const recData = await recRes.json();
-          setRecurrings(recData.data || []);
-        }
+        setCategories(catData.data || []);
+        setRecurrings(recData.data || []);
       } catch (e) {
         console.warn('Erro ao carregar categorias e recorrentes', e);
       }
@@ -89,13 +78,14 @@ export default function VisaoMensalPage() {
             const fromDate = start.toISOString().slice(0, 10);
             const toDate = end.toISOString().slice(0, 10);
 
-            const [txRes, budgetRes] = await Promise.all([
-              fetch(`${API_BASE}/transactions?profileId=${selectedProfileId}&from=${fromDate}&to=${toDate}`),
-              fetch(`${API_BASE}/budgets/summary?profileId=${selectedProfileId}&period=${period}`),
-            ]);
-
-            const txData = txRes.ok ? await txRes.json() : { data: [] };
-            const budgetData = budgetRes.ok ? await budgetRes.json() : { data: [] };
+            let txData: { data: Transaction[] } = { data: [] };
+            let budgetData: { data: BudgetSummaryItem[] } = { data: [] };
+            try {
+              [txData, budgetData] = await Promise.all([
+                api.get<{ data: Transaction[] }>(`/transactions?profileId=${selectedProfileId}&from=${fromDate}&to=${toDate}`),
+                api.get<{ data: BudgetSummaryItem[] }>(`/budgets/summary?profileId=${selectedProfileId}&period=${period}`),
+              ]);
+            } catch { /* graceful fallback */ }
 
             return {
               period,

@@ -17,7 +17,8 @@ import {
   ComposedChart,
   ReferenceLine,
 } from 'recharts';
-import { API_BASE } from '@/lib/api';
+import { api } from '@/lib/api';
+import { formatCurrency } from '@/utils/format';
 
 const PROXY_BASE = '/api/magic-formula';
 
@@ -90,12 +91,6 @@ const SEGMENT_COLORS: Record<string, string> = {
   Residencial: '#f97316',
   Educacional: '#6366f1',
 };
-
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  }).format(value);
 
 const formatPercent = (value: number) => `${value.toFixed(2)}%`;
 
@@ -177,9 +172,7 @@ export default function MercadoPage() {
   const loadFIIs = useCallback(async () => {
     setLoadingFiis(true);
     try {
-      const res = await fetch(`${API_BASE}/fiis/market`);
-      if (!res.ok) throw new Error('Falha ao carregar FIIs');
-      const json: FIIMarketResponse = await res.json();
+      const json = await api.get<FIIMarketResponse>('/fiis/market');
       setFiis(json.data || []);
       setCdiRate(json.cdiRate || 0);
       setCdiYield(json.cdiYield || 0);

@@ -1,13 +1,8 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
-import { API_BASE } from '@/lib/api';
-
-export interface Profile {
-  id: string;
-  name: string;
-  type: 'PERSONAL' | 'BUSINESS';
-}
+import { api } from '@/lib/api';
+import type { Profile } from '@/types/finances';
 
 interface ProfileContextType {
   profiles: Profile[];
@@ -30,8 +25,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const loadProfiles = async () => {
       try {
-        const response = await fetch(`${API_BASE}/profiles`);
-        const data = await response.json();
+        const data = await api.get<{ data: Profile[] }>('/profiles');
         const profileList: Profile[] = data.data || [];
         setProfiles(profileList);
 
