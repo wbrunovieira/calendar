@@ -586,6 +586,14 @@ export default function ContasPage() {
   const getSubAssets = (parentId: string) =>
     filteredAccounts.filter((a) => a.linkedAccountId === parentId);
 
+  // Sub-investments (exclude credit cards)
+  const getSubInvestments = (parentId: string) =>
+    filteredAccounts.filter((a) => a.linkedAccountId === parentId && a.type !== 'CREDIT_CARD');
+
+  // Credit cards linked to a parent account
+  const getSubCreditCards = (parentId: string) =>
+    filteredAccounts.filter((a) => a.linkedAccountId === parentId && a.type === 'CREDIT_CARD');
+
   // IDs of accounts that have linked investments (broker accounts like Clear)
   const brokerAccountIds = useMemo(() => {
     const parentIds = new Set<string>();
@@ -1143,6 +1151,8 @@ export default function ContasPage() {
                     const isExpanded = expandedAccountId === account.id;
 
                     if (account.type === 'CREDIT_CARD') {
+                      // Skip credit cards linked to a broker — they render inside the broker card
+                      if (account.linkedAccountId && brokerAccountIds.has(account.linkedAccountId)) return null;
                       return (
                         <SortableItem key={account.id} id={account.id}>
                           {({ listeners, attributes }) => (
@@ -1199,7 +1209,8 @@ export default function ContasPage() {
                     }
 
                     const isBroker = brokerAccountIds.has(account.id);
-                    const subInvestments = isBroker ? getSubAssets(account.id) : [];
+                    const subInvestments = isBroker ? getSubInvestments(account.id) : [];
+                    const subCreditCards = isBroker ? getSubCreditCards(account.id) : [];
                     const brokerTotalBrl = isBroker
                       ? account.currentBalance + subInvestments.reduce((sum, s) => sum + s.currentBalance, 0)
                       : account.currentBalance;
@@ -1318,6 +1329,26 @@ export default function ContasPage() {
                                     </div>
                                     );
                                   })}
+                                </div>
+                              )}
+                              {/* Credit cards linked to this broker account */}
+                              {subCreditCards.length > 0 && (
+                                <div className="mt-3 pt-3 border-t border-white/10 space-y-2">
+                                  <p className="text-white/40 text-[10px] uppercase tracking-wider font-semibold px-2">Cartões de crédito</p>
+                                  {subCreditCards.map((cc) => (
+                                    <div key={cc.id} className="px-1">
+                                      <CreditCardInfo
+                                        account={cc}
+                                        currentInvoice={currentInvoices[cc.id]}
+                                        invoices={invoicesByAccount[cc.id] || []}
+                                        onPayInvoice={handlePayInvoice}
+                                        onEdit={() => openEditModal(cc)}
+                                        onUpdateInvoice={handleUpdateInvoice}
+                                        selectedInvoiceId={selectedInvoiceByAccount[cc.id] || ''}
+                                        onInvoiceSelect={(invoiceId) => handleInvoiceSelect(cc.id, invoiceId)}
+                                      />
+                                    </div>
+                                  ))}
                                 </div>
                               )}
                             </div>
