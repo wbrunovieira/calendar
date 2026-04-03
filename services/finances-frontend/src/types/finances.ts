@@ -258,3 +258,24 @@ export interface Goal {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface CryptoPurchaseWithGains {
+  id: string;
+  asset: string;
+  quantity: number;
+  priceUsd: number;
+  exchangeRate: number;
+  investedBrl: number;
+  investedUsd: number;
+  occurredOn: string;
+  currentPriceUsd: number;
+  currentExchangeRate: number;
+  currentValueUsd: number;
+  currentValueBrl: number;
+  gainCryptoUsd: number;
+  gainCryptoPercent: number;
+  gainExchangeBrl: number;
+  gainExchangePercent: number;
+  gainTotalBrl: number;
+  gainTotalPercent: number;
+}
