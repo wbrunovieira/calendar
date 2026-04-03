@@ -2,6 +2,7 @@
 
 import { ReactNode } from 'react';
 import { ProfileProvider } from '@/contexts/ProfileContext';
+import { ToastProvider } from '@/components/ui/Toast';
 
 interface ProvidersProps {
   children: ReactNode;
@@ -10,7 +11,9 @@ interface ProvidersProps {
 export default function Providers({ children }: ProvidersProps) {
   return (
     <ProfileProvider>
-      {children}
+      <ToastProvider>
+        {children}
+      </ToastProvider>
     </ProfileProvider>
   );
 }

@@ -8,6 +8,7 @@ import InvestmentAccountInfo from '@/components/finances/InvestmentAccountInfo';
 import TransactionForm from '@/components/finances/TransactionForm';
 import type { BankAccount, Invoice, Transaction, TransactionFormData, Category } from '@/types/finances';
 import { API_BASE } from '@/lib/api';
+import { useToast } from '@/components/ui/Toast';
 import {
   DndContext,
   closestCenter,
@@ -319,6 +320,7 @@ function TransactionHistory({
   onEdit?: (tx: Transaction) => void;
   onDelete?: (tx: Transaction) => void;
 }) {
+  const { confirm } = useToast();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [dayBalances, setDayBalances] = useState<Record<string, { balance: number; dayTotal: number }>>({});
   const [loading, setLoading] = useState(true);
@@ -477,10 +479,12 @@ function TransactionHistory({
                       {onDelete && (
                         <button
                           type="button"
-                          onClick={() => {
-                            if (window.confirm(`Excluir "${tx.description}"?`)) {
-                              onDelete(tx);
-                            }
+                          onClick={async () => {
+                            const ok = await confirm(
+                              `Excluir "${tx.description}"?`,
+                              `${formatCurrency(tx.amount)} sera removido permanentemente.`,
+                            );
+                            if (ok) onDelete(tx);
                           }}
                           className="text-white/30 hover:text-red-400 transition-colors p-1"
                           title="Excluir lançamento"
@@ -543,6 +547,7 @@ function SortableItem({ id, children }: { id: string; children: (props: { listen
 
 export default function ContasPage() {
   const { profiles, selectedProfileId, selectedProfile, isLoading: profilesLoading } = useProfile();
+  const { toast, confirm } = useToast();
 
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -797,7 +802,7 @@ export default function ContasPage() {
       await fetchBankAccounts();
     } catch (error) {
       console.error('Erro ao criar conta bancaria:', error);
-      alert('Erro ao criar conta bancaria');
+      toast('Erro ao criar conta bancaria', 'error');
     }
   };
 
@@ -822,7 +827,7 @@ export default function ContasPage() {
       setEditingBankAccount(null);
     } catch (error) {
       console.error('Erro ao atualizar conta bancaria:', error);
-      alert('Erro ao atualizar conta bancaria');
+      toast('Erro ao atualizar conta bancaria', 'error');
     }
   };
 
@@ -854,7 +859,7 @@ export default function ContasPage() {
       await fetchBankAccounts();
     } catch (error) {
       console.error('Erro ao pagar fatura:', error);
-      alert('Erro ao pagar fatura');
+      toast('Erro ao pagar fatura', 'error');
     }
   };
 
@@ -874,7 +879,7 @@ export default function ContasPage() {
       await fetchInvoicesForCreditCards(filteredAccounts);
     } catch (error) {
       console.error('Erro ao atualizar fatura:', error);
-      alert('Erro ao atualizar fatura');
+      toast('Erro ao atualizar fatura', 'error');
     }
   };
 
@@ -912,7 +917,7 @@ export default function ContasPage() {
       setTimeout(() => setExpandedAccountId(currentExpanded), 50);
     } catch (error) {
       console.error('Erro ao criar transacao:', error);
-      alert('Erro ao criar transacao');
+      toast('Erro ao criar transacao', 'error');
     }
   };
 
@@ -938,7 +943,7 @@ export default function ContasPage() {
       setTimeout(() => setExpandedAccountId(currentExpanded), 50);
     } catch (error) {
       console.error('Erro ao atualizar transacao:', error);
-      alert('Erro ao atualizar transacao');
+      toast('Erro ao atualizar transacao', 'error');
     }
   };
 
@@ -960,9 +965,10 @@ export default function ContasPage() {
       const currentExpanded = expandedAccountId;
       setExpandedAccountId(null);
       setTimeout(() => setExpandedAccountId(currentExpanded), 50);
+      toast('Transacao excluida com sucesso');
     } catch (error) {
       console.error('Erro ao excluir transacao:', error);
-      alert('Erro ao excluir transacao');
+      toast('Erro ao excluir transacao', 'error');
     }
   };
 
