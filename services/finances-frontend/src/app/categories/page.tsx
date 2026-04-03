@@ -6,6 +6,7 @@ import AppLayout from '@/components/layout/AppLayout';
 import { useProfile } from '@/contexts/ProfileContext';
 import { API_BASE } from '@/lib/api';
 import type { Category, CategoryType } from '@/types/finances';
+import { useToast } from '@/components/ui/Toast';
 
 interface CategoryFormData {
   name: string;
@@ -51,6 +52,7 @@ const CATEGORY_ICONS = [
 
 export default function CategoriesPage() {
   const { selectedProfileId } = useProfile();
+  const { toast, confirm } = useToast();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -199,7 +201,8 @@ export default function CategoriesPage() {
       ? `A categoria "${cat.name}" tem ${subcats.length} subcategoria(s). Deseja excluir mesmo assim?`
       : `Deseja realmente excluir a categoria "${cat.name}"?`;
 
-    if (!confirm(msg)) return;
+    const ok = await confirm(msg);
+    if (!ok) return;
 
     try {
       const res = await fetch(`${API_BASE}/categories/${cat.id}`, {
@@ -207,8 +210,10 @@ export default function CategoriesPage() {
       });
       if (!res.ok) throw new Error(`status ${res.status}`);
       await loadCategories();
+      toast('Categoria excluida com sucesso');
     } catch (e) {
       console.warn('Erro ao excluir categoria', e);
+      toast('Nao foi possivel excluir a categoria', 'error');
       setError('Nao foi possivel excluir a categoria.');
     }
   };

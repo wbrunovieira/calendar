@@ -8,6 +8,7 @@ import CashflowSummary from '@/components/finances/CashflowSummary';
 import QuickExpense from '@/components/finances/QuickExpense';
 import GlobalSearch from '@/components/finances/GlobalSearch';
 import TodayAlerts from '@/components/finances/TodayAlerts';
+import { useToast } from '@/components/ui/Toast';
 import type {
   BankAccount,
   Category,
@@ -49,6 +50,7 @@ const defaultFilters: TransactionFilters = {
 export default function FinancesPage() {
   // Use shared profile context
   const { profiles, selectedProfileId, selectedProfile, isLoading: profilesLoading } = useProfile();
+  const { toast, confirm } = useToast();
 
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -235,7 +237,7 @@ export default function FinancesPage() {
 
   const handleCreateTransaction = async (payload: TransactionFormData) => {
     if (!selectedProfileId) {
-      alert('Selecione um perfil financeiro antes de criar lançamentos.');
+      toast('Selecione um perfil financeiro antes de criar lancamentos.', 'warning');
       return;
     }
 
@@ -264,7 +266,7 @@ export default function FinancesPage() {
       setSearchRefreshKey((k) => k + 1);
     } catch (error) {
       console.error('Erro ao criar lançamento:', error);
-      alert('Erro ao salvar lançamento');
+      toast('Erro ao salvar lancamento', 'error');
     } finally {
       setSavingTransaction(false);
     }
@@ -297,7 +299,7 @@ export default function FinancesPage() {
       setSearchRefreshKey((k) => k + 1);
     } catch (error) {
       console.error('Erro ao atualizar lançamento:', error);
-      alert('Erro ao atualizar lançamento');
+      toast('Erro ao atualizar lancamento', 'error');
     } finally {
       setSavingTransaction(false);
     }
@@ -340,14 +342,13 @@ export default function FinancesPage() {
       }
     } catch (error) {
       console.error('Erro ao atualizar status do lançamento:', error);
-      alert('Erro ao atualizar status do lançamento');
+      toast('Erro ao atualizar status do lancamento', 'error');
     }
   };
 
   const handleDeleteTransaction = async (id: string) => {
-    if (!confirm('Deseja realmente excluir este lançamento?')) {
-      return;
-    }
+    const ok = await confirm('Deseja realmente excluir este lancamento?');
+    if (!ok) return;
 
     try {
       const response = await fetch(`${API_BASE}/transactions/${id}`, {
@@ -356,16 +357,17 @@ export default function FinancesPage() {
 
       if (!response.ok) {
         const errorMessage = await response.text();
-        throw new Error(errorMessage || 'Erro ao excluir lançamento');
+        throw new Error(errorMessage || 'Erro ao excluir lancamento');
       }
 
       if (selectedProfileId) {
         await fetchTransactions(selectedProfileId, transactionFilters);
         await fetchBankAccounts();
       }
+      toast('Lancamento excluido com sucesso');
     } catch (error) {
-      console.error('Erro ao excluir lançamento:', error);
-      alert('Erro ao excluir lançamento');
+      console.error('Erro ao excluir lancamento:', error);
+      toast('Erro ao excluir lancamento', 'error');
     }
   };
 
@@ -389,7 +391,7 @@ export default function FinancesPage() {
       await fetchBankAccounts();
     } catch (error) {
       console.error('Erro ao pagar fatura:', error);
-      alert('Erro ao pagar fatura');
+      toast('Erro ao pagar fatura', 'error');
     }
   };
 
@@ -402,7 +404,7 @@ export default function FinancesPage() {
 
   const openTransactionModal = () => {
     if (!selectedProfileId) {
-      alert('Crie ou selecione um perfil financeiro antes de registrar lançamentos.');
+      toast('Crie ou selecione um perfil financeiro antes de registrar lancamentos.', 'warning');
       return;
     }
     setIsTransactionModalOpen(true);
@@ -473,7 +475,7 @@ export default function FinancesPage() {
       await fetchBankAccounts();
     } catch (error) {
       console.error('Erro ao confirmar recorrente:', error);
-      alert('Erro ao confirmar pagamento');
+      toast('Erro ao confirmar pagamento', 'error');
     }
   }, [selectedProfileId, filteredAccounts, transactionFilters, fetchTransactions, fetchBankAccounts]);
 

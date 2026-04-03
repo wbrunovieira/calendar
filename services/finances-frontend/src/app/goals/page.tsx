@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import AppLayout, { useProfile } from '@/components/layout/AppLayout';
 import { API_BASE } from '@/lib/api';
+import { useToast } from '@/components/ui/Toast';
 import type { Goal, GoalPriority, GoalStatus, Category } from '@/types/finances';
 
 const parseLocalDate = (value: string) => {
@@ -68,6 +69,7 @@ const emptyForm: FormData = {
 
 export default function GoalsPage() {
   const { selectedProfileId, selectedProfile } = useProfile();
+  const { toast, confirm } = useToast();
   const [goals, setGoals] = useState<Goal[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -164,12 +166,15 @@ export default function GoalsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir esta meta?')) return;
+    const ok = await confirm('Tem certeza que deseja excluir esta meta?');
+    if (!ok) return;
     try {
       await fetch(`${API_BASE}/goals/${id}`, { method: 'DELETE' });
       fetchGoals();
+      toast('Meta excluida com sucesso');
     } catch (e) {
       console.warn('Erro ao excluir', e);
+      toast('Erro ao excluir meta', 'error');
     }
   };
 

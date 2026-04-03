@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import AppLayout, { useProfile } from '@/components/layout/AppLayout';
+import { useToast } from '@/components/ui/Toast';
 import TransactionForm from '@/components/finances/TransactionForm';
 import { API_BASE } from '@/lib/api';
 import type { BankAccount, RecurringTransaction, BudgetSummaryItem, Category, Transaction, TransactionFormData } from '@/types/finances';
@@ -23,6 +24,7 @@ interface ForecastItem {
 export default function PlanPage() {
   // Use shared profile context
   const { profiles, selectedProfileId } = useProfile();
+  const { toast } = useToast();
 
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [recurrings, setRecurrings] = useState<RecurringTransaction[]>([]);
@@ -258,7 +260,7 @@ export default function PlanPage() {
       await loadData();
     } catch (e) {
       console.warn('Erro ao confirmar', e);
-      alert('Erro ao confirmar lancamento.');
+      toast('Erro ao confirmar lancamento', 'error');
     } finally {
       setConfirming(null);
     }
@@ -311,7 +313,7 @@ export default function PlanPage() {
       await loadData();
     } catch (e) {
       console.warn('Erro ao confirmar', e);
-      alert('Erro ao confirmar lancamento.');
+      toast('Erro ao confirmar lancamento', 'error');
     } finally {
       setConfirming(null);
     }
@@ -344,7 +346,7 @@ export default function PlanPage() {
       handleTransactionSaved();
     } catch (err) {
       console.error(err);
-      alert('Erro ao criar transacao');
+      toast('Erro ao criar transacao', 'error');
     } finally {
       setSavingTransaction(false);
     }
@@ -366,7 +368,7 @@ export default function PlanPage() {
       handleTransactionSaved();
     } catch (err) {
       console.error(err);
-      alert('Erro ao atualizar transacao');
+      toast('Erro ao atualizar transacao', 'error');
     } finally {
       setSavingTransaction(false);
     }

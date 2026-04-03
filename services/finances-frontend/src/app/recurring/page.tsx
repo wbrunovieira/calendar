@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import AppLayout, { useProfile } from '@/components/layout/AppLayout';
+import { useToast } from '@/components/ui/Toast';
 import { API_BASE } from '@/lib/api';
 import type { RecurringTransaction, BankAccount, Category, TransactionType } from '@/types/finances';
 
@@ -58,6 +59,7 @@ const defaultForm = (): FormData => ({
 export default function RecurringPage() {
   // Use shared profile context
   const { selectedProfileId, selectedProfile } = useProfile();
+  const { toast, confirm } = useToast();
 
   const [items, setItems] = useState<RecurringTransaction[]>([]);
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
@@ -223,14 +225,16 @@ export default function RecurringPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Deseja realmente excluir esta transacao recorrente?')) return;
+    const ok = await confirm('Deseja realmente excluir esta transacao recorrente?');
+    if (!ok) return;
     try {
       const res = await fetch(`${API_BASE}/recurring-transactions/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error(`status ${res.status}`);
       await loadRecurring();
+      toast('Transacao recorrente excluida');
     } catch (e) {
       console.warn('Erro ao excluir', e);
-      setError('Nao foi possivel excluir.');
+      toast('Nao foi possivel excluir', 'error');
     }
   };
 

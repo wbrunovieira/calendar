@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
+import { useToast } from '@/components/ui/Toast';
 import ProfileModal from '@/components/finances/ProfileModal';
 import BankAccountModal from '@/components/finances/BankAccountModal';
 import { API_BASE } from '@/lib/api';
@@ -15,6 +16,7 @@ interface Calendar {
 }
 
 export default function ConfiguracoesPage() {
+  const { toast, confirm } = useToast();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [profilesLoading, setProfilesLoading] = useState(true);
   const [calendars, setCalendars] = useState<Calendar[]>([]);
@@ -83,7 +85,7 @@ export default function ConfiguracoesPage() {
       await fetchProfiles();
     } catch (error) {
       console.error('Erro ao criar perfil:', error);
-      alert('Erro ao criar perfil');
+      toast('Erro ao criar perfil', 'error');
     }
   };
 
@@ -108,12 +110,13 @@ export default function ConfiguracoesPage() {
       setEditingProfile(null);
     } catch (error) {
       console.error('Erro ao atualizar perfil:', error);
-      alert('Erro ao atualizar perfil');
+      toast('Erro ao atualizar perfil', 'error');
     }
   };
 
   const handleDeleteProfile = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir este perfil?')) return;
+    const ok = await confirm('Tem certeza que deseja excluir este perfil?');
+    if (!ok) return;
 
     try {
       const response = await fetch(`${API_BASE}/profiles/${id}`, {
@@ -126,9 +129,10 @@ export default function ConfiguracoesPage() {
       }
 
       await fetchProfiles();
+      toast('Perfil excluido com sucesso');
     } catch (error) {
       console.error('Erro ao excluir perfil:', error);
-      alert('Erro ao excluir perfil');
+      toast('Erro ao excluir perfil', 'error');
     }
   };
 
@@ -196,7 +200,7 @@ export default function ConfiguracoesPage() {
       await fetchBankAccounts();
     } catch (error) {
       console.error('Erro ao criar conta bancária:', error);
-      alert('Erro ao criar conta bancária');
+      toast('Erro ao criar conta bancaria', 'error');
     }
   }, []);
 
@@ -221,12 +225,13 @@ export default function ConfiguracoesPage() {
       setEditingBankAccount(null);
     } catch (error) {
       console.error('Erro ao atualizar conta bancária:', error);
-      alert('Erro ao atualizar conta bancária');
+      toast('Erro ao atualizar conta bancaria', 'error');
     }
   };
 
   const handleDeleteBankAccount = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir esta conta bancária?')) return;
+    const ok = await confirm('Tem certeza que deseja excluir esta conta bancaria?');
+    if (!ok) return;
 
     try {
       const response = await fetch(`${API_BASE}/bank-accounts/${id}`, {
@@ -235,13 +240,14 @@ export default function ConfiguracoesPage() {
 
       if (!response.ok) {
         const errorMessage = await response.text();
-        throw new Error(errorMessage || 'Erro ao excluir conta bancária');
+        throw new Error(errorMessage || 'Erro ao excluir conta bancaria');
       }
 
       await fetchBankAccounts();
+      toast('Conta bancaria excluida com sucesso');
     } catch (error) {
-      console.error('Erro ao excluir conta bancária:', error);
-      alert('Erro ao excluir conta bancária');
+      console.error('Erro ao excluir conta bancaria:', error);
+      toast('Erro ao excluir conta bancaria', 'error');
     }
   };
 

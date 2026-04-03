@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import AppLayout, { useProfile } from '@/components/layout/AppLayout';
+import { useToast } from '@/components/ui/Toast';
 import { API_BASE } from '@/lib/api';
 import type { BudgetTarget, BudgetSummaryItem, Category, RecurringTransaction, Transaction } from '@/types/finances';
 
@@ -57,6 +58,7 @@ const calculatePaceMetrics = (period: string, spent: number, budget: number, pen
 export default function BudgetsPage() {
   // Use shared profile context
   const { selectedProfileId, selectedProfile } = useProfile();
+  const { toast } = useToast();
 
   const [period, setPeriod] = useState<string>(() => new Date().toISOString().slice(0, 7));
   const [targets, setTargets] = useState<BudgetTarget[]>([]);
@@ -272,7 +274,7 @@ export default function BudgetsPage() {
       resetForm();
     } catch (e) {
       console.warn('Erro ao salvar orçamento', e);
-      alert('Não foi possível salvar o orçamento');
+      toast('Nao foi possivel salvar o orcamento', 'error');
     }
   };
 
