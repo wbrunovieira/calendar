@@ -271,20 +271,37 @@ export default function BrokerAccountCard({
         {subCreditCards.length > 0 && (
           <div className="mt-3 pt-3 border-t border-white/10 space-y-2">
             <p className="text-white/40 text-[10px] uppercase tracking-wider font-semibold px-2">Cartões de crédito</p>
-            {subCreditCards.map((cc) => (
-              <div key={cc.id} className="px-1">
-                <CreditCardInfo
-                  account={cc}
-                  currentInvoice={currentInvoices[cc.id]}
-                  invoices={invoicesByAccount[cc.id] || []}
-                  onPayInvoice={onPayInvoice}
-                  onEdit={() => onEditAccount(cc)}
-                  onUpdateInvoice={onUpdateInvoice}
-                  selectedInvoiceId={selectedInvoiceByAccount[cc.id] || ''}
-                  onInvoiceSelect={(invoiceId) => onInvoiceSelect(cc.id, invoiceId)}
-                />
-              </div>
-            ))}
+            {subCreditCards.map((cc) => {
+              const selInvoiceId = selectedInvoiceByAccount[cc.id] || '';
+              return (
+                <div key={cc.id} className="px-1">
+                  <CreditCardInfo
+                    account={cc}
+                    currentInvoice={currentInvoices[cc.id]}
+                    invoices={invoicesByAccount[cc.id] || []}
+                    onPayInvoice={onPayInvoice}
+                    onEdit={() => onEditAccount(cc)}
+                    onUpdateInvoice={onUpdateInvoice}
+                    selectedInvoiceId={selInvoiceId}
+                    onInvoiceSelect={(invoiceId) => onInvoiceSelect(cc.id, invoiceId)}
+                  />
+                  {selInvoiceId && selectedProfileId && (
+                    <ExpandedTransactionPanel
+                      accountId={cc.id}
+                      profileId={selectedProfileId}
+                      categories={categories}
+                      accountCurrency={cc.currency}
+                      isCreditCard
+                      selectedInvoiceId={selInvoiceId}
+                      onAddTransaction={onAddTransaction}
+                      onEdit={onEditTransaction}
+                      onDelete={onDeleteTransaction}
+                      className="mt-0 rounded-t-none border-t-0"
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
