@@ -11,6 +11,7 @@ interface ExpandedTransactionPanelProps {
   isCreditCard?: boolean;
   includeAsDestination?: boolean;
   selectedInvoiceId?: string;
+  botFilter?: string;
   onAddTransaction: (accountId: string) => void;
   onEdit: (tx: Transaction) => void;
   onDelete: (tx: Transaction) => void;
@@ -25,6 +26,7 @@ export default function ExpandedTransactionPanel({
   isCreditCard,
   includeAsDestination,
   selectedInvoiceId,
+  botFilter,
   onAddTransaction,
   onEdit,
   onDelete,
@@ -50,6 +52,7 @@ export default function ExpandedTransactionPanel({
         accountCurrency={accountCurrency}
         isCreditCard={isCreditCard}
         includeAsDestination={includeAsDestination}
+        botFilter={botFilter}
         onEdit={onEdit}
         onDelete={onDelete}
       />

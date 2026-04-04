@@ -15,6 +15,7 @@ interface TransactionHistoryProps {
   accountCurrency?: string;
   isCreditCard?: boolean;
   includeAsDestination?: boolean;
+  botFilter?: string;
   onEdit?: (tx: Transaction) => void;
   onDelete?: (tx: Transaction) => void;
 }
@@ -27,6 +28,7 @@ export default function TransactionHistory({
   accountCurrency = 'BRL',
   isCreditCard = false,
   includeAsDestination = false,
+  botFilter,
   onEdit,
   onDelete,
 }: TransactionHistoryProps) {
@@ -77,14 +79,17 @@ export default function TransactionHistory({
   }, [accountId, profileId, selectedInvoiceId, includeAsDestination]);
 
   const groupedByDay = useMemo(() => {
+    const filtered = botFilter
+      ? transactions.filter(tx => tx.externalId?.startsWith(botFilter + '-'))
+      : transactions;
     const groups: Record<string, Transaction[]> = {};
-    for (const tx of transactions) {
+    for (const tx of filtered) {
       const dateKey = tx.occurredOn.split('T')[0];
       if (!groups[dateKey]) groups[dateKey] = [];
       groups[dateKey].push(tx);
     }
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
-  }, [transactions]);
+  }, [transactions, botFilter]);
 
   const groupedByDayDesc = useMemo(
     () => [...groupedByDay].reverse(),

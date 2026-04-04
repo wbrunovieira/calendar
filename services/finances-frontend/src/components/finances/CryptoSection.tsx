@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import {
   DndContext,
   closestCenter,
@@ -14,6 +15,8 @@ import { formatCurrency } from '@/utils/format';
 import { DragHandle, SortableItem } from '@/components/finances/SortableHelpers';
 import ExpandedTransactionPanel from '@/components/finances/ExpandedTransactionPanel';
 import type { BankAccount, Category, CryptoPurchaseWithGains, Transaction } from '@/types/finances';
+
+type BotTab = 'all' | 'MACross1' | 'MemeCoin1';
 
 interface CryptoSectionProps {
   cryptoAccounts: BankAccount[];
@@ -48,7 +51,15 @@ export default function CryptoSection({
   onEditTransaction,
   onDeleteTransaction,
 }: CryptoSectionProps) {
+  const [activeBot, setActiveBot] = useState<BotTab>('all');
+
   if (cryptoAccounts.length === 0) return null;
+
+  const botTabs: { key: BotTab; label: string }[] = [
+    { key: 'all', label: 'Todas' },
+    { key: 'MACross1', label: 'MACross1 (BRL)' },
+    { key: 'MemeCoin1', label: 'MemeCoin1 (USD)' },
+  ];
 
   return (
     <div className="space-y-3">
@@ -229,17 +240,39 @@ export default function CryptoSection({
                       </div>
                     </div>
                     {isExpanded && selectedProfileId && (
-                      <ExpandedTransactionPanel
-                        accountId={account.id}
-                        profileId={selectedProfileId}
-                        categories={categories}
-                        accountCurrency={account.currency}
-                        includeAsDestination
-                        onAddTransaction={onAddTransaction}
-                        onEdit={onEditTransaction}
-                        onDelete={onDeleteTransaction}
-                        className="ml-7"
-                      />
+                      <div className="ml-7 bg-white/[0.03] border border-white/10 border-t-0 rounded-b-xl p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          {botTabs.map((tab) => (
+                            <button
+                              key={tab.key}
+                              onClick={(e) => { e.stopPropagation(); setActiveBot(tab.key); }}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                                activeBot === tab.key
+                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                  : 'bg-white/5 text-white/50 border border-white/10 hover:bg-white/10'
+                              }`}
+                            >
+                              {tab.label}
+                            </button>
+                          ))}
+                          {activeBot === 'MemeCoin1' && cryptoPrices?.usdBrl && (
+                            <span className="ml-auto text-xs text-white/40">
+                              Saldo conta: {formatCurrency(account.currentBalance / cryptoPrices.usdBrl, 'USD')}
+                            </span>
+                          )}
+                        </div>
+                        <ExpandedTransactionPanel
+                          accountId={account.id}
+                          profileId={selectedProfileId}
+                          categories={categories}
+                          accountCurrency={activeBot === 'MemeCoin1' ? 'USD' : account.currency}
+                          includeAsDestination
+                          botFilter={activeBot === 'all' ? undefined : activeBot}
+                          onAddTransaction={onAddTransaction}
+                          onEdit={onEditTransaction}
+                          onDelete={onDeleteTransaction}
+                        />
+                      </div>
                     )}
                   </div>
                 )}
