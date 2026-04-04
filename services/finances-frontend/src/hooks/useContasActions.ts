@@ -104,14 +104,13 @@ export function useContasActions({
   const handleSaveTransaction = useCallback(async (payload: TransactionFormData) => {
     try {
       await api.post('/transactions', payload);
-      setIsTransactionFormOpen(false);
       await fetchBankAccounts();
       refreshExpandedAccount();
     } catch (error) {
       console.error('Erro ao criar transacao:', error);
       toast('Erro ao criar transacao', 'error');
     }
-  }, [fetchBankAccounts, refreshExpandedAccount, setIsTransactionFormOpen, toast]);
+  }, [fetchBankAccounts, refreshExpandedAccount, toast]);
 
   const handleUpdateTransaction = useCallback(async (id: string, payload: TransactionFormData) => {
     try {
