@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { formatCurrency } from '@/utils/format';
 import { DragHandle } from '@/components/finances/SortableHelpers';
 import type { DndListeners, DndAttributes } from '@/components/finances/SortableHelpers';
@@ -7,6 +8,13 @@ import FiiDetailPanel from '@/components/finances/FiiDetailPanel';
 import ExpandedTransactionPanel from '@/components/finances/ExpandedTransactionPanel';
 import CreditCardInfo from '@/components/finances/CreditCardInfo';
 import type { BankAccount, Category, Invoice, Transaction } from '@/types/finances';
+
+type BotTab = 'all' | 'MACross1' | 'MemeCoin1';
+const botTabs: { key: BotTab; label: string }[] = [
+  { key: 'all', label: 'Todas' },
+  { key: 'MACross1', label: 'MACross1 (BRL)' },
+  { key: 'MemeCoin1', label: 'MemeCoin1 (USD)' },
+];
 
 interface BrokerAccountCardProps {
   account: BankAccount;
@@ -57,6 +65,9 @@ export default function BrokerAccountCard({
   onUpdateInvoice,
   onInvoiceSelect,
 }: BrokerAccountCardProps) {
+  const [activeBot, setActiveBot] = useState<BotTab>('all');
+  const isExchange = account.type === 'EXCHANGE';
+
   const brokerTotalBrl = isBroker
     ? account.currentBalance + subInvestments.reduce((sum, s) => sum + s.currentBalance, 0)
     : account.currentBalance;
@@ -207,16 +218,47 @@ export default function BrokerAccountCard({
       </div>
 
       {isExpanded && selectedProfileId && (
-        <ExpandedTransactionPanel
-          accountId={account.id}
-          profileId={selectedProfileId}
-          categories={categories}
-          accountCurrency={account.currency}
-          includeAsDestination={isBroker}
-          onAddTransaction={onAddTransaction}
-          onEdit={onEditTransaction}
-          onDelete={onDeleteTransaction}
-        />
+        isExchange ? (
+          <div className="bg-white/[0.03] border border-white/10 border-t-0 rounded-b-xl p-4">
+            <div className="flex items-center gap-2 mb-3">
+              {botTabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={(e) => { e.stopPropagation(); setActiveBot(tab.key); }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    activeBot === tab.key
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      : 'bg-white/5 text-white/50 border border-white/10 hover:bg-white/10'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <ExpandedTransactionPanel
+              accountId={account.id}
+              profileId={selectedProfileId}
+              categories={categories}
+              accountCurrency={account.currency}
+              includeAsDestination={isBroker}
+              botFilter={activeBot === 'all' ? undefined : activeBot}
+              onAddTransaction={onAddTransaction}
+              onEdit={onEditTransaction}
+              onDelete={onDeleteTransaction}
+            />
+          </div>
+        ) : (
+          <ExpandedTransactionPanel
+            accountId={account.id}
+            profileId={selectedProfileId}
+            categories={categories}
+            accountCurrency={account.currency}
+            includeAsDestination={isBroker}
+            onAddTransaction={onAddTransaction}
+            onEdit={onEditTransaction}
+            onDelete={onDeleteTransaction}
+          />
+        )
       )}
     </div>
   );
