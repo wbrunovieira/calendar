@@ -80,7 +80,10 @@ export default function TransactionHistory({
 
   const groupedByDay = useMemo(() => {
     const filtered = botFilter
-      ? transactions.filter(tx => tx.externalId?.startsWith(botFilter + '-'))
+      ? transactions.filter(tx =>
+          tx.externalId?.startsWith(botFilter + '-') ||
+          tx.description?.includes(`(${botFilter})`)
+        )
       : transactions;
     const groups: Record<string, Transaction[]> = {};
     for (const tx of filtered) {
