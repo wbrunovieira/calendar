@@ -84,6 +84,7 @@ export default function TransactionForm({
   const [continueAdding, setContinueAdding] = useState(false);
   const [batchMode, setBatchMode] = useState(false);
   const [batchEntries, setBatchEntries] = useState<{ date: string; amount: string }[]>([]);
+  const [submitting, setSubmitting] = useState(false);
   const keepBankAccountRef = useRef<string | null>(null);
 
   const isEditing = !!editingTransaction;
@@ -244,36 +245,42 @@ export default function TransactionForm({
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (submitting) return;
 
-    if (isEditing && onUpdate && editingTransaction) {
-      await Promise.resolve(onUpdate(editingTransaction.id, buildPayload()));
-      onClose();
-      return;
-    }
-
-    if (batchMode && batchEntries.length > 0) {
-      for (const entry of batchEntries) {
-        const parsedAmount = parseFloat(entry.amount);
-        if (parsedAmount > 0 && entry.date) {
-          await Promise.resolve(onSave(buildPayload({ amount: parsedAmount, occurredOn: entry.date })));
-        }
+    setSubmitting(true);
+    try {
+      if (isEditing && onUpdate && editingTransaction) {
+        await Promise.resolve(onUpdate(editingTransaction.id, buildPayload()));
+        onClose();
+        return;
       }
-    } else {
-      await Promise.resolve(onSave(buildPayload()));
-    }
 
-    if (continueAdding) {
-      keepBankAccountRef.current = formData.bankAccountId;
-      setFormData({
-        ...defaultForm(selectedProfileId, 'CONFIRMED'),
-        bankAccountId: formData.bankAccountId,
-      });
-      setTagsInput('');
-      setBatchEntries([]);
-      setDestProfileId(selectedProfileId);
-      setDestCategories([]);
-    } else {
-      onClose();
+      if (batchMode && batchEntries.length > 0) {
+        for (const entry of batchEntries) {
+          const parsedAmount = parseFloat(entry.amount);
+          if (parsedAmount > 0 && entry.date) {
+            await Promise.resolve(onSave(buildPayload({ amount: parsedAmount, occurredOn: entry.date })));
+          }
+        }
+      } else {
+        await Promise.resolve(onSave(buildPayload()));
+      }
+
+      if (continueAdding) {
+        keepBankAccountRef.current = formData.bankAccountId;
+        setFormData({
+          ...defaultForm(selectedProfileId, 'CONFIRMED'),
+          bankAccountId: formData.bankAccountId,
+        });
+        setTagsInput('');
+        setBatchEntries([]);
+        setDestProfileId(selectedProfileId);
+        setDestCategories([]);
+      } else {
+        onClose();
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -867,10 +874,10 @@ export default function TransactionForm({
               </button>
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || submitting}
                 className="px-6 py-3 rounded-lg bg-emerald-500/80 hover:bg-emerald-500 text-white font-semibold transition-colors disabled:opacity-50"
               >
-                {loading ? 'Salvando...' : 'Salvar lançamento'}
+                {loading || submitting ? 'Salvando...' : 'Salvar lançamento'}
               </button>
             </div>
           </div>
