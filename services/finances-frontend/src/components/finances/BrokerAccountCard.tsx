@@ -16,6 +16,20 @@ const botTabs: { key: BotTab; label: string }[] = [
   { key: 'MemeCoin1', label: 'MemeCoin1 (USD)' },
 ];
 
+const MEME_SYMBOLS = new Set([
+  'USDT', 'DOGE', 'SHIB', 'PEPE', 'WIF', 'BONK', 'FLOKI',
+  'PNUT', 'TRUMP', 'NEIRO', 'MEME', 'ACT', 'BOME',
+]);
+
+function getAssetSymbol(name: string): string {
+  const match = name.match(/\(([A-Z]+)\)/);
+  return match ? match[1] : '';
+}
+
+function isMemeBotAsset(inv: BankAccount): boolean {
+  return MEME_SYMBOLS.has(getAssetSymbol(inv.name));
+}
+
 interface BrokerAccountCardProps {
   account: BankAccount;
   isExpanded: boolean;
@@ -124,76 +138,134 @@ export default function BrokerAccountCard({
         </div>
 
         {/* Sub-investments inside broker card */}
-        {isBroker && subInvestments.length > 0 && (
-          <div className="mt-3 pt-3 border-t border-white/10 space-y-2">
-            {account.currentBalance > 0 && (
-              <div className="px-2 py-2 rounded-lg bg-white/[0.04]">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-emerald-400 text-xs">●</span>
-                    <span className="text-white/80 text-sm font-medium">Saldo em conta</span>
-                  </div>
-                  <span className="text-white/80 text-sm font-medium">{formatCurrency(account.currentBalance)}</span>
-                </div>
-              </div>
-            )}
-            {subInvestments.map((inv) => {
-              const valorization = inv.currentBalance - inv.initialBalance;
-              const valorizationPct = inv.initialBalance > 0
-                ? (valorization / inv.initialBalance) * 100
-                : 0;
-              const hasValorization = inv.initialBalance > 0 && inv.numberOfQuotas != null;
-              const isFiiExpanded = expandedFiiId === inv.id;
-              return (
-                <div key={inv.id}>
-                  <div
-                    className="px-2 py-2 rounded-lg bg-white/[0.04] cursor-pointer hover:bg-white/[0.07] transition-colors"
-                    onClick={(e) => { e.stopPropagation(); onToggleFii(isFiiExpanded ? null : inv.id); }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-xs transition-transform ${isFiiExpanded ? 'rotate-90' : ''}`}>▶</span>
-                        <span className="text-white/80 text-sm font-medium">{inv.name}</span>
-                        {inv.numberOfQuotas != null && (
-                          <span className="text-white/40 text-xs">{inv.numberOfQuotas} cotas</span>
-                        )}
-                        {inv.quotaPrice != null && (
-                          <span className="text-white/30 text-xs">@ {formatCurrency(inv.quotaPrice)}</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-white/80 text-sm font-medium">{formatCurrency(inv.currentBalance, inv.currency)}</span>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onEditAccount(inv); }}
-                          className="text-white/30 hover:text-white/70 text-xs transition-colors"
-                        >
-                          Editar
-                        </button>
-                      </div>
+        {isBroker && subInvestments.length > 0 && (() => {
+          const macrossAssets = isExchange ? subInvestments.filter((inv) => !isMemeBotAsset(inv)) : subInvestments;
+          const memeAssets = isExchange ? subInvestments.filter((inv) => isMemeBotAsset(inv)) : [];
+          const macrossTotal = macrossAssets.reduce((sum, inv) => sum + inv.currentBalance, 0);
+          const memeTotal = memeAssets.reduce((sum, inv) => sum + inv.currentBalance, 0);
+
+          const renderAsset = (inv: BankAccount) => {
+            const valorization = inv.currentBalance - inv.initialBalance;
+            const valorizationPct = inv.initialBalance > 0
+              ? (valorization / inv.initialBalance) * 100
+              : 0;
+            const hasValorization = inv.initialBalance > 0 && inv.numberOfQuotas != null;
+            const isFiiExpanded = expandedFiiId === inv.id;
+            return (
+              <div key={inv.id}>
+                <div
+                  className="px-2 py-2 rounded-lg bg-white/[0.04] cursor-pointer hover:bg-white/[0.07] transition-colors"
+                  onClick={(e) => { e.stopPropagation(); onToggleFii(isFiiExpanded ? null : inv.id); }}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs transition-transform ${isFiiExpanded ? 'rotate-90' : ''}`}>▶</span>
+                      <span className="text-white/80 text-sm font-medium">{inv.name}</span>
+                      {inv.numberOfQuotas != null && (
+                        <span className="text-white/40 text-xs">{inv.numberOfQuotas} cotas</span>
+                      )}
+                      {inv.quotaPrice != null && (
+                        <span className="text-white/30 text-xs">@ {formatCurrency(inv.quotaPrice)}</span>
+                      )}
                     </div>
-                    {hasValorization && (
-                      <div className="flex items-center justify-between mt-1 px-6">
-                        <span className="text-white/30 text-xs">
-                          Investido: {formatCurrency(inv.initialBalance)}
-                        </span>
-                        <span className={`text-xs font-medium ${valorization >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {valorization >= 0 ? '+' : ''}{formatCurrency(valorization)} ({valorizationPct >= 0 ? '+' : ''}{valorizationPct.toFixed(2)}%)
-                        </span>
-                      </div>
-                    )}
+                    <div className="flex items-center gap-3">
+                      <span className="text-white/80 text-sm font-medium">{formatCurrency(inv.currentBalance, inv.currency)}</span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onEditAccount(inv); }}
+                        className="text-white/30 hover:text-white/70 text-xs transition-colors"
+                      >
+                        Editar
+                      </button>
+                    </div>
                   </div>
-                  {isFiiExpanded && selectedProfileId && (
-                    <FiiDetailPanel
-                      account={inv}
-                      clearAccountId={account.id}
-                      profileId={selectedProfileId}
-                    />
+                  {hasValorization && (
+                    <div className="flex items-center justify-between mt-1 px-6">
+                      <span className="text-white/30 text-xs">
+                        Investido: {formatCurrency(inv.initialBalance)}
+                      </span>
+                      <span className={`text-xs font-medium ${valorization >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {valorization >= 0 ? '+' : ''}{formatCurrency(valorization)} ({valorizationPct >= 0 ? '+' : ''}{valorizationPct.toFixed(2)}%)
+                      </span>
+                    </div>
                   )}
                 </div>
-              );
-            })}
-          </div>
-        )}
+                {isFiiExpanded && selectedProfileId && (
+                  <FiiDetailPanel
+                    account={inv}
+                    clearAccountId={account.id}
+                    profileId={selectedProfileId}
+                  />
+                )}
+              </div>
+            );
+          };
+
+          return (
+            <div className="mt-3 pt-3 border-t border-white/10 space-y-2">
+              {!isExchange ? (
+                <>
+                  {account.currentBalance > 0 && (
+                    <div className="px-2 py-2 rounded-lg bg-white/[0.04]">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-emerald-400 text-xs">●</span>
+                          <span className="text-white/80 text-sm font-medium">Saldo em conta</span>
+                        </div>
+                        <span className="text-white/80 text-sm font-medium">{formatCurrency(account.currentBalance)}</span>
+                      </div>
+                    </div>
+                  )}
+                  {subInvestments.map(renderAsset)}
+                </>
+              ) : (
+                <>
+                  {/* MACross1 group */}
+                  {(macrossAssets.length > 0 || account.currentBalance > 0) && (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between px-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-blue-400 text-xs font-bold">⬤</span>
+                          <span className="text-blue-400 text-[11px] font-semibold uppercase tracking-wider">MACross1 (BRL)</span>
+                        </div>
+                        <span className="text-white/50 text-xs font-medium">
+                          {formatCurrency(account.currentBalance + macrossTotal)}
+                        </span>
+                      </div>
+                      {account.currentBalance > 0 && (
+                        <div className="px-2 py-2 rounded-lg bg-white/[0.04]">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-emerald-400 text-xs">●</span>
+                              <span className="text-white/80 text-sm font-medium">Saldo em conta</span>
+                            </div>
+                            <span className="text-white/80 text-sm font-medium">{formatCurrency(account.currentBalance)}</span>
+                          </div>
+                        </div>
+                      )}
+                      {macrossAssets.map(renderAsset)}
+                    </div>
+                  )}
+
+                  {/* MemeCoin1 group */}
+                  {memeAssets.length > 0 && (
+                    <div className="space-y-1.5 mt-2 pt-2 border-t border-white/[0.06]">
+                      <div className="flex items-center justify-between px-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-amber-400 text-xs font-bold">⬤</span>
+                          <span className="text-amber-400 text-[11px] font-semibold uppercase tracking-wider">MemeCoin1 (USD)</span>
+                        </div>
+                        <span className="text-white/50 text-xs font-medium">
+                          {formatCurrency(memeTotal)}
+                        </span>
+                      </div>
+                      {memeAssets.map(renderAsset)}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Credit cards linked to this broker account */}
         {subCreditCards.length > 0 && (
