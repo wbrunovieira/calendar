@@ -30,6 +30,8 @@ interface TimeSlotViewProps {
   onDeleteClick: (event: Event, e: React.MouseEvent) => void;
   onEventUpdate?: () => void;
   onTimeSlotClick?: (date: string, time: string) => void;
+  onPreviousPeriod?: () => void;
+  onNextPeriod?: () => void;
   daysOfWeek?: string[];
   daysOfWeekFull: string[];
   monthNames: string[];
@@ -45,6 +47,8 @@ export function TimeSlotView({
   onDeleteClick,
   onEventUpdate,
   onTimeSlotClick,
+  onPreviousPeriod,
+  onNextPeriod,
   daysOfWeek,
   daysOfWeekFull,
   monthNames,
@@ -304,6 +308,29 @@ export function TimeSlotView({
         {/* Today's Habits, Reminders and Tasks Sections - only show in single day view */}
         {isSingleDay && (
           <>
+            {/* Day navigation for bottom sections */}
+            {(onPreviousPeriod || onNextPeriod) && (
+              <div className="mt-6 flex items-center justify-between px-2">
+                <button
+                  onClick={onPreviousPeriod}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/40 transition-all duration-200 text-white/70 hover:text-white"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                  <span className="text-sm">Dia anterior</span>
+                </button>
+                <button
+                  onClick={onNextPeriod}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/40 transition-all duration-200 text-white/70 hover:text-white"
+                >
+                  <span className="text-sm">Proximo dia</span>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
+            )}
             <DayViewHabitsSection date={days[0]} />
             <DayViewRemindersSection date={days[0]} onReminderToggled={onEventUpdate} />
             <DayViewTasksSection

@@ -102,6 +102,8 @@ export default function CalendarGrid({
               onDeleteClick={onDeleteClick}
               onEventUpdate={onEventUpdate}
               onTimeSlotClick={onTimeSlotClick}
+              onPreviousPeriod={onPreviousPeriod}
+              onNextPeriod={onNextPeriod}
               daysOfWeek={viewMode === 'week' ? [...DAYS_OF_WEEK_SHORT] : undefined}
               daysOfWeekFull={[...DAYS_OF_WEEK_FULL]}
               monthNames={[...MONTH_NAMES]}
