@@ -33,6 +33,7 @@ interface CryptoSectionProps {
   onAddTransaction: (accountId: string) => void;
   onEditTransaction: (tx: Transaction) => void;
   onDeleteTransaction: (tx: Transaction) => void;
+  onConfirmTransaction?: (tx: Transaction) => Promise<void> | void;
 }
 
 export default function CryptoSection({
@@ -50,6 +51,7 @@ export default function CryptoSection({
   onAddTransaction,
   onEditTransaction,
   onDeleteTransaction,
+  onConfirmTransaction,
 }: CryptoSectionProps) {
   const [activeBot, setActiveBot] = useState<BotTab>('all');
 
@@ -271,6 +273,7 @@ export default function CryptoSection({
                           onAddTransaction={onAddTransaction}
                           onEdit={onEditTransaction}
                           onDelete={onDeleteTransaction}
+                          onConfirm={onConfirmTransaction}
                         />
                       </div>
                     )}

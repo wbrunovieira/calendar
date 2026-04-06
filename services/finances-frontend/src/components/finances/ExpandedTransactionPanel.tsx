@@ -15,6 +15,7 @@ interface ExpandedTransactionPanelProps {
   onAddTransaction: (accountId: string) => void;
   onEdit: (tx: Transaction) => void;
   onDelete: (tx: Transaction) => void;
+  onConfirm?: (tx: Transaction) => Promise<void> | void;
   className?: string;
 }
 
@@ -30,6 +31,7 @@ export default function ExpandedTransactionPanel({
   onAddTransaction,
   onEdit,
   onDelete,
+  onConfirm,
   className = '',
 }: ExpandedTransactionPanelProps) {
   return (
@@ -55,6 +57,7 @@ export default function ExpandedTransactionPanel({
         botFilter={botFilter}
         onEdit={onEdit}
         onDelete={onDelete}
+        onConfirm={onConfirm}
       />
     </div>
   );

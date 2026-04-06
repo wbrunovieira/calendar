@@ -18,6 +18,7 @@ interface TransactionHistoryProps {
   botFilter?: string;
   onEdit?: (tx: Transaction) => void;
   onDelete?: (tx: Transaction) => void;
+  onConfirm?: (tx: Transaction) => Promise<void> | void;
 }
 
 export default function TransactionHistory({
@@ -31,10 +32,12 @@ export default function TransactionHistory({
   botFilter,
   onEdit,
   onDelete,
+  onConfirm,
 }: TransactionHistoryProps) {
   const { confirm } = useToast();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [dayBalances, setDayBalances] = useState<Record<string, { balance: number; dayTotal: number }>>({});
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const categoryMap = useMemo(() => {
@@ -176,6 +179,21 @@ export default function TransactionHistory({
                       <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${status.color}`}>
                         {status.label}
                       </span>
+                      {onConfirm && tx.status === 'PLANNED' && (
+                        <button
+                          type="button"
+                          disabled={!!confirmingId}
+                          onClick={async () => {
+                            if (confirmingId) return;
+                            setConfirmingId(tx.id);
+                            try { await onConfirm(tx); } finally { setConfirmingId(null); }
+                          }}
+                          className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors disabled:opacity-50"
+                          title="Confirmar lançamento"
+                        >
+                          {confirmingId === tx.id ? 'Confirmando...' : 'Confirmar'}
+                        </button>
+                      )}
                       {onEdit && (
                         <button
                           type="button"

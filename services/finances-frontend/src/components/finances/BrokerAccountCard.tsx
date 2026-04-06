@@ -50,6 +50,7 @@ interface BrokerAccountCardProps {
   onAddTransaction: (accountId: string) => void;
   onEditTransaction: (tx: Transaction) => void;
   onDeleteTransaction: (tx: Transaction) => void;
+  onConfirmTransaction?: (tx: Transaction) => Promise<void> | void;
   onPayInvoice: (invoiceId: string, amount: number) => Promise<void>;
   onUpdateInvoice: (invoiceId: string, data: { closingDate?: string; dueDate?: string }) => Promise<void>;
   onInvoiceSelect: (accountId: string, invoiceId: string) => void;
@@ -75,6 +76,7 @@ export default function BrokerAccountCard({
   onAddTransaction,
   onEditTransaction,
   onDeleteTransaction,
+  onConfirmTransaction,
   onPayInvoice,
   onUpdateInvoice,
   onInvoiceSelect,
@@ -296,6 +298,7 @@ export default function BrokerAccountCard({
                       onAddTransaction={onAddTransaction}
                       onEdit={onEditTransaction}
                       onDelete={onDeleteTransaction}
+                      onConfirm={onConfirmTransaction}
                       className="mt-0 rounded-t-none border-t-0"
                     />
                   )}
@@ -334,6 +337,7 @@ export default function BrokerAccountCard({
               onAddTransaction={onAddTransaction}
               onEdit={onEditTransaction}
               onDelete={onDeleteTransaction}
+              onConfirm={onConfirmTransaction}
             />
           </div>
         ) : (
@@ -346,6 +350,7 @@ export default function BrokerAccountCard({
             onAddTransaction={onAddTransaction}
             onEdit={onEditTransaction}
             onDelete={onDeleteTransaction}
+            onConfirm={onConfirmTransaction}
           />
         )
       )}

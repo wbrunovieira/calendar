@@ -154,6 +154,15 @@ export default function ContasPage() {
     setIsTransactionFormOpen(true);
   };
 
+  const handleConfirmTransaction = async (tx: Transaction) => {
+    await api.put(`/transactions/${tx.id}/status`, {
+      status: 'CONFIRMED',
+      occurredOn: tx.occurredOn,
+    });
+    await fetchBankAccounts();
+    if (selectedProfileId) fetchInvoicesForCreditCards(filteredAccounts);
+  };
+
   const handleEditTransaction = (tx: Transaction) => {
     setEditingTransaction(tx);
     setPreselectedAccountId(tx.bankAccountId);
@@ -308,6 +317,7 @@ export default function ContasPage() {
                                   onAddTransaction={handleAddTransaction}
                                   onEdit={handleEditTransaction}
                                   onDelete={handleDeleteTransaction}
+                                  onConfirm={handleConfirmTransaction}
                                   className="ml-7"
                                 />
                               )}
@@ -340,6 +350,7 @@ export default function ContasPage() {
                             onAddTransaction={handleAddTransaction}
                             onEditTransaction={handleEditTransaction}
                             onDeleteTransaction={handleDeleteTransaction}
+                            onConfirmTransaction={handleConfirmTransaction}
                             onPayInvoice={handlePayInvoice}
                             onUpdateInvoice={handleUpdateInvoice}
                             onInvoiceSelect={handleInvoiceSelect}
@@ -366,6 +377,7 @@ export default function ContasPage() {
               onAddTransaction={handleAddTransaction}
               onEditTransaction={handleEditTransaction}
               onDeleteTransaction={handleDeleteTransaction}
+              onConfirmTransaction={handleConfirmTransaction}
             />
 
             <CryptoSection
@@ -383,6 +395,7 @@ export default function ContasPage() {
               onAddTransaction={handleAddTransaction}
               onEditTransaction={handleEditTransaction}
               onDeleteTransaction={handleDeleteTransaction}
+              onConfirmTransaction={handleConfirmTransaction}
             />
           </>
         )}
