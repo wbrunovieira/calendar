@@ -6,6 +6,22 @@ import { api } from '@/lib/api';
 import { useToast } from '@/components/ui/Toast';
 import { formatCurrency, parseLocalDate } from '@/utils/format';
 import type { Goal, GoalPriority, GoalStatus, Category } from '@/types/finances';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { DragHandle, SortableItem } from '@/components/finances/SortableHelpers';
 
 const priorityLabel: Record<GoalPriority, string> = {
   HIGH: 'Alta',
@@ -177,6 +193,32 @@ export default function GoalsPage() {
     }
   };
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = goals.findIndex((g) => g.id === active.id);
+    const newIndex = goals.findIndex((g) => g.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(goals, oldIndex, newIndex);
+    setGoals(reordered);
+
+    try {
+      await api.put('/goals/reorder', {
+        items: reordered.map((g, index) => ({ id: g.id, displayOrder: index + 1 })),
+      });
+    } catch (error) {
+      console.error('Erro ao reordenar metas:', error);
+      fetchGoals();
+    }
+  };
+
   const activeGoals = goals.filter((g) => g.status === 'ACTIVE');
   const completedGoals = goals.filter((g) => g.status === 'COMPLETED');
   const cancelledGoals = goals.filter((g) => g.status === 'CANCELLED');
@@ -240,70 +282,101 @@ export default function GoalsPage() {
           </div>
         )}
 
-        {/* Active Goals */}
-        {activeGoals.length > 0 && (
-          <div className="space-y-3">
-            <h2 className="text-white/70 text-sm font-medium uppercase tracking-wider">
-              Ativas ({activeGoals.length})
-            </h2>
-            {activeGoals.map((goal) => (
-              <GoalCard
-                key={goal.id}
-                goal={goal}
-                categories={categories}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-                deletingId={deletingId}
-                onStatusChange={handleStatusChange}
-                onAddAmount={(id) => {
-                  setAddAmountId(id);
-                  setAddAmountValue('');
-                }}
-              />
-            ))}
-          </div>
-        )}
+        {/* Goals with drag and drop */}
+        {goals.length > 0 && (
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={goals.map((g) => g.id)} strategy={verticalListSortingStrategy}>
+              {/* Active Goals */}
+              {activeGoals.length > 0 && (
+                <div className="space-y-3 mb-6">
+                  <h2 className="text-white/70 text-sm font-medium uppercase tracking-wider">
+                    Ativas ({activeGoals.length})
+                  </h2>
+                  {activeGoals.map((goal) => (
+                    <SortableItem key={goal.id} id={goal.id}>
+                      {({ listeners, attributes }) => (
+                        <div className="flex items-start gap-1">
+                          <DragHandle listeners={listeners} attributes={attributes} />
+                          <div className="flex-1">
+                            <GoalCard
+                              goal={goal}
+                              categories={categories}
+                              onEdit={handleEdit}
+                              onDelete={handleDelete}
+                              deletingId={deletingId}
+                              onStatusChange={handleStatusChange}
+                              onAddAmount={(id) => {
+                                setAddAmountId(id);
+                                setAddAmountValue('');
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </SortableItem>
+                  ))}
+                </div>
+              )}
 
-        {/* Completed Goals */}
-        {completedGoals.length > 0 && (
-          <div className="space-y-3">
-            <h2 className="text-white/70 text-sm font-medium uppercase tracking-wider">
-              Concluidas ({completedGoals.length})
-            </h2>
-            {completedGoals.map((goal) => (
-              <GoalCard
-                key={goal.id}
-                goal={goal}
-                categories={categories}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-                deletingId={deletingId}
-                onStatusChange={handleStatusChange}
-                onAddAmount={() => {}}
-              />
-            ))}
-          </div>
-        )}
+              {/* Completed Goals */}
+              {completedGoals.length > 0 && (
+                <div className="space-y-3 mb-6">
+                  <h2 className="text-white/70 text-sm font-medium uppercase tracking-wider">
+                    Concluidas ({completedGoals.length})
+                  </h2>
+                  {completedGoals.map((goal) => (
+                    <SortableItem key={goal.id} id={goal.id}>
+                      {({ listeners, attributes }) => (
+                        <div className="flex items-start gap-1">
+                          <DragHandle listeners={listeners} attributes={attributes} />
+                          <div className="flex-1">
+                            <GoalCard
+                              goal={goal}
+                              categories={categories}
+                              onEdit={handleEdit}
+                              onDelete={handleDelete}
+                              deletingId={deletingId}
+                              onStatusChange={handleStatusChange}
+                              onAddAmount={() => {}}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </SortableItem>
+                  ))}
+                </div>
+              )}
 
-        {/* Cancelled Goals */}
-        {cancelledGoals.length > 0 && (
-          <div className="space-y-3">
-            <h2 className="text-white/70 text-sm font-medium uppercase tracking-wider">
-              Canceladas ({cancelledGoals.length})
-            </h2>
-            {cancelledGoals.map((goal) => (
-              <GoalCard
-                key={goal.id}
-                goal={goal}
-                categories={categories}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-                deletingId={deletingId}
-                onStatusChange={handleStatusChange}
-                onAddAmount={() => {}}
-              />
-            ))}
-          </div>
+              {/* Cancelled Goals */}
+              {cancelledGoals.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-white/70 text-sm font-medium uppercase tracking-wider">
+                    Canceladas ({cancelledGoals.length})
+                  </h2>
+                  {cancelledGoals.map((goal) => (
+                    <SortableItem key={goal.id} id={goal.id}>
+                      {({ listeners, attributes }) => (
+                        <div className="flex items-start gap-1">
+                          <DragHandle listeners={listeners} attributes={attributes} />
+                          <div className="flex-1">
+                            <GoalCard
+                              goal={goal}
+                              categories={categories}
+                              onEdit={handleEdit}
+                              onDelete={handleDelete}
+                              deletingId={deletingId}
+                              onStatusChange={handleStatusChange}
+                              onAddAmount={() => {}}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </SortableItem>
+                  ))}
+                </div>
+              )}
+            </SortableContext>
+          </DndContext>
         )}
 
         {/* Add Amount Modal */}
