@@ -10,11 +10,12 @@ import (
 )
 
 type GoalHandlers struct {
-	service *usecases.GoalsService
+	service   *usecases.GoalsService
+	reorderUC *usecases.ReorderGoalsUseCase
 }
 
-func NewGoalHandlers(service *usecases.GoalsService) *GoalHandlers {
-	return &GoalHandlers{service: service}
+func NewGoalHandlers(service *usecases.GoalsService, reorderUC *usecases.ReorderGoalsUseCase) *GoalHandlers {
+	return &GoalHandlers{service: service, reorderUC: reorderUC}
 }
 
 func (h *GoalHandlers) List(w http.ResponseWriter, r *http.Request) {
@@ -133,4 +134,21 @@ func (h *GoalHandlers) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, map[string]interface{}{"message": "goal deleted"})
+}
+
+func (h *GoalHandlers) Reorder(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Items []usecases.ReorderItem `json:"items"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.reorderUC.Execute(body.Items); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	respondJSON(w, map[string]interface{}{"message": "goals reordered"})
 }

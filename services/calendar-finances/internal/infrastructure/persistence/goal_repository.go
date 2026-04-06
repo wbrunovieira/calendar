@@ -2,6 +2,8 @@ package persistence
 
 import (
 	"database/sql"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/brunovieira/calendar-finances/internal/domain/goal"
@@ -17,13 +19,13 @@ func NewGoalRepository(db *sql.DB) *GoalRepository {
 
 func (r *GoalRepository) Create(g *goal.Goal) error {
 	query := `
-		INSERT INTO finance.goals (id, profile_id, category_id, name, description, target_amount, current_amount, priority, target_date, status, link, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		INSERT INTO finance.goals (id, profile_id, category_id, name, description, target_amount, current_amount, priority, target_date, status, link, display_order, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 	`
 	_, err := r.db.Exec(query,
 		g.ID, g.ProfileID, toNullString(g.CategoryID), g.Name, g.Description,
 		g.TargetAmount, g.CurrentAmount, string(g.Priority),
-		toNullTime(g.TargetDate), string(g.Status), g.Link,
+		toNullTime(g.TargetDate), string(g.Status), g.Link, g.DisplayOrder,
 		g.CreatedAt, g.UpdatedAt,
 	)
 	return err
@@ -55,7 +57,7 @@ func (r *GoalRepository) Update(g *goal.Goal) error {
 func (r *GoalRepository) FindByID(id string) (*goal.Goal, error) {
 	query := `
 		SELECT id, profile_id, category_id, name, description, target_amount, current_amount,
-		       priority, target_date, status, link, created_at, updated_at
+		       priority, target_date, status, link, display_order, created_at, updated_at
 		FROM finance.goals WHERE id = $1
 	`
 	return r.scanGoal(r.db.QueryRow(query, id))
@@ -64,20 +66,9 @@ func (r *GoalRepository) FindByID(id string) (*goal.Goal, error) {
 func (r *GoalRepository) ListByProfile(profileID string) ([]*goal.Goal, error) {
 	query := `
 		SELECT id, profile_id, category_id, name, description, target_amount, current_amount,
-		       priority, target_date, status, link, created_at, updated_at
+		       priority, target_date, status, link, display_order, created_at, updated_at
 		FROM finance.goals WHERE profile_id = $1
-		ORDER BY
-			CASE status
-				WHEN 'ACTIVE' THEN 0
-				WHEN 'COMPLETED' THEN 1
-				WHEN 'CANCELLED' THEN 2
-			END,
-			CASE priority
-				WHEN 'HIGH' THEN 0
-				WHEN 'MEDIUM' THEN 1
-				WHEN 'LOW' THEN 2
-			END,
-			target_date ASC NULLS LAST
+		ORDER BY display_order ASC, created_at ASC
 	`
 	rows, err := r.db.Query(query, profileID)
 	if err != nil {
@@ -117,7 +108,7 @@ func (r *GoalRepository) scanGoal(row *sql.Row) (*goal.Goal, error) {
 	err := row.Scan(
 		&g.ID, &g.ProfileID, &categoryID, &g.Name, &g.Description,
 		&g.TargetAmount, &g.CurrentAmount, &priority, &targetDate,
-		&status, &g.Link, &g.CreatedAt, &g.UpdatedAt,
+		&status, &g.Link, &g.DisplayOrder, &g.CreatedAt, &g.UpdatedAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -148,7 +139,7 @@ func (r *GoalRepository) scanGoalFromRows(rows *sql.Rows) (*goal.Goal, error) {
 	err := rows.Scan(
 		&g.ID, &g.ProfileID, &categoryID, &g.Name, &g.Description,
 		&g.TargetAmount, &g.CurrentAmount, &priority, &targetDate,
-		&status, &g.Link, &g.CreatedAt, &g.UpdatedAt,
+		&status, &g.Link, &g.DisplayOrder, &g.CreatedAt, &g.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -165,6 +156,44 @@ func (r *GoalRepository) scanGoalFromRows(rows *sql.Rows) (*goal.Goal, error) {
 	}
 
 	return &g, nil
+}
+
+func (r *GoalRepository) UpdateDisplayOrders(updates []goal.DisplayOrderUpdate) error {
+	if len(updates) == 0 {
+		return nil
+	}
+
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var ids []string
+	var cases []string
+	args := make([]interface{}, 0, len(updates)*2)
+
+	for i, u := range updates {
+		paramID := i*2 + 1
+		paramOrder := i*2 + 2
+		ids = append(ids, fmt.Sprintf("$%d", paramID))
+		cases = append(cases, fmt.Sprintf("WHEN id = $%d THEN $%d::integer", paramID, paramOrder))
+		args = append(args, u.ID, u.DisplayOrder)
+	}
+
+	query := fmt.Sprintf(`
+		UPDATE finance.goals
+		SET display_order = CASE %s END,
+			updated_at = NOW()
+		WHERE id IN (%s)
+	`, strings.Join(cases, " "), strings.Join(ids, ", "))
+
+	_, err = tx.Exec(query, args...)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func toNullString(s *string) sql.NullString {

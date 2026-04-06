@@ -36,6 +36,7 @@ type Goal struct {
 	TargetDate    *time.Time `json:"targetDate,omitempty"`
 	Status        Status    `json:"status"`
 	Link          string    `json:"link,omitempty"`
+	DisplayOrder  int       `json:"displayOrder"`
 	CreatedAt     time.Time `json:"createdAt"`
 	UpdatedAt     time.Time `json:"updatedAt"`
 }

@@ -158,7 +158,8 @@ func main() {
 
 	goalRepo := persistence.NewGoalRepository(db)
 	goalService := usecases.NewGoalsService(goalRepo)
-	goalHandler := httpHandlers.NewGoalHandlers(goalService)
+	reorderGoalsUC := usecases.NewReorderGoalsUseCase(goalRepo)
+	goalHandler := httpHandlers.NewGoalHandlers(goalService, reorderGoalsUC)
 
 	// Initialize Binance client and crypto sync
 	cryptoPurchaseRepo := persistence.NewCryptoPurchaseRepository(db)
@@ -251,6 +252,7 @@ func main() {
 	apiRouter.HandleFunc("/goals/{id}", goalHandler.Delete).Methods("DELETE")
 	apiRouter.HandleFunc("/goals/{id}/add-amount", goalHandler.AddAmount).Methods("POST")
 	apiRouter.HandleFunc("/goals/{id}/status", goalHandler.UpdateStatus).Methods("PATCH")
+	apiRouter.HandleFunc("/goals/reorder", goalHandler.Reorder).Methods("PUT")
 
 	apiRouter.HandleFunc("/transactions/{id}", transactionHandler.Delete).Methods("DELETE")
 
