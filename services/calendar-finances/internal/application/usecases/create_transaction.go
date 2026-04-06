@@ -1,6 +1,8 @@
 package usecases
 
 import (
+	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -180,6 +182,17 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 	splits, err := uc.buildSplits(input.ProfileID, input.Splits)
 	if err != nil {
 		return nil, err
+	}
+
+	// Handle installments: when installmentTotal > 1, create multiple transactions
+	if input.InstallmentTotal != nil && *input.InstallmentTotal > 1 {
+		return uc.createInstallments(input, account, typeValue, occurredOn, dueOn, reminderOn, splits)
+	}
+
+	// When installmentTotal is 1, auto-set installmentNumber to 1 if not provided
+	if input.InstallmentTotal != nil && *input.InstallmentTotal == 1 && input.InstallmentNumber == nil {
+		one := 1
+		input.InstallmentNumber = &one
 	}
 
 	// Handle credit card invoice assignment for expense transactions
@@ -533,4 +546,99 @@ func parseDate(value string) (time.Time, error) {
 func isHistoricalDate(date time.Time) bool {
 	today := time.Now().Truncate(24 * time.Hour)
 	return date.Before(today)
+}
+
+// createInstallments creates multiple transactions for installment purchases.
+// Total amount is divided equally across installments, with any remainder
+// added to the first installment. Each installment is placed one month apart.
+func (uc *CreateTransactionUseCase) createInstallments(
+	input CreateTransactionInput,
+	account *bankaccount.BankAccount,
+	typeValue transaction.Type,
+	occurredOn time.Time,
+	dueOn *time.Time,
+	reminderOn *time.Time,
+	splits []*transaction.Split,
+) (*transaction.Transaction, error) {
+	total := *input.InstallmentTotal
+	installmentAmount := math.Floor(input.Amount/float64(total)*100) / 100
+	remainder := math.Round((input.Amount-installmentAmount*float64(total))*100) / 100
+
+	effectiveType := typeValue
+
+	var txnStatus transaction.Status
+	if input.Status != nil {
+		var err error
+		txnStatus, err = parseTransactionStatus(*input.Status)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		txnStatus = transaction.StatusPlanned
+	}
+
+	var firstTxn *transaction.Transaction
+
+	for i := 1; i <= total; i++ {
+		installmentDate := occurredOn.AddDate(0, i-1, 0)
+		amount := installmentAmount
+		if i == 1 {
+			amount += remainder
+		}
+
+		installmentNum := i
+		installmentTotal := total
+		description := fmt.Sprintf("%s - Parcela %d/%d", input.Description, i, total)
+
+		// Handle credit card invoice assignment
+		var invoiceID *string
+		if account.Type == bankaccount.AccountTypeCreditCard && typeValue == transaction.TypeExpense {
+			if account.ClosingDay != nil && account.DueDay != nil {
+				inv, err := uc.getOrCreateInvoiceForDate(account, installmentDate)
+				if err != nil {
+					return nil, err
+				}
+				if inv != nil {
+					invoiceID = &inv.ID
+				}
+			}
+		}
+
+		createParams := transaction.CreateParams{
+			ProfileID:            input.ProfileID,
+			BankAccountID:        input.BankAccountID,
+			CategoryID:           input.CategoryID,
+			InvoiceID:            invoiceID,
+			Type:                 effectiveType,
+			Amount:               amount,
+			Currency:             input.Currency,
+			Description:          description,
+			Notes:                input.Notes,
+			CostCenter:           input.CostCenter,
+			OccurredOn:           installmentDate,
+			DueOn:                dueOn,
+			ReminderOn:           reminderOn,
+			InstallmentNumber:    &installmentNum,
+			InstallmentTotal:     &installmentTotal,
+			ExternalID:           input.ExternalID,
+			Tags:                 input.Tags,
+			Splits:               splits,
+		}
+
+		txn, err := transaction.New(createParams)
+		if err != nil {
+			return nil, err
+		}
+		txn.Status = txnStatus
+
+		if err := uc.transactionRepo.Create(txn); err != nil {
+			return nil, err
+		}
+
+		if i == 1 {
+			firstTxn = txn
+		}
+	}
+
+	return firstTxn, nil
 }

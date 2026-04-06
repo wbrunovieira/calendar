@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -4181,5 +4182,290 @@ func TestRecalculateBalance_IncludesInitialBalance(t *testing.T) {
 	// Expected: 1000 (initial) - 300 (expense) = 700
 	if result.NewBalance != 700 {
 		t.Fatalf("expected new balance 700, got %.2f", result.NewBalance)
+	}
+}
+
+func TestCreateTransaction_Installments_ShouldCreateMultipleTransactions(t *testing.T) {
+	// Given: A credit card with closingDay=27, dueDay=3
+	// When: Creating an expense of R$31.46 with 2 installments on 2026-02-28
+	// Then: Should create 2 transactions:
+	//   - Parcela 1/2: R$15.73, on 2026-02-28, in the March invoice (closes 02/27, due 03/03)
+	//   - Parcela 2/2: R$15.73, on 2026-03-28, in the April invoice (closes 03/27, due 04/03)
+
+	profileID := "profile-1"
+	creditCardID := "cc-nubank"
+
+	now := time.Now()
+	closingDay := 27
+	dueDay := 3
+
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {
+			ID:         profileID,
+			CalendarID: "cal-1",
+			Name:       "Bruno Pessoal",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	limit := 5000.0
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		creditCardID: {
+			ID:             creditCardID,
+			ProfileID:      profileID,
+			Name:           "Cartão Pessoal Nubank",
+			Type:           bankaccount.AccountTypeCreditCard,
+			InitialBalance: 0,
+			CurrentBalance: 0,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreditLimit:    &limit,
+			ClosingDay:     &closingDay,
+			DueDay:         &dueDay,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	confirmedStatus := "CONFIRMED"
+	installmentTotal := 2
+
+	input := CreateTransactionInput{
+		ProfileID:      profileID,
+		BankAccountID:  creditCardID,
+		Type:           "EXPENSE",
+		Status:         &confirmedStatus,
+		Amount:         31.46,
+		Currency:       "BRL",
+		Description:    "Kvn Imersao 2026 Dolar",
+		OccurredOn:     "2026-02-28",
+		InstallmentTotal: &installmentTotal,
+	}
+
+	_, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should have created 2 transactions
+	if len(txRepo.created) != 2 {
+		t.Fatalf("expected 2 transactions, got %d", len(txRepo.created))
+	}
+
+	// Check installment 1
+	tx1 := txRepo.created[0]
+	if tx1.InstallmentNumber == nil || *tx1.InstallmentNumber != 1 {
+		t.Fatalf("expected installment 1, got %v", tx1.InstallmentNumber)
+	}
+	if tx1.InstallmentTotal == nil || *tx1.InstallmentTotal != 2 {
+		t.Fatalf("expected installment total 2, got %v", tx1.InstallmentTotal)
+	}
+	expectedAmount1 := 15.73
+	if tx1.Amount != expectedAmount1 {
+		t.Fatalf("expected amount %.2f, got %.2f", expectedAmount1, tx1.Amount)
+	}
+	if !strings.Contains(tx1.Description, "Parcela 1/2") {
+		t.Fatalf("expected description to contain 'Parcela 1/2', got '%s'", tx1.Description)
+	}
+	// Should be on 2026-02-28
+	if tx1.OccurredOn.Day() != 28 || tx1.OccurredOn.Month() != 2 {
+		t.Fatalf("expected installment 1 on 2026-02-28, got %s", tx1.OccurredOn.Format("2006-01-02"))
+	}
+
+	// Check installment 2
+	tx2 := txRepo.created[1]
+	if tx2.InstallmentNumber == nil || *tx2.InstallmentNumber != 2 {
+		t.Fatalf("expected installment 2, got %v", tx2.InstallmentNumber)
+	}
+	expectedAmount2 := 15.73
+	if tx2.Amount != expectedAmount2 {
+		t.Fatalf("expected amount %.2f, got %.2f", expectedAmount2, tx2.Amount)
+	}
+	if !strings.Contains(tx2.Description, "Parcela 2/2") {
+		t.Fatalf("expected description to contain 'Parcela 2/2', got '%s'", tx2.Description)
+	}
+	// Should be on 2026-03-28
+	if tx2.OccurredOn.Day() != 28 || tx2.OccurredOn.Month() != 3 {
+		t.Fatalf("expected installment 2 on 2026-03-28, got %s", tx2.OccurredOn.Format("2006-01-02"))
+	}
+
+	// Both should have invoiceIDs (different invoices)
+	if tx1.InvoiceID == nil {
+		t.Fatal("expected installment 1 to have invoiceID")
+	}
+	if tx2.InvoiceID == nil {
+		t.Fatal("expected installment 2 to have invoiceID")
+	}
+	if *tx1.InvoiceID == *tx2.InvoiceID {
+		t.Fatal("expected installments to be in different invoices")
+	}
+}
+
+func TestCreateTransaction_Installments_RegularAccount_ShouldCreateMultiple(t *testing.T) {
+	// Given: A regular checking account (not credit card)
+	// When: Creating an expense of R$300 with 3 installments on 2026-03-01
+	// Then: Should create 3 transactions, each R$100, one month apart, no invoiceID
+
+	profileID := "profile-1"
+	accountID := "checking-1"
+
+	now := time.Now()
+
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {
+			ID:         profileID,
+			CalendarID: "cal-1",
+			Name:       "Bruno",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Nubank",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 5000,
+			CurrentBalance: 5000,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	plannedStatus := "PLANNED"
+	installmentTotal := 3
+
+	input := CreateTransactionInput{
+		ProfileID:        profileID,
+		BankAccountID:    accountID,
+		Type:             "EXPENSE",
+		Status:           &plannedStatus,
+		Amount:           300,
+		Currency:         "BRL",
+		Description:      "Compra parcelada",
+		OccurredOn:       "2026-03-01",
+		InstallmentTotal: &installmentTotal,
+	}
+
+	_, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(txRepo.created) != 3 {
+		t.Fatalf("expected 3 transactions, got %d", len(txRepo.created))
+	}
+
+	// Each should be R$100
+	for i, tx := range txRepo.created {
+		if tx.Amount != 100 {
+			t.Fatalf("installment %d: expected amount 100, got %.2f", i+1, tx.Amount)
+		}
+		if tx.InstallmentNumber == nil || *tx.InstallmentNumber != i+1 {
+			t.Fatalf("installment %d: expected installmentNumber %d", i+1, i+1)
+		}
+		if tx.InstallmentTotal == nil || *tx.InstallmentTotal != 3 {
+			t.Fatalf("installment %d: expected installmentTotal 3", i+1)
+		}
+	}
+
+	// Check dates: March, April, May
+	expectedMonths := []time.Month{3, 4, 5}
+	for i, tx := range txRepo.created {
+		if tx.OccurredOn.Month() != expectedMonths[i] {
+			t.Fatalf("installment %d: expected month %d, got %d", i+1, expectedMonths[i], tx.OccurredOn.Month())
+		}
+	}
+}
+
+func TestCreateTransaction_SingleInstallment_ShouldCreateNormally(t *testing.T) {
+	// Given: installmentTotal=1 (or not set)
+	// Then: Should create a single transaction normally
+
+	profileID := "profile-1"
+	accountID := "checking-1"
+
+	now := time.Now()
+
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {
+			ID:         profileID,
+			CalendarID: "cal-1",
+			Name:       "Bruno",
+			Type:       profile.ProfileTypePersonal,
+			IsActive:   true,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:             accountID,
+			ProfileID:      profileID,
+			Name:           "Nubank",
+			Type:           bankaccount.AccountTypeChecking,
+			InitialBalance: 5000,
+			CurrentBalance: 5000,
+			Currency:       "BRL",
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	plannedStatus := "PLANNED"
+	installmentTotal := 1
+
+	input := CreateTransactionInput{
+		ProfileID:        profileID,
+		BankAccountID:    accountID,
+		Type:             "EXPENSE",
+		Status:           &plannedStatus,
+		Amount:           100,
+		Currency:         "BRL",
+		Description:      "Compra avulsa",
+		OccurredOn:       "2026-03-01",
+		InstallmentTotal: &installmentTotal,
+	}
+
+	_, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(txRepo.created) != 1 {
+		t.Fatalf("expected 1 transaction, got %d", len(txRepo.created))
+	}
+
+	if txRepo.created[0].Amount != 100 {
+		t.Fatalf("expected amount 100, got %.2f", txRepo.created[0].Amount)
 	}
 }
