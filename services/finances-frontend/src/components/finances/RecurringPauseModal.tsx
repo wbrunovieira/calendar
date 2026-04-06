@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { RecurringTransaction } from '@/types/finances';
 import { getLocalDateString } from '@/utils/format';
 
@@ -13,7 +14,7 @@ interface RecurringPauseModalProps {
   pausingItem: RecurringTransaction;
   reviewOnDate: string;
   setReviewOnDate: (date: string) => void;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
   onClose: () => void;
 }
 
@@ -24,6 +25,14 @@ export default function RecurringPauseModal({
   onConfirm,
   onClose,
 }: RecurringPauseModalProps) {
+  const [loading, setLoading] = useState(false);
+
+  const handleConfirm = async () => {
+    if (loading) return;
+    setLoading(true);
+    try { await onConfirm(); } finally { setLoading(false); }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 w-full max-w-md mx-4">
@@ -88,10 +97,11 @@ export default function RecurringPauseModal({
           </button>
           <button
             type="button"
-            onClick={onConfirm}
-            className="flex-1 px-4 py-2 bg-amber-500/80 hover:bg-amber-500 text-white rounded-lg font-semibold border border-amber-400/40 transition-colors"
+            onClick={handleConfirm}
+            disabled={loading}
+            className="flex-1 px-4 py-2 bg-amber-500/80 hover:bg-amber-500 text-white rounded-lg font-semibold border border-amber-400/40 transition-colors disabled:opacity-50"
           >
-            Pausar
+            {loading ? 'Pausando...' : 'Pausar'}
           </button>
         </div>
       </div>

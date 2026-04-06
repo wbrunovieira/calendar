@@ -27,6 +27,7 @@ export default function ConfiguracoesPage() {
 
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
   const [editingBankAccount, setEditingBankAccount] = useState<BankAccount | null>(null);
+  const [deletingProfileId, setDeletingProfileId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchProfiles();
@@ -93,9 +94,11 @@ export default function ConfiguracoesPage() {
   };
 
   const handleDeleteProfile = async (id: string) => {
+    if (deletingProfileId) return;
     const ok = await confirm('Tem certeza que deseja excluir este perfil?');
     if (!ok) return;
 
+    setDeletingProfileId(id);
     try {
       await api.delete(`/profiles/${id}`);
       await fetchProfiles();
@@ -103,6 +106,8 @@ export default function ConfiguracoesPage() {
     } catch (error) {
       console.error('Erro ao excluir perfil:', error);
       toast('Erro ao excluir perfil', 'error');
+    } finally {
+      setDeletingProfileId(null);
     }
   };
 
@@ -276,9 +281,10 @@ export default function ConfiguracoesPage() {
                         </button>
                         <button
                           onClick={() => handleDeleteProfile(profile.id)}
-                          className="px-4 py-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-100 border border-rose-500/30 transition-colors"
+                          disabled={!!deletingProfileId}
+                          className="px-4 py-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-100 border border-rose-500/30 transition-colors disabled:opacity-50"
                         >
-                          Excluir
+                          {deletingProfileId === profile.id ? 'Excluindo...' : 'Excluir'}
                         </button>
                       </div>
                     </div>

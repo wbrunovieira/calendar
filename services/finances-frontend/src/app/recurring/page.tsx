@@ -57,6 +57,7 @@ export default function RecurringPage() {
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const [pauseModalOpen, setPauseModalOpen] = useState(false);
   const [pausingItem, setPausingItem] = useState<RecurringTransaction | null>(null);
@@ -185,8 +186,10 @@ export default function RecurringPage() {
   };
 
   const handleDelete = async (id: string) => {
+    if (deletingId) return;
     const ok = await confirm('Deseja realmente excluir esta transacao recorrente?');
     if (!ok) return;
+    setDeletingId(id);
     try {
       await api.delete(`/recurring-transactions/${id}`);
       await loadRecurring();
@@ -194,6 +197,8 @@ export default function RecurringPage() {
     } catch (e) {
       console.warn('Erro ao excluir', e);
       toast('Nao foi possivel excluir', 'error');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -418,7 +423,8 @@ export default function RecurringPage() {
                               </button>
                               <button
                                 onClick={() => handleDelete(it.id)}
-                                className="p-1.5 text-white/60 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+                                disabled={!!deletingId}
+                                className="p-1.5 text-white/60 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors disabled:opacity-50"
                                 title="Excluir"
                               >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

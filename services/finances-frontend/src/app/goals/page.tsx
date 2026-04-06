@@ -63,6 +63,7 @@ export default function GoalsPage() {
   const [saving, setSaving] = useState(false);
   const [addAmountId, setAddAmountId] = useState<string | null>(null);
   const [addAmountValue, setAddAmountValue] = useState('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const fetchGoals = useCallback(async () => {
     if (!selectedProfileId) return;
@@ -139,8 +140,10 @@ export default function GoalsPage() {
   };
 
   const handleDelete = async (id: string) => {
+    if (deletingId) return;
     const ok = await confirm('Tem certeza que deseja excluir esta meta?');
     if (!ok) return;
+    setDeletingId(id);
     try {
       await api.delete(`/goals/${id}`);
       fetchGoals();
@@ -148,6 +151,8 @@ export default function GoalsPage() {
     } catch (e) {
       console.warn('Erro ao excluir', e);
       toast('Erro ao excluir meta', 'error');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -248,6 +253,7 @@ export default function GoalsPage() {
                 categories={categories}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
+                deletingId={deletingId}
                 onStatusChange={handleStatusChange}
                 onAddAmount={(id) => {
                   setAddAmountId(id);
@@ -271,6 +277,7 @@ export default function GoalsPage() {
                 categories={categories}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
+                deletingId={deletingId}
                 onStatusChange={handleStatusChange}
                 onAddAmount={() => {}}
               />
@@ -291,6 +298,7 @@ export default function GoalsPage() {
                 categories={categories}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
+                deletingId={deletingId}
                 onStatusChange={handleStatusChange}
                 onAddAmount={() => {}}
               />
@@ -477,6 +485,7 @@ function GoalCard({
   onDelete,
   onStatusChange,
   onAddAmount,
+  deletingId,
 }: {
   goal: Goal;
   categories: Category[];
@@ -484,6 +493,7 @@ function GoalCard({
   onDelete: (id: string) => void;
   onStatusChange: (id: string, status: GoalStatus) => void;
   onAddAmount: (id: string) => void;
+  deletingId?: string | null;
 }) {
   const progress = goal.targetAmount > 0 ? (goal.currentAmount / goal.targetAmount) * 100 : 0;
   const remaining = goal.targetAmount - goal.currentAmount;
@@ -608,9 +618,10 @@ function GoalCard({
         </button>
         <button
           onClick={() => onDelete(goal.id)}
-          className="px-2.5 py-1 bg-red-600/10 text-red-400/50 hover:text-red-400 hover:bg-red-600/20 rounded text-xs transition-colors"
+          disabled={!!deletingId}
+          className="px-2.5 py-1 bg-red-600/10 text-red-400/50 hover:text-red-400 hover:bg-red-600/20 rounded text-xs transition-colors disabled:opacity-50"
         >
-          Excluir
+          {deletingId === goal.id ? 'Excluindo...' : 'Excluir'}
         </button>
       </div>
     </div>

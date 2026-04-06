@@ -49,6 +49,23 @@ export default function TransactionsTable({
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [dayBalances, setDayBalances] = useState<Record<string, { balance: number; dayTotal: number }>>({});
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const handleConfirm = async (id: string) => {
+    if (actionLoading) return;
+    setActionLoading(id);
+    try { await onConfirm(id); } finally { setActionLoading(null); }
+  };
+  const handleCancel = async (id: string) => {
+    if (actionLoading) return;
+    setActionLoading(id);
+    try { await onCancel(id); } finally { setActionLoading(null); }
+  };
+  const handleDelete = async (id: string) => {
+    if (actionLoading) return;
+    setActionLoading(id);
+    try { await onDelete(id); } finally { setActionLoading(null); }
+  };
 
   const categoryMap = useMemo(() => {
     const map = new Map<string, Category>();
@@ -386,25 +403,28 @@ export default function TransactionsTable({
                             </button>
                             {transaction.status === 'PLANNED' && (
                               <button
-                                onClick={() => onConfirm(transaction.id)}
-                                className="px-3 py-1 rounded-lg bg-emerald-500/20 text-emerald-200 border border-emerald-500/40 hover:bg-emerald-500/30"
+                                onClick={() => handleConfirm(transaction.id)}
+                                disabled={!!actionLoading}
+                                className="px-3 py-1 rounded-lg bg-emerald-500/20 text-emerald-200 border border-emerald-500/40 hover:bg-emerald-500/30 disabled:opacity-50"
                               >
-                                Confirmar
+                                {actionLoading === transaction.id ? 'Confirmando...' : 'Confirmar'}
                               </button>
                             )}
                             {transaction.status === 'CONFIRMED' && (
                               <button
-                                onClick={() => onCancel(transaction.id)}
-                                className="px-3 py-1 rounded-lg bg-amber-500/20 text-amber-200 border border-amber-500/40 hover:bg-amber-500/30"
+                                onClick={() => handleCancel(transaction.id)}
+                                disabled={!!actionLoading}
+                                className="px-3 py-1 rounded-lg bg-amber-500/20 text-amber-200 border border-amber-500/40 hover:bg-amber-500/30 disabled:opacity-50"
                               >
-                                Cancelar
+                                {actionLoading === transaction.id ? 'Cancelando...' : 'Cancelar'}
                               </button>
                             )}
                             <button
-                              onClick={() => onDelete(transaction.id)}
-                              className="px-3 py-1 rounded-lg bg-rose-500/20 text-rose-200 border border-rose-500/40 hover:bg-rose-500/30"
+                              onClick={() => handleDelete(transaction.id)}
+                              disabled={!!actionLoading}
+                              className="px-3 py-1 rounded-lg bg-rose-500/20 text-rose-200 border border-rose-500/40 hover:bg-rose-500/30 disabled:opacity-50"
                             >
-                              Excluir
+                              {actionLoading === transaction.id ? 'Excluindo...' : 'Excluir'}
                             </button>
                           </div>
                         </td>

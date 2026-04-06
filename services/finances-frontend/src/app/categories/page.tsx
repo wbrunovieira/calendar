@@ -68,6 +68,7 @@ export default function CategoriesPage() {
     parentId: null,
   });
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Filter state
   const [filterType, setFilterType] = useState<CategoryType | 'ALL'>('ALL');
@@ -183,6 +184,7 @@ export default function CategoriesPage() {
   };
 
   const handleDelete = async (cat: Category) => {
+    if (deletingId) return;
     const subcats = getSubcategories(cat.id);
     const msg = subcats.length > 0
       ? `A categoria "${cat.name}" tem ${subcats.length} subcategoria(s). Deseja excluir mesmo assim?`
@@ -191,6 +193,7 @@ export default function CategoriesPage() {
     const ok = await confirm(msg);
     if (!ok) return;
 
+    setDeletingId(cat.id);
     try {
       await api.delete(`/categories/${cat.id}`);
       await loadCategories();
@@ -199,6 +202,8 @@ export default function CategoriesPage() {
       console.warn('Erro ao excluir categoria', e);
       toast('Nao foi possivel excluir a categoria', 'error');
       setError('Nao foi possivel excluir a categoria.');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -332,7 +337,8 @@ export default function CategoriesPage() {
                       </button>
                       <button
                         onClick={() => handleDelete(parent)}
-                        className="p-2 text-white/60 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+                        disabled={!!deletingId}
+                        className="p-2 text-white/60 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors disabled:opacity-50"
                         title="Excluir"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -367,7 +373,8 @@ export default function CategoriesPage() {
                             </button>
                             <button
                               onClick={() => handleDelete(sub)}
-                              className="p-1.5 text-white/40 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+                              disabled={!!deletingId}
+                              className="p-1.5 text-white/40 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors disabled:opacity-50"
                               title="Excluir"
                             >
                               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
