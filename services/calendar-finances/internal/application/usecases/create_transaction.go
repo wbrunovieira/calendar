@@ -184,8 +184,10 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		return nil, err
 	}
 
-	// Handle installments: when installmentTotal > 1, create multiple transactions
-	if input.InstallmentTotal != nil && *input.InstallmentTotal > 1 {
+	// Handle installments: when installmentTotal > 1 and installmentNumber is NOT set,
+	// auto-create multiple transactions. When installmentNumber IS set, the caller is
+	// creating a specific installment manually — skip auto-creation.
+	if input.InstallmentTotal != nil && *input.InstallmentTotal > 1 && input.InstallmentNumber == nil {
 		return uc.createInstallments(input, account, typeValue, occurredOn, dueOn, reminderOn, splits)
 	}
 

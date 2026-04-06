@@ -4469,3 +4469,81 @@ func TestCreateTransaction_SingleInstallment_ShouldCreateNormally(t *testing.T) 
 		t.Fatalf("expected amount 100, got %.2f", txRepo.created[0].Amount)
 	}
 }
+
+func TestCreateTransaction_ManualInstallment_ShouldNotAutoCreate(t *testing.T) {
+	now := time.Now()
+	profileID := "profile-manual-inst"
+	accountID := "account-manual-inst"
+
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		profileID: {ID: profileID, Name: "Test", CreatedAt: now, UpdatedAt: now},
+	}}
+
+	closingDay := 27
+	dueDay := 3
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: {
+			ID:         accountID,
+			ProfileID:  profileID,
+			Name:       "Nubank",
+			Type:       bankaccount.AccountTypeCreditCard,
+			Currency:   "BRL",
+			IsActive:   true,
+			ClosingDay: &closingDay,
+			DueDay:     &dueDay,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		},
+	}}
+
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+
+	plannedStatus := "PLANNED"
+	installmentNumber := 2
+	installmentTotal := 2
+
+	input := CreateTransactionInput{
+		ProfileID:         profileID,
+		BankAccountID:     accountID,
+		Type:              "EXPENSE",
+		Status:            &plannedStatus,
+		Amount:            15.73,
+		Currency:          "BRL",
+		Description:       "Kvn Imersao 2026 Dolar - Parcela 2/2",
+		OccurredOn:        "2026-03-28",
+		InstallmentNumber: &installmentNumber,
+		InstallmentTotal:  &installmentTotal,
+	}
+
+	txn, err := useCase.Execute(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should create exactly 1 transaction (not auto-split into 2)
+	if len(txRepo.created) != 1 {
+		t.Fatalf("expected 1 transaction, got %d", len(txRepo.created))
+	}
+
+	// Amount should be unchanged (not divided)
+	if txn.Amount != 15.73 {
+		t.Fatalf("expected amount 15.73, got %.2f", txn.Amount)
+	}
+
+	// Installment metadata preserved
+	if txn.InstallmentNumber == nil || *txn.InstallmentNumber != 2 {
+		t.Fatalf("expected installmentNumber 2")
+	}
+	if txn.InstallmentTotal == nil || *txn.InstallmentTotal != 2 {
+		t.Fatalf("expected installmentTotal 2")
+	}
+
+	// Should be assigned to an invoice (credit card)
+	if txn.InvoiceID == nil {
+		t.Fatalf("expected invoiceID to be set for credit card transaction")
+	}
+}
