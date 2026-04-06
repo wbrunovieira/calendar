@@ -97,11 +97,11 @@ export default function TodayAlerts({
       const nextDate = extractDateStr(rt.nextOccurrence);
       if (!nextDate || nextDate > today) return false;
 
-      // Check if there's a confirmed transaction that matches this recurring
-      // Match by: same description (case insensitive), same amount, confirmed status
+      // Check if there's a confirmed or planned transaction that matches this recurring
+      // Match by: same description (case insensitive), same amount
       // and occurred within a reasonable window (same month or up to 7 days difference)
-      const hasConfirmedPayment = transactions.some((tx) => {
-        if (tx.status !== 'CONFIRMED') return false;
+      const hasMatchingTransaction = transactions.some((tx) => {
+        if (tx.status !== 'CONFIRMED' && tx.status !== 'PLANNED') return false;
         if (tx.type !== rt.type) return false;
         if (Math.abs(tx.amount - rt.amount) > 0.01) return false; // Allow small float difference
 
@@ -125,7 +125,7 @@ export default function TodayAlerts({
         return daysDiff <= 7;
       });
 
-      return !hasConfirmedPayment;
+      return !hasMatchingTransaction;
     }).sort((a, b) => {
       const dateA = extractDateStr(a.nextOccurrence);
       const dateB = extractDateStr(b.nextOccurrence);
