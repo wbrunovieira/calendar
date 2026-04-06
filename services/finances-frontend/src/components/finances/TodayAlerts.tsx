@@ -219,6 +219,39 @@ export default function TodayAlerts({
     return { toPay, toReceive, overduePay, overdueReceive };
   }, [plannedToday, plannedOverdue, recurringToday, recurringOverdue, todayInvoices, overdueInvoices]);
 
+  // Loading state for async actions (prevents double clicks)
+  const [loadingAction, setLoadingAction] = useState<string | null>(null);
+
+  const handlePayInvoice = async (invoiceId: string, amount: number) => {
+    if (loadingAction || !onPayInvoice) return;
+    setLoadingAction(invoiceId);
+    try {
+      await onPayInvoice(invoiceId, amount);
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handleConfirmRecurring = async (rt: RecurringTransaction) => {
+    if (loadingAction || !onConfirmRecurring) return;
+    setLoadingAction(rt.id);
+    try {
+      await onConfirmRecurring(rt);
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handleConfirmTransaction = async (id: string) => {
+    if (loadingAction || !onConfirmTransaction) return;
+    setLoadingAction(id);
+    try {
+      await onConfirmTransaction(id);
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
   // State for dismissed review reminders (persisted in session)
   const [dismissedReviews, setDismissedReviews] = useState<Set<string>>(() => {
     if (typeof window !== 'undefined') {
@@ -389,10 +422,11 @@ export default function TodayAlerts({
                   </span>
                   {onPayInvoice && (
                     <button
-                      onClick={() => onPayInvoice(invoice.id, invoice.amount)}
-                      className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs rounded-lg transition-colors"
+                      onClick={() => handlePayInvoice(invoice.id, invoice.amount)}
+                      disabled={!!loadingAction}
+                      className="px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white text-xs rounded-lg transition-colors"
                     >
-                      Pagar
+                      {loadingAction === invoice.id ? 'Pagando...' : 'Pagar'}
                     </button>
                   )}
                 </div>
@@ -425,10 +459,11 @@ export default function TodayAlerts({
                     </span>
                     {onConfirmRecurring && (
                       <button
-                        onClick={() => onConfirmRecurring(rt)}
-                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded-lg transition-colors"
+                        onClick={() => handleConfirmRecurring(rt)}
+                        disabled={!!loadingAction}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-600 text-white text-xs rounded-lg transition-colors"
                       >
-                        {rt.type === 'INCOME' ? 'Ja recebi' : 'Ja paguei'}
+                        {loadingAction === rt.id ? 'Processando...' : (rt.type === 'INCOME' ? 'Ja recebi' : 'Ja paguei')}
                       </button>
                     )}
                   </div>
@@ -471,10 +506,11 @@ export default function TodayAlerts({
                     )}
                     {onConfirmTransaction && (
                       <button
-                        onClick={() => onConfirmTransaction(tx.id)}
-                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg transition-colors"
+                        onClick={() => handleConfirmTransaction(tx.id)}
+                        disabled={!!loadingAction}
+                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white text-xs rounded-lg transition-colors"
                       >
-                        Confirmar
+                        {loadingAction === tx.id ? 'Confirmando...' : 'Confirmar'}
                       </button>
                     )}
                   </div>
@@ -529,10 +565,11 @@ export default function TodayAlerts({
                   </span>
                   {onPayInvoice && (
                     <button
-                      onClick={() => onPayInvoice(invoice.id, invoice.amount)}
-                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded-lg transition-colors"
+                      onClick={() => handlePayInvoice(invoice.id, invoice.amount)}
+                      disabled={!!loadingAction}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-600 text-white text-xs rounded-lg transition-colors"
                     >
-                      Pagar
+                      {loadingAction === invoice.id ? 'Pagando...' : 'Pagar'}
                     </button>
                   )}
                 </div>
@@ -752,10 +789,11 @@ export default function TodayAlerts({
                     )}
                     {onConfirmTransaction && (
                       <button
-                        onClick={() => onConfirmTransaction(tx.id)}
-                        className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white text-xs rounded-lg transition-colors"
+                        onClick={() => handleConfirmTransaction(tx.id)}
+                        disabled={!!loadingAction}
+                        className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 disabled:bg-gray-600 text-white text-xs rounded-lg transition-colors"
                       >
-                        Confirmar
+                        {loadingAction === tx.id ? 'Confirmando...' : 'Confirmar'}
                       </button>
                     )}
                   </div>
