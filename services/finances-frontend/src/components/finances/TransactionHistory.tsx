@@ -186,7 +186,12 @@ export default function TransactionHistory({
                           onClick={async () => {
                             if (confirmingId) return;
                             setConfirmingId(tx.id);
-                            try { await onConfirm(tx); } finally { setConfirmingId(null); }
+                            try {
+                              await onConfirm(tx);
+                              setTransactions((prev) =>
+                                prev.map((t) => t.id === tx.id ? { ...t, status: 'CONFIRMED' } : t)
+                              );
+                            } finally { setConfirmingId(null); }
                           }}
                           className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors disabled:opacity-50"
                           title="Confirmar lançamento"
