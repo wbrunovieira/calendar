@@ -31,6 +31,7 @@ interface InvestmentSectionProps {
   onEditTransaction: (tx: Transaction) => void;
   onDeleteTransaction: (tx: Transaction) => void;
   onConfirmTransaction?: (tx: Transaction) => Promise<void> | void;
+  txRefreshKey?: number;
 }
 
 export default function InvestmentSection({
@@ -48,6 +49,7 @@ export default function InvestmentSection({
   onEditTransaction,
   onDeleteTransaction,
   onConfirmTransaction,
+  txRefreshKey,
 }: InvestmentSectionProps) {
   if (investmentAccounts.length === 0) return null;
 
@@ -110,6 +112,7 @@ export default function InvestmentSection({
                         onEdit={onEditTransaction}
                         onDelete={onDeleteTransaction}
                         onConfirm={onConfirmTransaction}
+                        refreshKey={txRefreshKey}
                         className="ml-7"
                       />
                     )}

@@ -16,6 +16,7 @@ interface TransactionHistoryProps {
   isCreditCard?: boolean;
   includeAsDestination?: boolean;
   botFilter?: string;
+  refreshKey?: number;
   onEdit?: (tx: Transaction) => void;
   onDelete?: (tx: Transaction) => void;
   onConfirm?: (tx: Transaction) => Promise<void> | void;
@@ -33,6 +34,7 @@ export default function TransactionHistory({
   onEdit,
   onDelete,
   onConfirm,
+  refreshKey = 0,
 }: TransactionHistoryProps) {
   const { confirm } = useToast();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -79,7 +81,7 @@ export default function TransactionHistory({
       }
     };
     fetchData();
-  }, [accountId, profileId, selectedInvoiceId, includeAsDestination]);
+  }, [accountId, profileId, selectedInvoiceId, includeAsDestination, refreshKey]);
 
   const groupedByDay = useMemo(() => {
     const filtered = botFilter

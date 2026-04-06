@@ -43,6 +43,7 @@ export default function ContasPage() {
   const [isTransactionFormOpen, setIsTransactionFormOpen] = useState(false);
   const [preselectedAccountId, setPreselectedAccountId] = useState<string>('');
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [txRefreshKey, setTxRefreshKey] = useState(0);
 
   const {
     bankAccounts,
@@ -161,6 +162,21 @@ export default function ContasPage() {
     });
     await fetchBankAccounts();
     if (selectedProfileId) fetchInvoicesForCreditCards(filteredAccounts);
+  };
+
+  const wrappedSaveTransaction = async (payload: Parameters<typeof handleSaveTransaction>[0]) => {
+    await handleSaveTransaction(payload);
+    setTxRefreshKey((k) => k + 1);
+  };
+
+  const wrappedUpdateTransaction = async (id: string, payload: Parameters<typeof handleUpdateTransaction>[1]) => {
+    await handleUpdateTransaction(id, payload);
+    setTxRefreshKey((k) => k + 1);
+  };
+
+  const wrappedDeleteTransaction = async (tx: { id: string }) => {
+    await handleDeleteTransaction(tx);
+    setTxRefreshKey((k) => k + 1);
   };
 
   const handleEditTransaction = (tx: Transaction) => {
@@ -316,8 +332,9 @@ export default function ContasPage() {
                                   isCreditCard
                                   onAddTransaction={handleAddTransaction}
                                   onEdit={handleEditTransaction}
-                                  onDelete={handleDeleteTransaction}
+                                  onDelete={wrappedDeleteTransaction}
                                   onConfirm={handleConfirmTransaction}
+                                  refreshKey={txRefreshKey}
                                   className="ml-7"
                                 />
                               )}
@@ -349,8 +366,9 @@ export default function ContasPage() {
                             onEditAccount={openEditModal}
                             onAddTransaction={handleAddTransaction}
                             onEditTransaction={handleEditTransaction}
-                            onDeleteTransaction={handleDeleteTransaction}
+                            onDeleteTransaction={wrappedDeleteTransaction}
                             onConfirmTransaction={handleConfirmTransaction}
+                            txRefreshKey={txRefreshKey}
                             onPayInvoice={handlePayInvoice}
                             onUpdateInvoice={handleUpdateInvoice}
                             onInvoiceSelect={handleInvoiceSelect}
@@ -376,8 +394,9 @@ export default function ContasPage() {
               onEditAccount={openEditModal}
               onAddTransaction={handleAddTransaction}
               onEditTransaction={handleEditTransaction}
-              onDeleteTransaction={handleDeleteTransaction}
+              onDeleteTransaction={wrappedDeleteTransaction}
               onConfirmTransaction={handleConfirmTransaction}
+              txRefreshKey={txRefreshKey}
             />
 
             <CryptoSection
@@ -394,8 +413,9 @@ export default function ContasPage() {
               onEditAccount={openEditModal}
               onAddTransaction={handleAddTransaction}
               onEditTransaction={handleEditTransaction}
-              onDeleteTransaction={handleDeleteTransaction}
+              onDeleteTransaction={wrappedDeleteTransaction}
               onConfirmTransaction={handleConfirmTransaction}
+              txRefreshKey={txRefreshKey}
             />
           </>
         )}
@@ -408,8 +428,8 @@ export default function ContasPage() {
             setIsTransactionFormOpen(false);
             setEditingTransaction(null);
           }}
-          onSave={handleSaveTransaction}
-          onUpdate={handleUpdateTransaction}
+          onSave={wrappedSaveTransaction}
+          onUpdate={wrappedUpdateTransaction}
           accounts={bankAccounts}
           categories={categories}
           defaultProfileId={selectedProfileId}

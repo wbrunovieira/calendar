@@ -16,6 +16,7 @@ interface ExpandedTransactionPanelProps {
   onEdit: (tx: Transaction) => void;
   onDelete: (tx: Transaction) => void;
   onConfirm?: (tx: Transaction) => Promise<void> | void;
+  refreshKey?: number;
   className?: string;
 }
 
@@ -32,6 +33,7 @@ export default function ExpandedTransactionPanel({
   onEdit,
   onDelete,
   onConfirm,
+  refreshKey,
   className = '',
 }: ExpandedTransactionPanelProps) {
   return (
@@ -58,6 +60,7 @@ export default function ExpandedTransactionPanel({
         onEdit={onEdit}
         onDelete={onDelete}
         onConfirm={onConfirm}
+        refreshKey={refreshKey}
       />
     </div>
   );
