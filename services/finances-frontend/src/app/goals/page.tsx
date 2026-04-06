@@ -636,7 +636,7 @@ function GoalsTimeline({
       {/* Vertical line */}
       <div className="absolute left-[15px] top-0 bottom-0 w-0.5 bg-white/10" />
 
-      {allSorted.map((goal, index) => {
+      {allSorted.map((goal) => {
         const progress = goal.targetAmount > 0 ? (goal.currentAmount / goal.targetAmount) * 100 : 0;
         const remaining = goal.targetAmount - goal.currentAmount;
         const category = categories.find((c) => c.id === goal.categoryId);
