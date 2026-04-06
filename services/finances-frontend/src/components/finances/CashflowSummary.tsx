@@ -18,11 +18,17 @@ const getCurrentMonthYear = () => {
 
 export default function CashflowSummary({ transactions, accounts, currentInvoices = {} }: CashflowSummaryProps) {
   const currentPeriod = getCurrentMonthYear();
+
+  // Exclude trades from EXCHANGE accounts (crypto bots) from income/expense totals
+  const exchangeAccountIds = new Set(
+    accounts.filter((acc) => acc.type === 'EXCHANGE').map((acc) => acc.id),
+  );
+
   const confirmedIncomeTransactions = transactions.filter(
-    (transaction) => transaction.status === 'CONFIRMED' && transaction.type === 'INCOME',
+    (transaction) => transaction.status === 'CONFIRMED' && transaction.type === 'INCOME' && !exchangeAccountIds.has(transaction.bankAccountId),
   );
   const confirmedExpenseTransactions = transactions.filter(
-    (transaction) => transaction.status === 'CONFIRMED' && transaction.type === 'EXPENSE',
+    (transaction) => transaction.status === 'CONFIRMED' && transaction.type === 'EXPENSE' && !exchangeAccountIds.has(transaction.bankAccountId),
   );
 
   const confirmedIncome = confirmedIncomeTransactions.reduce(
