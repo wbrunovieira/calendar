@@ -80,6 +80,7 @@ export default function GoalsPage() {
   const [addAmountId, setAddAmountId] = useState<string | null>(null);
   const [addAmountValue, setAddAmountValue] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'cards' | 'timeline'>('cards');
 
   const fetchGoals = useCallback(async () => {
     if (!selectedProfileId) return;
@@ -237,16 +238,46 @@ export default function GoalsPage() {
               {selectedProfile?.name || 'Selecione um perfil'}
             </p>
           </div>
-          <button
-            onClick={() => {
-              setForm(emptyForm);
-              setEditingId(null);
-              setShowForm(true);
-            }}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition-colors"
-          >
-            + Nova Meta
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="flex bg-white/5 border border-white/10 rounded-lg p-0.5">
+              <button
+                onClick={() => setViewMode('cards')}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  viewMode === 'cards'
+                    ? 'bg-white/10 text-white'
+                    : 'text-white/40 hover:text-white/60'
+                }`}
+                title="Visualizacao em cards"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setViewMode('timeline')}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  viewMode === 'timeline'
+                    ? 'bg-white/10 text-white'
+                    : 'text-white/40 hover:text-white/60'
+                }`}
+                title="Visualizacao em timeline"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </button>
+            </div>
+            <button
+              onClick={() => {
+                setForm(emptyForm);
+                setEditingId(null);
+                setShowForm(true);
+              }}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition-colors"
+            >
+              + Nova Meta
+            </button>
+          </div>
         </div>
 
         {/* Summary Cards */}
@@ -282,11 +313,10 @@ export default function GoalsPage() {
           </div>
         )}
 
-        {/* Goals with drag and drop */}
-        {goals.length > 0 && (
+        {/* Goals */}
+        {goals.length > 0 && viewMode === 'cards' && (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={goals.map((g) => g.id)} strategy={verticalListSortingStrategy}>
-              {/* Active Goals */}
               {activeGoals.length > 0 && (
                 <div className="space-y-3 mb-6">
                   <h2 className="text-white/70 text-sm font-medium uppercase tracking-wider">
@@ -318,7 +348,6 @@ export default function GoalsPage() {
                 </div>
               )}
 
-              {/* Completed Goals */}
               {completedGoals.length > 0 && (
                 <div className="space-y-3 mb-6">
                   <h2 className="text-white/70 text-sm font-medium uppercase tracking-wider">
@@ -347,7 +376,6 @@ export default function GoalsPage() {
                 </div>
               )}
 
-              {/* Cancelled Goals */}
               {cancelledGoals.length > 0 && (
                 <div className="space-y-3">
                   <h2 className="text-white/70 text-sm font-medium uppercase tracking-wider">
@@ -377,6 +405,21 @@ export default function GoalsPage() {
               )}
             </SortableContext>
           </DndContext>
+        )}
+
+        {goals.length > 0 && viewMode === 'timeline' && (
+          <GoalsTimeline
+            goals={goals}
+            categories={categories}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+            deletingId={deletingId}
+            onStatusChange={handleStatusChange}
+            onAddAmount={(id) => {
+              setAddAmountId(id);
+              setAddAmountValue('');
+            }}
+          />
         )}
 
         {/* Add Amount Modal */}
@@ -548,6 +591,231 @@ export default function GoalsPage() {
         )}
       </div>
     </AppLayout>
+  );
+}
+
+function GoalsTimeline({
+  goals,
+  categories,
+  onEdit,
+  onDelete,
+  deletingId,
+  onStatusChange,
+  onAddAmount,
+}: {
+  goals: Goal[];
+  categories: Category[];
+  onEdit: (g: Goal) => void;
+  onDelete: (id: string) => void;
+  deletingId?: string | null;
+  onStatusChange: (id: string, status: GoalStatus) => void;
+  onAddAmount: (id: string) => void;
+}) {
+  const activeGoals = goals.filter((g) => g.status === 'ACTIVE');
+  const completedGoals = goals.filter((g) => g.status === 'COMPLETED');
+  const cancelledGoals = goals.filter((g) => g.status === 'CANCELLED');
+
+  // Sort active goals: with date first (by date asc), then without date
+  const sortedActive = [...activeGoals].sort((a, b) => {
+    if (a.targetDate && b.targetDate) return a.targetDate.localeCompare(b.targetDate);
+    if (a.targetDate && !b.targetDate) return -1;
+    if (!a.targetDate && b.targetDate) return 1;
+    return 0;
+  });
+
+  const allSorted = [
+    ...sortedActive,
+    ...completedGoals,
+    ...cancelledGoals,
+  ];
+
+  const today = new Date();
+
+  return (
+    <div className="relative pl-8">
+      {/* Vertical line */}
+      <div className="absolute left-[15px] top-0 bottom-0 w-0.5 bg-white/10" />
+
+      {allSorted.map((goal, index) => {
+        const progress = goal.targetAmount > 0 ? (goal.currentAmount / goal.targetAmount) * 100 : 0;
+        const remaining = goal.targetAmount - goal.currentAmount;
+        const category = categories.find((c) => c.id === goal.categoryId);
+        const isActive = goal.status === 'ACTIVE';
+        const targetDate = goal.targetDate ? parseLocalDate(goal.targetDate) : null;
+        const daysLeft = targetDate
+          ? Math.ceil((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+          : null;
+        const isOverdue = daysLeft !== null && daysLeft < 0;
+
+        // Node color based on status/progress
+        const nodeColor =
+          goal.status === 'COMPLETED'
+            ? 'bg-blue-500 border-blue-400'
+            : goal.status === 'CANCELLED'
+              ? 'bg-gray-500 border-gray-400'
+              : progress >= 100
+                ? 'bg-emerald-500 border-emerald-400'
+                : isOverdue
+                  ? 'bg-red-500 border-red-400'
+                  : 'bg-emerald-500 border-emerald-400';
+
+        return (
+          <div key={goal.id} className="relative mb-6 last:mb-0">
+            {/* Node dot */}
+            <div
+              className={`absolute -left-8 top-3 w-3.5 h-3.5 rounded-full border-2 ${nodeColor} z-10`}
+            />
+
+            {/* Date label */}
+            {targetDate && (
+              <div className="absolute -left-8 top-8 -translate-x-[calc(100%+8px)] text-right whitespace-nowrap hidden sm:block">
+                <span
+                  className={`text-[10px] font-medium ${
+                    isOverdue ? 'text-red-400' : 'text-white/40'
+                  }`}
+                >
+                  {targetDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                </span>
+              </div>
+            )}
+
+            {/* Card */}
+            <div
+              className={`border rounded-xl p-4 transition-colors ${
+                isActive
+                  ? 'bg-white/5 border-white/10 hover:border-white/20'
+                  : 'bg-white/[0.02] border-white/5 opacity-60'
+              }`}
+            >
+              {/* Top row: name + badges + amount */}
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-white font-medium">{goal.name}</h3>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded border ${priorityColor[goal.priority]}`}
+                    >
+                      {priorityLabel[goal.priority]}
+                    </span>
+                    {goal.status !== 'ACTIVE' && (
+                      <span
+                        className={`text-[10px] px-1.5 py-0.5 rounded ${statusColor[goal.status]}`}
+                      >
+                        {statusLabel[goal.status]}
+                      </span>
+                    )}
+                    {isOverdue && isActive && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">
+                        Atrasada
+                      </span>
+                    )}
+                  </div>
+                  {goal.description && (
+                    <p className="text-white/40 text-xs mt-0.5">{goal.description}</p>
+                  )}
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-white font-bold">{formatCurrency(goal.targetAmount)}</p>
+                  {goal.currentAmount > 0 && (
+                    <p className="text-emerald-400 text-xs">
+                      {formatCurrency(goal.currentAmount)} guardado
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Info row */}
+              <div className="flex items-center gap-3 text-xs text-white/40 mb-2">
+                {category && <span>{category.name}</span>}
+                {targetDate && (
+                  <span>
+                    {daysLeft !== null && daysLeft >= 0
+                      ? `${daysLeft} dias restantes`
+                      : daysLeft !== null
+                        ? `${Math.abs(daysLeft)} dias atrasada`
+                        : ''}{' '}
+                    - {targetDate.toLocaleDateString('pt-BR')}
+                  </span>
+                )}
+                {!targetDate && <span className="italic">Sem data definida</span>}
+                {goal.link && (
+                  <a
+                    href={goal.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-400 hover:underline"
+                  >
+                    Ver produto
+                  </a>
+                )}
+              </div>
+
+              {/* Progress bar */}
+              {isActive && (
+                <div className="mb-3">
+                  <div className="flex justify-between text-xs text-white/40 mb-1">
+                    <span>{progress.toFixed(0)}%</span>
+                    <span>Faltam {formatCurrency(remaining > 0 ? remaining : 0)}</span>
+                  </div>
+                  <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        progress >= 100
+                          ? 'bg-emerald-500'
+                          : progress >= 50
+                            ? 'bg-yellow-500'
+                            : 'bg-blue-500'
+                      }`}
+                      style={{ width: `${Math.min(progress, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex items-center gap-2">
+                {isActive && (
+                  <>
+                    <button
+                      onClick={() => onAddAmount(goal.id)}
+                      className="px-2 py-1 bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 rounded text-xs transition-colors"
+                    >
+                      + Guardar
+                    </button>
+                    <button
+                      onClick={() => onStatusChange(goal.id, 'COMPLETED')}
+                      className="px-2 py-1 bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 rounded text-xs transition-colors"
+                    >
+                      Concluir
+                    </button>
+                    <button
+                      onClick={() => onStatusChange(goal.id, 'CANCELLED')}
+                      className="px-2 py-1 bg-gray-600/20 text-gray-400 hover:bg-gray-600/30 rounded text-xs transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                  </>
+                )}
+                <div className="flex-1" />
+                <button
+                  onClick={() => onEdit(goal)}
+                  className="px-2 py-1 bg-white/5 text-white/50 hover:text-white hover:bg-white/10 rounded text-xs transition-colors"
+                >
+                  Editar
+                </button>
+                <button
+                  onClick={() => onDelete(goal.id)}
+                  disabled={!!deletingId}
+                  className="px-2 py-1 bg-red-600/10 text-red-400/50 hover:text-red-400 hover:bg-red-600/20 rounded text-xs transition-colors disabled:opacity-50"
+                >
+                  {deletingId === goal.id ? 'Excluindo...' : 'Excluir'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
