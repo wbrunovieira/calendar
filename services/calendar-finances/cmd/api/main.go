@@ -248,11 +248,11 @@ func main() {
 	// Goal routes
 	apiRouter.HandleFunc("/goals", goalHandler.List).Methods("GET")
 	apiRouter.HandleFunc("/goals", goalHandler.Create).Methods("POST")
+	apiRouter.HandleFunc("/goals/reorder", goalHandler.Reorder).Methods("PUT")
 	apiRouter.HandleFunc("/goals/{id}", goalHandler.Update).Methods("PUT")
 	apiRouter.HandleFunc("/goals/{id}", goalHandler.Delete).Methods("DELETE")
 	apiRouter.HandleFunc("/goals/{id}/add-amount", goalHandler.AddAmount).Methods("POST")
 	apiRouter.HandleFunc("/goals/{id}/status", goalHandler.UpdateStatus).Methods("PATCH")
-	apiRouter.HandleFunc("/goals/reorder", goalHandler.Reorder).Methods("PUT")
 
 	apiRouter.HandleFunc("/transactions/{id}", transactionHandler.Delete).Methods("DELETE")
 
