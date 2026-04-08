@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
 import { parseLocalDate } from '@/utils/format';
-import type { Profile, Category, Transaction, BankAccount } from '@/types/finances';
+import type { Profile, Category, Transaction, BankAccount, ClassificationDRE } from '@/types/finances';
 
 const MONTHS_SHORT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
@@ -185,8 +185,38 @@ export function useDashboardData() {
       }));
   }, [filteredTransactions, categories]);
 
+  const selectedProfile = profiles.find((p) => p.id === selectedProfileId) || null;
+
+  // DRE data — only meaningful for BUSINESS profiles with classified categories
+  const dreData = useMemo(() => {
+    const confirmed = filteredTransactions.filter((tx) => tx.status === 'CONFIRMED');
+    const byDRE: Partial<Record<ClassificationDRE, number>> = {};
+
+    confirmed.forEach((tx) => {
+      const category = categories.find((c) => c.id === tx.categoryId);
+      if (!category?.classificationDRE) return;
+      const sign = tx.type === 'INCOME' ? 1 : -1;
+      const dre = category.classificationDRE;
+      byDRE[dre] = (byDRE[dre] || 0) + sign * tx.amount;
+    });
+
+    const grossRevenue = byDRE.REVENUE || 0;
+    const tax = byDRE.TAX || 0;           // negative (expense)
+    const fixedCost = byDRE.FIXED_COST || 0;   // negative
+    const variableCost = byDRE.VARIABLE_COST || 0; // negative
+    const prolabore = byDRE.PROLABORE || 0;    // negative
+    const marketing = byDRE.MARKETING || 0;    // negative
+    const financial = byDRE.FINANCIAL || 0;    // can be pos or neg
+    const netRevenue = grossRevenue + tax;
+    const operationalResult = netRevenue + fixedCost + variableCost + prolabore;
+    const finalResult = operationalResult + marketing + financial;
+
+    return { grossRevenue, tax, netRevenue, fixedCost, variableCost, prolabore, marketing, financial, operationalResult, finalResult, byDRE };
+  }, [filteredTransactions, categories]);
+
   return {
     profiles,
+    selectedProfile,
     selectedProfileId,
     setSelectedProfileId,
     selectedYear,
@@ -202,5 +232,6 @@ export function useDashboardData() {
     accountTotals,
     cumulativeData,
     topExpenses,
+    dreData,
   };
 }

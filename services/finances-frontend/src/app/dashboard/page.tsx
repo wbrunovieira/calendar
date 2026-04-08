@@ -1,9 +1,14 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
 import DashboardCharts from '@/components/finances/DashboardCharts';
+import DreSummary from '@/components/finances/DreSummary';
 import { useDashboardData } from '@/hooks/useDashboardData';
+import { api } from '@/lib/api';
+import { formatCurrency } from '@/utils/format';
+import type { CapitalContributionSummary } from '@/types/finances';
 
 const MONTHS = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -13,6 +18,7 @@ const MONTHS = [
 export default function DashboardPage() {
   const {
     profiles,
+    selectedProfile,
     selectedProfileId,
     setSelectedProfileId,
     selectedYear,
@@ -28,7 +34,23 @@ export default function DashboardPage() {
     accountTotals,
     cumulativeData,
     topExpenses,
+    dreData,
   } = useDashboardData();
+
+  const isBusiness = selectedProfile?.type === 'BUSINESS';
+
+  const [capitalSummary, setCapitalSummary] = useState<CapitalContributionSummary | null>(null);
+
+  useEffect(() => {
+    if (!selectedProfileId || !isBusiness) { setCapitalSummary(null); return; }
+    api.get<{ data: CapitalContributionSummary }>(`/capital-contributions/summary?profileId=${selectedProfileId}`)
+      .then((r) => setCapitalSummary(r?.data ?? null))
+      .catch(() => setCapitalSummary(null));
+  }, [selectedProfileId, isBusiness]);
+
+  const periodLabel = selectedMonth !== null
+    ? `${MONTHS[selectedMonth]} ${selectedYear}`
+    : String(selectedYear);
 
   return (
     <AppLayout>
@@ -100,18 +122,47 @@ export default function DashboardPage() {
         {loading ? (
           <div className="text-center py-12 text-white/60">Carregando dados...</div>
         ) : (
-          <DashboardCharts
-            totals={totals}
-            accountTotals={accountTotals}
-            selectedYear={selectedYear}
-            selectedMonth={selectedMonth}
-            monthlyData={monthlyData}
-            cumulativeData={cumulativeData}
-            categoryData={categoryData}
-            incomeCategoryData={incomeCategoryData}
-            topExpenses={topExpenses}
-            filteredTransactionsCount={filteredTransactions.length}
-          />
+          <>
+            <DashboardCharts
+              totals={totals}
+              accountTotals={accountTotals}
+              selectedYear={selectedYear}
+              selectedMonth={selectedMonth}
+              monthlyData={monthlyData}
+              cumulativeData={cumulativeData}
+              categoryData={categoryData}
+              incomeCategoryData={incomeCategoryData}
+              topExpenses={topExpenses}
+              filteredTransactionsCount={filteredTransactions.length}
+            />
+
+            {/* PJ-only sections */}
+            {isBusiness && (
+              <div className="space-y-4">
+                {/* Capital Contributions Summary */}
+                {capitalSummary && capitalSummary.outstandingDebt > 0 && (
+                  <div className="bg-orange-500/10 border border-orange-400/30 rounded-2xl p-5 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-3xl">🤝</span>
+                      <div>
+                        <p className="text-orange-200 font-semibold">Empresa deve ao sócio</p>
+                        <p className="text-white/50 text-sm">
+                          Aportado: {formatCurrency(capitalSummary.totalContributed)} · Retirado: {formatCurrency(capitalSummary.totalWithdrawn)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-orange-200">{formatCurrency(capitalSummary.outstandingDebt)}</p>
+                      <Link href="/aportes" className="text-xs text-orange-300/70 hover:text-orange-300 underline">Ver aportes →</Link>
+                    </div>
+                  </div>
+                )}
+
+                {/* DRE */}
+                <DreSummary dreData={dreData} period={periodLabel} />
+              </div>
+            )}
+          </>
         )}
       </div>
     </AppLayout>

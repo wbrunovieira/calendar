@@ -8,6 +8,7 @@ import CashflowSummary from '@/components/finances/CashflowSummary';
 import QuickExpense from '@/components/finances/QuickExpense';
 import GlobalSearch from '@/components/finances/GlobalSearch';
 import TodayAlerts from '@/components/finances/TodayAlerts';
+import DasAlert from '@/components/finances/DasAlert';
 import { useToast } from '@/components/ui/Toast';
 import type {
   BankAccount,
@@ -400,6 +401,15 @@ export default function FinancesPage() {
             refreshKey={searchRefreshKey}
           />
         </div>
+
+        {/* DAS Alert — Simples Nacional only, from day 15 */}
+        {selectedProfile?.simplesNacional && (
+          <DasAlert
+            profile={selectedProfile}
+            transactions={transactions}
+            categories={categories}
+          />
+        )}
 
         {/* Today Alerts */}
         {selectedProfileId && (
