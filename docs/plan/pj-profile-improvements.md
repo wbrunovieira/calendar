@@ -309,11 +309,12 @@ REVENUE_TARGET      → meta de faturamento
 7. ✅ Card "Empresa deve ao sócio: R$ X" no Dashboard com link para /aportes (só BUSINESS, só quando há saldo devedor)
 8. ✅ Alerta DAS na Home a partir do dia 15, com estimativa baseada em alíquota + faturamento anterior (só simplesNacional=true)
 
-### Fase 3 — Centro de Custo e Marketing
-9. Entidade `CostCenter` como dimensão real
-10. Migração do campo `cost_center` texto → FK (não-destrutiva)
-11. Nova entidade `MarketingCampaign`
-12. Fluxo de campanha + ROI
+### Fase 3 — Centro de Custo e Marketing ✅ CONCLUÍDA (Abril 2026)
+9. ✅ Entidade `CostCenter` — CLIENT/PROJECT/DEPARTMENT com CRUD completo
+10. ✅ Colunas `cost_center_id` e `campaign_id` adicionadas em `transactions` (nullable, non-destructive)
+11. ✅ Nova entidade `MarketingCampaign` — plataforma, orçamento, receita atribuída, leads, conversões
+12. ✅ ROI, CPL e CPC calculados automaticamente via endpoint `/metrics`
+13. ✅ Páginas `/centros` e `/marketing` no frontend (só para BUSINESS)
 
 ### Fase 4 — Refinamento
 13. Campo `isPersonalReimbursement` nas transações
