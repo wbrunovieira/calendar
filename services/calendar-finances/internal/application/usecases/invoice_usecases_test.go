@@ -308,9 +308,14 @@ func TestCreditCardTransaction_BeforeClosingDay_GoesToCurrentMonthInvoice(t *tes
 		t.Errorf("expected January invoice, got %s", inv.ReferenceDate.Month())
 	}
 
-	// Invoice amount should equal transaction amount
-	if inv.Amount != 100.00 {
-		t.Errorf("expected invoice amount 100.00, got %f", inv.Amount)
+	// Invoice amount should equal transaction amount (recalculated via GetInvoiceUseCase)
+	getUC := NewGetInvoiceUseCase(f.invoiceRepo, f.txRepo)
+	invWithAmount, err := getUC.Execute(*tx.InvoiceID)
+	if err != nil {
+		t.Fatalf("failed to get invoice: %v", err)
+	}
+	if invWithAmount.Amount != 100.00 {
+		t.Errorf("expected invoice amount 100.00, got %f", invWithAmount.Amount)
 	}
 }
 
@@ -451,8 +456,12 @@ func TestCreditCardTransaction_MultipleTransactions_AccumulateInSameInvoice(t *t
 		t.Error("expected all transactions to have same invoice ID")
 	}
 
-	// Invoice amount should be sum of all transactions
-	inv, _ := f.invoiceRepo.FindByID(*tx1.InvoiceID)
+	// Invoice amount should be sum of all transactions (recalculated via GetInvoiceUseCase)
+	getUC := NewGetInvoiceUseCase(f.invoiceRepo, f.txRepo)
+	inv, err := getUC.Execute(*tx1.InvoiceID)
+	if err != nil {
+		t.Fatalf("failed to get invoice: %v", err)
+	}
 	expectedTotal := 100.00 + 50.00 + 75.50
 	if inv.Amount != expectedTotal {
 		t.Errorf("expected invoice amount %f, got %f", expectedTotal, inv.Amount)
@@ -516,12 +525,21 @@ func TestCreditCardTransaction_AcrossClosingBoundary_DifferentInvoices(t *testin
 		t.Errorf("expected February invoice for tx2, got %s", inv2.ReferenceDate.Month())
 	}
 
-	// Verify amounts
-	if inv1.Amount != 100.00 {
-		t.Errorf("expected January invoice amount 100.00, got %f", inv1.Amount)
+	// Verify amounts (recalculated via GetInvoiceUseCase)
+	getUC := NewGetInvoiceUseCase(f.invoiceRepo, f.txRepo)
+	inv1WithAmt, err := getUC.Execute(*tx1.InvoiceID)
+	if err != nil {
+		t.Fatalf("failed to get invoice1: %v", err)
 	}
-	if inv2.Amount != 200.00 {
-		t.Errorf("expected February invoice amount 200.00, got %f", inv2.Amount)
+	inv2WithAmt, err := getUC.Execute(*tx2.InvoiceID)
+	if err != nil {
+		t.Fatalf("failed to get invoice2: %v", err)
+	}
+	if inv1WithAmt.Amount != 100.00 {
+		t.Errorf("expected January invoice amount 100.00, got %f", inv1WithAmt.Amount)
+	}
+	if inv2WithAmt.Amount != 200.00 {
+		t.Errorf("expected February invoice amount 200.00, got %f", inv2WithAmt.Amount)
 	}
 }
 
@@ -1118,34 +1136,6 @@ func TestUpdateInvoice_ShouldUpdateDueDate(t *testing.T) {
 	}
 }
 
-func TestUpdateInvoice_ShouldUpdateAmount(t *testing.T) {
-	f := newTestFixtures()
-
-	inv, _ := invoice.New(invoice.CreateParams{
-		BankAccountID: f.cardID,
-		ClosingDay:    f.closingDay,
-		DueDay:        f.dueDay,
-		ReferenceDate: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
-	})
-	f.invoiceRepo.Create(inv)
-
-	useCase := NewUpdateInvoiceUseCase(f.invoiceRepo)
-
-	newAmount := 1883.53
-	input := UpdateInvoiceInput{
-		Amount: &newAmount,
-	}
-
-	updated, err := useCase.Execute(inv.ID, input)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if updated.Amount != 1883.53 {
-		t.Errorf("expected amount 1883.53, got %.2f", updated.Amount)
-	}
-}
-
 func TestUpdateInvoice_ShouldUpdateMultipleFields(t *testing.T) {
 	f := newTestFixtures()
 
@@ -1160,11 +1150,9 @@ func TestUpdateInvoice_ShouldUpdateMultipleFields(t *testing.T) {
 	useCase := NewUpdateInvoiceUseCase(f.invoiceRepo)
 
 	newDueDate := "2026-03-16"
-	newAmount := 1883.53
 	newClosingDate := "2026-03-09"
 	input := UpdateInvoiceInput{
 		DueDate:     &newDueDate,
-		Amount:      &newAmount,
 		ClosingDate: &newClosingDate,
 	}
 
@@ -1179,9 +1167,6 @@ func TestUpdateInvoice_ShouldUpdateMultipleFields(t *testing.T) {
 	if !updated.DueDate.Equal(expectedDue) {
 		t.Errorf("expected due date %v, got %v", expectedDue, updated.DueDate)
 	}
-	if updated.Amount != 1883.53 {
-		t.Errorf("expected amount 1883.53, got %.2f", updated.Amount)
-	}
 	if !updated.ClosingDate.Equal(expectedClosing) {
 		t.Errorf("expected closing date %v, got %v", expectedClosing, updated.ClosingDate)
 	}
@@ -1191,9 +1176,9 @@ func TestUpdateInvoice_NotFound_ShouldReturnError(t *testing.T) {
 	f := newTestFixtures()
 	useCase := NewUpdateInvoiceUseCase(f.invoiceRepo)
 
-	newAmount := 100.0
+	newDueDate := "2026-03-16"
 	input := UpdateInvoiceInput{
-		Amount: &newAmount,
+		DueDate: &newDueDate,
 	}
 
 	_, err := useCase.Execute("non-existent-id", input)
@@ -1358,9 +1343,9 @@ func TestUpdateInvoice_PaidInvoice_ShouldReturnError(t *testing.T) {
 
 	useCase := NewUpdateInvoiceUseCase(f.invoiceRepo)
 
-	newAmount := 100.0
+	newDueDate := "2026-03-16"
 	input := UpdateInvoiceInput{
-		Amount: &newAmount,
+		DueDate: &newDueDate,
 	}
 
 	_, err := useCase.Execute(inv.ID, input)
@@ -1370,7 +1355,7 @@ func TestUpdateInvoice_PaidInvoice_ShouldReturnError(t *testing.T) {
 }
 
 // Test: ListInvoices should NOT recalculate amount for CLOSED invoices
-func TestListInvoices_ShouldNotRecalculateClosedInvoiceAmount(t *testing.T) {
+func TestListInvoices_ShouldAlwaysRecalculateAmount_EvenWhenClosed(t *testing.T) {
 	f := newTestFixtures()
 	createTxUC := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo)
 
@@ -1393,22 +1378,19 @@ func TestListInvoices_ShouldNotRecalculateClosedInvoiceAmount(t *testing.T) {
 		t.Fatalf("unexpected error creating transaction: %v", err)
 	}
 
-	// Get the invoice and close it
+	// Close the invoice and manually corrupt its amount
 	inv, _ := f.invoiceRepo.FindByID(*tx.InvoiceID)
 	inv.Close()
-
-	// Manually set the amount to a different value (simulating credit/adjustment)
-	inv.Amount = 150.00
+	inv.Amount = 150.00 // stale/wrong value
 	f.invoiceRepo.Update(inv)
 
-	// List invoices with transaction repo (which would recalculate)
+	// List should ALWAYS recalculate from transactions, regardless of status
 	listUC := NewListInvoicesUseCase(f.invoiceRepo, f.accountRepo, f.txRepo)
 	invoices, err := listUC.Execute(f.cardID)
 	if err != nil {
 		t.Fatalf("unexpected error listing invoices: %v", err)
 	}
 
-	// The CLOSED invoice should keep the manually set amount (150), NOT the transaction sum (200)
 	var found *invoice.Invoice
 	for _, i := range invoices {
 		if i.ID == inv.ID {
@@ -1419,8 +1401,8 @@ func TestListInvoices_ShouldNotRecalculateClosedInvoiceAmount(t *testing.T) {
 	if found == nil {
 		t.Fatal("expected to find the invoice")
 	}
-	if found.Amount != 150.00 {
-		t.Errorf("expected closed invoice amount 150.00, got %.2f (should not recalculate closed invoices)", found.Amount)
+	if found.Amount != 200.00 {
+		t.Errorf("expected recalculated amount 200.00, got %.2f (should always recalculate)", found.Amount)
 	}
 }
 
@@ -1488,8 +1470,8 @@ func TestListInvoices_ShouldRecalculateOpenInvoiceAmount(t *testing.T) {
 	}
 }
 
-// Test: GetInvoice should NOT recalculate amount for CLOSED invoices
-func TestGetInvoice_ShouldNotRecalculateClosedInvoiceAmount(t *testing.T) {
+// Test: GetInvoice should ALWAYS recalculate amount from transactions, even for CLOSED invoices
+func TestGetInvoice_ShouldAlwaysRecalculateAmount_EvenWhenClosed(t *testing.T) {
 	f := newTestFixtures()
 	createTxUC := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo)
 
@@ -1510,20 +1492,20 @@ func TestGetInvoice_ShouldNotRecalculateClosedInvoiceAmount(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Close and set custom amount
+	// Close and corrupt the stored amount
 	inv, _ := f.invoiceRepo.FindByID(*tx.InvoiceID)
 	inv.Close()
-	inv.Amount = 150.00
+	inv.Amount = 150.00 // stale/wrong value
 	f.invoiceRepo.Update(inv)
 
-	// Get should respect the stored amount
+	// Get should ALWAYS recalculate from transactions regardless of status
 	getUC := NewGetInvoiceUseCase(f.invoiceRepo, f.txRepo)
 	result, err := getUC.Execute(inv.ID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.Amount != 150.00 {
-		t.Errorf("expected closed invoice amount 150.00, got %.2f", result.Amount)
+	if result.Amount != 200.00 {
+		t.Errorf("expected recalculated amount 200.00, got %.2f (should always recalculate)", result.Amount)
 	}
 }
 

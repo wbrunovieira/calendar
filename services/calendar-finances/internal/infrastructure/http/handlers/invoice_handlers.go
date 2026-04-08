@@ -17,16 +17,15 @@ type PayInvoiceExecutor interface {
 }
 
 type InvoiceHandlers struct {
-	createUC         *usecases.CreateInvoiceUseCase
-	listUC           *usecases.ListInvoicesUseCase
-	getUC            *usecases.GetInvoiceUseCase
-	getCurrentUC     *usecases.GetCurrentInvoiceUseCase
-	closeUC          *usecases.CloseInvoiceUseCase
-	payUC            PayInvoiceExecutor
-	addAmountUC      *usecases.AddAmountToInvoiceUseCase
-	recalculateUC    *usecases.RecalculateInvoiceAmountUseCase
-	updateUC         *usecases.UpdateInvoiceUseCase
-	autoCloseUC      *usecases.AutoCloseInvoicesUseCase
+	createUC      *usecases.CreateInvoiceUseCase
+	listUC        *usecases.ListInvoicesUseCase
+	getUC         *usecases.GetInvoiceUseCase
+	getCurrentUC  *usecases.GetCurrentInvoiceUseCase
+	closeUC       *usecases.CloseInvoiceUseCase
+	payUC         PayInvoiceExecutor
+	recalculateUC *usecases.RecalculateInvoiceAmountUseCase
+	updateUC      *usecases.UpdateInvoiceUseCase
+	autoCloseUC   *usecases.AutoCloseInvoicesUseCase
 }
 
 func NewInvoiceHandlers(
@@ -36,18 +35,16 @@ func NewInvoiceHandlers(
 	getCurrentUC *usecases.GetCurrentInvoiceUseCase,
 	closeUC *usecases.CloseInvoiceUseCase,
 	payUC PayInvoiceExecutor,
-	addAmountUC *usecases.AddAmountToInvoiceUseCase,
 	recalculateUC *usecases.RecalculateInvoiceAmountUseCase,
 ) *InvoiceHandlers {
 	return &InvoiceHandlers{
-		createUC:         createUC,
-		listUC:           listUC,
-		getUC:            getUC,
-		getCurrentUC:     getCurrentUC,
-		closeUC:          closeUC,
-		payUC:            payUC,
-		addAmountUC:      addAmountUC,
-		recalculateUC:    recalculateUC,
+		createUC:      createUC,
+		listUC:        listUC,
+		getUC:         getUC,
+		getCurrentUC:  getCurrentUC,
+		closeUC:       closeUC,
+		payUC:         payUC,
+		recalculateUC: recalculateUC,
 	}
 }
 
@@ -168,30 +165,6 @@ func (h *InvoiceHandlers) Pay(w http.ResponseWriter, r *http.Request) {
 	input.InvoiceID = id
 
 	invoice, err := h.payUC.Execute(input)
-	if err != nil {
-		status := http.StatusBadRequest
-		if err == usecases.ErrInvoiceNotFound {
-			status = http.StatusNotFound
-		}
-		http.Error(w, err.Error(), status)
-		return
-	}
-
-	respondJSON(w, map[string]any{"data": invoice})
-}
-
-// AddAmount handles POST /api/v1/invoices/{id}/add-amount
-func (h *InvoiceHandlers) AddAmount(w http.ResponseWriter, r *http.Request) {
-	id := mux.Vars(r)["id"]
-
-	var input usecases.AddAmountToInvoiceInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-	input.InvoiceID = id
-
-	invoice, err := h.addAmountUC.Execute(input)
 	if err != nil {
 		status := http.StatusBadRequest
 		if err == usecases.ErrInvoiceNotFound {

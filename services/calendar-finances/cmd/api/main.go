@@ -130,7 +130,6 @@ func main() {
 	closeInvoiceUC := usecases.NewCloseInvoiceUseCase(invoiceRepo)
 	// PayInvoiceUseCaseV2: Creates payment transaction on linked checking account when invoice is paid
 	payInvoiceUC := usecases.NewPayInvoiceUseCaseV2(invoiceRepo, bankAccountRepo, transactionRepo)
-	addAmountToInvoiceUC := usecases.NewAddAmountToInvoiceUseCase(invoiceRepo)
 	recalculateInvoiceUC := usecases.NewRecalculateInvoiceAmountUseCase(invoiceRepo, transactionRepo)
 	updateInvoiceUC := usecases.NewUpdateInvoiceUseCase(invoiceRepo)
 	invoiceHandler := httpHandlers.NewInvoiceHandlers(
@@ -140,7 +139,6 @@ func main() {
 		getCurrentInvoiceUC,
 		closeInvoiceUC,
 		payInvoiceUC,
-		addAmountToInvoiceUC,
 		recalculateInvoiceUC,
 	)
 	invoiceHandler.SetUpdateUseCase(updateInvoiceUC)
@@ -265,7 +263,6 @@ func main() {
 	apiRouter.HandleFunc("/invoices/{id}", invoiceHandler.Update).Methods("PUT")
 	apiRouter.HandleFunc("/invoices/{id}/close", invoiceHandler.Close).Methods("POST")
 	apiRouter.HandleFunc("/invoices/{id}/pay", invoiceHandler.Pay).Methods("POST")
-	apiRouter.HandleFunc("/invoices/{id}/add-amount", invoiceHandler.AddAmount).Methods("POST")
 	apiRouter.HandleFunc("/invoices/{id}/recalculate", invoiceHandler.Recalculate).Methods("POST")
 
 	// Crypto routes

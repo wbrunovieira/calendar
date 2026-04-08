@@ -111,22 +111,20 @@ func (uc *ListInvoicesUseCase) Execute(bankAccountID string) ([]*invoice.Invoice
 		return nil, err
 	}
 
-	// Recalculate amounts from transactions only for OPEN invoices
+	// Always recalculate amounts from transactions (source of truth)
 	if uc.transactionRepo != nil {
 		for _, inv := range invoices {
-			if inv.Status == invoice.StatusOpen {
-				total, err := uc.transactionRepo.SumByInvoiceID(inv.ID)
-				if err == nil {
-					inv.Amount = total
-				}
-				confirmed, err := uc.transactionRepo.SumByInvoiceIDByStatus(inv.ID, transactionPkg.StatusConfirmed)
-				if err == nil {
-					inv.ConfirmedAmount = confirmed
-				}
-				planned, err := uc.transactionRepo.SumByInvoiceIDByStatus(inv.ID, transactionPkg.StatusPlanned)
-				if err == nil {
-					inv.PlannedAmount = planned
-				}
+			total, err := uc.transactionRepo.SumByInvoiceID(inv.ID)
+			if err == nil {
+				inv.Amount = total
+			}
+			confirmed, err := uc.transactionRepo.SumByInvoiceIDByStatus(inv.ID, transactionPkg.StatusConfirmed)
+			if err == nil {
+				inv.ConfirmedAmount = confirmed
+			}
+			planned, err := uc.transactionRepo.SumByInvoiceIDByStatus(inv.ID, transactionPkg.StatusPlanned)
+			if err == nil {
+				inv.PlannedAmount = planned
 			}
 		}
 	}
@@ -323,8 +321,8 @@ func (uc *GetInvoiceUseCase) Execute(invoiceID string) (*invoice.Invoice, error)
 		return nil, ErrInvoiceNotFound
 	}
 
-	// Recalculate amounts from transactions only for OPEN invoices
-	if uc.transactionRepo != nil && inv.Status == invoice.StatusOpen {
+	// Always recalculate amounts from transactions (source of truth)
+	if uc.transactionRepo != nil {
 		total, err := uc.transactionRepo.SumByInvoiceID(invoiceID)
 		if err == nil {
 			inv.Amount = total
@@ -379,8 +377,8 @@ func (uc *GetCurrentInvoiceUseCase) Execute(bankAccountID string) (*invoice.Invo
 		return nil, err
 	}
 
-	// Recalculate amounts from transactions only for OPEN invoices
-	if inv != nil && uc.transactionRepo != nil && inv.Status == invoice.StatusOpen {
+	// Always recalculate amounts from transactions (source of truth)
+	if inv != nil && uc.transactionRepo != nil {
 		total, err := uc.transactionRepo.SumByInvoiceID(inv.ID)
 		if err == nil {
 			inv.Amount = total
@@ -393,38 +391,6 @@ func (uc *GetCurrentInvoiceUseCase) Execute(bankAccountID string) (*invoice.Invo
 		if err == nil {
 			inv.PlannedAmount = planned
 		}
-	}
-
-	return inv, nil
-}
-
-// AddAmountToInvoiceInput contains the parameters to add an amount to an invoice
-type AddAmountToInvoiceInput struct {
-	InvoiceID string  `json:"invoiceId"`
-	Amount    float64 `json:"amount"`
-}
-
-// AddAmountToInvoiceUseCase adds an amount to an invoice
-type AddAmountToInvoiceUseCase struct {
-	invoiceRepo invoice.Repository
-}
-
-func NewAddAmountToInvoiceUseCase(invoiceRepo invoice.Repository) *AddAmountToInvoiceUseCase {
-	return &AddAmountToInvoiceUseCase{invoiceRepo: invoiceRepo}
-}
-
-func (uc *AddAmountToInvoiceUseCase) Execute(input AddAmountToInvoiceInput) (*invoice.Invoice, error) {
-	inv, err := uc.invoiceRepo.FindByID(input.InvoiceID)
-	if err != nil {
-		return nil, ErrInvoiceNotFound
-	}
-
-	if err := inv.AddAmount(input.Amount); err != nil {
-		return nil, ErrInvoiceNotOpen
-	}
-
-	if err := uc.invoiceRepo.Update(inv); err != nil {
-		return nil, err
 	}
 
 	return inv, nil
@@ -475,10 +441,9 @@ func (uc *RecalculateInvoiceAmountUseCase) Execute(invoiceID string) (*invoice.I
 
 // UpdateInvoiceInput contains the parameters to update an invoice
 type UpdateInvoiceInput struct {
-	DueDate     *string  `json:"dueDate"`
-	ClosingDate *string  `json:"closingDate"`
-	OpeningDate *string  `json:"openingDate"`
-	Amount      *float64 `json:"amount"`
+	DueDate     *string `json:"dueDate"`
+	ClosingDate *string `json:"closingDate"`
+	OpeningDate *string `json:"openingDate"`
 }
 
 // UpdateInvoiceUseCase updates an invoice's editable fields
@@ -522,10 +487,6 @@ func (uc *UpdateInvoiceUseCase) Execute(invoiceID string, input UpdateInvoiceInp
 			return nil, ErrInvalidInput
 		}
 		inv.OpeningDate = d
-	}
-
-	if input.Amount != nil {
-		inv.Amount = *input.Amount
 	}
 
 	inv.UpdatedAt = time.Now()

@@ -330,13 +330,6 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		}
 	}
 
-	// Update invoice amount if this is a credit card expense
-	if inv != nil {
-		if err := inv.AddAmount(input.Amount); err == nil {
-			_ = uc.invoiceRepo.Update(inv)
-		}
-	}
-
 	return txn, nil
 }
 

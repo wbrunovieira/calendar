@@ -116,35 +116,6 @@ func safeDate(year int, month time.Month, day int) time.Time {
 	return time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
 }
 
-// AddAmount adds an amount to the invoice total
-func (i *Invoice) AddAmount(amount float64) error {
-	if i.Status != StatusOpen {
-		return errors.New("cannot add amount to a closed or paid invoice")
-	}
-	if amount <= 0 {
-		return errors.New("amount must be greater than zero")
-	}
-	i.Amount += amount
-	i.touch()
-	return nil
-}
-
-// SubtractAmount subtracts an amount from the invoice total (for refunds/cancellations)
-func (i *Invoice) SubtractAmount(amount float64) error {
-	if i.Status == StatusPaid {
-		return errors.New("cannot modify a paid invoice")
-	}
-	if amount <= 0 {
-		return errors.New("amount must be greater than zero")
-	}
-	i.Amount -= amount
-	if i.Amount < 0 {
-		i.Amount = 0
-	}
-	i.touch()
-	return nil
-}
-
 // Close closes the invoice for new transactions
 func (i *Invoice) Close() error {
 	if i.Status != StatusOpen {
