@@ -304,10 +304,10 @@ REVENUE_TARGET      → meta de faturamento
 9. ✅ Nav links "Aportes" e "Ativos" visíveis apenas para perfis BUSINESS
 10. ✅ Deploy em produção — `finances.wbdigitalsolutions.com`
 
-### Fase 2 — Visibilidade
-6. DRE simplificada no Dashboard (baseada nas classificações de categoria)
-7. Visão "Sócio x Empresa" mais visível (saldo devedor no header/dashboard)
-8. Alerta DAS na home para perfis com `simplesNacional: true`
+### Fase 2 — Visibilidade ✅ CONCLUÍDA (Abril 2026)
+6. ✅ DRE simplificada no Dashboard — Receita Bruta → Impostos → Receita Líquida → Custos → Resultado Operacional → Marketing → Resultado Final (só BUSINESS)
+7. ✅ Card "Empresa deve ao sócio: R$ X" no Dashboard com link para /aportes (só BUSINESS, só quando há saldo devedor)
+8. ✅ Alerta DAS na Home a partir do dia 15, com estimativa baseada em alíquota + faturamento anterior (só simplesNacional=true)
 
 ### Fase 3 — Centro de Custo e Marketing
 9. Entidade `CostCenter` como dimensão real
