@@ -292,29 +292,33 @@ REVENUE_TARGET      → meta de faturamento
 
 ## Ordem de Implementação Sugerida
 
-### Fase 1 — Fundação (sem risco, apenas additive)
-1. Adicionar `legalEntityType`, `cnpj`, `companyName`, `simplesNacional`, `taxRegime` ao Profile (nullable — sem quebrar produção)
-2. Adicionar `classificationDRE` à Category (nullable)
-3. Nova tabela `finance.capital_contributions`
-4. Nova tabela `finance.company_assets`
-5. Atualizar UI do ProfileModal para mostrar campos PJ
+### Fase 1 — Fundação ✅ CONCLUÍDA (Abril 2026)
+1. ✅ Adicionar `legalEntityType`, `cnpj`, `companyName`, `simplesNacional`, `taxRegime`, `dasAliquota`, `openingDate` ao Profile (nullable — sem quebrar produção)
+2. ✅ Adicionar `classificationDRE` à Category (nullable)
+3. ✅ Nova tabela `finance.capital_contributions`
+4. ✅ Nova tabela `finance.company_assets`
+5. ✅ Atualizar UI do ProfileModal para mostrar campos PJ (seção amber, só quando BUSINESS)
+6. ✅ Dropdown de `classificationDRE` na página de Categorias (só para BUSINESS)
+7. ✅ Nova página `/aportes` — CRUD completo + cards de resumo ("Empresa deve ao sócio")
+8. ✅ Nova página `/ativos` — CRUD completo + cards de patrimônio e depreciação
+9. ✅ Nav links "Aportes" e "Ativos" visíveis apenas para perfis BUSINESS
+10. ✅ Deploy em produção — `finances.wbdigitalsolutions.com`
 
 ### Fase 2 — Visibilidade
 6. DRE simplificada no Dashboard (baseada nas classificações de categoria)
-7. Visão "Sócio x Empresa" (aportes e saldo devedor)
-8. Página/seção de Ativos da empresa
-9. Alerta DAS na home
+7. Visão "Sócio x Empresa" mais visível (saldo devedor no header/dashboard)
+8. Alerta DAS na home para perfis com `simplesNacional: true`
 
 ### Fase 3 — Centro de Custo e Marketing
-10. Entidade `CostCenter` como dimensão real
-11. Migração do campo `cost_center` texto → FK (não-destrutiva)
-12. Nova entidade `MarketingCampaign`
-13. Fluxo de campanha + ROI
+9. Entidade `CostCenter` como dimensão real
+10. Migração do campo `cost_center` texto → FK (não-destrutiva)
+11. Nova entidade `MarketingCampaign`
+12. Fluxo de campanha + ROI
 
 ### Fase 4 — Refinamento
-14. Campo `isPersonalReimbursement` nas transações
-15. Reformulação das Metas com `goalType`
-16. Renomear linguagem da UI condicionalmente ao `legalEntityType`
+13. Campo `isPersonalReimbursement` nas transações
+14. Reformulação das Metas com `goalType`
+15. Renomear linguagem da UI condicionalmente ao `legalEntityType`
 
 ---
 
