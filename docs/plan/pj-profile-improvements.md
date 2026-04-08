@@ -316,10 +316,10 @@ REVENUE_TARGET      → meta de faturamento
 12. ✅ ROI, CPL e CPC calculados automaticamente via endpoint `/metrics`
 13. ✅ Páginas `/centros` e `/marketing` no frontend (só para BUSINESS)
 
-### Fase 4 — Refinamento
-13. Campo `isPersonalReimbursement` nas transações
-14. Reformulação das Metas com `goalType`
-15. Renomear linguagem da UI condicionalmente ao `legalEntityType`
+### Fase 4 — Refinamento ✅ CONCLUÍDA (Abril 2026)
+13. ✅ Campo `isPersonalReimbursement` nas transações — checkbox no form (EXPENSE), badge nas listas, alerta na home (BUSINESS)
+14. ✅ Reformulação das Metas com `goalType` — PERSONAL_SAVINGS / OPERATIONAL_RESERVE / TAX_FUND / INVESTMENT_FUND / REVENUE_TARGET, badge nos cards
+15. ✅ Linguagem condicional PJ via `profileLabels` utility — Lançamentos→Movimentações, Metas→Reservas e Objetivos, etc. (quando `legalEntityType` preenchido)
 
 ---
 
