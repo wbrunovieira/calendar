@@ -64,11 +64,11 @@ export default function AportesPage() {
       setLoading(true);
       const [contribData, summaryData, accountData] = await Promise.all([
         api.get<{ data: CapitalContribution[] }>(`/capital-contributions?profileId=${selectedProfileId}`),
-        api.get<CapitalContributionSummary>(`/capital-contributions/summary?profileId=${selectedProfileId}`),
+        api.get<{ data: CapitalContributionSummary }>(`/capital-contributions/summary?profileId=${selectedProfileId}`),
         api.get<{ data: BankAccount[] }>(`/bank-accounts?profileId=${selectedProfileId}`),
       ]);
       setContributions(contribData.data || []);
-      setSummary(summaryData);
+      setSummary(summaryData.data || null);
       setAccounts(accountData.data || []);
     } catch (e) {
       console.warn('Erro ao carregar aportes', e);
