@@ -413,6 +413,7 @@ export default function FinancesPage() {
             onConfirmTransaction={(id) => updateTransactionStatus(id, 'CONFIRMED')}
             onConfirmRecurring={handleConfirmRecurring}
             onEditTransaction={handleEditTransaction}
+            onDeleteTransaction={handleDeleteTransaction}
           />
         )}
 
@@ -542,6 +543,7 @@ export default function FinancesPage() {
         }}
         onSave={handleCreateTransaction}
         onUpdate={handleUpdateTransaction}
+        onDelete={handleDeleteTransaction}
         accounts={bankAccounts}
         categories={categories}
         defaultProfileId={selectedProfileId ?? ''}

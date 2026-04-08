@@ -18,6 +18,7 @@ interface TransactionFormProps {
   onClose: () => void;
   onSave: (payload: TransactionFormData) => Promise<void> | void;
   onUpdate?: (id: string, payload: TransactionFormData) => Promise<void> | void;
+  onDelete?: (id: string) => void;
   accounts: BankAccount[];
   categories: Category[];
   defaultProfileId: string;
@@ -67,6 +68,7 @@ export default function TransactionForm({
   onClose,
   onSave,
   onUpdate,
+  onDelete,
   accounts,
   categories,
   defaultProfileId,
@@ -852,6 +854,18 @@ export default function TransactionForm({
               >
                 Planejado
               </button>
+              {isEditing && onDelete && editingTransaction && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDelete(editingTransaction.id);
+                    onClose();
+                  }}
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30 hover:text-red-300 transition-all"
+                >
+                  🗑️
+                </button>
+              )}
             </div>
             <div className="flex items-center gap-3">
               {!isEditing && (

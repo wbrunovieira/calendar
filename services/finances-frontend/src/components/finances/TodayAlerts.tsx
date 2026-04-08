@@ -15,6 +15,7 @@ interface TodayAlertsProps {
   onConfirmTransaction?: (id: string) => void;
   onConfirmRecurring?: (recurring: RecurringTransaction) => Promise<void>;
   onEditTransaction?: (transaction: Transaction) => void;
+  onDeleteTransaction?: (id: string) => void;
 }
 
 const formatLocalDate = (date: Date) => {
@@ -72,6 +73,7 @@ export default function TodayAlerts({
   onConfirmTransaction,
   onConfirmRecurring,
   onEditTransaction,
+  onDeleteTransaction,
 }: TodayAlertsProps) {
   const today = formatLocalDate(new Date());
 
@@ -513,6 +515,15 @@ export default function TodayAlerts({
                         {loadingAction === tx.id ? 'Confirmando...' : 'Confirmar'}
                       </button>
                     )}
+                    {onDeleteTransaction && (
+                      <button
+                        onClick={() => onDeleteTransaction(tx.id)}
+                        className="px-2 py-1.5 bg-red-500/20 hover:bg-red-500/40 text-red-400 hover:text-red-300 text-xs rounded-lg transition-colors"
+                        title="Excluir lançamento"
+                      >
+                        🗑️
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -646,6 +657,15 @@ export default function TodayAlerts({
                       className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg transition-colors"
                     >
                       Confirmar
+                    </button>
+                  )}
+                  {onDeleteTransaction && (
+                    <button
+                      onClick={() => onDeleteTransaction(tx.id)}
+                      className="px-2 py-1.5 bg-red-500/20 hover:bg-red-500/40 text-red-400 hover:text-red-300 text-xs rounded-lg transition-colors"
+                      title="Excluir lançamento"
+                    >
+                      🗑️
                     </button>
                   )}
                 </div>
