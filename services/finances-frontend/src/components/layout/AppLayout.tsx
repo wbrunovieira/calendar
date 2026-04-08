@@ -19,6 +19,8 @@ const navItems = [
   { href: '/recurring', label: 'Fixas' },
   { href: '/budgets', label: 'Orcamentos' },
   { href: '/goals', label: 'Metas' },
+  { href: '/aportes', label: 'Aportes', businessOnly: true },
+  { href: '/ativos', label: 'Ativos', businessOnly: true },
   { href: '/plan', label: 'Planejamento' },
   { href: '/visao', label: 'Visao Mensal' },
   { href: '/mercado', label: 'Mercado' },

@@ -8,12 +8,13 @@ import (
 )
 
 type CreateCategoryInput struct {
-	ProfileID string  `json:"profileId"`
-	Name      string  `json:"name"`
-	Type      string  `json:"type"`
-	Color     *string `json:"color,omitempty"`
-	Icon      *string `json:"icon,omitempty"`
-	ParentID  *string `json:"parentId,omitempty"`
+	ProfileID         string                      `json:"profileId"`
+	Name              string                      `json:"name"`
+	Type              string                      `json:"type"`
+	Color             *string                     `json:"color,omitempty"`
+	Icon              *string                     `json:"icon,omitempty"`
+	ParentID          *string                     `json:"parentId,omitempty"`
+	ClassificationDRE *category.ClassificationDRE `json:"classificationDRE,omitempty"`
 }
 
 type CreateCategoryUseCase struct {
@@ -36,12 +37,13 @@ func (uc *CreateCategoryUseCase) Execute(input CreateCategoryInput) (*category.C
 
 	typeValue := category.Type(strings.ToUpper(strings.TrimSpace(input.Type)))
 	cat, err := category.NewCategory(category.CreateParams{
-		ProfileID: input.ProfileID,
-		Name:      input.Name,
-		Type:      typeValue,
-		Color:     input.Color,
-		Icon:      input.Icon,
-		ParentID:  input.ParentID,
+		ProfileID:         input.ProfileID,
+		Name:              input.Name,
+		Type:              typeValue,
+		Color:             input.Color,
+		Icon:              input.Icon,
+		ParentID:          input.ParentID,
+		ClassificationDRE: input.ClassificationDRE,
 	})
 	if err != nil {
 		return nil, err

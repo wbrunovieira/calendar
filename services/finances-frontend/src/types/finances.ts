@@ -1,4 +1,6 @@
 export type ProfileType = 'PERSONAL' | 'BUSINESS';
+export type LegalEntityType = 'MEI' | 'ME' | 'EPP' | 'LTDA' | 'SA';
+export type TaxRegime = 'SIMPLES' | 'LUCRO_PRESUMIDO' | 'LUCRO_REAL';
 
 export interface Profile {
   id: string;
@@ -6,6 +8,14 @@ export interface Profile {
   name: string;
   type: ProfileType;
   isActive: boolean;
+  // PJ-specific (nullable)
+  legalEntityType?: LegalEntityType;
+  companyName?: string;
+  cnpj?: string;
+  simplesNacional?: boolean;
+  taxRegime?: TaxRegime;
+  dasAliquota?: number;
+  openingDate?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -73,6 +83,16 @@ export interface BankAccount {
 }
 
 export type CategoryType = 'INCOME' | 'EXPENSE' | 'TRANSFER';
+export type ClassificationDRE =
+  | 'REVENUE'
+  | 'TAX'
+  | 'FIXED_COST'
+  | 'VARIABLE_COST'
+  | 'PROLABORE'
+  | 'MARKETING'
+  | 'FINANCIAL'
+  | 'ASSET'
+  | 'CAPITAL';
 
 export interface Category {
   id: string;
@@ -82,7 +102,54 @@ export interface Category {
   color?: string;
   icon?: string;
   parentId?: string;
+  classificationDRE?: ClassificationDRE;
   isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ContributionType = 'CONTRIBUTION' | 'WITHDRAWAL' | 'LOAN';
+
+export interface CapitalContribution {
+  id: string;
+  profileId: string;
+  type: ContributionType;
+  amount: number;
+  date: string;
+  description: string;
+  sourceAccountId?: string;
+  notes?: string;
+  isReturned: boolean;
+  returnedAmount: number;
+  returnedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CapitalContributionSummary {
+  totalContributed: number;
+  totalWithdrawn: number;
+  totalLoaned: number;
+  totalReturned: number;
+  outstandingDebt: number;
+}
+
+export type AssetCategory = 'HARDWARE' | 'SOFTWARE' | 'FURNITURE' | 'VEHICLE' | 'REAL_ESTATE' | 'OTHER';
+
+export interface CompanyAsset {
+  id: string;
+  profileId: string;
+  name: string;
+  category: AssetCategory;
+  purchaseDate: string;
+  purchaseAmount: number;
+  currentValue: number;
+  depreciationRate: number;
+  linkedTransactionId?: string;
+  notes?: string;
+  isActive: boolean;
+  disposalDate?: string;
+  disposalAmount?: number;
   createdAt: string;
   updatedAt: string;
 }

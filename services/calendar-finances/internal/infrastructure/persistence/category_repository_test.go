@@ -36,7 +36,7 @@ func TestCategoryRepositoryCreate(t *testing.T) {
 	}
 
 	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO finance.categories")).
-		WithArgs(cat.ID, cat.ProfileID, cat.Name, cat.Type, cat.Color, cat.Icon, cat.ParentID, cat.IsActive, cat.CreatedAt, cat.UpdatedAt).
+		WithArgs(cat.ID, cat.ProfileID, cat.Name, cat.Type, cat.Color, cat.Icon, cat.ParentID, cat.ClassificationDRE, cat.IsActive, cat.CreatedAt, cat.UpdatedAt).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	if err := repo.Create(cat); err != nil {
@@ -58,10 +58,10 @@ func TestCategoryRepositoryFindByID(t *testing.T) {
 	repo := NewCategoryRepository(db)
 
 	now := fixedNow()
-	rows := sqlmock.NewRows([]string{"id", "profile_id", "name", "type", "color", "icon", "parent_id", "is_active", "created_at", "updated_at"}).
-		AddRow("cat-123", "profile-1", "Transporte", "EXPENSE", "#FFAA00", nil, nil, true, now, now)
+	rows := sqlmock.NewRows([]string{"id", "profile_id", "name", "type", "color", "icon", "parent_id", "classification_dre", "is_active", "created_at", "updated_at"}).
+		AddRow("cat-123", "profile-1", "Transporte", "EXPENSE", "#FFAA00", nil, nil, nil, true, now, now)
 
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, profile_id, name, type, color, icon, parent_id, is_active, created_at, updated_at")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, profile_id, name, type, color, icon, parent_id, classification_dre, is_active, created_at, updated_at")).
 		WithArgs("cat-123").
 		WillReturnRows(rows)
 

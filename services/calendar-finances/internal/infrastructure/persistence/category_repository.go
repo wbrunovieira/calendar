@@ -22,13 +22,13 @@ func (r *CategoryRepository) Create(cat *category.Category) error {
 
 	query := `
 		INSERT INTO finance.categories (
-			id, profile_id, name, type, color, icon, parent_id, is_active, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			id, profile_id, name, type, color, icon, parent_id, classification_dre, is_active, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`
 
 	_, err := r.db.Exec(query,
 		cat.ID, cat.ProfileID, cat.Name, cat.Type,
-		cat.Color, cat.Icon, cat.ParentID, cat.IsActive,
+		cat.Color, cat.Icon, cat.ParentID, cat.ClassificationDRE, cat.IsActive,
 		cat.CreatedAt, cat.UpdatedAt,
 	)
 	return err
@@ -42,13 +42,13 @@ func (r *CategoryRepository) Update(cat *category.Category) error {
 	query := `
 		UPDATE finance.categories
 		SET name = $2, type = $3, color = $4, icon = $5, parent_id = $6,
-			is_active = $7, updated_at = $8
+			classification_dre = $7, is_active = $8, updated_at = $9
 		WHERE id = $1
 	`
 
 	result, err := r.db.Exec(query,
 		cat.ID, cat.Name, cat.Type, cat.Color, cat.Icon, cat.ParentID,
-		cat.IsActive, cat.UpdatedAt,
+		cat.ClassificationDRE, cat.IsActive, cat.UpdatedAt,
 	)
 	if err != nil {
 		return err
@@ -67,7 +67,7 @@ func (r *CategoryRepository) Update(cat *category.Category) error {
 
 func (r *CategoryRepository) FindByID(id string) (*category.Category, error) {
 	query := `
-		SELECT id, profile_id, name, type, color, icon, parent_id, is_active, created_at, updated_at
+		SELECT id, profile_id, name, type, color, icon, parent_id, classification_dre, is_active, created_at, updated_at
 		FROM finance.categories
 		WHERE id = $1
 	`
@@ -78,7 +78,7 @@ func (r *CategoryRepository) FindByID(id string) (*category.Category, error) {
 
 func (r *CategoryRepository) ListByProfile(profileID string) ([]*category.Category, error) {
 	query := `
-		SELECT id, profile_id, name, type, color, icon, parent_id, is_active, created_at, updated_at
+		SELECT id, profile_id, name, type, color, icon, parent_id, classification_dre, is_active, created_at, updated_at
 		FROM finance.categories
 		WHERE profile_id = $1
 		ORDER BY name
@@ -166,9 +166,10 @@ type categoryScanner interface {
 func scanCategory(scanner categoryScanner) (*category.Category, error) {
 	cat := &category.Category{}
 	var (
-		color  sql.NullString
-		icon   sql.NullString
-		parent sql.NullString
+		color             sql.NullString
+		icon              sql.NullString
+		parent            sql.NullString
+		classificationDRE sql.NullString
 	)
 
 	err := scanner.Scan(
@@ -179,6 +180,7 @@ func scanCategory(scanner categoryScanner) (*category.Category, error) {
 		&color,
 		&icon,
 		&parent,
+		&classificationDRE,
 		&cat.IsActive,
 		&cat.CreatedAt,
 		&cat.UpdatedAt,
@@ -201,6 +203,10 @@ func scanCategory(scanner categoryScanner) (*category.Category, error) {
 	if parent.Valid {
 		s := parent.String
 		cat.ParentID = &s
+	}
+	if classificationDRE.Valid {
+		v := category.ClassificationDRE(classificationDRE.String)
+		cat.ClassificationDRE = &v
 	}
 
 	return cat, nil

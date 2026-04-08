@@ -57,7 +57,7 @@ func TestUpdateCategory(t *testing.T) {
 	}
 
 	color := "#00FFAA"
-	if err := cat.Update("Receitas Fixas", TypeIncome, &color, nil, nil); err != nil {
+	if err := cat.Update("Receitas Fixas", TypeIncome, &color, nil, nil, nil); err != nil {
 		t.Fatalf("unexpected update error: %v", err)
 	}
 

@@ -464,6 +464,81 @@ func RunMigrations(db *sql.DB) error {
 		`ALTER TABLE finance.crypto_purchases ADD COLUMN IF NOT EXISTS strategy VARCHAR(50) NOT NULL DEFAULT 'manual'`,
 		`CREATE INDEX IF NOT EXISTS idx_crypto_purchases_strategy ON finance.crypto_purchases(strategy)`,
 
+		// Phase 1 — PJ Profile: add nullable PJ-specific columns to profiles
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='finance' AND table_name='profiles' AND column_name='legal_entity_type') THEN
+				ALTER TABLE finance.profiles ADD COLUMN legal_entity_type VARCHAR(10) CHECK (legal_entity_type IN ('MEI','ME','EPP','LTDA','SA'));
+			END IF;
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='finance' AND table_name='profiles' AND column_name='company_name') THEN
+				ALTER TABLE finance.profiles ADD COLUMN company_name VARCHAR(255);
+			END IF;
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='finance' AND table_name='profiles' AND column_name='cnpj') THEN
+				ALTER TABLE finance.profiles ADD COLUMN cnpj VARCHAR(20);
+			END IF;
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='finance' AND table_name='profiles' AND column_name='simples_nacional') THEN
+				ALTER TABLE finance.profiles ADD COLUMN simples_nacional BOOLEAN;
+			END IF;
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='finance' AND table_name='profiles' AND column_name='tax_regime') THEN
+				ALTER TABLE finance.profiles ADD COLUMN tax_regime VARCHAR(20) CHECK (tax_regime IN ('SIMPLES','LUCRO_PRESUMIDO','LUCRO_REAL'));
+			END IF;
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='finance' AND table_name='profiles' AND column_name='das_aliquota') THEN
+				ALTER TABLE finance.profiles ADD COLUMN das_aliquota NUMERIC(5,2);
+			END IF;
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='finance' AND table_name='profiles' AND column_name='opening_date') THEN
+				ALTER TABLE finance.profiles ADD COLUMN opening_date DATE;
+			END IF;
+		END $$`,
+
+		// Phase 1 — DRE Classification: add nullable classification_dre to categories
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='finance' AND table_name='categories' AND column_name='classification_dre') THEN
+				ALTER TABLE finance.categories ADD COLUMN classification_dre VARCHAR(20)
+					CHECK (classification_dre IN ('REVENUE','TAX','FIXED_COST','VARIABLE_COST','PROLABORE','MARKETING','FINANCIAL','ASSET','CAPITAL'));
+			END IF;
+		END $$`,
+
+		// Phase 1 — Capital Contributions: track owner investments in the company
+		`CREATE TABLE IF NOT EXISTS finance.capital_contributions (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			profile_id UUID NOT NULL REFERENCES finance.profiles(id) ON DELETE CASCADE,
+			type VARCHAR(20) NOT NULL CHECK (type IN ('CONTRIBUTION','WITHDRAWAL','LOAN')),
+			amount NUMERIC(15,2) NOT NULL CHECK (amount > 0),
+			date DATE NOT NULL,
+			description VARCHAR(255) NOT NULL,
+			source_account_id UUID REFERENCES finance.bank_accounts(id) ON DELETE SET NULL,
+			notes TEXT,
+			is_returned BOOLEAN NOT NULL DEFAULT false,
+			returned_amount NUMERIC(15,2) NOT NULL DEFAULT 0,
+			returned_at TIMESTAMP,
+			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_capital_contributions_profile ON finance.capital_contributions(profile_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_capital_contributions_date ON finance.capital_contributions(date)`,
+
+		// Phase 1 — Company Assets: track fixed assets owned by the company
+		`CREATE TABLE IF NOT EXISTS finance.company_assets (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			profile_id UUID NOT NULL REFERENCES finance.profiles(id) ON DELETE CASCADE,
+			name VARCHAR(255) NOT NULL,
+			category VARCHAR(20) NOT NULL CHECK (category IN ('HARDWARE','SOFTWARE','FURNITURE','VEHICLE','REAL_ESTATE','OTHER')),
+			purchase_date DATE NOT NULL,
+			purchase_amount NUMERIC(15,2) NOT NULL CHECK (purchase_amount > 0),
+			current_value NUMERIC(15,2) NOT NULL DEFAULT 0,
+			depreciation_rate NUMERIC(5,2) NOT NULL DEFAULT 0,
+			linked_transaction_id UUID REFERENCES finance.transactions(id) ON DELETE SET NULL,
+			notes TEXT,
+			is_active BOOLEAN NOT NULL DEFAULT true,
+			disposal_date DATE,
+			disposal_amount NUMERIC(15,2),
+			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_company_assets_profile ON finance.company_assets(profile_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_company_assets_active ON finance.company_assets(profile_id, is_active)`,
+
 		// Migration: Update Clear broker account from CHECKING to INVESTMENT
 		// and fill investment_type/broker for its sub-accounts (FIIs)
 		`DO $$

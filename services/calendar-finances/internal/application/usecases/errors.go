@@ -22,4 +22,6 @@ var (
 	ErrNotCreditCard              = errors.New("bank account is not a credit card")
 	ErrDestinationCategoryRequired = errors.New("destination category is required for cross-profile transfer")
 	ErrGoalNotFound                = errors.New("goal not found")
+	ErrCapitalContributionNotFound = errors.New("capital contribution not found")
+	ErrCompanyAssetNotFound        = errors.New("company asset not found")
 )

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import AppLayout from '@/components/layout/AppLayout';
 import { useProfile } from '@/contexts/ProfileContext';
 import { api } from '@/lib/api';
-import type { Category, CategoryType } from '@/types/finances';
+import type { Category, CategoryType, ClassificationDRE } from '@/types/finances';
 import { useToast } from '@/components/ui/Toast';
 
 interface CategoryFormData {
@@ -14,6 +14,7 @@ interface CategoryFormData {
   color: string;
   icon: string;
   parentId: string | null;
+  classificationDRE: ClassificationDRE | '';
 }
 
 const CATEGORY_COLORS = [
@@ -50,8 +51,21 @@ const CATEGORY_ICONS = [
   { value: 'other', label: '📦 Outros' },
 ];
 
+const DRE_LABELS: Record<ClassificationDRE, string> = {
+  REVENUE: 'Receita',
+  TAX: 'Imposto',
+  FIXED_COST: 'Custo Fixo',
+  VARIABLE_COST: 'Custo Variavel',
+  PROLABORE: 'Pro-labore',
+  MARKETING: 'Marketing',
+  FINANCIAL: 'Financeiro',
+  ASSET: 'Ativo',
+  CAPITAL: 'Capital',
+};
+
 export default function CategoriesPage() {
-  const { selectedProfileId } = useProfile();
+  const { selectedProfileId, selectedProfile } = useProfile();
+  const isBusiness = selectedProfile?.type === 'BUSINESS';
   const { toast, confirm } = useToast();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(false);
@@ -66,6 +80,7 @@ export default function CategoriesPage() {
     color: CATEGORY_COLORS[0],
     icon: 'other',
     parentId: null,
+    classificationDRE: '',
   });
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -127,6 +142,7 @@ export default function CategoriesPage() {
       color: parent?.color || CATEGORY_COLORS[0],
       icon: 'other',
       parentId,
+      classificationDRE: '',
     });
     setModalOpen(true);
   };
@@ -139,6 +155,7 @@ export default function CategoriesPage() {
       color: cat.color || CATEGORY_COLORS[0],
       icon: cat.icon || 'other',
       parentId: cat.parentId || null,
+      classificationDRE: cat.classificationDRE || '',
     });
     setModalOpen(true);
   };
@@ -165,6 +182,10 @@ export default function CategoriesPage() {
       // Only include parentId if it's set
       if (formData.parentId) {
         payload.parentId = formData.parentId;
+      }
+
+      if (formData.classificationDRE) {
+        payload.classificationDRE = formData.classificationDRE;
       }
 
       if (editingCategory) {
@@ -310,6 +331,11 @@ export default function CategoriesPage() {
                           <span className={`text-xs px-2 py-0.5 rounded-full border ${getTypeColor(parent.type)}`}>
                             {getTypeLabel(parent.type)}
                           </span>
+                          {isBusiness && parent.classificationDRE && (
+                            <span className="text-xs px-2 py-0.5 rounded-full border bg-amber-500/15 text-amber-300 border-amber-400/30">
+                              {DRE_LABELS[parent.classificationDRE]}
+                            </span>
+                          )}
                           {parent.children.length > 0 && (
                             <span className="text-white/50 text-xs">
                               {parent.children.length} subcategoria{parent.children.length > 1 ? 's' : ''}
@@ -480,6 +506,23 @@ export default function CategoriesPage() {
                   ))}
                 </div>
               </div>
+
+              {/* ClassificationDRE — only for BUSINESS profiles */}
+              {isBusiness && !formData.parentId && (
+                <div>
+                  <label className="block text-sm text-white/70 mb-1">Classificação DRE (opcional)</label>
+                  <select
+                    value={formData.classificationDRE}
+                    onChange={(e) => setFormData({ ...formData, classificationDRE: e.target.value as ClassificationDRE | '' })}
+                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
+                  >
+                    <option value="" className="bg-slate-900">Nenhuma</option>
+                    {(Object.keys(DRE_LABELS) as ClassificationDRE[]).map((k) => (
+                      <option key={k} value={k} className="bg-slate-900">{DRE_LABELS[k]}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div className="flex gap-3 pt-4">
                 <button

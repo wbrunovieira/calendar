@@ -195,6 +195,38 @@ func main() {
 	stockHandler.SetDividendUseCase(dividendSyncUC)
 	log.Println("✓ brapi.dev integration enabled (B3 stocks/FIIs)")
 
+	// Initialize Capital Contribution use cases and handlers
+	capitalContributionRepo := persistence.NewCapitalContributionRepository(db)
+	createCapitalContributionUC := usecases.NewCreateCapitalContributionUseCase(capitalContributionRepo, profileRepo)
+	listCapitalContributionsUC := usecases.NewListCapitalContributionsUseCase(capitalContributionRepo)
+	getCapitalContributionUC := usecases.NewGetCapitalContributionUseCase(capitalContributionRepo)
+	updateCapitalContributionUC := usecases.NewUpdateCapitalContributionUseCase(capitalContributionRepo)
+	deleteCapitalContributionUC := usecases.NewDeleteCapitalContributionUseCase(capitalContributionRepo)
+	summaryCapitalContributionUC := usecases.NewGetCapitalContributionSummaryUseCase(capitalContributionRepo)
+	capitalContributionHandler := httpHandlers.NewCapitalContributionHandlers(
+		createCapitalContributionUC,
+		listCapitalContributionsUC,
+		getCapitalContributionUC,
+		updateCapitalContributionUC,
+		deleteCapitalContributionUC,
+		summaryCapitalContributionUC,
+	)
+
+	// Initialize Company Asset use cases and handlers
+	companyAssetRepo := persistence.NewCompanyAssetRepository(db)
+	createCompanyAssetUC := usecases.NewCreateCompanyAssetUseCase(companyAssetRepo, profileRepo)
+	listCompanyAssetsUC := usecases.NewListCompanyAssetsUseCase(companyAssetRepo)
+	getCompanyAssetUC := usecases.NewGetCompanyAssetUseCase(companyAssetRepo)
+	updateCompanyAssetUC := usecases.NewUpdateCompanyAssetUseCase(companyAssetRepo)
+	deleteCompanyAssetUC := usecases.NewDeleteCompanyAssetUseCase(companyAssetRepo)
+	companyAssetHandler := httpHandlers.NewCompanyAssetHandlers(
+		createCompanyAssetUC,
+		listCompanyAssetsUC,
+		getCompanyAssetUC,
+		updateCompanyAssetUC,
+		deleteCompanyAssetUC,
+	)
+
 	// API v1 routes
 	apiRouter := router.PathPrefix("/api/v1").Subrouter()
 
@@ -253,6 +285,21 @@ func main() {
 	apiRouter.HandleFunc("/goals/{id}/status", goalHandler.UpdateStatus).Methods("PATCH")
 
 	apiRouter.HandleFunc("/transactions/{id}", transactionHandler.Delete).Methods("DELETE")
+
+	// Capital Contribution routes (aportes do sócio)
+	apiRouter.HandleFunc("/capital-contributions/summary", capitalContributionHandler.Summary).Methods("GET")
+	apiRouter.HandleFunc("/capital-contributions", capitalContributionHandler.List).Methods("GET")
+	apiRouter.HandleFunc("/capital-contributions", capitalContributionHandler.Create).Methods("POST")
+	apiRouter.HandleFunc("/capital-contributions/{id}", capitalContributionHandler.Get).Methods("GET")
+	apiRouter.HandleFunc("/capital-contributions/{id}", capitalContributionHandler.Update).Methods("PUT")
+	apiRouter.HandleFunc("/capital-contributions/{id}", capitalContributionHandler.Delete).Methods("DELETE")
+
+	// Company Asset routes (ativos da empresa)
+	apiRouter.HandleFunc("/company-assets", companyAssetHandler.List).Methods("GET")
+	apiRouter.HandleFunc("/company-assets", companyAssetHandler.Create).Methods("POST")
+	apiRouter.HandleFunc("/company-assets/{id}", companyAssetHandler.Get).Methods("GET")
+	apiRouter.HandleFunc("/company-assets/{id}", companyAssetHandler.Update).Methods("PUT")
+	apiRouter.HandleFunc("/company-assets/{id}", companyAssetHandler.Delete).Methods("DELETE")
 
 	// Invoice routes
 	apiRouter.HandleFunc("/invoices", invoiceHandler.List).Methods("GET")
