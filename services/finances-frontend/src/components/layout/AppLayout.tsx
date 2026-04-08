@@ -139,7 +139,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
             </div>
           </div>
           <nav className="mt-4 flex flex-wrap gap-2">
-            {navItems.map((item) => {
+            {navItems.filter((item) => !item.businessOnly || profileTheme === 'business').map((item) => {
               const isActive = pathname === item.href;
               return (
                 <Link
