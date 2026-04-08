@@ -110,6 +110,7 @@ export default function TransactionForm({
           description: editingTransaction.description,
           notes: editingTransaction.notes,
           costCenter: editingTransaction.costCenter,
+          isPersonalReimbursement: editingTransaction.isPersonalReimbursement,
           occurredOn: editingTransaction.occurredOn.slice(0, 10),
           dueOn: editingTransaction.dueOn?.slice(0, 10) || (editingTransaction.status === 'PLANNED' ? editingTransaction.occurredOn.slice(0, 10) : undefined),
           reminderOn: editingTransaction.reminderOn?.slice(0, 10),
@@ -697,6 +698,23 @@ export default function TransactionForm({
                   />
                 </div>
               </div>
+
+              {/* Personal reimbursement — EXPENSE only */}
+              {formData.type === 'EXPENSE' && (
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={formData.isPersonalReimbursement ?? false}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, isPersonalReimbursement: e.target.checked }))
+                    }
+                    className="w-4 h-4 rounded border-white/30 bg-white/10 accent-orange-500"
+                  />
+                  <span className="text-white/70 text-sm">
+                    💳 É despesa pessoal no cartão PJ (aguarda reembolso)
+                  </span>
+                </label>
+              )}
 
               {/* Reminder field - only show for PLANNED transactions */}
               {formData.status === 'PLANNED' && (

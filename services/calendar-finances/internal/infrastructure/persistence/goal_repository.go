@@ -19,13 +19,13 @@ func NewGoalRepository(db *sql.DB) *GoalRepository {
 
 func (r *GoalRepository) Create(g *goal.Goal) error {
 	query := `
-		INSERT INTO finance.goals (id, profile_id, category_id, name, description, target_amount, current_amount, priority, target_date, status, link, display_order, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		INSERT INTO finance.goals (id, profile_id, category_id, name, description, target_amount, current_amount, priority, target_date, status, link, goal_type, display_order, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 	`
 	_, err := r.db.Exec(query,
 		g.ID, g.ProfileID, toNullString(g.CategoryID), g.Name, g.Description,
 		g.TargetAmount, g.CurrentAmount, string(g.Priority),
-		toNullTime(g.TargetDate), string(g.Status), g.Link, g.DisplayOrder,
+		toNullTime(g.TargetDate), string(g.Status), g.Link, string(g.GoalType), g.DisplayOrder,
 		g.CreatedAt, g.UpdatedAt,
 	)
 	return err
@@ -36,13 +36,13 @@ func (r *GoalRepository) Update(g *goal.Goal) error {
 		UPDATE finance.goals
 		SET name = $2, description = $3, target_amount = $4, current_amount = $5,
 		    priority = $6, target_date = $7, status = $8, link = $9,
-		    category_id = $10, updated_at = $11
+		    category_id = $10, goal_type = $11, updated_at = $12
 		WHERE id = $1
 	`
 	result, err := r.db.Exec(query,
 		g.ID, g.Name, g.Description, g.TargetAmount, g.CurrentAmount,
 		string(g.Priority), toNullTime(g.TargetDate), string(g.Status),
-		g.Link, toNullString(g.CategoryID), g.UpdatedAt,
+		g.Link, toNullString(g.CategoryID), string(g.GoalType), g.UpdatedAt,
 	)
 	if err != nil {
 		return err
@@ -57,7 +57,7 @@ func (r *GoalRepository) Update(g *goal.Goal) error {
 func (r *GoalRepository) FindByID(id string) (*goal.Goal, error) {
 	query := `
 		SELECT id, profile_id, category_id, name, description, target_amount, current_amount,
-		       priority, target_date, status, link, display_order, created_at, updated_at
+		       priority, target_date, status, link, goal_type, display_order, created_at, updated_at
 		FROM finance.goals WHERE id = $1
 	`
 	return r.scanGoal(r.db.QueryRow(query, id))
@@ -66,7 +66,7 @@ func (r *GoalRepository) FindByID(id string) (*goal.Goal, error) {
 func (r *GoalRepository) ListByProfile(profileID string) ([]*goal.Goal, error) {
 	query := `
 		SELECT id, profile_id, category_id, name, description, target_amount, current_amount,
-		       priority, target_date, status, link, display_order, created_at, updated_at
+		       priority, target_date, status, link, goal_type, display_order, created_at, updated_at
 		FROM finance.goals WHERE profile_id = $1
 		ORDER BY display_order ASC, created_at ASC
 	`
@@ -103,12 +103,12 @@ func (r *GoalRepository) scanGoal(row *sql.Row) (*goal.Goal, error) {
 	var g goal.Goal
 	var categoryID sql.NullString
 	var targetDate sql.NullTime
-	var priority, status string
+	var priority, status, goalType string
 
 	err := row.Scan(
 		&g.ID, &g.ProfileID, &categoryID, &g.Name, &g.Description,
 		&g.TargetAmount, &g.CurrentAmount, &priority, &targetDate,
-		&status, &g.Link, &g.DisplayOrder, &g.CreatedAt, &g.UpdatedAt,
+		&status, &g.Link, &goalType, &g.DisplayOrder, &g.CreatedAt, &g.UpdatedAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -119,6 +119,7 @@ func (r *GoalRepository) scanGoal(row *sql.Row) (*goal.Goal, error) {
 
 	g.Priority = goal.Priority(priority)
 	g.Status = goal.Status(status)
+	g.GoalType = goal.GoalType(goalType)
 	if categoryID.Valid {
 		g.CategoryID = &categoryID.String
 	}
@@ -134,12 +135,12 @@ func (r *GoalRepository) scanGoalFromRows(rows *sql.Rows) (*goal.Goal, error) {
 	var g goal.Goal
 	var categoryID sql.NullString
 	var targetDate sql.NullTime
-	var priority, status string
+	var priority, status, goalType string
 
 	err := rows.Scan(
 		&g.ID, &g.ProfileID, &categoryID, &g.Name, &g.Description,
 		&g.TargetAmount, &g.CurrentAmount, &priority, &targetDate,
-		&status, &g.Link, &g.DisplayOrder, &g.CreatedAt, &g.UpdatedAt,
+		&status, &g.Link, &goalType, &g.DisplayOrder, &g.CreatedAt, &g.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -147,6 +148,7 @@ func (r *GoalRepository) scanGoalFromRows(rows *sql.Rows) (*goal.Goal, error) {
 
 	g.Priority = goal.Priority(priority)
 	g.Status = goal.Status(status)
+	g.GoalType = goal.GoalType(goalType)
 	if categoryID.Valid {
 		g.CategoryID = &categoryID.String
 	}

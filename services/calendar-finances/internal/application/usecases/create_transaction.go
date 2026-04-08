@@ -30,9 +30,10 @@ type CreateTransactionInput struct {
 	Amount               float64                       `json:"amount"`
 	Currency             string                        `json:"currency"`
 	Description          string                        `json:"description"`
-	Notes                *string                       `json:"notes,omitempty"`
-	CostCenter           *string                       `json:"costCenter,omitempty"`
-	OccurredOn           string                        `json:"occurredOn"`
+	Notes                    *string                       `json:"notes,omitempty"`
+	CostCenter               *string                       `json:"costCenter,omitempty"`
+	IsPersonalReimbursement  bool                          `json:"isPersonalReimbursement"`
+	OccurredOn               string                        `json:"occurredOn"`
 	DueOn                *string                       `json:"dueOn,omitempty"`
 	ReminderOn           *string                       `json:"reminderOn,omitempty"` // Optional reminder date for alerts (10, 5, 1, 0 days before)
 	RecurrenceRule       *string                       `json:"recurrenceRule,omitempty"`
@@ -219,26 +220,27 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 	}
 
 	createParams := transaction.CreateParams{
-		ProfileID:            input.ProfileID,
-		BankAccountID:        input.BankAccountID,
-		DestinationAccountID: destinationAccountID,
-		CategoryID:           input.CategoryID,
-		InvoiceID:            invoiceID,
-		Type:                 effectiveType,
-		Amount:               input.Amount,
-		Currency:             input.Currency,
-		Description:          input.Description,
-		Notes:                input.Notes,
-		CostCenter:           input.CostCenter,
-		OccurredOn:           occurredOn,
-		DueOn:                dueOn,
-		ReminderOn:           reminderOn,
-		RecurrenceRule:       input.RecurrenceRule,
-		InstallmentNumber:    input.InstallmentNumber,
-		InstallmentTotal:     input.InstallmentTotal,
-		ExternalID:           input.ExternalID,
-		Tags:                 input.Tags,
-		Splits:               splits,
+		ProfileID:               input.ProfileID,
+		BankAccountID:           input.BankAccountID,
+		DestinationAccountID:    destinationAccountID,
+		CategoryID:              input.CategoryID,
+		InvoiceID:               invoiceID,
+		Type:                    effectiveType,
+		Amount:                  input.Amount,
+		Currency:                input.Currency,
+		Description:             input.Description,
+		Notes:                   input.Notes,
+		CostCenter:              input.CostCenter,
+		IsPersonalReimbursement: input.IsPersonalReimbursement,
+		OccurredOn:              occurredOn,
+		DueOn:                   dueOn,
+		ReminderOn:              reminderOn,
+		RecurrenceRule:          input.RecurrenceRule,
+		InstallmentNumber:       input.InstallmentNumber,
+		InstallmentTotal:        input.InstallmentTotal,
+		ExternalID:              input.ExternalID,
+		Tags:                    input.Tags,
+		Splits:                  splits,
 	}
 
 	txn, err := transaction.New(createParams)
@@ -600,24 +602,25 @@ func (uc *CreateTransactionUseCase) createInstallments(
 		}
 
 		createParams := transaction.CreateParams{
-			ProfileID:            input.ProfileID,
-			BankAccountID:        input.BankAccountID,
-			CategoryID:           input.CategoryID,
-			InvoiceID:            invoiceID,
-			Type:                 effectiveType,
-			Amount:               amount,
-			Currency:             input.Currency,
-			Description:          description,
-			Notes:                input.Notes,
-			CostCenter:           input.CostCenter,
-			OccurredOn:           installmentDate,
-			DueOn:                dueOn,
-			ReminderOn:           reminderOn,
-			InstallmentNumber:    &installmentNum,
-			InstallmentTotal:     &installmentTotal,
-			ExternalID:           input.ExternalID,
-			Tags:                 input.Tags,
-			Splits:               splits,
+			ProfileID:               input.ProfileID,
+			BankAccountID:           input.BankAccountID,
+			CategoryID:              input.CategoryID,
+			InvoiceID:               invoiceID,
+			Type:                    effectiveType,
+			Amount:                  amount,
+			Currency:                input.Currency,
+			Description:             description,
+			Notes:                   input.Notes,
+			CostCenter:              input.CostCenter,
+			IsPersonalReimbursement: input.IsPersonalReimbursement,
+			OccurredOn:              installmentDate,
+			DueOn:                   dueOn,
+			ReminderOn:              reminderOn,
+			InstallmentNumber:       &installmentNum,
+			InstallmentTotal:        &installmentTotal,
+			ExternalID:              input.ExternalID,
+			Tags:                    input.Tags,
+			Splits:                  splits,
 		}
 
 		txn, err := transaction.New(createParams)

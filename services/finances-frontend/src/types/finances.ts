@@ -225,6 +225,7 @@ export interface Transaction {
   installmentTotal?: number;
   externalId?: string;
   linkedTransactionId?: string;
+  isPersonalReimbursement?: boolean;
   tags?: string[];
   splits?: TransactionSplit[];
   createdAt: string;
@@ -244,6 +245,7 @@ export interface TransactionFormData {
   description: string;
   notes?: string;
   costCenter?: string;
+  isPersonalReimbursement?: boolean;
   occurredOn: string;
   dueOn?: string;
   reminderOn?: string;
@@ -348,6 +350,12 @@ export interface Invoice {
 
 export type GoalPriority = 'HIGH' | 'MEDIUM' | 'LOW';
 export type GoalStatus = 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
+export type GoalType =
+  | 'PERSONAL_SAVINGS'
+  | 'OPERATIONAL_RESERVE'
+  | 'TAX_FUND'
+  | 'INVESTMENT_FUND'
+  | 'REVENUE_TARGET';
 
 export interface Goal {
   id: string;
@@ -361,6 +369,8 @@ export interface Goal {
   targetDate?: string;
   status: GoalStatus;
   link?: string;
+  goalType: GoalType;
+  displayOrder?: number;
   createdAt: string;
   updatedAt: string;
 }

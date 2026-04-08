@@ -19,9 +19,10 @@ type UpdateTransactionInput struct {
 	Amount               float64  `json:"amount"`
 	Currency             string   `json:"currency"`
 	Description          string   `json:"description"`
-	Notes                *string  `json:"notes,omitempty"`
-	CostCenter           *string  `json:"costCenter,omitempty"`
-	OccurredOn           string   `json:"occurredOn"`
+	Notes                    *string  `json:"notes,omitempty"`
+	CostCenter               *string  `json:"costCenter,omitempty"`
+	IsPersonalReimbursement  bool     `json:"isPersonalReimbursement"`
+	OccurredOn               string   `json:"occurredOn"`
 	DueOn                *string  `json:"dueOn,omitempty"`
 	ReminderOn           *string  `json:"reminderOn,omitempty"` // Optional reminder date for alerts
 	RecurrenceRule       *string  `json:"recurrenceRule,omitempty"`
@@ -167,6 +168,7 @@ func (uc *UpdateTransactionUseCase) Execute(id string, input UpdateTransactionIn
 	existing.Description = strings.TrimSpace(input.Description)
 	existing.Notes = input.Notes
 	existing.CostCenter = input.CostCenter
+	existing.IsPersonalReimbursement = input.IsPersonalReimbursement
 	existing.OccurredOn = occurredOn
 	existing.DueOn = dueOn
 	existing.ReminderOn = reminderOn

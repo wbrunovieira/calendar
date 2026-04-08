@@ -41,9 +41,10 @@ type Transaction struct {
 	Amount               float64    `json:"amount"`
 	Currency             string     `json:"currency"`
 	Description          string     `json:"description"`
-	Notes                *string    `json:"notes,omitempty"`
-	CostCenter           *string    `json:"costCenter,omitempty"`
-	OccurredOn           time.Time  `json:"occurredOn"`
+	Notes                    *string    `json:"notes,omitempty"`
+	CostCenter               *string    `json:"costCenter,omitempty"`
+	IsPersonalReimbursement  bool       `json:"isPersonalReimbursement"`
+	OccurredOn               time.Time  `json:"occurredOn"`
 	DueOn                *time.Time `json:"dueOn,omitempty"`
 	ReminderOn           *time.Time `json:"reminderOn,omitempty"` // Optional reminder date for alerts (10, 5, 1, 0 days before)
 	RecurrenceRule       *string    `json:"recurrenceRule,omitempty"`
@@ -68,10 +69,11 @@ type CreateParams struct {
 	Amount               float64
 	Currency             string
 	Description          string
-	Notes                *string
-	CostCenter           *string
-	OccurredOn           time.Time
-	DueOn                *time.Time
+	Notes                   *string
+	CostCenter              *string
+	IsPersonalReimbursement bool
+	OccurredOn              time.Time
+	DueOn                   *time.Time
 	ReminderOn           *time.Time // Optional reminder date for alerts
 	RecurrenceRule       *string
 	InstallmentNumber    *int
@@ -130,9 +132,10 @@ func New(params CreateParams) (*Transaction, error) {
 		Amount:               round2(params.Amount),
 		Currency:             currency,
 		Description:          description,
-		Notes:                cloneString(params.Notes),
-		CostCenter:           cloneString(params.CostCenter),
-		OccurredOn:           params.OccurredOn,
+		Notes:                   cloneString(params.Notes),
+		CostCenter:              cloneString(params.CostCenter),
+		IsPersonalReimbursement: params.IsPersonalReimbursement,
+		OccurredOn:              params.OccurredOn,
 		DueOn:                cloneTime(params.DueOn),
 		ReminderOn:           cloneTime(params.ReminderOn),
 		RecurrenceRule:       cloneString(params.RecurrenceRule),

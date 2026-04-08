@@ -9,6 +9,7 @@ import QuickExpense from '@/components/finances/QuickExpense';
 import GlobalSearch from '@/components/finances/GlobalSearch';
 import TodayAlerts from '@/components/finances/TodayAlerts';
 import DasAlert from '@/components/finances/DasAlert';
+import PersonalReimbursementAlert from '@/components/finances/PersonalReimbursementAlert';
 import { useToast } from '@/components/ui/Toast';
 import type {
   BankAccount,
@@ -21,6 +22,7 @@ import type {
   RecurringTransaction,
 } from '@/types/finances';
 import { api, ApiError } from '@/lib/api';
+import { getProfileLabels } from '@/utils/profileLabels';
 
 // Format date to YYYY-MM-DD without timezone conversion
 const formatLocalDate = (date: Date) => {
@@ -51,6 +53,7 @@ const defaultFilters: TransactionFilters = {
 export default function FinancesPage() {
   // Use shared profile context
   const { profiles, selectedProfileId, selectedProfile, isLoading: profilesLoading } = useProfile();
+  const labels = getProfileLabels(selectedProfile);
   const { toast, confirm } = useToast();
 
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -411,6 +414,11 @@ export default function FinancesPage() {
           />
         )}
 
+        {/* Personal Reimbursement Alert — BUSINESS only */}
+        {selectedProfile?.type === 'BUSINESS' && (
+          <PersonalReimbursementAlert transactions={transactions} />
+        )}
+
         {/* Today Alerts */}
         {selectedProfileId && (
           <TodayAlerts
@@ -429,7 +437,7 @@ export default function FinancesPage() {
 
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-white">Despesas e planejamento</h1>
+            <h1 className="text-3xl font-bold text-white">{labels.transactions}</h1>
             <p className="text-white/60 text-sm">Registre gastos diários, semanais e mensais; programe fixas e controle orçamentos por categoria.</p>
           </div>
           <button
@@ -441,7 +449,7 @@ export default function FinancesPage() {
             }`}
           >
             <span>➕</span>
-            <span>Novo lançamento</span>
+            <span>{labels.newTransaction}</span>
           </button>
         </div>
 

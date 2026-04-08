@@ -16,6 +16,7 @@ type GoalInput struct {
 	Priority     string  `json:"priority"`
 	TargetDate   *string `json:"targetDate,omitempty"`
 	Link         string  `json:"link,omitempty"`
+	GoalType     string  `json:"goalType,omitempty"`
 }
 
 type GoalAddAmountInput struct {
@@ -49,6 +50,11 @@ func (s *GoalsService) Create(input GoalInput) (*goal.Goal, error) {
 		priority = goal.PriorityMedium
 	}
 
+	goalType := goal.GoalType(strings.ToUpper(input.GoalType))
+	if goalType == "" {
+		goalType = goal.GoalTypePersonalSavings
+	}
+
 	g, err := goal.New(goal.CreateParams{
 		ProfileID:    input.ProfileID,
 		CategoryID:   input.CategoryID,
@@ -58,6 +64,7 @@ func (s *GoalsService) Create(input GoalInput) (*goal.Goal, error) {
 		Priority:     priority,
 		TargetDate:   targetDate,
 		Link:         input.Link,
+		GoalType:     goalType,
 	})
 	if err != nil {
 		return nil, err
@@ -87,6 +94,10 @@ func (s *GoalsService) Update(id string, input GoalInput) (*goal.Goal, error) {
 
 	if input.Priority != "" {
 		g.Priority = goal.Priority(strings.ToUpper(input.Priority))
+	}
+
+	if input.GoalType != "" {
+		g.GoalType = goal.GoalType(strings.ToUpper(input.GoalType))
 	}
 
 	if input.TargetDate != nil && *input.TargetDate != "" {

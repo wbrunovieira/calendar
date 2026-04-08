@@ -154,3 +154,32 @@ func TestGoal_Progress(t *testing.T) {
 		t.Errorf("expected 25%%, got %.2f%%", progress)
 	}
 }
+
+func TestNewGoal_DefaultGoalType(t *testing.T) {
+	g, err := New(CreateParams{
+		ProfileID:    "profile-1",
+		Name:         "Item",
+		TargetAmount: 100,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if g.GoalType != GoalTypePersonalSavings {
+		t.Errorf("expected PERSONAL_SAVINGS, got %s", g.GoalType)
+	}
+}
+
+func TestNewGoal_ExplicitGoalType(t *testing.T) {
+	g, err := New(CreateParams{
+		ProfileID:    "profile-1",
+		Name:         "Fundo de imposto",
+		TargetAmount: 5000,
+		GoalType:     GoalTypeTaxFund,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if g.GoalType != GoalTypeTaxFund {
+		t.Errorf("expected TAX_FUND, got %s", g.GoalType)
+	}
+}

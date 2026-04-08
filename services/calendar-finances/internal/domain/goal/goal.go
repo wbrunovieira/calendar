@@ -24,21 +24,32 @@ const (
 	StatusCancelled Status = "CANCELLED"
 )
 
+type GoalType string
+
+const (
+	GoalTypePersonalSavings    GoalType = "PERSONAL_SAVINGS"
+	GoalTypeOperationalReserve GoalType = "OPERATIONAL_RESERVE"
+	GoalTypeTaxFund            GoalType = "TAX_FUND"
+	GoalTypeInvestmentFund     GoalType = "INVESTMENT_FUND"
+	GoalTypeRevenueTarget      GoalType = "REVENUE_TARGET"
+)
+
 type Goal struct {
-	ID            string    `json:"id"`
-	ProfileID     string    `json:"profileId"`
-	CategoryID    *string   `json:"categoryId,omitempty"`
-	Name          string    `json:"name"`
-	Description   string    `json:"description"`
-	TargetAmount  float64   `json:"targetAmount"`
-	CurrentAmount float64   `json:"currentAmount"`
-	Priority      Priority  `json:"priority"`
+	ID            string     `json:"id"`
+	ProfileID     string     `json:"profileId"`
+	CategoryID    *string    `json:"categoryId,omitempty"`
+	Name          string     `json:"name"`
+	Description   string     `json:"description"`
+	TargetAmount  float64    `json:"targetAmount"`
+	CurrentAmount float64    `json:"currentAmount"`
+	Priority      Priority   `json:"priority"`
 	TargetDate    *time.Time `json:"targetDate,omitempty"`
-	Status        Status    `json:"status"`
-	Link          string    `json:"link,omitempty"`
-	DisplayOrder  int       `json:"displayOrder"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
+	Status        Status     `json:"status"`
+	Link          string     `json:"link,omitempty"`
+	GoalType      GoalType   `json:"goalType"`
+	DisplayOrder  int        `json:"displayOrder"`
+	CreatedAt     time.Time  `json:"createdAt"`
+	UpdatedAt     time.Time  `json:"updatedAt"`
 }
 
 type CreateParams struct {
@@ -50,6 +61,7 @@ type CreateParams struct {
 	Priority     Priority
 	TargetDate   *time.Time
 	Link         string
+	GoalType     GoalType
 }
 
 func New(params CreateParams) (*Goal, error) {
@@ -68,6 +80,11 @@ func New(params CreateParams) (*Goal, error) {
 		priority = PriorityMedium
 	}
 
+	goalType := params.GoalType
+	if goalType == "" {
+		goalType = GoalTypePersonalSavings
+	}
+
 	now := time.Now()
 	return &Goal{
 		ID:            uuid.New().String(),
@@ -81,6 +98,7 @@ func New(params CreateParams) (*Goal, error) {
 		TargetDate:    params.TargetDate,
 		Status:        StatusActive,
 		Link:          params.Link,
+		GoalType:      goalType,
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}, nil

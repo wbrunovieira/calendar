@@ -5,7 +5,8 @@ import AppLayout, { useProfile } from '@/components/layout/AppLayout';
 import { api } from '@/lib/api';
 import { useToast } from '@/components/ui/Toast';
 import { formatCurrency, parseLocalDate } from '@/utils/format';
-import type { Goal, GoalPriority, GoalStatus, Category } from '@/types/finances';
+import type { Goal, GoalPriority, GoalStatus, GoalType, Category } from '@/types/finances';
+import { getProfileLabels } from '@/utils/profileLabels';
 import {
   DndContext,
   closestCenter,
@@ -47,6 +48,22 @@ const statusColor: Record<GoalStatus, string> = {
   CANCELLED: 'bg-gray-500/20 text-gray-400',
 };
 
+const GOAL_TYPE_LABELS: Record<GoalType, string> = {
+  PERSONAL_SAVINGS: 'Poupanca Pessoal',
+  OPERATIONAL_RESERVE: 'Reserva Operacional',
+  TAX_FUND: 'Fundo de Imposto',
+  INVESTMENT_FUND: 'Fundo de Investimento',
+  REVENUE_TARGET: 'Meta de Faturamento',
+};
+
+const GOAL_TYPE_ICONS: Record<GoalType, string> = {
+  PERSONAL_SAVINGS: '🎯',
+  OPERATIONAL_RESERVE: '🏦',
+  TAX_FUND: '📋',
+  INVESTMENT_FUND: '📈',
+  REVENUE_TARGET: '💰',
+};
+
 interface FormData {
   name: string;
   description: string;
@@ -55,6 +72,7 @@ interface FormData {
   targetDate: string;
   link: string;
   categoryId: string;
+  goalType: GoalType;
 }
 
 const emptyForm: FormData = {
@@ -65,10 +83,12 @@ const emptyForm: FormData = {
   targetDate: '',
   link: '',
   categoryId: '',
+  goalType: 'PERSONAL_SAVINGS',
 };
 
 export default function GoalsPage() {
   const { selectedProfileId, selectedProfile } = useProfile();
+  const labels = getProfileLabels(selectedProfile);
   const { toast, confirm } = useToast();
   const [goals, setGoals] = useState<Goal[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -123,6 +143,7 @@ export default function GoalsPage() {
         targetDate: form.targetDate || undefined,
         link: form.link || undefined,
         categoryId: form.categoryId || undefined,
+        goalType: form.goalType,
       };
 
       if (editingId) {
@@ -151,6 +172,7 @@ export default function GoalsPage() {
       targetDate: goal.targetDate ? goal.targetDate.split('T')[0] : '',
       link: goal.link || '',
       categoryId: goal.categoryId || '',
+      goalType: goal.goalType || 'PERSONAL_SAVINGS',
     });
     setEditingId(goal.id);
     setShowForm(true);
@@ -233,7 +255,7 @@ export default function GoalsPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-white">Metas</h1>
+            <h1 className="text-2xl font-bold text-white">{labels.goals}</h1>
             <p className="text-white/50 text-sm">
               {selectedProfile?.name || 'Selecione um perfil'}
             </p>
@@ -527,6 +549,21 @@ export default function GoalsPage() {
                       <option value="LOW">Baixa</option>
                     </select>
                   </div>
+                </div>
+
+                <div>
+                  <label className="text-white/50 text-xs mb-1 block">Tipo de Meta</label>
+                  <select
+                    value={form.goalType}
+                    onChange={(e) => setForm({ ...form, goalType: e.target.value as GoalType })}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white"
+                  >
+                    {(Object.keys(GOAL_TYPE_LABELS) as GoalType[]).map((t) => (
+                      <option key={t} value={t} className="bg-slate-900">
+                        {GOAL_TYPE_ICONS[t]} {GOAL_TYPE_LABELS[t]}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -856,13 +893,18 @@ function GoalCard({
     >
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <h3 className="text-white font-medium truncate">{goal.name}</h3>
             <span
               className={`text-[10px] px-1.5 py-0.5 rounded border ${priorityColor[goal.priority]}`}
             >
               {priorityLabel[goal.priority]}
             </span>
+            {goal.goalType && goal.goalType !== 'PERSONAL_SAVINGS' && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded border bg-amber-500/20 text-amber-300 border-amber-400/30">
+                {GOAL_TYPE_ICONS[goal.goalType]} {GOAL_TYPE_LABELS[goal.goalType]}
+              </span>
+            )}
             {goal.status !== 'ACTIVE' && (
               <span className={`text-[10px] px-1.5 py-0.5 rounded ${statusColor[goal.status]}`}>
                 {statusLabel[goal.status]}

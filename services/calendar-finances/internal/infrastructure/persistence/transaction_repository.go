@@ -56,14 +56,14 @@ func (r *TransactionRepository) Create(txn *transaction.Transaction) (err error)
 	insertQuery := `
 		INSERT INTO finance.transactions (
 			id, profile_id, bank_account_id, destination_account_id, category_id, invoice_id,
-			type, status, amount, currency, description, notes, cost_center,
+			type, status, amount, currency, description, notes, cost_center, is_personal_reimbursement,
 			occurred_on, due_on, reminder_on, recurrence_rule, installment_number, installment_total,
 			external_id, linked_transaction_id, created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
-			$7, $8, $9, $10, $11, $12, $13,
-			$14, $15, $16, $17, $18, $19,
-			$20, $21, $22, $23
+			$7, $8, $9, $10, $11, $12, $13, $14,
+			$15, $16, $17, $18, $19, $20,
+			$21, $22, $23, $24
 		)
 	`
 
@@ -86,6 +86,7 @@ func (r *TransactionRepository) Create(txn *transaction.Transaction) (err error)
 		nullableStringFromValue(description),
 		nullableString(txn.Notes),
 		nullableString(txn.CostCenter),
+		txn.IsPersonalReimbursement,
 		txn.OccurredOn,
 		nullableTime(txn.DueOn),
 		nullableTime(txn.ReminderOn),
@@ -145,7 +146,7 @@ func (r *TransactionRepository) Create(txn *transaction.Transaction) (err error)
 func (r *TransactionRepository) GetByID(id string) (*transaction.Transaction, error) {
 	query := `
 		SELECT id, profile_id, bank_account_id, destination_account_id, category_id, invoice_id,
-			type, status, amount, currency, description, notes, cost_center,
+			type, status, amount, currency, description, notes, cost_center, is_personal_reimbursement,
 			occurred_on, due_on, reminder_on, recurrence_rule, installment_number, installment_total,
 			external_id, linked_transaction_id, created_at, updated_at
 		FROM finance.transactions
@@ -172,7 +173,7 @@ func (r *TransactionRepository) List(filter transaction.ListFilter) ([]*transact
 
 	baseQuery := `
         SELECT id, profile_id, bank_account_id, destination_account_id, category_id, invoice_id,
-               type, status, amount, currency, description, notes, cost_center,
+               type, status, amount, currency, description, notes, cost_center, is_personal_reimbursement,
                occurred_on, due_on, reminder_on, recurrence_rule, installment_number, installment_total,
                external_id, linked_transaction_id, created_at, updated_at
         FROM finance.transactions
@@ -259,14 +260,14 @@ type transactionScanner interface {
 func scanTransaction(scanner transactionScanner) (*transaction.Transaction, error) {
 	tx := &transaction.Transaction{}
 	var (
-		destination       sql.NullString
-		categoryID        sql.NullString
-		invoiceID         sql.NullString
-		description       sql.NullString
-		notes             sql.NullString
-		costCenter        sql.NullString
-		dueOn             sql.NullTime
-		reminderOn        sql.NullTime
+		destination         sql.NullString
+		categoryID          sql.NullString
+		invoiceID           sql.NullString
+		description         sql.NullString
+		notes               sql.NullString
+		costCenter          sql.NullString
+		dueOn               sql.NullTime
+		reminderOn          sql.NullTime
 		recurrence          sql.NullString
 		installmentNumber   sql.NullInt64
 		installmentTotal    sql.NullInt64
@@ -288,6 +289,7 @@ func scanTransaction(scanner transactionScanner) (*transaction.Transaction, erro
 		&description,
 		&notes,
 		&costCenter,
+		&tx.IsPersonalReimbursement,
 		&tx.OccurredOn,
 		&dueOn,
 		&reminderOn,
@@ -399,14 +401,15 @@ func (r *TransactionRepository) Update(txn *transaction.Transaction) (err error)
 			description = $10,
 			notes = $11,
 			cost_center = $12,
-			occurred_on = $13,
-			due_on = $14,
-			reminder_on = $15,
-			recurrence_rule = $16,
-			installment_number = $17,
-			installment_total = $18,
-			external_id = $19,
-			linked_transaction_id = $20,
+			is_personal_reimbursement = $13,
+			occurred_on = $14,
+			due_on = $15,
+			reminder_on = $16,
+			recurrence_rule = $17,
+			installment_number = $18,
+			installment_total = $19,
+			external_id = $20,
+			linked_transaction_id = $21,
 			updated_at = NOW()
 		WHERE id = $1
 	`
@@ -424,6 +427,7 @@ func (r *TransactionRepository) Update(txn *transaction.Transaction) (err error)
 		nullableStringFromValue(txn.Description),
 		nullableString(txn.Notes),
 		nullableString(txn.CostCenter),
+		txn.IsPersonalReimbursement,
 		txn.OccurredOn,
 		nullableTime(txn.DueOn),
 		nullableTime(txn.ReminderOn),

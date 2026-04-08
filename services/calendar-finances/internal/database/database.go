@@ -583,6 +583,30 @@ func RunMigrations(db *sql.DB) error {
 			END IF;
 		END $$`,
 
+		// Migration: Add display_order to goals (if missing from initial migration)
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='finance' AND table_name='goals' AND column_name='display_order') THEN
+				ALTER TABLE finance.goals ADD COLUMN display_order INTEGER NOT NULL DEFAULT 0;
+			END IF;
+		END $$`,
+
+		// Migration: Add goal_type to goals
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='finance' AND table_name='goals' AND column_name='goal_type') THEN
+				ALTER TABLE finance.goals ADD COLUMN goal_type VARCHAR(30) NOT NULL DEFAULT 'PERSONAL_SAVINGS';
+			END IF;
+		END $$`,
+
+		// Migration: Add is_personal_reimbursement to transactions
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='finance' AND table_name='transactions' AND column_name='is_personal_reimbursement') THEN
+				ALTER TABLE finance.transactions ADD COLUMN is_personal_reimbursement BOOLEAN NOT NULL DEFAULT FALSE;
+			END IF;
+		END $$`,
+
 		// Migration: Update Clear broker account from CHECKING to INVESTMENT
 		// and fill investment_type/broker for its sub-accounts (FIIs)
 		`DO $$
