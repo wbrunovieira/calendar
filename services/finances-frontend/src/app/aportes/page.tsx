@@ -50,7 +50,7 @@ export default function AportesPage() {
   const [formData, setFormData] = useState<ContributionFormData>({
     type: 'CONTRIBUTION',
     amount: '',
-    date: new Date().toISOString().slice(0, 10),
+    date: '',
     description: '',
     sourceAccountId: '',
     notes: '',
@@ -60,16 +60,14 @@ export default function AportesPage() {
 
   const loadData = useCallback(async () => {
     if (!selectedProfileId) return;
+    setLoading(true);
     try {
-      setLoading(true);
-      const [contribData, summaryData, accountData] = await Promise.all([
-        api.get<{ data: CapitalContribution[] }>(`/capital-contributions?profileId=${selectedProfileId}`),
-        api.get<{ data: CapitalContributionSummary }>(`/capital-contributions/summary?profileId=${selectedProfileId}`),
-        api.get<{ data: BankAccount[] }>(`/bank-accounts?profileId=${selectedProfileId}`),
-      ]);
-      setContributions(contribData.data || []);
-      setSummary(summaryData.data || null);
-      setAccounts(accountData.data || []);
+      const contribData = await api.get<{ data: CapitalContribution[] }>(`/capital-contributions?profileId=${selectedProfileId}`).catch(() => null);
+      const summaryData = await api.get<{ data: CapitalContributionSummary }>(`/capital-contributions/summary?profileId=${selectedProfileId}`).catch(() => null);
+      const accountData = await api.get<{ data: BankAccount[] }>(`/bank-accounts?profileId=${selectedProfileId}`).catch(() => null);
+      setContributions(contribData?.data ?? []);
+      setSummary(summaryData?.data ?? null);
+      setAccounts(accountData?.data ?? []);
     } catch (e) {
       console.warn('Erro ao carregar aportes', e);
     } finally {
@@ -83,10 +81,12 @@ export default function AportesPage() {
 
   const openCreate = () => {
     setEditing(null);
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     setFormData({
       type: 'CONTRIBUTION',
       amount: '',
-      date: new Date().toISOString().slice(0, 10),
+      date: dateStr,
       description: '',
       sourceAccountId: '',
       notes: '',
