@@ -108,6 +108,45 @@ export interface Category {
   updatedAt: string;
 }
 
+export type CostCenterType = 'CLIENT' | 'PROJECT' | 'DEPARTMENT';
+
+export interface CostCenter {
+  id: string;
+  profileId: string;
+  name: string;
+  type: CostCenterType;
+  color?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CampaignPlatform = 'META_ADS' | 'GOOGLE_ADS' | 'INSTAGRAM' | 'LINKEDIN' | 'OTHER';
+
+export interface MarketingCampaign {
+  id: string;
+  profileId: string;
+  name: string;
+  platform: CampaignPlatform;
+  startDate: string;
+  endDate?: string;
+  budget: number;
+  revenueAttributed: number;
+  leads: number;
+  conversions: number;
+  notes?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MarketingCampaignMetrics extends MarketingCampaign {
+  totalSpent: number;
+  roi: number;
+  costPerLead: number;
+  costPerConversion: number;
+}
+
 export type ContributionType = 'CONTRIBUTION' | 'WITHDRAWAL' | 'LOAN';
 
 export interface CapitalContribution {

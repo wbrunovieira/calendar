@@ -539,6 +539,50 @@ func RunMigrations(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_company_assets_profile ON finance.company_assets(profile_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_company_assets_active ON finance.company_assets(profile_id, is_active)`,
 
+		// Phase 3: Cost Centers
+		`CREATE TABLE IF NOT EXISTS finance.cost_centers (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			profile_id UUID NOT NULL REFERENCES finance.profiles(id) ON DELETE CASCADE,
+			name VARCHAR(255) NOT NULL,
+			type VARCHAR(20) NOT NULL CHECK (type IN ('CLIENT','PROJECT','DEPARTMENT')),
+			color VARCHAR(20),
+			is_active BOOLEAN NOT NULL DEFAULT true,
+			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_cost_centers_profile ON finance.cost_centers(profile_id)`,
+
+		// Phase 3: Marketing Campaigns
+		`CREATE TABLE IF NOT EXISTS finance.marketing_campaigns (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			profile_id UUID NOT NULL REFERENCES finance.profiles(id) ON DELETE CASCADE,
+			name VARCHAR(255) NOT NULL,
+			platform VARCHAR(20) NOT NULL CHECK (platform IN ('META_ADS','GOOGLE_ADS','INSTAGRAM','LINKEDIN','OTHER')),
+			start_date DATE NOT NULL,
+			end_date DATE,
+			budget NUMERIC(15,2) NOT NULL DEFAULT 0,
+			revenue_attributed NUMERIC(15,2) NOT NULL DEFAULT 0,
+			leads INT NOT NULL DEFAULT 0,
+			conversions INT NOT NULL DEFAULT 0,
+			notes TEXT,
+			is_active BOOLEAN NOT NULL DEFAULT true,
+			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_marketing_campaigns_profile ON finance.marketing_campaigns(profile_id)`,
+
+		// Phase 3: Add cost_center_id and campaign_id to transactions (non-destructive, nullable)
+		`DO $$ BEGIN
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='finance' AND table_name='transactions' AND column_name='cost_center_id') THEN
+				ALTER TABLE finance.transactions ADD COLUMN cost_center_id UUID REFERENCES finance.cost_centers(id) ON DELETE SET NULL;
+			END IF;
+		END $$`,
+		`DO $$ BEGIN
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='finance' AND table_name='transactions' AND column_name='campaign_id') THEN
+				ALTER TABLE finance.transactions ADD COLUMN campaign_id UUID REFERENCES finance.marketing_campaigns(id) ON DELETE SET NULL;
+			END IF;
+		END $$`,
+
 		// Migration: Update Clear broker account from CHECKING to INVESTMENT
 		// and fill investment_type/broker for its sub-accounts (FIIs)
 		`DO $$

@@ -21,6 +21,8 @@ const navItems = [
   { href: '/goals', label: 'Metas' },
   { href: '/aportes', label: 'Aportes', businessOnly: true },
   { href: '/ativos', label: 'Ativos', businessOnly: true },
+  { href: '/centros', label: 'Centros', businessOnly: true },
+  { href: '/marketing', label: 'Marketing', businessOnly: true },
   { href: '/plan', label: 'Planejamento' },
   { href: '/visao', label: 'Visao Mensal' },
   { href: '/mercado', label: 'Mercado' },

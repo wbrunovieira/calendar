@@ -227,6 +227,25 @@ func main() {
 		deleteCompanyAssetUC,
 	)
 
+	// Cost Centers
+	costCenterRepo := persistence.NewCostCenterRepository(db)
+	createCostCenterUC := usecases.NewCreateCostCenterUseCase(costCenterRepo)
+	listCostCentersUC := usecases.NewListCostCentersUseCase(costCenterRepo)
+	getCostCenterUC := usecases.NewGetCostCenterUseCase(costCenterRepo)
+	updateCostCenterUC := usecases.NewUpdateCostCenterUseCase(costCenterRepo)
+	deleteCostCenterUC := usecases.NewDeleteCostCenterUseCase(costCenterRepo)
+	costCenterHandler := httpHandlers.NewCostCenterHandlers(createCostCenterUC, listCostCentersUC, getCostCenterUC, updateCostCenterUC, deleteCostCenterUC)
+
+	// Marketing Campaigns
+	campaignRepo := persistence.NewMarketingCampaignRepository(db)
+	createCampaignUC := usecases.NewCreateCampaignUseCase(campaignRepo)
+	listCampaignsUC := usecases.NewListCampaignsUseCase(campaignRepo)
+	getCampaignUC := usecases.NewGetCampaignUseCase(campaignRepo)
+	updateCampaignUC := usecases.NewUpdateCampaignUseCase(campaignRepo)
+	deleteCampaignUC := usecases.NewDeleteCampaignUseCase(campaignRepo)
+	getCampaignMetricsUC := usecases.NewGetCampaignWithMetricsUseCase(campaignRepo)
+	campaignHandler := httpHandlers.NewMarketingCampaignHandlers(createCampaignUC, listCampaignsUC, getCampaignUC, updateCampaignUC, deleteCampaignUC, getCampaignMetricsUC)
+
 	// API v1 routes
 	apiRouter := router.PathPrefix("/api/v1").Subrouter()
 
@@ -300,6 +319,21 @@ func main() {
 	apiRouter.HandleFunc("/company-assets/{id}", companyAssetHandler.Get).Methods("GET")
 	apiRouter.HandleFunc("/company-assets/{id}", companyAssetHandler.Update).Methods("PUT")
 	apiRouter.HandleFunc("/company-assets/{id}", companyAssetHandler.Delete).Methods("DELETE")
+
+	// Cost Center routes (centros de custo)
+	apiRouter.HandleFunc("/cost-centers", costCenterHandler.List).Methods("GET")
+	apiRouter.HandleFunc("/cost-centers", costCenterHandler.Create).Methods("POST")
+	apiRouter.HandleFunc("/cost-centers/{id}", costCenterHandler.Get).Methods("GET")
+	apiRouter.HandleFunc("/cost-centers/{id}", costCenterHandler.Update).Methods("PUT")
+	apiRouter.HandleFunc("/cost-centers/{id}", costCenterHandler.Delete).Methods("DELETE")
+
+	// Marketing Campaign routes (campanhas de marketing)
+	apiRouter.HandleFunc("/marketing-campaigns", campaignHandler.List).Methods("GET")
+	apiRouter.HandleFunc("/marketing-campaigns", campaignHandler.Create).Methods("POST")
+	apiRouter.HandleFunc("/marketing-campaigns/{id}", campaignHandler.Get).Methods("GET")
+	apiRouter.HandleFunc("/marketing-campaigns/{id}", campaignHandler.Update).Methods("PUT")
+	apiRouter.HandleFunc("/marketing-campaigns/{id}", campaignHandler.Delete).Methods("DELETE")
+	apiRouter.HandleFunc("/marketing-campaigns/{id}/metrics", campaignHandler.GetWithMetrics).Methods("GET")
 
 	// Invoice routes
 	apiRouter.HandleFunc("/invoices", invoiceHandler.List).Methods("GET")
