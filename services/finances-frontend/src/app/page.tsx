@@ -78,6 +78,9 @@ export default function FinancesPage() {
   // Recurring transactions for alerts
   const [recurringTransactions, setRecurringTransactions] = useState<RecurringTransaction[]>([]);
 
+  // Overdue PLANNED transactions from previous months (not in current month filter)
+  const [overdueTransactions, setOverdueTransactions] = useState<Transaction[]>([]);
+
   const filteredAccounts = useMemo(
     () => bankAccounts.filter((account) => account.profileId === selectedProfileId),
     [bankAccounts, selectedProfileId],
@@ -183,6 +186,27 @@ export default function FinancesPage() {
     }
   }, []);
 
+  // Fetch PLANNED transactions from the past 60 days that are overdue (before current month)
+  const fetchOverdueTransactions = useCallback(async (profileId: string) => {
+    try {
+      const now = new Date();
+      const currentMonthStart = formatLocalDate(new Date(now.getFullYear(), now.getMonth(), 1));
+      const sixtyDaysAgo = new Date(now);
+      sixtyDaysAgo.setDate(now.getDate() - 60);
+      const from = formatLocalDate(sixtyDaysAgo);
+      // to = day before current month start
+      const lastDayBefore = new Date(now.getFullYear(), now.getMonth(), 0);
+      const to = formatLocalDate(lastDayBefore);
+      if (from >= currentMonthStart) return; // safety check
+      const params = new URLSearchParams({ profileId, status: 'PLANNED', occurredFrom: from, occurredTo: to });
+      const data = await api.get<{ data: Transaction[] }>(`/transactions?${params.toString()}`);
+      setOverdueTransactions(data.data || []);
+    } catch (error) {
+      console.warn('Erro ao carregar transacoes atrasadas:', error);
+      setOverdueTransactions([]);
+    }
+  }, []);
+
   useEffect(() => {
     if (!selectedProfileId) {
       setCategories([]);
@@ -197,7 +221,8 @@ export default function FinancesPage() {
     fetchTransactions(selectedProfileId, baseFilters);
     fetchBudgetSummary(selectedProfileId);
     fetchRecurringTransactions(selectedProfileId);
-  }, [selectedProfileId, fetchCategories, fetchTransactions, fetchBudgetSummary, fetchRecurringTransactions]);
+    fetchOverdueTransactions(selectedProfileId);
+  }, [selectedProfileId, fetchCategories, fetchTransactions, fetchBudgetSummary, fetchRecurringTransactions, fetchOverdueTransactions]);
 
   // Fetch invoices when filtered accounts change
   useEffect(() => {
@@ -276,6 +301,7 @@ export default function FinancesPage() {
       if (selectedProfileId) {
         await fetchTransactions(selectedProfileId, transactionFilters);
         await fetchBankAccounts();
+        await fetchOverdueTransactions(selectedProfileId);
         setSearchRefreshKey((k) => k + 1);
       }
     } catch (error) {
@@ -422,7 +448,7 @@ export default function FinancesPage() {
         {/* Today Alerts */}
         {selectedProfileId && (
           <TodayAlerts
-            transactions={transactions}
+            transactions={[...overdueTransactions.filter((o) => !transactions.some((t) => t.id === o.id)), ...transactions]}
             recurringTransactions={recurringTransactions}
             invoices={invoicesByAccount}
             accounts={filteredAccounts}
