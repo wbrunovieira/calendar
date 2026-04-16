@@ -27,7 +27,12 @@ export default function SidebarHabitsWidget({ isCollapsed }: SidebarHabitsWidget
       // Check which habits are completed today
       const completed = new Set<string>();
       for (const habit of data) {
-        if (habit.executions?.some(e => e.executionDate === today && e.completed)) {
+        if (habit.executions?.some(e => {
+          const execDate = typeof e.executionDate === 'string'
+            ? e.executionDate.split('T')[0]
+            : '';
+          return execDate === today && e.completed;
+        })) {
           completed.add(habit.id);
         }
       }

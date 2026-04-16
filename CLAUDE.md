@@ -6,22 +6,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Multi-container calendar application integrating Google Calendar accounts (professional and personal), Linear task management, financial tracking, and health/fitness tracking with AI-powered agents. Single-user personal project.
 
-## Quick Start
-
-```bash
-# 1. Start backend services
-docker-compose up -d
-
-# 2. Start calendar frontend (new terminal)
-cd services/calendar-frontend && npm install && npm run dev
-
-# 3. Start finances frontend (new terminal, optional)
-cd services/finances-frontend && npm install && npm run dev
-
-# 4. Start health frontend (new terminal, optional)
-cd services/health-frontend && npm install && npm run dev
-```
-
 ## Architecture
 
 ### Container Structure
@@ -79,11 +63,21 @@ src/domains/[domain]/
 
 ### Financial Module (calendar-finances)
 
-Located in `services/calendar-finances/internal/`. Manual dependency wiring in `cmd/api/main.go` (repo → usecase → handler). Routes registered on Gorilla Mux with `/api/v1` prefix. Migrations are manual SQL strings in `internal/database/database.go`.
+Located in `services/calendar-finances/internal/`. Manual dependency wiring in `cmd/api/main.go` (repo → usecase → handler). Routes registered on Gorilla Mux with `/api/v1` prefix. Migrations are inline SQL strings in `internal/database/database.go` — idempotent, run automatically on startup. No ORM; uses `sql.DB` with connection pooling (25 max open, 5 idle).
+
+### Health Module (calendar-health)
+
+Same Go/Gorilla Mux pattern as calendar-finances. Uses `health.*` schema (separate from `public.*` and `finance.*`). Schema versioning via `health.schema_migrations` table.
 
 ### AI Agents Module (agents)
 
-FastAPI app with LangGraph. Graph compiled once at startup (lifespan), invoked per-request. Services communicate internally via Docker network (`http://calendar-finances:3335`, `http://langfuse-web:3000`).
+FastAPI app with LangGraph. Graphs compiled once at startup (lifespan event), never at request time. Services communicate internally via Docker network (`http://calendar-finances:3335`, `http://langfuse-web:3000`).
+
+**Two named graphs:**
+- **Transaction graph** — 5-node pipeline: `load_context → parse_message → resolve_entities → create_transaction → format_reply`. Conditional routing on errors.
+- **CRM Lead Research graph** — 7-node graph with retry loops (up to 3 rounds) and supervisor review checkpoint.
+
+**Langfuse prompt versioning:** Agents fetch prompts by name + label via `langfuse.get_prompt()` with in-memory caching. This decouples prompt changes from code deployments (production vs staging via labels).
 
 ### n8n (Workflow Automation)
 
@@ -173,38 +167,6 @@ bash scripts/seed-test-db.sh     # Seed test database
 ```
 
 ## Database Schema
-
-### Calendar Schema (Prisma)
-Schema: `services/calendar-core/prisma/schema.prisma`
-
-**Key Tables:**
-- `events` - Main events with RRule recurrence, eventType (EVENT/HABIT/TODO/REMINDER)
-- `event_completions` - Execution tracking (separate from modifications)
-- `recurrence_exceptions` - Removed dates from recurring events
-- `recurrence_overrides` - Modified instances of recurring events
-- `calendars` - Professional/personal separation
-- `category_types` - Modern categorization (health, work, leisure, etc.)
-- `categories` - Legacy structure with M2M to category_types
-- `labels` - Event labels
-
-### Finance Schema (PostgreSQL)
-Schema prefix: `finance.` — Migrations in Go code (`internal/database/database.go`), not Prisma.
-
-**Key Tables:** `finance.profiles`, `finance.transactions`, `finance.bank_accounts`, `finance.recurring_transactions`, `finance.budget_targets`, `finance.categories`, `finance.invoices`
-
-## API Endpoints
-
-### calendar-core
-- `/events` - CRUD + `/events/executions/toggle`, `/events/:id/executions`, `/events/stats`
-- `/calendars`, `/categories`, `/category-types`, `/labels` - Standard CRUD
-
-### calendar-finances
-All prefixed with `/api/v1`:
-- `/profiles`, `/bank-accounts`, `/transactions`, `/recurring-transactions`, `/budgets`, `/categories`
-
-### agents
-- `GET /health` — liveness (reports LangGraph availability)
-- `GET /health?deep=1` — readiness (executes ping-pong graph)
 
 ## Testing
 
