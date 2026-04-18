@@ -67,6 +67,37 @@ func TestUpdateBankAccount_InvalidCurrencyReturnsError(t *testing.T) {
 	}
 }
 
+// Given: account linked to another account, update sends payload without linkedAccountId
+// When: Execute
+// Then: linkedAccountId is preserved (not zeroed)
+func TestUpdateBankAccount_NilLinkedAccountIDPreservesExisting(t *testing.T) {
+	linkedID := "parent-account-id"
+	repo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		"acc-1": {
+			ID:              "acc-1",
+			ProfileID:       "profile-1",
+			Name:            "acc-1",
+			Type:            bankaccount.AccountTypeInvestment,
+			Currency:        "BRL",
+			IsActive:        true,
+			LinkedAccountID: &linkedID,
+		},
+	}}
+
+	uc := NewUpdateBankAccountUseCase(repo)
+	input := baseUpdateInput("acc-1", "BRL")
+	// LinkedAccountID is nil (omitted from payload)
+	_, err := uc.Execute("acc-1", input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := repo.accounts["acc-1"].LinkedAccountID
+	if got == nil || *got != linkedID {
+		t.Fatalf("expected linkedAccountId %q to be preserved, got %v", linkedID, got)
+	}
+}
+
 // Given: account with BRL, update sends USD (valid)
 // When: Execute
 // Then: currency is updated to USD

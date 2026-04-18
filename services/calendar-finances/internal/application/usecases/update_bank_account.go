@@ -75,27 +75,37 @@ func (uc *UpdateBankAccountUseCase) Execute(id string, input UpdateBankAccountIn
 	account.CreditLimit = input.CreditLimit
 	account.DueDay = input.DueDay
 	account.ClosingDay = input.ClosingDay
-	account.LinkedAccountID = input.LinkedAccountID
-	account.DisplayOrder = input.DisplayOrder
+	if input.LinkedAccountID != nil {
+		account.LinkedAccountID = input.LinkedAccountID
+	}
+	if input.DisplayOrder != nil {
+		account.DisplayOrder = input.DisplayOrder
+	}
 
-	// Update investment-specific fields
+	// Update investment-specific fields — nil means "not sent", preserve existing
 	if input.InvestmentType != nil {
 		invType := bankaccount.InvestmentType(*input.InvestmentType)
 		account.InvestmentType = &invType
-	} else {
-		account.InvestmentType = nil
 	}
 	if input.YieldType != nil {
 		yieldType := bankaccount.YieldType(*input.YieldType)
 		account.YieldType = &yieldType
-	} else {
-		account.YieldType = nil
 	}
-	account.YieldRate = input.YieldRate
-	account.MaturityDate = input.MaturityDate
-	account.Broker = input.Broker
-	account.NumberOfQuotas = input.NumberOfQuotas
-	account.QuotaPrice = input.QuotaPrice
+	if input.YieldRate != nil {
+		account.YieldRate = input.YieldRate
+	}
+	if input.MaturityDate != nil {
+		account.MaturityDate = input.MaturityDate
+	}
+	if input.Broker != nil {
+		account.Broker = input.Broker
+	}
+	if input.NumberOfQuotas != nil {
+		account.NumberOfQuotas = input.NumberOfQuotas
+	}
+	if input.QuotaPrice != nil {
+		account.QuotaPrice = input.QuotaPrice
+	}
 
 	account.UpdatedAt = time.Now()
 
