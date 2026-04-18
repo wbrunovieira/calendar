@@ -26,4 +26,5 @@ var (
 	ErrCompanyAssetNotFound         = errors.New("company asset not found")
 	ErrCostCenterNotFound           = errors.New("cost center not found")
 	ErrMarketingCampaignNotFound    = errors.New("marketing campaign not found")
+	ErrInvalidCurrency              = errors.New("invalid currency: must be BRL, USD, or EUR")
 )

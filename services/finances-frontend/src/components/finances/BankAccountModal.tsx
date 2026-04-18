@@ -98,7 +98,7 @@ export default function BankAccountModal({
         type: account.type,
         initialBalance: account.initialBalance,
         currentBalance: account.currentBalance,
-        currency: account.currency,
+        currency: account.currency || 'BRL',
         bankName: account.bankName || '',
         bankCode: account.bankCode || '',
         agency: account.agency || '',

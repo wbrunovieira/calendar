@@ -56,7 +56,13 @@ func (uc *UpdateBankAccountUseCase) Execute(id string, input UpdateBankAccountIn
 	account.Name = input.Name
 	account.Type = bankaccount.AccountType(input.Type)
 	account.CurrentBalance = input.CurrentBalance
-	account.Currency = input.Currency
+	if input.Currency == "" {
+		// keep existing currency
+	} else if !bankaccount.IsValidCurrency(input.Currency) {
+		return nil, ErrInvalidCurrency
+	} else {
+		account.Currency = input.Currency
+	}
 	account.IsActive = input.IsActive
 	account.BankName = input.BankName
 	account.BankCode = input.BankCode
