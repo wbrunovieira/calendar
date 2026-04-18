@@ -194,11 +194,26 @@ export default function BrokerAccountCard({
                   )}
                 </div>
                 {isFiiExpanded && selectedProfileId && (
-                  <FiiDetailPanel
-                    account={inv}
-                    clearAccountId={account.id}
-                    profileId={selectedProfileId}
-                  />
+                  inv.numberOfQuotas != null ? (
+                    <FiiDetailPanel
+                      account={inv}
+                      clearAccountId={account.id}
+                      profileId={selectedProfileId}
+                    />
+                  ) : (
+                    <ExpandedTransactionPanel
+                      accountId={inv.id}
+                      profileId={selectedProfileId}
+                      categories={categories}
+                      accountCurrency={inv.currency || 'BRL'}
+                      includeAsDestination
+                      onAddTransaction={onAddTransaction}
+                      onEdit={onEditTransaction}
+                      onDelete={onDeleteTransaction}
+                      onConfirm={onConfirmTransaction}
+                      refreshKey={txRefreshKey}
+                    />
+                  )
                 )}
               </div>
             );
