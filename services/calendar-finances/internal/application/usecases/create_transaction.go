@@ -45,11 +45,12 @@ type CreateTransactionInput struct {
 }
 
 type CreateTransactionUseCase struct {
-	profileRepo     profile.Repository
-	accountRepo     bankaccount.Repository
-	categoryRepo    category.Repository
-	transactionRepo transaction.Repository
-	invoiceRepo     invoice.Repository
+	profileRepo         profile.Repository
+	accountRepo         bankaccount.Repository
+	categoryRepo        category.Repository
+	transactionRepo     transaction.Repository
+	invoiceRepo         invoice.Repository
+	balanceRecalculator BalanceRecalculator
 }
 
 func NewCreateTransactionUseCase(
@@ -58,13 +59,15 @@ func NewCreateTransactionUseCase(
 	categoryRepo category.Repository,
 	transactionRepo transaction.Repository,
 	invoiceRepo invoice.Repository,
+	recalculator BalanceRecalculator,
 ) *CreateTransactionUseCase {
 	return &CreateTransactionUseCase{
-		profileRepo:     profileRepo,
-		accountRepo:     accountRepo,
-		categoryRepo:    categoryRepo,
-		transactionRepo: transactionRepo,
-		invoiceRepo:     invoiceRepo,
+		profileRepo:         profileRepo,
+		accountRepo:         accountRepo,
+		categoryRepo:        categoryRepo,
+		transactionRepo:     transactionRepo,
+		invoiceRepo:         invoiceRepo,
+		balanceRecalculator: recalculator,
 	}
 }
 
@@ -304,6 +307,7 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 			if err := uc.accountRepo.Update(destinationAccount); err != nil {
 				return nil, err
 			}
+			recalculateAccounts(uc.balanceRecalculator, account.ID, destinationAccount.ID)
 		}
 
 		return txn, nil
@@ -329,6 +333,9 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 			if err := uc.accountRepo.Update(destinationAccount); err != nil {
 				return nil, err
 			}
+			recalculateAccounts(uc.balanceRecalculator, account.ID, *destinationAccountID)
+		} else {
+			recalculateAccounts(uc.balanceRecalculator, account.ID)
 		}
 	}
 

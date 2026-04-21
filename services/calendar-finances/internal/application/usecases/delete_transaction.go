@@ -8,12 +8,13 @@ import (
 )
 
 type DeleteTransactionUseCase struct {
-	repo       transaction.Repository
-	accountRepo bankaccount.Repository
+	repo                transaction.Repository
+	accountRepo         bankaccount.Repository
+	balanceRecalculator BalanceRecalculator
 }
 
-func NewDeleteTransactionUseCase(repo transaction.Repository, accountRepo bankaccount.Repository) *DeleteTransactionUseCase {
-	return &DeleteTransactionUseCase{repo: repo, accountRepo: accountRepo}
+func NewDeleteTransactionUseCase(repo transaction.Repository, accountRepo bankaccount.Repository, recalculator BalanceRecalculator) *DeleteTransactionUseCase {
+	return &DeleteTransactionUseCase{repo: repo, accountRepo: accountRepo, balanceRecalculator: recalculator}
 }
 
 func (uc *DeleteTransactionUseCase) Execute(id string) error {
@@ -35,6 +36,7 @@ func (uc *DeleteTransactionUseCase) Execute(id string) error {
 					if err := uc.accountRepo.Update(linkedAccount); err != nil {
 						return err
 					}
+					recalculateAccounts(uc.balanceRecalculator, linkedAccount.ID)
 				}
 			}
 			// Delete linked transaction
@@ -61,7 +63,10 @@ func (uc *DeleteTransactionUseCase) Execute(id string) error {
 					if err := uc.accountRepo.Update(destAccount); err != nil {
 						return err
 					}
+					recalculateAccounts(uc.balanceRecalculator, account.ID, destAccount.ID)
 				}
+			} else {
+				recalculateAccounts(uc.balanceRecalculator, account.ID)
 			}
 		}
 	}

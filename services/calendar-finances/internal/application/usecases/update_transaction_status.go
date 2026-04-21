@@ -14,12 +14,13 @@ type UpdateTransactionStatusInput struct {
 }
 
 type UpdateTransactionStatusUseCase struct {
-	repo        transaction.Repository
-	accountRepo bankaccount.Repository
+	repo                transaction.Repository
+	accountRepo         bankaccount.Repository
+	balanceRecalculator BalanceRecalculator
 }
 
-func NewUpdateTransactionStatusUseCase(repo transaction.Repository, accountRepo bankaccount.Repository) *UpdateTransactionStatusUseCase {
-	return &UpdateTransactionStatusUseCase{repo: repo, accountRepo: accountRepo}
+func NewUpdateTransactionStatusUseCase(repo transaction.Repository, accountRepo bankaccount.Repository, recalculator BalanceRecalculator) *UpdateTransactionStatusUseCase {
+	return &UpdateTransactionStatusUseCase{repo: repo, accountRepo: accountRepo, balanceRecalculator: recalculator}
 }
 
 func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransactionStatusInput) (*transaction.Transaction, error) {
@@ -85,6 +86,9 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 		// Log error but don't fail the operation
 		// The transaction status is already updated
 	}
+	if acc, err := uc.accountRepo.FindByID(tx.BankAccountID); err == nil && acc.Type != bankaccount.AccountTypeCreditCard {
+		recalculateAccounts(uc.balanceRecalculator, tx.BankAccountID)
+	}
 
 	// Handle linked transaction (cross-profile paired transactions)
 	if tx.LinkedTransactionID != nil {
@@ -95,6 +99,9 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 			_ = uc.repo.UpdateStatus(linkedTx.ID, targetStatus, occurredAt, linkedTx.Notes)
 			// Update linked transaction balance
 			_ = uc.updateBalanceOnStatusChange(linkedTx, linkedOldStatus, targetStatus)
+			if linkedAcc, err := uc.accountRepo.FindByID(linkedTx.BankAccountID); err == nil && linkedAcc.Type != bankaccount.AccountTypeCreditCard {
+				recalculateAccounts(uc.balanceRecalculator, linkedTx.BankAccountID)
+			}
 			linkedTx.Status = targetStatus
 		}
 	}

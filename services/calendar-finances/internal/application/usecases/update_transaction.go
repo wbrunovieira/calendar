@@ -33,10 +33,11 @@ type UpdateTransactionInput struct {
 }
 
 type UpdateTransactionUseCase struct {
-	accountRepo     bankaccount.Repository
-	categoryRepo    category.Repository
-	transactionRepo transaction.Repository
-	invoiceRepo     invoice.Repository
+	accountRepo         bankaccount.Repository
+	categoryRepo        category.Repository
+	transactionRepo     transaction.Repository
+	invoiceRepo         invoice.Repository
+	balanceRecalculator BalanceRecalculator
 }
 
 func NewUpdateTransactionUseCase(
@@ -44,12 +45,14 @@ func NewUpdateTransactionUseCase(
 	categoryRepo category.Repository,
 	transactionRepo transaction.Repository,
 	invoiceRepo invoice.Repository,
+	recalculator BalanceRecalculator,
 ) *UpdateTransactionUseCase {
 	return &UpdateTransactionUseCase{
-		accountRepo:     accountRepo,
-		categoryRepo:    categoryRepo,
-		transactionRepo: transactionRepo,
-		invoiceRepo:     invoiceRepo,
+		accountRepo:         accountRepo,
+		categoryRepo:        categoryRepo,
+		transactionRepo:     transactionRepo,
+		invoiceRepo:         invoiceRepo,
+		balanceRecalculator: recalculator,
 	}
 }
 
@@ -208,6 +211,16 @@ func (uc *UpdateTransactionUseCase) Execute(id string, input UpdateTransactionIn
 		input.BankAccountID, typeValue, input.Amount, status, destinationAccountID); err != nil {
 		return nil, err
 	}
+
+	// Recalculate all affected accounts
+	ids := deduplicateIDs(oldAccountID, input.BankAccountID)
+	if oldDestAccountID != nil {
+		ids = append(ids, *oldDestAccountID)
+	}
+	if destinationAccountID != nil {
+		ids = append(ids, *destinationAccountID)
+	}
+	recalculateAccounts(uc.balanceRecalculator, ids...)
 
 	return existing, nil
 }

@@ -345,7 +345,7 @@ func TestCreateTransactionUseCaseExpense(t *testing.T) {
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 	input := CreateTransactionInput{
 		ProfileID:     profileID,
 		BankAccountID: accountID,
@@ -409,7 +409,7 @@ func TestCreateTransactionUseCaseCreditLimitExceeded(t *testing.T) {
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 	confirmedStatus := "CONFIRMED"
 	// Use today's date so balance validation runs (historical dates skip validation)
 	today := time.Now().Format("2006-01-02")
@@ -497,7 +497,7 @@ func TestUpdateTransactionUseCaseSuccess(t *testing.T) {
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
 
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{})
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{}, nil)
 	input := UpdateTransactionInput{
 		BankAccountID: accountID,
 		CategoryID:    &newCategoryID,
@@ -531,7 +531,7 @@ func TestUpdateTransactionUseCaseNotFound(t *testing.T) {
 	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{}}
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{}}
 
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{})
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{}, nil)
 	input := UpdateTransactionInput{
 		BankAccountID: "account-1",
 		Type:          "EXPENSE",
@@ -591,7 +591,7 @@ func TestUpdateTransactionUseCaseWithStatusChange(t *testing.T) {
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
 
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{})
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{}, nil)
 	confirmedStatus := "CONFIRMED"
 	input := UpdateTransactionInput{
 		BankAccountID: accountID,
@@ -665,7 +665,7 @@ func TestUpdateTransactionUseCaseInvalidCategory(t *testing.T) {
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
 
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{})
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{}, nil)
 	input := UpdateTransactionInput{
 		BankAccountID: accountID,
 		CategoryID:    &wrongCategoryID,
@@ -734,7 +734,7 @@ func TestCreateTransactionUseCaseWithStatusConfirmed(t *testing.T) {
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	confirmedStatus := "CONFIRMED"
 	input := CreateTransactionInput{
@@ -799,7 +799,7 @@ func TestCreateTransactionUseCaseDefaultStatusPlanned(t *testing.T) {
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	// No status provided - should default to PLANNED
 	input := CreateTransactionInput{
@@ -858,7 +858,7 @@ func TestCreateTransactionUseCaseInvalidStatus(t *testing.T) {
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	invalidStatus := "INVALID_STATUS"
 	input := CreateTransactionInput{
@@ -930,7 +930,7 @@ func TestCreateTransactionPlannedSkipsBalanceValidation(t *testing.T) {
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	// PLANNED status should skip balance validation
 	plannedStatus := "PLANNED"
@@ -997,7 +997,7 @@ func TestCreateTransactionConfirmedValidatesBalance(t *testing.T) {
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	// CONFIRMED status should validate balance (use today's date, historical dates skip validation)
 	confirmedStatus := "CONFIRMED"
@@ -1060,7 +1060,7 @@ func TestCreateTransactionDefaultStatusSkipsBalanceValidation(t *testing.T) {
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	// No status provided - defaults to PLANNED, should skip balance validation
 	input := CreateTransactionInput{
@@ -1119,7 +1119,7 @@ func TestCreateTransactionWithReminderOn(t *testing.T) {
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	reminderOn := "2025-03-10" // 10 days before occurredOn
 	input := CreateTransactionInput{
@@ -1184,7 +1184,7 @@ func TestCreateTransactionWithoutReminderOn(t *testing.T) {
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	input := CreateTransactionInput{
 		ProfileID:     profileID,
@@ -1251,7 +1251,7 @@ func TestCreateTransaction_HistoricalConfirmed_ShouldSkipBalanceValidation(t *te
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	// Yesterday's date (historical)
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
@@ -1323,7 +1323,7 @@ func TestCreateTransaction_TodayConfirmed_ShouldValidateBalance(t *testing.T) {
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	// Today's date
 	today := time.Now().Format("2006-01-02")
@@ -1391,7 +1391,7 @@ func TestCreateTransaction_FutureConfirmed_ShouldValidateBalance(t *testing.T) {
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	// Tomorrow's date
 	tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
@@ -1462,7 +1462,7 @@ func TestCreateTransaction_ConfirmedExpense_ShouldDecreaseBalance(t *testing.T) 
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	confirmedStatus := "CONFIRMED"
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
@@ -1536,7 +1536,7 @@ func TestCreateTransaction_ConfirmedIncome_ShouldIncreaseBalance(t *testing.T) {
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	confirmedStatus := "CONFIRMED"
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
@@ -1610,7 +1610,7 @@ func TestCreateTransaction_PlannedTransaction_ShouldNotUpdateBalance(t *testing.
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	plannedStatus := "PLANNED"
 	tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
@@ -1709,7 +1709,7 @@ func TestCreateTransaction_CreditCardExpense_ShouldNotUpdateBalance(t *testing.T
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	confirmedStatus := "CONFIRMED"
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
@@ -1790,7 +1790,7 @@ func TestCreateTransaction_CreditCardIncome_ShouldNotUpdateBalance(t *testing.T)
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	confirmedStatus := "CONFIRMED"
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
@@ -1861,7 +1861,7 @@ func TestDeleteTransaction_ConfirmedExpense_ShouldRestoreBalance(t *testing.T) {
 	invoiceRepo := &fakeInvoiceRepo{}
 
 	// Create a confirmed expense
-	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 	confirmedStatus := "CONFIRMED"
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
 
@@ -1889,7 +1889,7 @@ func TestDeleteTransaction_ConfirmedExpense_ShouldRestoreBalance(t *testing.T) {
 	accountRepo.updateCalled = false
 
 	// Delete the transaction
-	deleteUC := NewDeleteTransactionUseCase(txRepo, accountRepo)
+	deleteUC := NewDeleteTransactionUseCase(txRepo, accountRepo, nil)
 	err = deleteUC.Execute(txn.ID)
 	if err != nil {
 		t.Fatalf("unexpected error deleting transaction: %v", err)
@@ -1946,7 +1946,7 @@ func TestDeleteTransaction_ConfirmedIncome_ShouldReverseBalance(t *testing.T) {
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 	confirmedStatus := "CONFIRMED"
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
 
@@ -1970,7 +1970,7 @@ func TestDeleteTransaction_ConfirmedIncome_ShouldReverseBalance(t *testing.T) {
 
 	accountRepo.updateCalled = false
 
-	deleteUC := NewDeleteTransactionUseCase(txRepo, accountRepo)
+	deleteUC := NewDeleteTransactionUseCase(txRepo, accountRepo, nil)
 	err = deleteUC.Execute(txn.ID)
 	if err != nil {
 		t.Fatalf("unexpected error deleting transaction: %v", err)
@@ -2022,7 +2022,7 @@ func TestDeleteTransaction_PlannedTransaction_ShouldNotChangeBalance(t *testing.
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
 
 	// PLANNED is the default status (no Status field passed)
@@ -2046,7 +2046,7 @@ func TestDeleteTransaction_PlannedTransaction_ShouldNotChangeBalance(t *testing.
 
 	accountRepo.updateCalled = false
 
-	deleteUC := NewDeleteTransactionUseCase(txRepo, accountRepo)
+	deleteUC := NewDeleteTransactionUseCase(txRepo, accountRepo, nil)
 	err = deleteUC.Execute(txn.ID)
 	if err != nil {
 		t.Fatalf("unexpected error deleting transaction: %v", err)
@@ -2107,7 +2107,7 @@ func TestDeleteTransaction_CreditCard_ShouldNotChangeBalance(t *testing.T) {
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 	confirmedStatus := "CONFIRMED"
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
 
@@ -2127,7 +2127,7 @@ func TestDeleteTransaction_CreditCard_ShouldNotChangeBalance(t *testing.T) {
 
 	accountRepo.updateCalled = false
 
-	deleteUC := NewDeleteTransactionUseCase(txRepo, accountRepo)
+	deleteUC := NewDeleteTransactionUseCase(txRepo, accountRepo, nil)
 	err = deleteUC.Execute(txn.ID)
 	if err != nil {
 		t.Fatalf("unexpected error deleting transaction: %v", err)
@@ -2148,7 +2148,7 @@ func TestDeleteTransaction_NotFound_ShouldReturnError(t *testing.T) {
 	txRepo := &fakeTransactionRepo{}
 	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{}}
 
-	deleteUC := NewDeleteTransactionUseCase(txRepo, accountRepo)
+	deleteUC := NewDeleteTransactionUseCase(txRepo, accountRepo, nil)
 	err := deleteUC.Execute("non-existent-id")
 
 	if err == nil {
@@ -2213,7 +2213,7 @@ func TestCreateTransaction_ConfirmedTransfer_ShouldCreditDestination(t *testing.
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	confirmedStatus := "CONFIRMED"
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
@@ -2306,7 +2306,7 @@ func TestCreateTransaction_PlannedTransfer_ShouldNotUpdateAnyBalance(t *testing.
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
 
@@ -2394,7 +2394,7 @@ func TestDeleteTransaction_ConfirmedTransfer_ShouldReverseBothAccounts(t *testin
 	invoiceRepo := &fakeInvoiceRepo{}
 
 	// Create a confirmed transfer
-	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 	confirmedStatus := "CONFIRMED"
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
 
@@ -2418,7 +2418,7 @@ func TestDeleteTransaction_ConfirmedTransfer_ShouldReverseBothAccounts(t *testin
 	accountRepo.updateCount = 0
 
 	// Delete the transfer
-	deleteUC := NewDeleteTransactionUseCase(txRepo, accountRepo)
+	deleteUC := NewDeleteTransactionUseCase(txRepo, accountRepo, nil)
 	err = deleteUC.Execute(txn.ID)
 	if err != nil {
 		t.Fatalf("unexpected error deleting transfer: %v", err)
@@ -2497,7 +2497,7 @@ func TestUpdateTransactionStatus_TransferConfirm_ShouldCreditDestination(t *test
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
 
-	useCase := NewUpdateTransactionStatusUseCase(txRepo, accountRepo)
+	useCase := NewUpdateTransactionStatusUseCase(txRepo, accountRepo, nil)
 
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
 	_, err := useCase.Execute("tx-transfer-1", UpdateTransactionStatusInput{
@@ -2577,7 +2577,7 @@ func TestUpdateTransactionStatus_TransferCancel_ShouldReverseDestination(t *test
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
 
-	useCase := NewUpdateTransactionStatusUseCase(txRepo, accountRepo)
+	useCase := NewUpdateTransactionStatusUseCase(txRepo, accountRepo, nil)
 
 	_, err := useCase.Execute("tx-transfer-2", UpdateTransactionStatusInput{
 		Status: "CANCELLED",
@@ -2688,7 +2688,7 @@ func TestCreateTransaction_CrossProfileTransfer_ShouldCreatePairedTransactions(t
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	confirmedStatus := "CONFIRMED"
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
@@ -2799,7 +2799,7 @@ func TestCreateTransaction_CrossProfileTransfer_RequiresDestinationCategory(t *t
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	confirmedStatus := "CONFIRMED"
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
@@ -2850,7 +2850,7 @@ func TestCreateTransaction_SameProfileTransfer_StillWorksAsBefore(t *testing.T) 
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	confirmedStatus := "CONFIRMED"
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
@@ -2939,7 +2939,7 @@ func TestDeleteTransaction_CrossProfileLinked_ShouldDeleteBoth(t *testing.T) {
 		},
 	}}
 
-	deleteUC := NewDeleteTransactionUseCase(txRepo, accountRepo)
+	deleteUC := NewDeleteTransactionUseCase(txRepo, accountRepo, nil)
 	err := deleteUC.Execute(sourceTxID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -3014,7 +3014,7 @@ func TestUpdateTransactionStatus_CrossProfileConfirm_ShouldUpdateBoth(t *testing
 		},
 	}}
 
-	useCase := NewUpdateTransactionStatusUseCase(txRepo, accountRepo)
+	useCase := NewUpdateTransactionStatusUseCase(txRepo, accountRepo, nil)
 
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
 	_, err := useCase.Execute(sourceTxID, UpdateTransactionStatusInput{
@@ -3070,7 +3070,7 @@ func TestCreateTransaction_CrossProfilePlanned_ShouldNotUpdateBalances(t *testin
 	txRepo := &fakeTransactionRepo{}
 	invRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, catRepo, txRepo, invRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, catRepo, txRepo, invRepo, nil)
 
 	plannedStatus := "PLANNED"
 	destAccountID := destID
@@ -3170,7 +3170,7 @@ func TestUpdateTransactionStatus_CrossProfileCancel_ShouldReverseBoth(t *testing
 		},
 	}}
 
-	useCase := NewUpdateTransactionStatusUseCase(txRepo, accountRepo)
+	useCase := NewUpdateTransactionStatusUseCase(txRepo, accountRepo, nil)
 
 	_, err := useCase.Execute(sourceTxID, UpdateTransactionStatusInput{
 		Status: "CANCELLED",
@@ -3252,7 +3252,7 @@ func TestUpdateTransaction_AmountChange_AdjustsBalance(t *testing.T) {
 	}
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{})
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{}, nil)
 
 	confirmedStatus := "CONFIRMED"
 	_, err := useCase.Execute(txID, UpdateTransactionInput{
@@ -3322,7 +3322,7 @@ func TestUpdateTransaction_TypeChange_AdjustsBalance(t *testing.T) {
 	}
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{})
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{}, nil)
 
 	confirmedStatus := "CONFIRMED"
 	_, err := useCase.Execute(txID, UpdateTransactionInput{
@@ -3402,7 +3402,7 @@ func TestUpdateTransaction_AccountSwitch_MovesBalance(t *testing.T) {
 	}
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{})
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{}, nil)
 
 	confirmedStatus := "CONFIRMED"
 	_, err := useCase.Execute(txID, UpdateTransactionInput{
@@ -3480,7 +3480,7 @@ func TestUpdateTransaction_CreditCard_NoBalanceChange(t *testing.T) {
 	}
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{})
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{}, nil)
 
 	confirmedStatus := "CONFIRMED"
 	_, err := useCase.Execute(txID, UpdateTransactionInput{
@@ -3550,7 +3550,7 @@ func TestUpdateTransaction_PlannedToConfirmed_AppliesBalance(t *testing.T) {
 	}
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{})
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{}, nil)
 
 	confirmedStatus := "CONFIRMED"
 	_, err := useCase.Execute(txID, UpdateTransactionInput{
@@ -3620,7 +3620,7 @@ func TestUpdateTransaction_ConfirmedToPlanned_ReversesBalance(t *testing.T) {
 	}
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{})
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{}, nil)
 
 	plannedStatus := "PLANNED"
 	_, err := useCase.Execute(txID, UpdateTransactionInput{
@@ -3711,7 +3711,7 @@ func TestUpdateTransaction_TransferDestinationChange_AdjustsBothDests(t *testing
 	}
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{})
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{}, nil)
 
 	confirmedStatus := "CONFIRMED"
 	_, err := useCase.Execute(txID, UpdateTransactionInput{
@@ -3834,7 +3834,7 @@ func TestUpdateTransaction_CreditCardAccountChange_ReassignsInvoice(t *testing.T
 	}
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	_, err := useCase.Execute(txID, UpdateTransactionInput{
 		BankAccountID: ccAccountB, // Changed to different credit card
@@ -3932,7 +3932,7 @@ func TestUpdateTransaction_CreditCardToRegularAccount_ClearsInvoice(t *testing.T
 	}
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	_, err := useCase.Execute(txID, UpdateTransactionInput{
 		BankAccountID: checkingID, // Changed to regular account
@@ -4025,7 +4025,7 @@ func TestUpdateTransaction_RegularToCreditCard_AssignsInvoice(t *testing.T) {
 	}
 
 	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{existingTx}}
-	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewUpdateTransactionUseCase(accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	_, err := useCase.Execute(txID, UpdateTransactionInput{
 		BankAccountID: ccAccountID, // Changed to credit card
@@ -4234,7 +4234,7 @@ func TestCreateTransaction_Installments_ShouldCreateMultipleTransactions(t *test
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	confirmedStatus := "CONFIRMED"
 	installmentTotal := 2
@@ -4351,7 +4351,7 @@ func TestCreateTransaction_Installments_RegularAccount_ShouldCreateMultiple(t *t
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	plannedStatus := "PLANNED"
 	installmentTotal := 3
@@ -4439,7 +4439,7 @@ func TestCreateTransaction_SingleInstallment_ShouldCreateNormally(t *testing.T) 
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	plannedStatus := "PLANNED"
 	installmentTotal := 1
@@ -4500,7 +4500,7 @@ func TestCreateTransaction_ManualInstallment_ShouldNotAutoCreate(t *testing.T) {
 	txRepo := &fakeTransactionRepo{}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo)
+	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
 
 	plannedStatus := "PLANNED"
 	installmentNumber := 2
