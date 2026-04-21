@@ -188,6 +188,12 @@ func (f *fakeTransactionRepoWithInvoice) CalculateBalanceByBankAccountID(bankAcc
 func (f *fakeTransactionRepoWithInvoice) FindByExternalID(externalID string) (*transaction.Transaction, error) {
 	return nil, nil
 }
+func (f *fakeTransactionRepoWithInvoice) CalculateBalanceSince(_ string, _ time.Time) (float64, error) {
+	return 0, nil
+}
+func (f *fakeTransactionRepoWithInvoice) CalculateBalanceUpTo(_ string, _ time.Time) (float64, error) {
+	return 0, nil
+}
 
 // Test: GetCurrentInvoice should return confirmed and planned amounts separately
 func TestGetCurrentInvoice_ShouldReturnConfirmedAndPlannedAmounts(t *testing.T) {

@@ -825,3 +825,65 @@ func (r *TransactionRepository) CalculateBalanceByBankAccountID(bankAccountID st
 
 	return round2(balance), nil
 }
+
+func (r *TransactionRepository) CalculateBalanceSince(accountID string, since time.Time) (float64, error) {
+	if strings.TrimSpace(accountID) == "" {
+		return 0, errors.New("accountID is required")
+	}
+	query := `
+		SELECT
+			COALESCE((
+				SELECT SUM(CASE
+					WHEN type = 'INCOME' THEN amount
+					WHEN type = 'EXPENSE' THEN -amount
+					WHEN type = 'TRANSFER' THEN -amount
+					ELSE 0
+				END)
+				FROM finance.transactions
+				WHERE bank_account_id = $1 AND status = 'CONFIRMED' AND occurred_on >= $2
+			), 0)
+			+
+			COALESCE((
+				SELECT SUM(amount)
+				FROM finance.transactions
+				WHERE destination_account_id = $1 AND status = 'CONFIRMED'
+				  AND type = 'TRANSFER' AND occurred_on >= $2
+			), 0)
+	`
+	var balance float64
+	if err := r.db.QueryRow(query, accountID, since).Scan(&balance); err != nil {
+		return 0, err
+	}
+	return round2(balance), nil
+}
+
+func (r *TransactionRepository) CalculateBalanceUpTo(accountID string, upTo time.Time) (float64, error) {
+	if strings.TrimSpace(accountID) == "" {
+		return 0, errors.New("accountID is required")
+	}
+	query := `
+		SELECT
+			COALESCE((
+				SELECT SUM(CASE
+					WHEN type = 'INCOME' THEN amount
+					WHEN type = 'EXPENSE' THEN -amount
+					WHEN type = 'TRANSFER' THEN -amount
+					ELSE 0
+				END)
+				FROM finance.transactions
+				WHERE bank_account_id = $1 AND status = 'CONFIRMED' AND occurred_on <= $2
+			), 0)
+			+
+			COALESCE((
+				SELECT SUM(amount)
+				FROM finance.transactions
+				WHERE destination_account_id = $1 AND status = 'CONFIRMED'
+				  AND type = 'TRANSFER' AND occurred_on <= $2
+			), 0)
+	`
+	var balance float64
+	if err := r.db.QueryRow(query, accountID, upTo).Scan(&balance); err != nil {
+		return 0, err
+	}
+	return round2(balance), nil
+}

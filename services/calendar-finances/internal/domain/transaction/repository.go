@@ -26,5 +26,11 @@ type Repository interface {
 	SumByInvoiceID(invoiceID string) (float64, error)
 	SumByInvoiceIDByStatus(invoiceID string, status Status) (float64, error)
 	CalculateBalanceByBankAccountID(bankAccountID string) (float64, error)
+	// CalculateBalanceSince returns the net balance impact of all CONFIRMED
+	// transactions for the account that occurred on or after `since`.
+	CalculateBalanceSince(accountID string, since time.Time) (float64, error)
+	// CalculateBalanceUpTo returns the net balance impact of all CONFIRMED
+	// transactions for the account that occurred on or before `upTo`.
+	CalculateBalanceUpTo(accountID string, upTo time.Time) (float64, error)
 	FindByExternalID(externalID string) (*Transaction, error)
 }

@@ -120,7 +120,7 @@ func TestIntegration_CreateConfirmedExpense_RecalculatesBalance(t *testing.T) {
 	profileRepo := persistence.NewProfileRepository(db)
 	accountRepo := persistence.NewBankAccountRepository(db)
 	txRepo := persistence.NewTransactionRepository(db)
-	recalcUC := NewRecalculateBalanceUseCase(accountRepo, txRepo)
+	recalcUC := NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
 
 	uc := NewCreateTransactionUseCase(
 		profileRepo,
@@ -176,7 +176,7 @@ func TestIntegration_DeleteConfirmedExpense_RecalculatesBalance(t *testing.T) {
 
 	accountRepo := persistence.NewBankAccountRepository(db)
 	txRepo := persistence.NewTransactionRepository(db)
-	recalcUC := NewRecalculateBalanceUseCase(accountRepo, txRepo)
+	recalcUC := NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
 
 	// Seed a confirmed expense
 	txID := fmt.Sprintf("int-tx-del-%d", time.Now().UnixNano())
@@ -232,7 +232,7 @@ func TestIntegration_UpdateStatus_PlannedToConfirmed_RecalculatesBalance(t *test
 
 	accountRepo := persistence.NewBankAccountRepository(db)
 	txRepo := persistence.NewTransactionRepository(db)
-	recalcUC := NewRecalculateBalanceUseCase(accountRepo, txRepo)
+	recalcUC := NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
 
 	txID := fmt.Sprintf("int-tx-status-%d", time.Now().UnixNano())
 	tx := &transaction.Transaction{

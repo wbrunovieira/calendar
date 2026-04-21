@@ -73,6 +73,7 @@ func main() {
 	categoryRepo := persistence.NewCategoryRepository(db)
 	invoiceRepo := persistence.NewInvoiceRepository(db)
 	transactionRepo := persistence.NewTransactionRepository(db)
+	checkpointRepo := persistence.NewCheckpointRepository(db)
 
 	// Initialize Bank Account use cases and handlers
 	createBankAccountUC := usecases.NewCreateBankAccountUseCase(bankAccountRepo)
@@ -81,7 +82,8 @@ func main() {
 	updateBankAccountUC := usecases.NewUpdateBankAccountUseCase(bankAccountRepo)
 	deleteBankAccountUC := usecases.NewDeleteBankAccountUseCase(bankAccountRepo)
 	reorderBankAccountsUC := usecases.NewReorderBankAccountsUseCase(bankAccountRepo)
-	recalculateBalanceUC := usecases.NewRecalculateBalanceUseCase(bankAccountRepo, transactionRepo)
+	closeMonthUC := usecases.NewCloseMonthUseCase(bankAccountRepo, transactionRepo, checkpointRepo)
+	recalculateBalanceUC := usecases.NewRecalculateBalanceUseCase(bankAccountRepo, transactionRepo, checkpointRepo)
 	bankAccountHandler := httpHandlers.NewBankAccountHandlers(
 		createBankAccountUC,
 		listBankAccountsUC,
@@ -90,6 +92,7 @@ func main() {
 		deleteBankAccountUC,
 		reorderBankAccountsUC,
 		recalculateBalanceUC,
+		closeMonthUC,
 	)
 
 	// Initialize Category use cases and handlers
@@ -264,6 +267,7 @@ func main() {
 	apiRouter.HandleFunc("/bank-accounts/{id}", bankAccountHandler.Update).Methods("PUT")
 	apiRouter.HandleFunc("/bank-accounts/{id}", bankAccountHandler.Delete).Methods("DELETE")
 	apiRouter.HandleFunc("/bank-accounts/{id}/recalculate-balance", bankAccountHandler.RecalculateBalance).Methods("POST")
+	apiRouter.HandleFunc("/bank-accounts/close-month", bankAccountHandler.CloseMonth).Methods("POST")
 
 	// Accounts routes (placeholder)
 	apiRouter.HandleFunc("/accounts", handlers.NotImplemented).Methods("GET", "POST")
@@ -491,6 +495,24 @@ func main() {
 				} else if result.NewDividends > 0 {
 					log.Printf("Dividend sync: %d new dividends (R$%.2f)", result.NewDividends, result.TotalAmount)
 				}
+			}
+		}
+	}()
+
+	// Background job: close previous month on the 1st of each month (creates checkpoints)
+	go func() {
+		for {
+			now := time.Now()
+			// Next 1st of the month at 00:05 UTC
+			nextRun := time.Date(now.Year(), now.Month()+1, 1, 0, 5, 0, 0, time.UTC)
+			time.Sleep(time.Until(nextRun))
+
+			prevMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+			result, err := closeMonthUC.Execute(usecases.CloseMonthInput{ReferenceMonth: prevMonth})
+			if err != nil {
+				log.Printf("close-month error: %v", err)
+			} else {
+				log.Printf("close-month: created %d checkpoints for %s", result.CheckpointsCreated, prevMonth.Format("2006-01"))
 			}
 		}
 	}()

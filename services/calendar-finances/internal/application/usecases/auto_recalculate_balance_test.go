@@ -254,7 +254,7 @@ func TestCreateTransaction_ConfirmedIncome_BalanceIsCorrect(t *testing.T) {
 
 	txRepo := &fakeTransactionRepo{}
 	accRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{testAccount: acc}}
-	recalc := NewRecalculateBalanceUseCase(accRepo, txRepo)
+	recalc := NewRecalculateBalanceUseCase(accRepo, txRepo, nil)
 
 	uc := NewCreateTransactionUseCase(
 		setupProfile(testProfile),

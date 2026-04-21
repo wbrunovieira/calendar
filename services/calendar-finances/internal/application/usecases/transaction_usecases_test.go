@@ -4119,7 +4119,7 @@ func TestRecalculateBalance_SumsConfirmedTransactions(t *testing.T) {
 		},
 	}}
 
-	useCase := NewRecalculateBalanceUseCase(accountRepo, txRepo)
+	useCase := NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
 
 	result, err := useCase.Execute(accountID)
 	if err != nil {
@@ -4172,7 +4172,7 @@ func TestRecalculateBalance_IncludesInitialBalance(t *testing.T) {
 		},
 	}}
 
-	useCase := NewRecalculateBalanceUseCase(accountRepo, txRepo)
+	useCase := NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
 
 	result, err := useCase.Execute(accountID)
 	if err != nil {

@@ -99,7 +99,7 @@ func TestRecalculateBalance_OutgoingTransfer_DebitsSource(t *testing.T) {
 		},
 	}
 
-	uc := NewRecalculateBalanceUseCase(accountRepo, txRepo)
+	uc := NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
 	result, err := uc.Execute(caixinhaID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -130,7 +130,7 @@ func TestRecalculateBalance_IncomingTransfer_CreditsDestination(t *testing.T) {
 		},
 	}
 
-	uc := NewRecalculateBalanceUseCase(accountRepo, txRepo)
+	uc := NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
 	result, err := uc.Execute(contaID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -158,7 +158,7 @@ func TestRecalculateBalance_PlannedTransfer_DoesNotAffectBalance(t *testing.T) {
 		},
 	}
 
-	uc := NewRecalculateBalanceUseCase(accountRepo, txRepo)
+	uc := NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
 	result, err := uc.Execute(caixinhaID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -193,7 +193,7 @@ func TestRecalculateBalance_MixedTransactions_CaixinhaScenario(t *testing.T) {
 		},
 	}
 
-	uc := NewRecalculateBalanceUseCase(accountRepo, txRepo)
+	uc := NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
 	result, err := uc.Execute(caixinhaID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -221,7 +221,7 @@ func TestRecalculateBalance_ReportsOldAndNewBalance(t *testing.T) {
 		},
 	}
 
-	uc := NewRecalculateBalanceUseCase(accountRepo, txRepo)
+	uc := NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
 	_, err := uc.Execute("wrong-id")
 	if err == nil {
 		t.Fatal("expected error for unknown account, got nil")
@@ -247,7 +247,7 @@ func TestRecalculateBalance_AccountNotFound_ReturnsError(t *testing.T) {
 	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{}}
 	txRepo := &fakeTransactionRepo{}
 
-	uc := NewRecalculateBalanceUseCase(accountRepo, txRepo)
+	uc := NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
 	_, err := uc.Execute("non-existent")
 	if err == nil {
 		t.Fatal("expected error for non-existent account, got nil")

@@ -638,6 +638,18 @@ func RunMigrations(db *sql.DB) error {
 				AND name ~ '^[A-Z]{4}[3-8]$';
 			END IF;
 		END $$`,
+
+		// Balance checkpoints — monthly closing balances for O(recent) recalculation
+		`CREATE TABLE IF NOT EXISTS finance.balance_checkpoints (
+			id             UUID PRIMARY KEY,
+			account_id     UUID NOT NULL REFERENCES finance.bank_accounts(id) ON DELETE CASCADE,
+			reference_month DATE NOT NULL,
+			closing_balance NUMERIC(15,2) NOT NULL,
+			created_at     TIMESTAMP NOT NULL DEFAULT now(),
+			UNIQUE (account_id, reference_month)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_balance_checkpoints_account_month
+			ON finance.balance_checkpoints (account_id, reference_month DESC)`,
 	}
 
 	for i, migration := range migrations {

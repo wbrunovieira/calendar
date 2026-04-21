@@ -108,6 +108,12 @@ func (f *FakeTransactionRepository) CalculateBalanceByBankAccountID(bankAccountI
 func (f *FakeTransactionRepository) FindByExternalID(externalID string) (*transaction.Transaction, error) {
 	return nil, nil
 }
+func (f *FakeTransactionRepository) CalculateBalanceSince(_ string, _ time.Time) (float64, error) {
+	return 0, nil
+}
+func (f *FakeTransactionRepository) CalculateBalanceUpTo(_ string, _ time.Time) (float64, error) {
+	return 0, nil
+}
 
 func TestListTransactions_FilterByDateRange_ShouldReturnOnlyTransactionsInRange(t *testing.T) {
 	// Arrange

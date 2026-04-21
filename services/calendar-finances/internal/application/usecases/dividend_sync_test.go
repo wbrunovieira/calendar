@@ -41,6 +41,12 @@ func (m *mockTransactionRepo) SumByInvoiceIDByStatus(invoiceID string, status tr
 func (m *mockTransactionRepo) CalculateBalanceByBankAccountID(bankAccountID string) (float64, error) {
 	return 0, nil
 }
+func (m *mockTransactionRepo) CalculateBalanceSince(_ string, _ time.Time) (float64, error) {
+	return 0, nil
+}
+func (m *mockTransactionRepo) CalculateBalanceUpTo(_ string, _ time.Time) (float64, error) {
+	return 0, nil
+}
 
 func TestDividendSync_CreatesIncomeTransactions(t *testing.T) {
 	parentID := "clear-id"

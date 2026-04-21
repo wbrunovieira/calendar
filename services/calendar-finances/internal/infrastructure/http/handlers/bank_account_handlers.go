@@ -3,19 +3,21 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/brunovieira/calendar-finances/internal/application/usecases"
 	"github.com/gorilla/mux"
 )
 
 type BankAccountHandlers struct {
-	createUseCase              *usecases.CreateBankAccountUseCase
-	listUseCase                *usecases.ListBankAccountsUseCase
-	getUseCase                 *usecases.GetBankAccountUseCase
-	updateUseCase              *usecases.UpdateBankAccountUseCase
-	deleteUseCase              *usecases.DeleteBankAccountUseCase
-	reorderUseCase             *usecases.ReorderBankAccountsUseCase
-	recalculateBalanceUseCase  *usecases.RecalculateBalanceUseCase
+	createUseCase             *usecases.CreateBankAccountUseCase
+	listUseCase               *usecases.ListBankAccountsUseCase
+	getUseCase                *usecases.GetBankAccountUseCase
+	updateUseCase             *usecases.UpdateBankAccountUseCase
+	deleteUseCase             *usecases.DeleteBankAccountUseCase
+	reorderUseCase            *usecases.ReorderBankAccountsUseCase
+	recalculateBalanceUseCase *usecases.RecalculateBalanceUseCase
+	closeMonthUseCase         *usecases.CloseMonthUseCase
 }
 
 func NewBankAccountHandlers(
@@ -26,15 +28,17 @@ func NewBankAccountHandlers(
 	deleteUC *usecases.DeleteBankAccountUseCase,
 	reorderUC *usecases.ReorderBankAccountsUseCase,
 	recalculateBalanceUC *usecases.RecalculateBalanceUseCase,
+	closeMonthUC *usecases.CloseMonthUseCase,
 ) *BankAccountHandlers {
 	return &BankAccountHandlers{
-		createUseCase:              createUC,
-		listUseCase:                listUC,
-		getUseCase:                 getUC,
-		updateUseCase:              updateUC,
-		deleteUseCase:              deleteUC,
-		reorderUseCase:             reorderUC,
-		recalculateBalanceUseCase:  recalculateBalanceUC,
+		createUseCase:             createUC,
+		listUseCase:               listUC,
+		getUseCase:                getUC,
+		updateUseCase:             updateUC,
+		deleteUseCase:             deleteUC,
+		reorderUseCase:            reorderUC,
+		recalculateBalanceUseCase: recalculateBalanceUC,
+		closeMonthUseCase:         closeMonthUC,
 	}
 }
 
@@ -160,6 +164,40 @@ func (h *BankAccountHandlers) RecalculateBalance(w http.ResponseWriter, r *http.
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"data": result,
 	})
+}
+
+// CloseMonth handles POST /api/v1/bank-accounts/close-month
+// Body: { "referenceMonth": "2026-03-01" }  (any date in the target month)
+func (h *BankAccountHandlers) CloseMonth(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ReferenceMonth string `json:"referenceMonth"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	var t usecases.CloseMonthInput
+	if body.ReferenceMonth != "" {
+		parsed, err := time.Parse("2006-01-02", body.ReferenceMonth)
+		if err != nil {
+			http.Error(w, "referenceMonth must be YYYY-MM-DD", http.StatusBadRequest)
+			return
+		}
+		t.ReferenceMonth = parsed
+	} else {
+		// Default: close previous calendar month
+		t.ReferenceMonth = time.Now().AddDate(0, -1, 0)
+	}
+
+	result, err := h.closeMonthUseCase.Execute(t)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"data": result})
 }
 
 // Reorder handles PUT /api/v1/bank-accounts/reorder
