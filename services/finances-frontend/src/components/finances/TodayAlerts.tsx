@@ -11,7 +11,7 @@ interface TodayAlertsProps {
   invoices: Record<string, Invoice[]>;
   accounts: BankAccount[];
   categories: Category[];
-  onPayInvoice?: (invoiceId: string, amount: number) => Promise<void>;
+  onPayInvoice?: (invoiceId: string, amount: number, paidAt: string) => Promise<void>;
   onConfirmTransaction?: (id: string) => void;
   onConfirmRecurring?: (recurring: RecurringTransaction) => Promise<void>;
   onEditTransaction?: (transaction: Transaction) => void;
@@ -225,12 +225,19 @@ export default function TodayAlerts({
 
   // Loading state for async actions (prevents double clicks)
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
+  const [payingInvoiceDates, setPayingInvoiceDates] = useState<Record<string, string>>({});
+
+  const openPayInvoice = (invoiceId: string) => {
+    setPayingInvoiceDates((prev) => ({ ...prev, [invoiceId]: today }));
+  };
 
   const handlePayInvoice = async (invoiceId: string, amount: number) => {
     if (loadingAction || !onPayInvoice) return;
+    const paidAt = payingInvoiceDates[invoiceId] ?? today;
     setLoadingAction(invoiceId);
     try {
-      await onPayInvoice(invoiceId, amount);
+      await onPayInvoice(invoiceId, amount, paidAt);
+      setPayingInvoiceDates((prev) => { const n = { ...prev }; delete n[invoiceId]; return n; });
     } finally {
       setLoadingAction(null);
     }
@@ -424,35 +431,54 @@ export default function TodayAlerts({
           <div className="space-y-2">
             {/* Overdue Invoices */}
             {overdueInvoices.map(({ invoice, account, daysOverdue }) => (
-              <div
-                key={invoice.id}
-                className="flex items-center justify-between bg-white/5 rounded-xl p-3"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-xl">💳</span>
-                  <div>
-                    <p className="text-white text-sm font-medium">
-                      Fatura {account.name}
-                    </p>
-                    <p className="text-red-400 text-xs">
-                      {daysOverdue === 1 ? 'Venceu ontem' : `Venceu ha ${daysOverdue} dias`} ({formatDisplayDate(invoice.dueDate)})
-                    </p>
+              <div key={invoice.id} className="bg-white/5 rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">💳</span>
+                    <div>
+                      <p className="text-white text-sm font-medium">Fatura {account.name}</p>
+                      <p className="text-red-400 text-xs">
+                        {daysOverdue === 1 ? 'Venceu ontem' : `Venceu ha ${daysOverdue} dias`} ({formatDisplayDate(invoice.dueDate)})
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-red-400 font-semibold">{formatCurrency(invoice.amount)}</span>
+                    {onPayInvoice && !payingInvoiceDates[invoice.id] && (
+                      <button
+                        onClick={() => openPayInvoice(invoice.id)}
+                        disabled={!!loadingAction}
+                        className="px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white text-xs rounded-lg transition-colors"
+                      >
+                        Pagar
+                      </button>
+                    )}
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-red-400 font-semibold">
-                    {formatCurrency(invoice.amount)}
-                  </span>
-                  {onPayInvoice && (
+                {onPayInvoice && payingInvoiceDates[invoice.id] !== undefined && (
+                  <div className="flex items-center gap-2 pt-1 border-t border-white/10">
+                    <span className="text-white/60 text-xs">Pago em</span>
+                    <input
+                      type="date"
+                      value={payingInvoiceDates[invoice.id]}
+                      onChange={(e) => setPayingInvoiceDates((prev) => ({ ...prev, [invoice.id]: e.target.value }))}
+                      className="px-2 py-1 bg-white/10 border border-white/20 rounded-lg text-white text-xs focus:outline-none focus:ring-1 focus:ring-red-400"
+                    />
                     <button
                       onClick={() => handlePayInvoice(invoice.id, invoice.amount)}
                       disabled={!!loadingAction}
-                      className="px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white text-xs rounded-lg transition-colors"
+                      className="px-3 py-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white text-xs rounded-lg transition-colors"
                     >
-                      {loadingAction === invoice.id ? 'Pagando...' : 'Pagar'}
+                      {loadingAction === invoice.id ? 'Pagando...' : 'Confirmar'}
                     </button>
-                  )}
-                </div>
+                    <button
+                      onClick={() => setPayingInvoiceDates((prev) => { const n = { ...prev }; delete n[invoice.id]; return n; })}
+                      className="text-white/40 hover:text-white/70 text-xs"
+                    >
+                      cancelar
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
 
@@ -578,33 +604,52 @@ export default function TodayAlerts({
           <div className="space-y-2">
             {/* Invoices due today */}
             {todayInvoices.map(({ invoice, account }) => (
-              <div
-                key={invoice.id}
-                className="flex items-center justify-between bg-white/5 rounded-xl p-3"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-xl">💳</span>
-                  <div>
-                    <p className="text-white text-sm font-medium">
-                      Fatura {account.name}
-                    </p>
-                    <p className="text-white/50 text-xs">Vence hoje</p>
+              <div key={invoice.id} className="bg-white/5 rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">💳</span>
+                    <div>
+                      <p className="text-white text-sm font-medium">Fatura {account.name}</p>
+                      <p className="text-white/50 text-xs">Vence hoje</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-red-400 font-semibold">{formatCurrency(invoice.amount)}</span>
+                    {onPayInvoice && !payingInvoiceDates[invoice.id] && (
+                      <button
+                        onClick={() => openPayInvoice(invoice.id)}
+                        disabled={!!loadingAction}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-600 text-white text-xs rounded-lg transition-colors"
+                      >
+                        Pagar
+                      </button>
+                    )}
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-red-400 font-semibold">
-                    {formatCurrency(invoice.amount)}
-                  </span>
-                  {onPayInvoice && (
+                {onPayInvoice && payingInvoiceDates[invoice.id] !== undefined && (
+                  <div className="flex items-center gap-2 pt-1 border-t border-white/10">
+                    <span className="text-white/60 text-xs">Pago em</span>
+                    <input
+                      type="date"
+                      value={payingInvoiceDates[invoice.id]}
+                      onChange={(e) => setPayingInvoiceDates((prev) => ({ ...prev, [invoice.id]: e.target.value }))}
+                      className="px-2 py-1 bg-white/10 border border-white/20 rounded-lg text-white text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                    />
                     <button
                       onClick={() => handlePayInvoice(invoice.id, invoice.amount)}
                       disabled={!!loadingAction}
-                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-600 text-white text-xs rounded-lg transition-colors"
+                      className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-600 text-white text-xs rounded-lg transition-colors"
                     >
-                      {loadingAction === invoice.id ? 'Pagando...' : 'Pagar'}
+                      {loadingAction === invoice.id ? 'Pagando...' : 'Confirmar'}
                     </button>
-                  )}
-                </div>
+                    <button
+                      onClick={() => setPayingInvoiceDates((prev) => { const n = { ...prev }; delete n[invoice.id]; return n; })}
+                      className="text-white/40 hover:text-white/70 text-xs"
+                    >
+                      cancelar
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
 

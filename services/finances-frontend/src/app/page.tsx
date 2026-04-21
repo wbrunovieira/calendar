@@ -363,10 +363,9 @@ export default function FinancesPage() {
     }
   };
 
-  const handlePayInvoice = async (invoiceId: string, amount: number) => {
+  const handlePayInvoice = async (invoiceId: string, amount: number, paidAt: string) => {
     try {
-      const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
-      await api.post(`/invoices/${invoiceId}/pay`, { paidAmount: amount, paidAt: today });
+      await api.post(`/invoices/${invoiceId}/pay`, { paidAmount: amount, paidAt });
 
       // Refresh invoices after payment
       await fetchInvoicesForCreditCards(filteredAccounts);
