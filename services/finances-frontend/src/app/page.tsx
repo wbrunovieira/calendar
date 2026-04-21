@@ -60,7 +60,7 @@ export default function FinancesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [, setBudgetSummary] = useState<BudgetSummaryItem[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [transactionsLoading, setTransactionsLoading] = useState(false);
+  const [transactionsLoading, setTransactionsLoading] = useState(true);
   const [transactionsError, setTransactionsError] = useState<'NOT_IMPLEMENTED' | 'GENERIC' | null>(null);
   const [transactionFilters, setTransactionFilters] = useState<TransactionFilters>({ ...defaultFilters });
 
@@ -279,6 +279,41 @@ export default function FinancesPage() {
     }
   };
 
+  const handlePauseRecurring = async (tx: Transaction) => {
+    if (!tx.recurrenceRule) return;
+    const recurring = recurringTransactions.find(
+      (r) => r.description === tx.description && r.bankAccountId === tx.bankAccountId
+    );
+    if (!recurring) {
+      toast('Recorrência não encontrada', 'error');
+      return;
+    }
+    try {
+      await api.patch(`/recurring-transactions/${recurring.id}/status`, { status: 'PAUSED' });
+      if (tx.status === 'PLANNED') {
+        await api.put(`/transactions/${tx.id}`, {
+          profileId: tx.profileId,
+          bankAccountId: tx.bankAccountId,
+          categoryId: tx.categoryId,
+          type: tx.type,
+          status: 'CANCELLED',
+          amount: tx.amount,
+          currency: tx.currency,
+          description: tx.description,
+          occurredOn: tx.occurredOn,
+          recurrenceRule: tx.recurrenceRule,
+        });
+      }
+      await fetchRecurringTransactions(tx.profileId);
+      await fetchTransactions(selectedProfileId!, transactionFilters);
+      await fetchOverdueTransactions(tx.profileId);
+      toast('Recorrência pausada', 'success');
+    } catch (error) {
+      console.error('Erro ao pausar recorrência:', error);
+      toast('Erro ao pausar recorrência', 'error');
+    }
+  };
+
   const handleEditTransaction = (transaction: Transaction) => {
     setEditingTransaction(transaction);
     setIsTransactionModalOpen(true);
@@ -288,7 +323,7 @@ export default function FinancesPage() {
     id: string,
     status: 'CONFIRMED' | 'CANCELLED',
   ) => {
-    const transaction = transactions.find((item) => item.id === id);
+    const transaction = transactions.find((item) => item.id === id) ?? overdueTransactions.find((item) => item.id === id);
     if (!transaction) return;
 
     try {
@@ -458,6 +493,7 @@ export default function FinancesPage() {
             onConfirmRecurring={handleConfirmRecurring}
             onEditTransaction={handleEditTransaction}
             onDeleteTransaction={handleDeleteTransaction}
+            loading={transactionsLoading}
           />
         )}
 
@@ -588,6 +624,7 @@ export default function FinancesPage() {
         onSave={handleCreateTransaction}
         onUpdate={handleUpdateTransaction}
         onDelete={handleDeleteTransaction}
+        onPauseRecurring={handlePauseRecurring}
         accounts={bankAccounts}
         categories={categories}
         defaultProfileId={selectedProfileId ?? ''}

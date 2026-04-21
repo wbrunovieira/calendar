@@ -19,6 +19,7 @@ interface TransactionFormProps {
   onSave: (payload: TransactionFormData) => Promise<void> | void;
   onUpdate?: (id: string, payload: TransactionFormData) => Promise<void> | void;
   onDelete?: (id: string) => void;
+  onPauseRecurring?: (tx: Transaction) => Promise<void> | void;
   accounts: BankAccount[];
   categories: Category[];
   defaultProfileId: string;
@@ -69,6 +70,7 @@ export default function TransactionForm({
   onSave,
   onUpdate,
   onDelete,
+  onPauseRecurring,
   accounts,
   categories,
   defaultProfileId,
@@ -882,6 +884,19 @@ export default function TransactionForm({
                   className="px-4 py-2 rounded-lg text-sm font-medium bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30 hover:text-red-300 transition-all"
                 >
                   🗑️
+                </button>
+              )}
+              {isEditing && editingTransaction?.recurrenceRule && onPauseRecurring && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await Promise.resolve(onPauseRecurring(editingTransaction));
+                    onClose();
+                  }}
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30 hover:text-amber-200 transition-all"
+                  title="Pausar recorrência"
+                >
+                  ⏸ Pausar recorrência
                 </button>
               )}
             </div>

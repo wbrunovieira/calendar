@@ -16,6 +16,7 @@ interface TodayAlertsProps {
   onConfirmRecurring?: (recurring: RecurringTransaction) => Promise<void>;
   onEditTransaction?: (transaction: Transaction) => void;
   onDeleteTransaction?: (id: string) => void;
+  loading?: boolean;
 }
 
 const formatLocalDate = (date: Date) => {
@@ -74,6 +75,7 @@ export default function TodayAlerts({
   onConfirmRecurring,
   onEditTransaction,
   onDeleteTransaction,
+  loading,
 }: TodayAlertsProps) {
   const today = formatLocalDate(new Date());
 
@@ -358,6 +360,25 @@ export default function TodayAlerts({
     const acc = accounts.find((a) => a.id === accountId);
     return acc?.name || '';
   };
+
+  // Loading skeleton
+  if (loading) {
+    return (
+      <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-4 animate-pulse">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-8 h-8 rounded-full bg-white/10" />
+          <div className="space-y-1.5 flex-1">
+            <div className="h-4 w-32 rounded bg-white/10" />
+            <div className="h-3 w-48 rounded bg-white/10" />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <div className="h-14 rounded-xl bg-white/10" />
+          <div className="h-14 rounded-xl bg-white/10" />
+        </div>
+      </div>
+    );
+  }
 
   // No pending items - show friendly message
   if (!hasAlerts) {

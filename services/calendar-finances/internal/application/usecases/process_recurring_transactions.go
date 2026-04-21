@@ -100,7 +100,8 @@ func buildTransactionInput(rec *recurringtransaction.RecurringTransaction) Creat
 		Status:        &status,
 		Amount:        rec.Amount,
 		Currency:      rec.Currency,
-		Description:   rec.Description,
-		OccurredOn:    occurredOn,
+		Description:    rec.Description,
+		OccurredOn:     occurredOn,
+		RecurrenceRule: &rec.RecurrenceRule,
 	}
 }
