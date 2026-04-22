@@ -232,6 +232,80 @@ func calculateReferenceMonth(txDate time.Time, closingDay int) time.Time {
 	return time.Date(year, month, 1, 0, 0, 0, 0, time.UTC)
 }
 
+// getOrCreateInvoiceForDate finds the invoice that covers txDate for the given
+// credit-card account, creating one if none exists yet. Shared by
+// CreateTransactionUseCase and UpdateTransactionUseCase so that switching a
+// transaction to a different card always assigns a valid invoice.
+func getOrCreateInvoiceForDate(repo invoice.Repository, account *bankaccount.BankAccount, txDate time.Time) (*invoice.Invoice, error) {
+	inv, err := repo.FindByBankAccountAndDate(account.ID, txDate)
+	if err != nil {
+		return nil, err
+	}
+	if inv != nil {
+		return inv, nil
+	}
+
+	refDate := calculateReferenceMonth(txDate, *account.ClosingDay)
+	params := invoice.CreateParams{
+		BankAccountID: account.ID,
+		ClosingDay:    *account.ClosingDay,
+		DueDay:        *account.DueDay,
+		ReferenceDate: refDate,
+	}
+
+	inv, err = invoice.New(params)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := repo.Create(inv); err != nil {
+		if !isUniqueViolation(err) {
+			return nil, err
+		}
+
+		existingInvoices, listErr := repo.FindByBankAccountID(account.ID)
+		if listErr != nil {
+			return nil, listErr
+		}
+
+		var existingInv *invoice.Invoice
+		for _, ei := range existingInvoices {
+			if ei.ReferenceDate.Year() == refDate.Year() && ei.ReferenceDate.Month() == refDate.Month() {
+				existingInv = ei
+				break
+			}
+		}
+
+		if existingInv != nil && existingInv.ContainsDate(txDate) {
+			return existingInv, nil
+		}
+
+		nextMonth := refDate.AddDate(0, 1, 0)
+		params.ReferenceDate = nextMonth
+		inv, err = invoice.New(params)
+		if err != nil {
+			return nil, err
+		}
+		if existingInv != nil {
+			inv.OpeningDate = existingInv.ClosingDate.AddDate(0, 0, 1)
+		}
+
+		if err := repo.Create(inv); err != nil {
+			if isUniqueViolation(err) {
+				for _, ei := range existingInvoices {
+					if ei.ReferenceDate.Year() == nextMonth.Year() && ei.ReferenceDate.Month() == nextMonth.Month() {
+						return ei, nil
+					}
+				}
+			}
+			return nil, err
+		}
+		return inv, nil
+	}
+
+	return inv, nil
+}
+
 // CloseInvoiceInput contains the parameters to close an invoice
 type CloseInvoiceInput struct {
 	InvoiceID string `json:"invoiceId"`

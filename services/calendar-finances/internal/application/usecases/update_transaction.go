@@ -186,7 +186,7 @@ func (uc *UpdateTransactionUseCase) Execute(id string, input UpdateTransactionIn
 	if existing.BankAccountID != oldAccountID || !existing.OccurredOn.Equal(oldOccurredOn) {
 		if account.Type == bankaccount.AccountTypeCreditCard && typeValue == transaction.TypeExpense {
 			if account.ClosingDay != nil && account.DueDay != nil {
-				inv, invErr := uc.invoiceRepo.FindByBankAccountAndDate(account.ID, occurredOn)
+				inv, invErr := getOrCreateInvoiceForDate(uc.invoiceRepo, account, occurredOn)
 				if invErr == nil && inv != nil {
 					existing.InvoiceID = &inv.ID
 				} else {
