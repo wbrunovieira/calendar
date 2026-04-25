@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import AppLayout from '@/components/navigation/AppLayout';
 import { Calendar } from '@/types/calendar';
@@ -9,8 +9,25 @@ import { api } from '@/lib/api';
 type SyncResult = { created: number; updated: number; deleted: number };
 type SyncState = Record<string, 'idle' | 'syncing' | 'done' | 'error'>;
 
-export default function IntegrationsPage() {
+function ConnectedToast({
+  onToast,
+  onRefresh,
+}: {
+  onToast: (msg: string) => void;
+  onRefresh: () => void;
+}) {
   const searchParams = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get('connected') === 'true') {
+      onToast('Google Calendar conectado com sucesso!');
+      onRefresh();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return null;
+}
+
+function IntegrationsContent() {
   const [calendars, setCalendars] = useState<Calendar[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncStates, setSyncStates] = useState<SyncState>({});
@@ -36,13 +53,6 @@ export default function IntegrationsPage() {
   useEffect(() => {
     fetchCalendars();
   }, [fetchCalendars]);
-
-  useEffect(() => {
-    if (searchParams.get('connected') === 'true') {
-      showToast('Google Calendar conectado com sucesso!');
-      fetchCalendars();
-    }
-  }, [searchParams, fetchCalendars]);
 
   const handleConnect = (calendarId: string) => {
     window.location.href = api.googleCalendar.getConnectUrl(calendarId);
@@ -94,6 +104,9 @@ export default function IntegrationsPage() {
 
   return (
     <AppLayout>
+      <Suspense fallback={null}>
+        <ConnectedToast onToast={showToast} onRefresh={fetchCalendars} />
+      </Suspense>
       <div className="flex-1 w-full py-8 relative">
         {/* Toast */}
         {toast && (
@@ -272,4 +285,8 @@ export default function IntegrationsPage() {
       </div>
     </AppLayout>
   );
+}
+
+export default function IntegrationsPage() {
+  return <IntegrationsContent />;
 }
