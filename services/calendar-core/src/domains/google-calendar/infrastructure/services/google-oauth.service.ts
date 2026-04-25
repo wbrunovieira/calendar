@@ -29,7 +29,7 @@ export class GoogleOAuthService {
   getAuthorizationUrl(state: string): string {
     return this.oauth2Client.generateAuthUrl({
       access_type: 'offline',
-      prompt: 'consent',
+      prompt: 'select_account consent',
       scope: [
         'https://www.googleapis.com/auth/calendar',
         'https://www.googleapis.com/auth/calendar.events',
