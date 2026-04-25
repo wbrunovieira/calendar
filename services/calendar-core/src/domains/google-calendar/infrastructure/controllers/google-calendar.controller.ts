@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Post,
   Delete,
   Param,
   Query,
@@ -11,6 +12,7 @@ import {
 import { GoogleOAuthService } from '../services/google-oauth.service';
 import { ConnectGoogleCalendarUseCase } from '../../application/use-cases/connect-google-calendar.use-case';
 import { DisconnectGoogleCalendarUseCase } from '../../application/use-cases/disconnect-google-calendar.use-case';
+import { PullGoogleChangesUseCase } from '../../application/use-cases/pull-google-changes.use-case';
 
 @Controller('google-calendar')
 export class GoogleCalendarController {
@@ -18,6 +20,7 @@ export class GoogleCalendarController {
     private readonly googleOAuthService: GoogleOAuthService,
     private readonly connectGoogleCalendar: ConnectGoogleCalendarUseCase,
     private readonly disconnectGoogleCalendar: DisconnectGoogleCalendarUseCase,
+    private readonly pullGoogleChanges: PullGoogleChangesUseCase,
   ) {}
 
   @Get('auth/connect')
@@ -42,5 +45,11 @@ export class GoogleCalendarController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async disconnect(@Param('calendarId') calendarId: string) {
     await this.disconnectGoogleCalendar.execute(calendarId);
+  }
+
+  @Post('sync/:calendarId/pull')
+  async pullSync(@Param('calendarId') calendarId: string) {
+    const result = await this.pullGoogleChanges.execute(calendarId);
+    return { data: result };
   }
 }
