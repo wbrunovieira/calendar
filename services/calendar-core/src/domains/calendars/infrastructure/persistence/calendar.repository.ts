@@ -20,6 +20,8 @@ export class CalendarRepository {
         color: calendar.color,
         type: calendar.type,
         googleCalendarId: calendar.googleCalendarId,
+        googleSyncToken: calendar.googleSyncToken,
+        lastSyncAt: calendar.lastSyncAt,
         financeProfileId: calendar.financeProfileId,
         isActive: calendar.isActive,
       },
@@ -54,12 +56,36 @@ export class CalendarRepository {
         color: data.color,
         type: data.type,
         googleCalendarId: data.googleCalendarId,
+        googleSyncToken: data.googleSyncToken,
+        lastSyncAt: data.lastSyncAt,
         financeProfileId: data.financeProfileId,
         isActive: data.isActive,
       },
     });
 
     return Calendar.create(updated);
+  }
+
+  async updateSyncState(
+    id: string,
+    googleSyncToken: string,
+    lastSyncAt: Date,
+  ): Promise<void> {
+    await this.prisma.calendar.update({
+      where: { id },
+      data: { googleSyncToken, lastSyncAt },
+    });
+  }
+
+  async findAllGoogleConnected(): Promise<Calendar[]> {
+    const calendars = await this.prisma.calendar.findMany({
+      where: {
+        googleCalendarId: { not: null },
+        isActive: true,
+      },
+    });
+
+    return calendars.map((calendar) => Calendar.create(calendar));
   }
 
   async delete(id: string): Promise<void> {

@@ -6,6 +6,8 @@ export class Calendar {
   color: string;
   type: string;
   googleCalendarId: string | null;
+  googleSyncToken: string | null;
+  lastSyncAt: Date | null;
   financeProfileId: string | null;
   isActive: boolean;
   createdAt: Date;
@@ -23,6 +25,8 @@ export class Calendar {
     color: string;
     type: string;
     googleCalendarId?: string | null;
+    googleSyncToken?: string | null;
+    lastSyncAt?: Date | null;
     financeProfileId?: string | null;
     isActive?: boolean;
     createdAt?: Date;
@@ -36,6 +40,8 @@ export class Calendar {
       color: data.color,
       type: data.type,
       googleCalendarId: data.googleCalendarId || null,
+      googleSyncToken: data.googleSyncToken || null,
+      lastSyncAt: data.lastSyncAt || null,
       financeProfileId: data.financeProfileId || null,
       isActive: data.isActive ?? true,
       createdAt: data.createdAt || new Date(),

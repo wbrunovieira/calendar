@@ -181,5 +181,72 @@ describe("Calendar Entity", () => {
       expect(calendar.type).toBe("professional");
       expect(calendar.name).toBe("WB Digital Solutions");
     });
+
+    it("should set googleSyncToken to null when not provided", () => {
+      const calendar = Calendar.create({
+        userId: "user-123",
+        name: "Personal",
+        color: "#FF5733",
+        type: "personal",
+      });
+
+      expect(calendar.googleSyncToken).toBeNull();
+    });
+
+    it("should set googleSyncToken when provided", () => {
+      const calendar = Calendar.create({
+        userId: "user-123",
+        name: "Work",
+        color: "#0077B5",
+        type: "professional",
+        googleSyncToken: "sync-token-abc123",
+      });
+
+      expect(calendar.googleSyncToken).toBe("sync-token-abc123");
+    });
+
+    it("should set lastSyncAt to null when not provided", () => {
+      const calendar = Calendar.create({
+        userId: "user-123",
+        name: "Personal",
+        color: "#FF5733",
+        type: "personal",
+      });
+
+      expect(calendar.lastSyncAt).toBeNull();
+    });
+
+    it("should set lastSyncAt when provided", () => {
+      const syncDate = new Date("2024-01-15T10:00:00Z");
+
+      const calendar = Calendar.create({
+        userId: "user-123",
+        name: "Work",
+        color: "#0077B5",
+        type: "professional",
+        lastSyncAt: syncDate,
+      });
+
+      expect(calendar.lastSyncAt).toEqual(syncDate);
+    });
+
+    it("should create calendar with all google sync fields", () => {
+      const syncDate = new Date("2024-01-15T10:00:00Z");
+
+      const calendar = Calendar.create({
+        userId: "user-123",
+        name: "WB Digital Solutions",
+        color: "#0077B5",
+        type: "professional",
+        email: "bruno@wbdigitalsolutions.com",
+        googleCalendarId: "primary",
+        googleSyncToken: "sync-token-xyz",
+        lastSyncAt: syncDate,
+      });
+
+      expect(calendar.googleCalendarId).toBe("primary");
+      expect(calendar.googleSyncToken).toBe("sync-token-xyz");
+      expect(calendar.lastSyncAt).toEqual(syncDate);
+    });
   });
 });
