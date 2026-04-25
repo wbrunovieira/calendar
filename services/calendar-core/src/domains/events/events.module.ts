@@ -12,8 +12,12 @@ import { GetWeeklyProgressUseCase } from './application/use-cases/get-weekly-pro
 import { ReorderEventsUseCase } from './application/use-cases/reorder-events.use-case';
 import { EventRepository } from './infrastructure/repositories/event.repository';
 import { EventExecutionRepository } from './infrastructure/repositories/event-execution.repository';
+import { GoogleCalendarModule } from '@domains/google-calendar/google-calendar.module';
+import { CalendarsModule } from '@domains/calendars/calendars.module';
+import { SyncEventToGoogleUseCase } from '@domains/google-calendar/application/use-cases/sync-event-to-google.use-case';
 
 @Module({
+  imports: [GoogleCalendarModule, CalendarsModule],
   controllers: [EventsController],
   providers: [
     CreateEventUseCase,
@@ -28,6 +32,7 @@ import { EventExecutionRepository } from './infrastructure/repositories/event-ex
     ReorderEventsUseCase,
     EventRepository,
     EventExecutionRepository,
+    SyncEventToGoogleUseCase,
   ],
   exports: [EventRepository, EventExecutionRepository],
 })

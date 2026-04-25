@@ -1,12 +1,18 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { Event } from '../../domain/entities/event.entity';
 import { EventRepository } from '../../infrastructure/repositories/event.repository';
 import { CreateEventDto } from '../../infrastructure/dtos/create-event.dto';
 import { RRuleHelper } from '../../domain/utils/rrule-helper';
+import { CalendarRepository } from '@domains/calendars/infrastructure/persistence/calendar.repository';
+import { SyncEventToGoogleUseCase } from '@domains/google-calendar/application/use-cases/sync-event-to-google.use-case';
 
 @Injectable()
 export class CreateEventUseCase {
-  constructor(private readonly eventRepository: EventRepository) {}
+  constructor(
+    private readonly eventRepository: EventRepository,
+    @Optional() private readonly calendarRepository: CalendarRepository,
+    @Optional() private readonly syncToGoogle: SyncEventToGoogleUseCase,
+  ) {}
 
   async execute(dto: CreateEventDto): Promise<Event> {
     // Use direct recurrenceRule if provided, otherwise convert legacy format
@@ -106,6 +112,19 @@ export class CreateEventUseCase {
       weeklyPreferredDays,
     });
 
-    return await this.eventRepository.create(event, dto.reminders);
+    const created = await this.eventRepository.create(event, dto.reminders);
+
+    if (this.syncToGoogle && this.calendarRepository && !dto.syncSource) {
+      const calendar = await this.calendarRepository.findById(dto.calendarId);
+      if (calendar) {
+        const googleEventId = await this.syncToGoogle.onCreate(created, calendar);
+        if (googleEventId) {
+          await this.eventRepository.updateGoogleEventId(created.id, googleEventId);
+          created.googleEventId = googleEventId;
+        }
+      }
+    }
+
+    return created;
   }
 }

@@ -115,4 +115,8 @@ export class UpdateEventDto {
   @ValidateNested({ each: true })
   @Type(() => EventReminderDto)
   reminders?: EventReminderDto[];
+
+  @IsOptional()
+  @IsString()
+  syncSource?: 'google' | 'internal';
 }

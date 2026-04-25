@@ -139,4 +139,9 @@ export class CreateEventDto {
   @ValidateNested({ each: true })
   @Type(() => EventReminderDto)
   reminders?: EventReminderDto[];
+
+  // Internal: set to 'google' when event is created by inbound sync (prevents loop)
+  @IsOptional()
+  @IsString()
+  syncSource?: 'google' | 'internal';
 }

@@ -1,21 +1,34 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { EventRepository } from '../../infrastructure/repositories/event.repository';
 import { PrismaClient } from '@prisma/client';
 import { RRuleHelper } from '../../domain/utils/rrule-helper';
+import { CalendarRepository } from '@domains/calendars/infrastructure/persistence/calendar.repository';
+import { SyncEventToGoogleUseCase } from '@domains/google-calendar/application/use-cases/sync-event-to-google.use-case';
 
 @Injectable()
 export class DeleteEventUseCase {
   private prisma: PrismaClient;
 
-  constructor(private readonly eventRepository: EventRepository) {
+  constructor(
+    private readonly eventRepository: EventRepository,
+    @Optional() private readonly calendarRepository: CalendarRepository,
+    @Optional() private readonly syncToGoogle: SyncEventToGoogleUseCase,
+  ) {
     this.prisma = new PrismaClient();
   }
 
-  async execute(id: string): Promise<void> {
+  async execute(id: string, syncSource?: 'google' | 'internal'): Promise<void> {
     const event = await this.eventRepository.findById(id);
 
     if (!event) {
       throw new NotFoundException(`Event with ID ${id} not found`);
+    }
+
+    if (this.syncToGoogle && this.calendarRepository && !syncSource && event.googleEventId) {
+      const calendar = await this.calendarRepository.findById(event.calendarId);
+      if (calendar) {
+        await this.syncToGoogle.onDelete(event.googleEventId, calendar);
+      }
     }
 
     await this.eventRepository.delete(id);

@@ -250,6 +250,20 @@ export class EventRepository {
     });
   }
 
+  async updateGoogleEventId(id: string, googleEventId: string): Promise<void> {
+    await this.prisma.event.update({
+      where: { id },
+      data: { googleEventId },
+    });
+  }
+
+  async findByGoogleEventId(googleEventId: string): Promise<Event | null> {
+    const event = await this.prisma.event.findFirst({
+      where: { googleEventId },
+    });
+    return event ? new Event(event) : null;
+  }
+
   async updateDisplayOrder(updates: { id: string; displayOrder: number }[]): Promise<void> {
     if (updates.length === 0) return;
 

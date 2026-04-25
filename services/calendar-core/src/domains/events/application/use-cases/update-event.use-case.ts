@@ -1,14 +1,20 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { EventRepository } from '../../infrastructure/repositories/event.repository';
 import { UpdateEventDto } from '../../infrastructure/dtos/update-event.dto';
 import { PrismaClient } from '@prisma/client';
 import { RRuleHelper } from '../../domain/utils/rrule-helper';
+import { CalendarRepository } from '@domains/calendars/infrastructure/persistence/calendar.repository';
+import { SyncEventToGoogleUseCase } from '@domains/google-calendar/application/use-cases/sync-event-to-google.use-case';
 
 @Injectable()
 export class UpdateEventUseCase {
   private prisma: PrismaClient;
 
-  constructor(private readonly eventRepository: EventRepository) {
+  constructor(
+    private readonly eventRepository: EventRepository,
+    @Optional() private readonly calendarRepository: CalendarRepository,
+    @Optional() private readonly syncToGoogle: SyncEventToGoogleUseCase,
+  ) {
     this.prisma = new PrismaClient();
   }
 
@@ -80,6 +86,14 @@ export class UpdateEventUseCase {
     }
 
     const updatedEvent = await this.eventRepository.update(id, updateData, dto.reminders);
+
+    if (this.syncToGoogle && this.calendarRepository && !dto.syncSource && updatedEvent.googleEventId) {
+      const calendar = await this.calendarRepository.findById(updatedEvent.calendarId);
+      if (calendar) {
+        await this.syncToGoogle.onUpdate(updatedEvent, calendar);
+      }
+    }
+
     return updatedEvent;
   }
 

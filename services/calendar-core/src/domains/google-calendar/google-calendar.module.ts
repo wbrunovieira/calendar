@@ -6,6 +6,7 @@ import { GoogleOAuthService } from './infrastructure/services/google-oauth.servi
 import { GoogleCalendarApiClient } from './infrastructure/services/google-calendar-api.client';
 import { ConnectGoogleCalendarUseCase } from './application/use-cases/connect-google-calendar.use-case';
 import { DisconnectGoogleCalendarUseCase } from './application/use-cases/disconnect-google-calendar.use-case';
+import { SyncEventToGoogleUseCase } from './application/use-cases/sync-event-to-google.use-case';
 import { GOOGLE_OAUTH_TOKEN_REPOSITORY } from './domain/repositories/google-oauth-token.repository.interface';
 
 @Module({
@@ -20,7 +21,8 @@ import { GOOGLE_OAUTH_TOKEN_REPOSITORY } from './domain/repositories/google-oaut
     GoogleCalendarApiClient,
     ConnectGoogleCalendarUseCase,
     DisconnectGoogleCalendarUseCase,
+    SyncEventToGoogleUseCase,
   ],
-  exports: [GoogleOAuthService, GoogleCalendarApiClient],
+  exports: [GoogleOAuthService, GoogleCalendarApiClient, SyncEventToGoogleUseCase],
 })
 export class GoogleCalendarModule {}
