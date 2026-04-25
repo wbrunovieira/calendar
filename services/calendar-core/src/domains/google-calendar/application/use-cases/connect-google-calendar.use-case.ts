@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { CalendarRepository } from '@domains/calendars/infrastructure/persistence/calendar.repository';
+import { CalendarRepository } from '../../../calendars/infrastructure/persistence/calendar.repository';
 import { GoogleOAuthService } from '../../infrastructure/services/google-oauth.service';
 
 @Injectable()

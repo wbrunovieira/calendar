@@ -1,5 +1,5 @@
 import { calendar_v3 } from 'googleapis';
-import { Event } from '@domains/events/domain/entities/event.entity';
+import { Event } from '../../../events/domain/entities/event.entity';
 import { GoogleEventPayload } from '../../infrastructure/services/google-calendar-api.client';
 
 const TIMEZONE = 'America/Sao_Paulo';

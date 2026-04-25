@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { CalendarRepository } from '@domains/calendars/infrastructure/persistence/calendar.repository';
+import { CalendarRepository } from '../../../calendars/infrastructure/persistence/calendar.repository';
 import { PullGoogleChangesUseCase } from '../../application/use-cases/pull-google-changes.use-case';
 
 @Injectable()

@@ -2,8 +2,8 @@ import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { EventRepository } from '../../infrastructure/repositories/event.repository';
 import { PrismaClient } from '@prisma/client';
 import { RRuleHelper } from '../../domain/utils/rrule-helper';
-import { CalendarRepository } from '@domains/calendars/infrastructure/persistence/calendar.repository';
-import { SyncEventToGoogleUseCase } from '@domains/google-calendar/application/use-cases/sync-event-to-google.use-case';
+import { CalendarRepository } from '../../../calendars/infrastructure/persistence/calendar.repository';
+import { SyncEventToGoogleUseCase } from '../../../google-calendar/application/use-cases/sync-event-to-google.use-case';
 
 @Injectable()
 export class DeleteEventUseCase {

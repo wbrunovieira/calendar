@@ -7,7 +7,15 @@ export class GoogleOAuthToken {
   createdAt: Date;
   updatedAt: Date;
 
-  private constructor(props: GoogleOAuthToken) {
+  private constructor(props: {
+    id: string;
+    email: string;
+    accessToken: string;
+    refreshToken: string;
+    expiresAt: Date;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
     Object.assign(this, props);
   }
 

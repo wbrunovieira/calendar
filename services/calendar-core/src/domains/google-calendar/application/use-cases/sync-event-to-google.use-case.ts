@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Event } from '@domains/events/domain/entities/event.entity';
-import { Calendar } from '@domains/calendars/domain/entities/calendar.entity';
+import { Event } from '../../../events/domain/entities/event.entity';
+import { Calendar } from '../../../calendars/domain/entities/calendar.entity';
 import { GoogleCalendarApiClient } from '../../infrastructure/services/google-calendar-api.client';
 import { GoogleEventMapper } from '../../domain/services/google-event-mapper';
 

@@ -48,11 +48,16 @@ src/domains/[domain]/
 └── infrastructure/
     ├── controllers/         # HTTP endpoints
     ├── dtos/                # class-validator DTOs (NOT in application/dto/)
-    ├── repositories/        # Repository interfaces
-    └── persistence/         # Prisma implementations
+    ├── repositories/        # Repository interfaces (TypeScript interfaces)
+    └── persistence/         # Concrete Prisma implementations of those interfaces
 ```
 
-**Event Types:** Events have `eventType` field: `EVENT` (appointment), `HABIT` (habit), `TODO` (task), `REMINDER`. All stored in the same `events` table with type-specific fields (priority for TODOs, reminderDaysBefore for REMINDERs, weeklyTargetCount for flexible habits).
+Persistence classes call `Entity.create()` to hydrate domain objects from Prisma records. Repository implementations instantiate `PrismaClient` directly (no injection).
+
+**Event Types:** Events have `eventType` field: `EVENT` (appointment), `HABIT` (habit), `TODO` (task), `REMINDER`. All stored in the same `events` table with type-specific optional fields:
+- TODOs: `priority`, `dueDate`
+- REMINDERs: `reminderDaysBefore` (array)
+- HABITs: `recurrenceType` (`FIXED`/`FLEXIBLE`), `weeklyTargetCount`, `weeklyPreferredDays`
 
 **Recurrence Pattern:** Master events with RRule format. Derived instances link via `recurrenceMasterId`. Overrides and exceptions tracked in separate tables.
 
@@ -64,6 +69,16 @@ src/domains/[domain]/
 ### Financial Module (calendar-finances)
 
 Located in `services/calendar-finances/internal/`. Manual dependency wiring in `cmd/api/main.go` (repo → usecase → handler). Routes registered on Gorilla Mux with `/api/v1` prefix. Migrations are inline SQL strings in `internal/database/database.go` — idempotent, run automatically on startup. No ORM; uses `sql.DB` with connection pooling (25 max open, 5 idle).
+
+Some handlers require post-construction injection: after creating a handler, additional use-cases are set via setter methods (e.g., `transactionHandler.SetDailyBalancesUseCase(dailyBalancesUC)`). Check `main.go` when adding new cross-handler dependencies.
+
+**Background goroutines** started at launch (in `main.go`):
+- Auto-close invoices: 24h loop
+- Sync Binance trades: 30min loop
+- B3 stock prices + dividends: 2h / 24h loops
+- Close month checkpoints: monthly at 00:05 UTC
+
+**Transaction model** supports splits (`CreateTransactionSplitInput` array) and installment tracking (`InstallmentNumber`, `InstallmentTotal`) for credit card flows.
 
 ### Health Module (calendar-health)
 
@@ -165,8 +180,6 @@ bash scripts/setup-test-db.sh    # Create test database (calendar_test_db)
 bash scripts/reset-test-db.sh    # Reset test database
 bash scripts/seed-test-db.sh     # Seed test database
 ```
-
-## Database Schema
 
 ## Testing
 

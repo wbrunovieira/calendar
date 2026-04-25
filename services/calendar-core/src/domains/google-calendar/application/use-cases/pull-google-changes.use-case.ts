@@ -1,9 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { CalendarRepository } from '@domains/calendars/infrastructure/persistence/calendar.repository';
-import { EventRepository } from '@domains/events/infrastructure/repositories/event.repository';
+import { CalendarRepository } from '../../../calendars/infrastructure/persistence/calendar.repository';
+import { EventRepository } from '../../../events/infrastructure/repositories/event.repository';
 import { GoogleCalendarApiClient } from '../../infrastructure/services/google-calendar-api.client';
 import { GoogleEventMapper } from '../../domain/services/google-event-mapper';
-import { Event } from '@domains/events/domain/entities/event.entity';
+import { Event } from '../../../events/domain/entities/event.entity';
 import { calendar_v3 } from 'googleapis';
 
 @Injectable()

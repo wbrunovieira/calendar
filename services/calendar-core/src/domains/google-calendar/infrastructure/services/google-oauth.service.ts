@@ -1,9 +1,7 @@
 import { Injectable, Inject, NotFoundException } from '@nestjs/common';
 import { OAuth2Client } from 'google-auth-library';
-import {
-  IGoogleOAuthTokenRepository,
-  GOOGLE_OAUTH_TOKEN_REPOSITORY,
-} from '../../domain/repositories/google-oauth-token.repository.interface';
+import type { IGoogleOAuthTokenRepository } from '../../domain/repositories/google-oauth-token.repository.interface';
+import { GOOGLE_OAUTH_TOKEN_REPOSITORY } from '../../domain/repositories/google-oauth-token.repository.interface';
 import { GoogleOAuthToken } from '../../domain/entities/google-oauth-token.entity';
 
 export interface TokenData {
