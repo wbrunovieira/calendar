@@ -188,6 +188,21 @@ export const api = {
       fetchAPI<{ data: Calendar[]; total: number }>('/calendars').then((res) => res.data),
   },
 
+  // Google Calendar integration
+  googleCalendar: {
+    getConnectUrl: (calendarId: string) =>
+      `${API_URL}/google-calendar/auth/connect?calendarId=${calendarId}`,
+    disconnect: (calendarId: string) =>
+      fetchAPI<void>(`/google-calendar/auth/disconnect/${calendarId}`, {
+        method: 'DELETE',
+      }),
+    pullSync: (calendarId: string) =>
+      fetchAPI<{ data: { created: number; updated: number; deleted: number } }>(
+        `/google-calendar/sync/${calendarId}/pull`,
+        { method: 'POST' },
+      ),
+  },
+
   // Categories
   categories: {
     list: (calendarId?: string) => {

@@ -7,6 +7,9 @@ export interface Calendar {
   color: string;
   type: CalendarType;
   isActive: boolean;
+  googleCalendarId?: string | null;
+  googleSyncToken?: string | null;
+  lastSyncAt?: string | null;
 }
 
 export interface CategoryType {
