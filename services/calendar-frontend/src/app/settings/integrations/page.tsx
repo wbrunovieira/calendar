@@ -261,7 +261,7 @@ export default function IntegrationsPage() {
             </li>
             <li className="flex items-start gap-2">
               <span className="text-purple-400 mt-0.5">→</span>
-              <span>Use "Sincronizar agora" para buscar mudanças imediatamente</span>
+              <span>Use &quot;Sincronizar agora&quot; para buscar mudanças imediatamente</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-yellow-400 mt-0.5">→</span>
