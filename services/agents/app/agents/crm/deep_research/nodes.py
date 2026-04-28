@@ -34,6 +34,22 @@ def _to_e164_br(phone: str) -> str | None:
     return None
 
 
+_LINK_AGGREGATORS = {"linktr.ee", "linktree.com", "bio.link", "beacons.ai", "tap.bio", "campsite.bio", "koji.to", "linkin.bio"}
+_THIRD_PARTY_EMAIL_HINTS = ["contabilidade", "contador", "contabil", "escritorio", "advocacia", "juridico", "fercon", "assessoria"]
+
+
+def _is_link_aggregator(url: str) -> bool:
+    if not url:
+        return False
+    return any(d in url.lower() for d in _LINK_AGGREGATORS)
+
+
+def _is_third_party_email(email: str) -> bool:
+    if not email:
+        return False
+    return any(p in email.lower() for p in _THIRD_PARTY_EMAIL_HINTS)
+
+
 def _clean_cnpj(cnpj: str) -> str:
     return re.sub(r"\D", "", cnpj)
 
@@ -137,6 +153,28 @@ def _extract_cnpj_updates(data: dict, lead: dict) -> dict:
             updates["isMei"] = mei["optante"]
 
     return updates
+
+
+def _extract_cnpj_contacts(data: dict) -> list[dict]:
+    contacts = []
+    for member in (data.get("qsa") or [])[:5]:
+        nome = (member.get("nome_socio") or "").strip()
+        if nome and len(nome.split()) >= 2 and not nome.startswith("***"):
+            qual = member.get("qualificacao_socio") or "Sócio"
+            contacts.append({"name": nome.title(), "role": qual, "email": None, "phone": None})
+    return contacts
+
+
+def _extract_tiktok_handle(value: str) -> str | None:
+    if not value:
+        return None
+    m = re.search(r"tiktok\.com/@([A-Za-z0-9_.]+)/?", value)
+    if m:
+        return m.group(1)
+    m = re.match(r"@?([A-Za-z0-9_.]+)$", value.strip())
+    if m:
+        return m.group(1)
+    return None
 
 
 # ── Node: assess_previous_research ────────────────────────────────────────
@@ -260,11 +298,14 @@ async def plan_research(state: DeepResearchState) -> dict:
 
     # Website / description / services
     web_fields = ["website", "description", "segment"]
-    if "web" not in skip and name and any(_is_empty(lead.get(f)) for f in web_fields):
+    website_is_aggregator = _is_link_aggregator(lead.get("website") or "")
+    if "web" not in skip and name and (any(_is_empty(lead.get(f)) for f in web_fields) or website_is_aggregator):
         missing.append("web")
         queries.append(f'"{name}" site oficial serviços')
         if lead.get("city"):
             queries.append(f'"{name}" {lead["city"]} empresa')
+        if website_is_aggregator:
+            queries.append(f'"{name}" site:.com.br OR site:.com -linktr.ee -instagram.com -facebook.com')
 
     # Instagram
     if "instagram" not in skip and _is_empty(lead.get("instagram")) and name:
@@ -409,6 +450,7 @@ async def extract_updates(state: DeepResearchState) -> dict:
     contacts = state.get("contacts", [])
     web_results = state.get("web_results", [])
     existing_updates = state.get("updates", {})
+    cnpj_raw = state.get("cnpj_raw")
     missing = state.get("missing_fields", [])
     trace = state.get("_trace")
 
@@ -489,6 +531,11 @@ async def extract_updates(state: DeepResearchState) -> dict:
     # Fix 1: only update fields that were truly empty in the original lead
     merged = {k: v for k, v in merged.items() if _is_empty(lead.get(k)) and not _is_empty(v)}
 
+    # Linktree detection: if website found (or already on lead) is an aggregator, flag it
+    website_val = merged.get("website") or lead.get("website")
+    if website_val and _is_link_aggregator(str(website_val)):
+        proposed["_websiteNote"] = f"Website detectado é um agregador de links ({website_val}) — empresa pode não ter site próprio"
+
     # Fix 2: infer whatsapp from phone when whatsapp is empty
     if _is_empty(lead.get("whatsapp")) and "whatsapp" not in merged:
         phone_source = merged.get("phone") or lead.get("phone")
@@ -496,6 +543,9 @@ async def extract_updates(state: DeepResearchState) -> dict:
             e164 = _to_e164_br(str(phone_source))
             if e164:
                 merged["whatsapp"] = e164
+
+    # QSA contacts from CNPJ: add socios as contacts if none found yet
+    cnpj_contacts = _extract_cnpj_contacts(cnpj_raw) if cnpj_raw else []
 
     # Merge LLM contacts with existing contacts (enrich existing, add new ones)
     existing_names = {(c.get("name") or "").lower().strip() for c in contacts}
@@ -532,6 +582,14 @@ async def extract_updates(state: DeepResearchState) -> dict:
             final_contacts.append(orig)
     final_contacts.extend(truly_new)
 
+    # Add QSA contacts from CNPJ as fallback (only if not already in contacts)
+    all_known_names = {(c.get("name") or "").lower().strip() for c in final_contacts}
+    for qsa_contact in cnpj_contacts:
+        qname = (qsa_contact.get("name") or "").lower().strip()
+        if qname and qname not in all_known_names:
+            final_contacts.append(qsa_contact)
+            all_known_names.add(qname)
+
     result: dict = {"updates": merged, "new_contacts": final_contacts}
     if proposed:
         result["proposed_fields"] = proposed
@@ -556,12 +614,13 @@ def _extract_instagram_handle(value: str) -> str | None:
     return None
 
 
-_INSTAGRAM_SYSTEM = """\
-Você é um analista de presença digital. Analise os dados encontrados sobre o perfil do
-Instagram e a Meta Ads Library da empresa. Retorne APENAS JSON válido, sem markdown."""
+_SOCIAL_SYSTEM = """\
+Você é um analista de presença digital. Analise os dados encontrados sobre os perfis
+sociais e a Meta Ads Library da empresa. Retorne APENAS JSON válido, sem markdown."""
 
-_INSTAGRAM_USER = """\
-Perfil Instagram: @{handle}
+_SOCIAL_USER = """\
+Instagram: @{ig_handle}
+TikTok: @{tt_handle}
 Empresa: {business_name}
 
 Dados encontrados:
@@ -570,11 +629,18 @@ Dados encontrados:
 Extraia o que encontrar nos resultados. Use null para campos não encontrados.
 Retorne JSON com esta estrutura exata:
 {{
-  "followers": <número inteiro ou null>,
-  "posts": <número inteiro ou null>,
-  "lastPostDays": <dias desde o último post (inteiro) ou null>,
-  "frequency": <"ativo" | "irregular" | "abandonado" | null>,
-  "frequencyNote": <"breve descrição" ou null>,
+  "instagram": {{
+    "followers": <número inteiro ou null>,
+    "posts": <número inteiro ou null>,
+    "lastPostDays": <dias desde o último post (inteiro) ou null>,
+    "frequency": <"ativo" | "irregular" | "abandonado" | null>,
+    "frequencyNote": <"breve descrição" ou null>
+  }},
+  "tiktok": {{
+    "followers": <número inteiro ou null>,
+    "videos": <número inteiro ou null>,
+    "frequency": <"ativo" | "irregular" | "abandonado" | null>
+  }},
   "metaAds": {{
     "hasAds": <true | false | null>,
     "activeCount": <número inteiro ou null>
@@ -582,13 +648,14 @@ Retorne JSON com esta estrutura exata:
 }}
 
 Critérios de frequency:
-- "ativo": posts regulares nos últimos 30 dias
-- "irregular": posts esporádicos ou último post entre 31-90 dias
-- "abandonado": sem posts nos últimos 90 dias ou conta claramente inativa
+- "ativo": publicações regulares nos últimos 30 dias
+- "irregular": publicações esporádicas ou última entre 31-90 dias
+- "abandonado": sem publicações nos últimos 90 dias ou conta inativa
 - null: não foi possível determinar
 
-Para metaAds.hasAds retorne true apenas se encontrar evidência clara de anúncios ativos
-na Meta Ads Library. Se não encontrar referência alguma, retorne null (não false)."""
+Para metaAds.hasAds: true apenas com evidência clara de anúncios ativos na Meta Ads
+Library. Sem referência alguma → null (não false).
+Se o perfil não existir ou não houver dados, retorne o objeto com todos os campos null."""
 
 
 async def enrich_instagram(state: DeepResearchState) -> dict:
@@ -598,24 +665,32 @@ async def enrich_instagram(state: DeepResearchState) -> dict:
 
     # Determine instagram source (newly found or already on lead)
     instagram_val = updates.get("instagram") or lead.get("instagram")
-    if not instagram_val:
+    tiktok_val = updates.get("tiktok") or lead.get("tiktok")
+
+    if not instagram_val and not tiktok_val:
         return {"instagram_insights": None}
 
-    handle = _extract_instagram_handle(str(instagram_val))
-    if not handle:
-        return {"instagram_insights": None}
-
+    ig_handle = _extract_instagram_handle(str(instagram_val)) if instagram_val else "N/A"
+    tt_handle = _extract_tiktok_handle(str(tiktok_val)) if tiktok_val else "N/A"
     business_name = lead.get("businessName", "")
     checked_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    queries = [
-        f"site:instagram.com/{handle} seguidores posts",
-        f'"{business_name}" Meta Ads Library anúncios ativos facebook',
-    ]
+    queries: list[str] = []
+    if ig_handle != "N/A":
+        queries += [
+            f'"@{ig_handle}" instagram seguidores posts',
+            f'"{ig_handle}" site:socialblade.com OR site:ninjalitics.com OR site:hypeauditor.com',
+        ]
+    if tt_handle != "N/A":
+        queries.append(f'"@{tt_handle}" tiktok seguidores videos site:socialblade.com OR tiktok.com/@{tt_handle}')
+    queries.append(f'facebook.com/ads/library "{business_name}" anúncios ativos')
 
-    span = trace.span(name="instagram_enrichment", input={"handle": handle}) if trace else None
+    span = trace.span(name="social_enrichment", input={"ig": ig_handle, "tt": tt_handle}) if trace else None
     results = await _tavily_search(queries, max_results=5, search_depth="advanced")
     search_context = _format_tavily_results(results)
+
+    insights: dict | None = None
+    meta_ads_update: dict | None = None
 
     insights: dict | None = None
     meta_ads_update: dict | None = None
@@ -623,17 +698,18 @@ async def enrich_instagram(state: DeepResearchState) -> dict:
     if search_context.strip():
         gen = (
             trace.generation(
-                name="enrich_instagram",
+                name="enrich_social",
                 model="claude-haiku-4-5-20251001",
-                input=[{"role": "user", "content": _INSTAGRAM_USER}],
+                input=[{"role": "user", "content": _SOCIAL_USER}],
             )
             if trace else None
         )
         try:
             raw = await _call_claude(
-                system=_INSTAGRAM_SYSTEM,
-                user=_INSTAGRAM_USER.format(
-                    handle=handle,
+                system=_SOCIAL_SYSTEM,
+                user=_SOCIAL_USER.format(
+                    ig_handle=ig_handle,
+                    tt_handle=tt_handle,
                     business_name=business_name,
                     search_context=search_context[:5000],
                 ),
@@ -645,13 +721,23 @@ async def enrich_instagram(state: DeepResearchState) -> dict:
             text = re.sub(r"\s*```$", "", text.strip())
             parsed = json.loads(text)
 
+            ig_raw = parsed.get("instagram") or {}
+            tt_raw = parsed.get("tiktok") or {}
             insights = {
-                k: parsed.get(k)
-                for k in ("followers", "posts", "lastPostDays", "frequency", "frequencyNote")
+                "handle": ig_handle,
+                "followers": ig_raw.get("followers"),
+                "posts": ig_raw.get("posts"),
+                "lastPostDays": ig_raw.get("lastPostDays"),
+                "frequency": ig_raw.get("frequency"),
+                "frequencyNote": ig_raw.get("frequencyNote"),
+                "tiktok": {
+                    "handle": tt_handle,
+                    "followers": tt_raw.get("followers"),
+                    "videos": tt_raw.get("videos"),
+                    "frequency": tt_raw.get("frequency"),
+                } if tt_handle != "N/A" else None,
             }
-            insights["handle"] = handle
 
-            # Build metaAds update only when we have a definitive answer
             meta_raw = parsed.get("metaAds") or {}
             has_ads = meta_raw.get("hasAds")
             if has_ads is not None:
@@ -662,9 +748,9 @@ async def enrich_instagram(state: DeepResearchState) -> dict:
                 }
 
             if gen:
-                gen.end(output={"followers": insights.get("followers"), "hasAds": has_ads})
+                gen.end(output={"ig_followers": insights.get("followers"), "hasAds": has_ads})
         except Exception:
-            logger.exception("[DeepResearch] enrich_instagram parse error for @%s", handle)
+            logger.exception("[DeepResearch] enrich_instagram parse error ig=@%s tt=@%s", ig_handle, tt_handle)
             if gen:
                 gen.end(output={"error": "parse_failed"})
 
@@ -673,7 +759,7 @@ async def enrich_instagram(state: DeepResearchState) -> dict:
 
     logger.info(
         "[DeepResearch] instagram @%s followers=%s frequency=%s hasAds=%s",
-        handle,
+        ig_handle,
         insights.get("followers") if insights else None,
         insights.get("frequency") if insights else None,
         meta_ads_update.get("hasAds") if meta_ads_update else None,
@@ -681,9 +767,7 @@ async def enrich_instagram(state: DeepResearchState) -> dict:
 
     result: dict = {"instagram_insights": insights}
     if meta_ads_update is not None and _is_empty(lead.get("metaAds")):
-        # Merge into existing updates
-        new_updates = {**updates, "metaAds": meta_ads_update}
-        result["updates"] = new_updates
+        result["updates"] = {**updates, "metaAds": meta_ads_update}
     return result
 
 
@@ -709,8 +793,11 @@ Campos encontrados mas que já tinham valor no CRM (para auditoria):
 Novos contatos encontrados ({contact_count}):
 {contacts_json}
 
-Análise do Instagram (@{instagram_handle}):
+Análise de redes sociais:
 {instagram_block}
+
+Alertas automáticos (DEVEM aparecer no resumo):
+{alerts_block}
 
 Campos que permanecem vazios:
 {still_missing}
@@ -721,44 +808,70 @@ Escreva um resumo em pt-BR (3-5 parágrafos) cobrindo:
 1. O que foi encontrado e preenchido (campos que estavam vazios)
 2. Qualidade e confiabilidade dos dados (mencione se veio do CNPJ oficial)
 3. Destaques sobre a empresa (porte, segmento, presença digital)
-4. Instagram e maturidade digital: seguidores, frequência de posts, anúncios ativos na Meta (se disponível)
+4. Redes sociais: Instagram, TikTok, frequência de posts, anúncios ativos na Meta
 5. Contatos encontrados e seus cargos
-6. Lacunas que permanecem e pontos de atenção para o time comercial
+6. Alertas e lacunas que permanecem — pontos de atenção para o time comercial
 {reresearch_instruction}"""
 
 
-def _build_instagram_block(insights: dict | None, updates: dict, lead: dict) -> tuple[str, str]:
-    """Return (handle, formatted block) for the summary prompt."""
+def _build_social_block(insights: dict | None, updates: dict, lead: dict) -> tuple[str, str]:
+    """Return (ig_handle, formatted block) for the summary prompt."""
     instagram_val = updates.get("instagram") or lead.get("instagram")
-    if not instagram_val:
-        return "N/A", "Nenhum perfil Instagram encontrado."
+    tiktok_val = updates.get("tiktok") or lead.get("tiktok")
 
-    handle = _extract_instagram_handle(str(instagram_val)) or str(instagram_val)
+    if not instagram_val and not tiktok_val:
+        return "N/A", "Nenhum perfil Instagram ou TikTok encontrado."
 
-    if not insights:
-        return handle, "Perfil encontrado mas não foi possível coletar métricas."
+    ig_handle = _extract_instagram_handle(str(instagram_val)) if instagram_val else None
+    tt_handle = _extract_tiktok_handle(str(tiktok_val)) if tiktok_val else None
 
     parts: list[str] = []
-    if insights.get("followers") is not None:
-        parts.append(f"Seguidores: {insights['followers']:,}")
-    if insights.get("posts") is not None:
-        parts.append(f"Posts: {insights['posts']}")
-    if insights.get("frequency"):
-        freq = insights["frequency"].capitalize()
-        note = f" — {insights['frequencyNote']}" if insights.get("frequencyNote") else ""
-        parts.append(f"Frequência: {freq}{note}")
-    if insights.get("lastPostDays") is not None:
-        parts.append(f"Último post: há {insights['lastPostDays']} dias")
 
-    # Meta Ads — read from updates (set by enrich_instagram)
+    # Instagram
+    if ig_handle:
+        parts.append(f"**Instagram @{ig_handle}**")
+        if not insights:
+            parts.append("  Perfil encontrado mas sem métricas disponíveis.")
+        else:
+            if insights.get("followers") is not None:
+                parts.append(f"  Seguidores: {insights['followers']:,}")
+            if insights.get("posts") is not None:
+                parts.append(f"  Posts: {insights['posts']}")
+            if insights.get("frequency"):
+                freq = insights["frequency"].capitalize()
+                note = f" — {insights['frequencyNote']}" if insights.get("frequencyNote") else ""
+                parts.append(f"  Frequência: {freq}{note}")
+            if insights.get("lastPostDays") is not None:
+                parts.append(f"  Último post: há {insights['lastPostDays']} dias")
+            if not any(insights.get(k) for k in ("followers", "posts", "frequency")):
+                parts.append("  Sem métricas disponíveis (perfil possivelmente bloqueado para bots)")
+
+    # TikTok
+    tt_data = (insights or {}).get("tiktok") if insights else None
+    if tt_handle:
+        parts.append(f"**TikTok @{tt_handle}**")
+        if tt_data:
+            if tt_data.get("followers") is not None:
+                parts.append(f"  Seguidores: {tt_data['followers']:,}")
+            if tt_data.get("videos") is not None:
+                parts.append(f"  Vídeos: {tt_data['videos']}")
+            if tt_data.get("frequency"):
+                parts.append(f"  Frequência: {tt_data['frequency'].capitalize()}")
+            if not any(tt_data.get(k) for k in ("followers", "videos", "frequency")):
+                parts.append("  Sem métricas disponíveis")
+        else:
+            parts.append("  Perfil encontrado mas sem métricas disponíveis.")
+
+    # Meta Ads
     meta = updates.get("metaAds")
     if meta:
         if meta.get("hasAds"):
-            parts.append(f"Meta Ads: {meta['activeCount']} anúncio(s) ativo(s)")
+            parts.append(f"**Meta Ads:** {meta['activeCount']} anúncio(s) ativo(s) ✓")
         else:
-            parts.append("Meta Ads: sem anúncios ativos encontrados")
+            parts.append("**Meta Ads:** sem anúncios ativos encontrados")
 
-    return handle, "\n".join(parts) if parts else "Perfil encontrado mas sem métricas disponíveis."
+    display_handle = ig_handle or tt_handle or "N/A"
+    return display_handle, "\n".join(parts) if parts else "Perfis encontrados mas sem métricas."
 
 
 async def generate_summary(state: DeepResearchState) -> dict:
@@ -784,7 +897,16 @@ async def generate_summary(state: DeepResearchState) -> dict:
         if _is_empty(lead.get(f)) and _is_empty(updates.get(f))
     ]
 
-    ig_handle, ig_block = _build_instagram_block(instagram_insights, updates, lead)
+    ig_handle, ig_block = _build_social_block(instagram_insights, updates, lead)
+
+    # Alerts for the summary
+    alerts: list[str] = []
+    existing_email = lead.get("email") or ""
+    if existing_email and _is_third_party_email(existing_email):
+        alerts.append(f"⚠️ Email no CRM ({existing_email}) parece ser de terceiro (contabilidade/escritório) — recomenda-se buscar email direto da empresa.")
+    website_val = updates.get("website") or lead.get("website") or ""
+    if website_val and _is_link_aggregator(website_val):
+        alerts.append(f"⚠️ Website registrado ({website_val}) é um agregador de links (Linktree/similar) — empresa pode não ter site próprio. Verificar se há domínio próprio.")
 
     # Build previous research context block
     if previous_summary:
@@ -814,8 +936,8 @@ async def generate_summary(state: DeepResearchState) -> dict:
         proposed_json=json.dumps(proposed_fields, ensure_ascii=False, indent=2) if proposed_fields else "Nenhum.",
         contact_count=len(new_contacts),
         contacts_json=json.dumps(new_contacts, ensure_ascii=False, indent=2) if new_contacts else "Nenhum contato novo.",
-        instagram_handle=ig_handle,
         instagram_block=ig_block,
+        alerts_block="\n".join(alerts) if alerts else "Nenhum alerta.",
         still_missing=", ".join(still_missing) if still_missing else "Nenhum — pesquisa completa!",
         previous_context=previous_context,
         reresearch_instruction=reresearch_instruction,
