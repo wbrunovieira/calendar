@@ -368,14 +368,15 @@ async def run_searches(state: DeepResearchState) -> dict:
     updates: dict = {}
     cnpj_raw: dict | None = None
 
-    # CNPJ lookup via BrasilAPI
-    if "cnpj" in missing:
-        cnpj = lead.get("companyRegistrationID", "")
+    # CNPJ lookup via BrasilAPI — always when CNPJ exists (QSA contacts), legal fields only if missing
+    cnpj = lead.get("companyRegistrationID", "")
+    if cnpj:
         span = trace.span(name="cnpj_lookup", input={"cnpj": cnpj}) if trace else None
         cnpj_raw = await _fetch_cnpj(cnpj)
         if cnpj_raw:
-            updates.update(_extract_cnpj_updates(cnpj_raw, lead))
-            logger.info("[DeepResearch] CNPJ data retrieved for %s", cnpj)
+            if "cnpj" in missing:
+                updates.update(_extract_cnpj_updates(cnpj_raw, lead))
+            logger.info("[DeepResearch] CNPJ data retrieved for %s (legal_update=%s)", cnpj, "cnpj" in missing)
         if span:
             span.end(output={"found": cnpj_raw is not None})
 

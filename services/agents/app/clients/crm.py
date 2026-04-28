@@ -101,6 +101,13 @@ async def send_deep_research_webhook(payload: dict) -> None:
     async with httpx.AsyncClient(timeout=10) as client:
         try:
             resp = await client.post(url, json=payload, headers=_auth_headers())
-            resp.raise_for_status()
+            if resp.status_code == 200:
+                body = resp.json() if resp.content else {}
+                if body.get("ok"):
+                    logger.info("Deep research webhook delivered: leadId=%s queued=%s", payload.get("leadId"), body.get("queued"))
+                else:
+                    logger.warning("Deep research webhook 200 but ok!=true: %s", body)
+            else:
+                logger.warning("Deep research webhook returned %s for %s", resp.status_code, url)
         except Exception:
-            logger.warning("Deep research webhook failed (CRM may not have the endpoint yet): %s", url)
+            logger.warning("Deep research webhook failed (network/timeout): %s", url)
