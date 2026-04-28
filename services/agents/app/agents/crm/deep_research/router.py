@@ -69,6 +69,7 @@ class LeadInput(BaseModel):
     internationalActivity: str | None = None
     source: str | None = None
     quality: str | None = None
+    metaAds: dict | None = None
 
 
 class DeepResearchRequest(BaseModel):
@@ -128,6 +129,7 @@ async def _run_deep_research(
             "leadId": lead_id,
             "status": "error",
             "updates": {},
+            "proposedFields": {},
             "newContacts": [],
             "summary": "Falha inesperada na execução da pesquisa.",
             "error": "background_task_failed",
@@ -136,6 +138,7 @@ async def _run_deep_research(
 
     error = result.get("error")
     updates = result.get("updates") or {}
+    proposed_fields = result.get("proposed_fields") or {}
     new_contacts = result.get("new_contacts") or []
     summary = result.get("summary") or ""
     status = "error" if error else "completed"
@@ -144,13 +147,14 @@ async def _run_deep_research(
         trace.update(output={
             "status": status,
             "updatedFields": list(updates.keys()),
+            "proposedFields": list(proposed_fields.keys()),
             "newContacts": len(new_contacts),
         })
         langfuse.flush()
 
     logger.info(
-        "[DeepResearch] lead=%s status=%s updates=%d contacts=%d",
-        lead_id, status, len(updates), len(new_contacts),
+        "[DeepResearch] lead=%s status=%s updates=%d proposed=%d contacts=%d",
+        lead_id, status, len(updates), len(proposed_fields), len(new_contacts),
     )
 
     await crm.send_deep_research_webhook({
@@ -158,6 +162,7 @@ async def _run_deep_research(
         "leadId": lead_id,
         "status": status,
         "updates": updates,
+        "proposedFields": proposed_fields,
         "newContacts": new_contacts,
         "summary": summary,
         "error": error,

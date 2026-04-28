@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from datetime import datetime, timezone
 
 import httpx
 
@@ -21,6 +22,16 @@ def _is_empty(value) -> bool:
     if isinstance(value, str) and not value.strip():
         return True
     return False
+
+
+def _to_e164_br(phone: str) -> str | None:
+    """Convert a Brazilian phone number to E.164 (+55XXXXXXXXXXX)."""
+    digits = re.sub(r"\D", "", phone)
+    if digits.startswith("55") and len(digits) in (12, 13):
+        return "+" + digits
+    if len(digits) in (10, 11):
+        return "+55" + digits
+    return None
 
 
 def _clean_cnpj(cnpj: str) -> str:
@@ -172,12 +183,17 @@ async def plan_research(state: DeepResearchState) -> dict:
         missing.append("social")
         queries.append(f'"{name}" facebook tiktok redes sociais')
 
-    # Contacts (email, phone, decision makers)
-    needs_contacts = (
-        not contacts
-        or all(_is_empty(c.get("email")) and _is_empty(c.get("phone")) for c in contacts)
-    )
-    if needs_contacts and name:
+    # Contacts: enrich existing contacts missing email/phone, or discover new ones
+    if contacts:
+        incomplete = [c for c in contacts if _is_empty(c.get("email")) or _is_empty(c.get("phone"))]
+        if incomplete:
+            missing.append("contacts")
+            for c in incomplete[:3]:
+                cname = (c.get("name") or "").strip()
+                if cname:
+                    queries.append(f'"{name}" "{cname}" email telefone linkedin contato')
+            queries.append(f'"{name}" contato email telefone')
+    elif name:
         missing.append("contacts")
         queries.append(f'"{name}" contato email telefone diretor gerente')
         if lead.get("website"):
@@ -246,6 +262,9 @@ Lead atual (campos null/vazio indicam o que precisa ser preenchido):
 Campos que já encontramos (CNPJ lookup):
 {already_found}
 
+Contatos já cadastrados no CRM (busque email e telefone para eles nos resultados):
+{existing_contacts_json}
+
 Resultados de busca:
 {search_context}
 
@@ -270,90 +289,294 @@ Retorne um objeto JSON com APENAS os campos encontrados, usando estas chaves exa
   "tiktok": "URL ou @handle"
 }}
 
-Também extraia contatos encontrados como array separado "contacts":
+Para a chave "contacts", retorne TODOS os contatos relevantes encontrados (incluindo os já cadastrados se encontrou dados novos para eles):
 [{{"name": "...", "email": "...", "phone": "...", "role": "..."}}]
+Inclua email e telefone sempre que encontrar nos resultados. Omita campos que não encontrou.
 
 Responda SOMENTE com JSON: {{"updates": {{...}}, "contacts": [...]}}"""
 
 
 async def extract_updates(state: DeepResearchState) -> dict:
     lead = state.get("lead", {})
+    contacts = state.get("contacts", [])
     web_results = state.get("web_results", [])
     existing_updates = state.get("updates", {})
     missing = state.get("missing_fields", [])
     trace = state.get("_trace")
 
-    # If nothing to extract from web (only CNPJ was missing), skip
+    llm_updates: dict = {}
+    llm_contacts: list = []
+
+    # LLM extraction only when web searches were needed
     web_relevant = [m for m in missing if m != "cnpj"]
-    if not web_relevant or not web_results:
-        return {}
+    if web_relevant and web_results:
+        search_context = _format_tavily_results(web_results)
+        if search_context.strip():
+            already_found = json.dumps(existing_updates, ensure_ascii=False) if existing_updates else "nenhum"
 
-    search_context = _format_tavily_results(web_results)
-    if not search_context.strip():
-        return {}
+            # Only show empty fields to LLM (plus minimal context fields)
+            lead_for_prompt = {
+                k: v for k, v in lead.items()
+                if _is_empty(v) or k in ("businessName", "city", "state", "companyRegistrationID")
+            }
 
-    already_found = json.dumps(existing_updates, ensure_ascii=False) if existing_updates else "nenhum"
+            # Show existing contacts so LLM can enrich them
+            existing_contacts_str = (
+                json.dumps(contacts, ensure_ascii=False, indent=2)
+                if contacts else "Nenhum contato cadastrado."
+            )
 
-    # Mask sensitive existing data — only show null/empty fields
-    lead_for_prompt = {
-        k: v for k, v in lead.items()
-        if _is_empty(v) or k in ("businessName", "city", "state", "segment", "companyRegistrationID")
-    }
+            user = _EXTRACT_USER.format(
+                lead_json=json.dumps(lead_for_prompt, ensure_ascii=False, indent=2),
+                already_found=already_found,
+                existing_contacts_json=existing_contacts_str,
+                search_context=search_context[:6000],
+            )
 
-    user = _EXTRACT_USER.format(
-        lead_json=json.dumps(lead_for_prompt, ensure_ascii=False, indent=2),
-        already_found=already_found,
-        search_context=search_context[:6000],
-    )
+            gen = (
+                trace.generation(
+                    name="extract_updates",
+                    model="claude-haiku-4-5-20251001",
+                    input=[{"role": "user", "content": user}],
+                )
+                if trace
+                else None
+            )
 
-    gen = (
-        trace.generation(
-            name="extract_updates",
-            model="claude-haiku-4-5-20251001",
-            input=[{"role": "user", "content": user}],
-        )
-        if trace
-        else None
-    )
+            try:
+                raw = await _call_claude(
+                    system=_EXTRACT_SYSTEM,
+                    user=user,
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=2048,
+                )
+                text = raw.content[0].text if raw.content else "{}"
+                text = re.sub(r"^```(?:json)?\s*", "", text.strip())
+                text = re.sub(r"\s*```$", "", text.strip())
 
-    try:
-        raw = await _call_claude(
-            system=_EXTRACT_SYSTEM,
-            user=user,
-            model="claude-haiku-4-5-20251001",
-            max_tokens=2048,
-        )
-        text = raw.content[0].text if raw.content else "{}"
+                parsed = json.loads(text)
+                llm_updates = parsed.get("updates", {})
+                llm_contacts = parsed.get("contacts", [])
+                if gen:
+                    gen.end(output={"fields": list(llm_updates.keys()), "contacts": len(llm_contacts)})
 
-        # Strip markdown fences if present
-        text = re.sub(r"^```(?:json)?\s*", "", text.strip())
-        text = re.sub(r"\s*```$", "", text.strip())
-
-        parsed = json.loads(text)
-        llm_updates = parsed.get("updates", {})
-        llm_contacts = parsed.get("contacts", [])
-        if gen:
-            gen.end(output={"fields": list(llm_updates.keys()), "contacts": len(llm_contacts)})
-
-    except Exception:
-        logger.exception("[DeepResearch] extract_updates LLM/parse error")
-        if gen:
-            gen.end(output={"error": "parse_failed"})
-        return {}
+            except Exception:
+                logger.exception("[DeepResearch] extract_updates LLM/parse error")
+                if gen:
+                    gen.end(output={"error": "parse_failed"})
 
     # Merge: CNPJ data takes priority over LLM for overlapping fields
     merged = {**llm_updates, **existing_updates}
 
-    # Only keep fields that were actually missing
-    merged = {k: v for k, v in merged.items() if not _is_empty(v)}
+    # Capture proposed fields: agent found a value but lead already has a different one
+    _audit_fields = {"email", "website", "phone"}
+    proposed: dict = {}
+    for field in _audit_fields:
+        found_val = merged.get(field)
+        lead_val = lead.get(field)
+        if not _is_empty(found_val) and not _is_empty(lead_val):
+            if str(found_val).lower().strip() != str(lead_val).lower().strip():
+                proposed[field] = found_val
 
-    # Validate contacts
-    valid_contacts = [
-        c for c in llm_contacts
-        if c.get("name") and len(c["name"].split()) >= 2
+    # Fix 1: only update fields that were truly empty in the original lead
+    merged = {k: v for k, v in merged.items() if _is_empty(lead.get(k)) and not _is_empty(v)}
+
+    # Fix 2: infer whatsapp from phone when whatsapp is empty
+    if _is_empty(lead.get("whatsapp")) and "whatsapp" not in merged:
+        phone_source = merged.get("phone") or lead.get("phone")
+        if phone_source:
+            e164 = _to_e164_br(str(phone_source))
+            if e164:
+                merged["whatsapp"] = e164
+
+    # Merge LLM contacts with existing contacts (enrich existing, add new ones)
+    existing_names = {(c.get("name") or "").lower().strip() for c in contacts}
+    enriched_existing: list[dict] = []
+    truly_new: list[dict] = []
+
+    for c in llm_contacts:
+        if not c.get("name") or len(c["name"].split()) < 2:
+            continue
+        cname_lower = c["name"].lower().strip()
+        if cname_lower in existing_names:
+            # Enrich existing contact: only add fields that were missing
+            match = next((e for e in contacts if (e.get("name") or "").lower().strip() == cname_lower), None)
+            if match:
+                enriched = {**match}
+                if _is_empty(enriched.get("email")) and not _is_empty(c.get("email")):
+                    enriched["email"] = c["email"]
+                if _is_empty(enriched.get("phone")) and not _is_empty(c.get("phone")):
+                    enriched["phone"] = c["phone"]
+                if _is_empty(enriched.get("role")) and not _is_empty(c.get("role")):
+                    enriched["role"] = c["role"]
+                enriched_existing.append(enriched)
+        else:
+            truly_new.append(c)
+
+    # Build final contacts list: enriched existing (only if we added data) + truly new
+    final_contacts: list[dict] = []
+    for orig in contacts:
+        oname = (orig.get("name") or "").lower().strip()
+        enriched = next((e for e in enriched_existing if (e.get("name") or "").lower().strip() == oname), None)
+        if enriched:
+            final_contacts.append(enriched)
+        else:
+            final_contacts.append(orig)
+    final_contacts.extend(truly_new)
+
+    result: dict = {"updates": merged, "new_contacts": final_contacts}
+    if proposed:
+        result["proposed_fields"] = proposed
+    return result
+
+
+# ── Node: enrich_instagram ────────────────────────────────────────────────
+
+
+def _extract_instagram_handle(value: str) -> str | None:
+    """Return the bare handle from a URL or @handle string."""
+    if not value:
+        return None
+    # Strip URL parts: instagram.com/handle or instagram.com/handle/
+    m = re.search(r"instagram\.com/([A-Za-z0-9_.]+)/?", value)
+    if m:
+        return m.group(1)
+    # @handle
+    m = re.match(r"@?([A-Za-z0-9_.]+)$", value.strip())
+    if m:
+        return m.group(1)
+    return None
+
+
+_INSTAGRAM_SYSTEM = """\
+Você é um analista de presença digital. Analise os dados encontrados sobre o perfil do
+Instagram e a Meta Ads Library da empresa. Retorne APENAS JSON válido, sem markdown."""
+
+_INSTAGRAM_USER = """\
+Perfil Instagram: @{handle}
+Empresa: {business_name}
+
+Dados encontrados:
+{search_context}
+
+Extraia o que encontrar nos resultados. Use null para campos não encontrados.
+Retorne JSON com esta estrutura exata:
+{{
+  "followers": <número inteiro ou null>,
+  "posts": <número inteiro ou null>,
+  "lastPostDays": <dias desde o último post (inteiro) ou null>,
+  "frequency": <"ativo" | "irregular" | "abandonado" | null>,
+  "frequencyNote": <"breve descrição" ou null>,
+  "metaAds": {{
+    "hasAds": <true | false | null>,
+    "activeCount": <número inteiro ou null>
+  }}
+}}
+
+Critérios de frequency:
+- "ativo": posts regulares nos últimos 30 dias
+- "irregular": posts esporádicos ou último post entre 31-90 dias
+- "abandonado": sem posts nos últimos 90 dias ou conta claramente inativa
+- null: não foi possível determinar
+
+Para metaAds.hasAds retorne true apenas se encontrar evidência clara de anúncios ativos
+na Meta Ads Library. Se não encontrar referência alguma, retorne null (não false)."""
+
+
+async def enrich_instagram(state: DeepResearchState) -> dict:
+    lead = state.get("lead", {})
+    updates = state.get("updates", {})
+    trace = state.get("_trace")
+
+    # Determine instagram source (newly found or already on lead)
+    instagram_val = updates.get("instagram") or lead.get("instagram")
+    if not instagram_val:
+        return {"instagram_insights": None}
+
+    handle = _extract_instagram_handle(str(instagram_val))
+    if not handle:
+        return {"instagram_insights": None}
+
+    business_name = lead.get("businessName", "")
+    checked_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    queries = [
+        f"site:instagram.com/{handle} seguidores posts",
+        f'"{business_name}" Meta Ads Library anúncios ativos facebook',
     ]
 
-    return {"updates": merged, "new_contacts": valid_contacts}
+    span = trace.span(name="instagram_enrichment", input={"handle": handle}) if trace else None
+    results = await _tavily_search(queries, max_results=5, search_depth="advanced")
+    search_context = _format_tavily_results(results)
+
+    insights: dict | None = None
+    meta_ads_update: dict | None = None
+
+    if search_context.strip():
+        gen = (
+            trace.generation(
+                name="enrich_instagram",
+                model="claude-haiku-4-5-20251001",
+                input=[{"role": "user", "content": _INSTAGRAM_USER}],
+            )
+            if trace else None
+        )
+        try:
+            raw = await _call_claude(
+                system=_INSTAGRAM_SYSTEM,
+                user=_INSTAGRAM_USER.format(
+                    handle=handle,
+                    business_name=business_name,
+                    search_context=search_context[:5000],
+                ),
+                model="claude-haiku-4-5-20251001",
+                max_tokens=512,
+            )
+            text = raw.content[0].text if raw.content else "{}"
+            text = re.sub(r"^```(?:json)?\s*", "", text.strip())
+            text = re.sub(r"\s*```$", "", text.strip())
+            parsed = json.loads(text)
+
+            insights = {
+                k: parsed.get(k)
+                for k in ("followers", "posts", "lastPostDays", "frequency", "frequencyNote")
+            }
+            insights["handle"] = handle
+
+            # Build metaAds update only when we have a definitive answer
+            meta_raw = parsed.get("metaAds") or {}
+            has_ads = meta_raw.get("hasAds")
+            if has_ads is not None:
+                meta_ads_update = {
+                    "hasAds": bool(has_ads),
+                    "activeCount": int(meta_raw.get("activeCount") or 0),
+                    "checkedAt": checked_at,
+                }
+
+            if gen:
+                gen.end(output={"followers": insights.get("followers"), "hasAds": has_ads})
+        except Exception:
+            logger.exception("[DeepResearch] enrich_instagram parse error for @%s", handle)
+            if gen:
+                gen.end(output={"error": "parse_failed"})
+
+    if span:
+        span.end(output={"insights_found": insights is not None})
+
+    logger.info(
+        "[DeepResearch] instagram @%s followers=%s frequency=%s hasAds=%s",
+        handle,
+        insights.get("followers") if insights else None,
+        insights.get("frequency") if insights else None,
+        meta_ads_update.get("hasAds") if meta_ads_update else None,
+    )
+
+    result: dict = {"instagram_insights": insights}
+    if meta_ads_update is not None and _is_empty(lead.get("metaAds")):
+        # Merge into existing updates
+        new_updates = {**updates, "metaAds": meta_ads_update}
+        result["updates"] = new_updates
+    return result
 
 
 # ── Node: generate_summary ─────────────────────────────────────────────────
@@ -369,40 +592,85 @@ Nome: {business_name}
 CNPJ: {cnpj}
 Cidade: {city} / {state}
 
-Campos atualizados ({update_count} encontrados):
+Campos novos preenchidos ({update_count} campos que estavam vazios e foram encontrados):
 {updates_json}
+
+Campos encontrados mas que já tinham valor no CRM (para auditoria):
+{proposed_json}
 
 Novos contatos encontrados ({contact_count}):
 {contacts_json}
+
+Análise do Instagram (@{instagram_handle}):
+{instagram_block}
 
 Campos que permanecem vazios:
 {still_missing}
 
 Escreva um resumo em pt-BR (3-5 parágrafos) cobrindo:
-1. O que foi encontrado e atualizado
+1. O que foi encontrado e preenchido (campos que estavam vazios)
 2. Qualidade e confiabilidade dos dados (mencione se veio do CNPJ oficial)
 3. Destaques sobre a empresa (porte, segmento, presença digital)
-4. Contatos encontrados e seus cargos
-5. Lacunas que permanecem e pontos de atenção para o time comercial"""
+4. Instagram e maturidade digital: seguidores, frequência de posts, anúncios ativos na Meta (se disponível)
+5. Contatos encontrados e seus cargos
+6. Lacunas que permanecem e pontos de atenção para o time comercial"""
+
+
+def _build_instagram_block(insights: dict | None, updates: dict, lead: dict) -> tuple[str, str]:
+    """Return (handle, formatted block) for the summary prompt."""
+    instagram_val = updates.get("instagram") or lead.get("instagram")
+    if not instagram_val:
+        return "N/A", "Nenhum perfil Instagram encontrado."
+
+    handle = _extract_instagram_handle(str(instagram_val)) or str(instagram_val)
+
+    if not insights:
+        return handle, "Perfil encontrado mas não foi possível coletar métricas."
+
+    parts: list[str] = []
+    if insights.get("followers") is not None:
+        parts.append(f"Seguidores: {insights['followers']:,}")
+    if insights.get("posts") is not None:
+        parts.append(f"Posts: {insights['posts']}")
+    if insights.get("frequency"):
+        freq = insights["frequency"].capitalize()
+        note = f" — {insights['frequencyNote']}" if insights.get("frequencyNote") else ""
+        parts.append(f"Frequência: {freq}{note}")
+    if insights.get("lastPostDays") is not None:
+        parts.append(f"Último post: há {insights['lastPostDays']} dias")
+
+    # Meta Ads — read from updates (set by enrich_instagram)
+    meta = updates.get("metaAds")
+    if meta:
+        if meta.get("hasAds"):
+            parts.append(f"Meta Ads: {meta['activeCount']} anúncio(s) ativo(s)")
+        else:
+            parts.append("Meta Ads: sem anúncios ativos encontrados")
+
+    return handle, "\n".join(parts) if parts else "Perfil encontrado mas sem métricas disponíveis."
 
 
 async def generate_summary(state: DeepResearchState) -> dict:
     lead = state.get("lead", {})
     updates = state.get("updates", {})
+    proposed_fields = state.get("proposed_fields", {})
     new_contacts = state.get("new_contacts", [])
     missing = state.get("missing_fields", [])
+    instagram_insights = state.get("instagram_insights")
     trace = state.get("_trace")
 
     # Fields still missing after research
     all_nullable = [
         "registeredName", "companyOwner", "foundationDate", "legalNature",
         "segment", "companySize", "employeesCount", "revenueRange", "description",
-        "website", "email", "phone", "instagram", "linkedin", "facebook", "tiktok",
+        "website", "email", "phone", "whatsapp", "instagram", "linkedin", "facebook", "tiktok",
     ]
     still_missing = [
         f for f in all_nullable
         if _is_empty(lead.get(f)) and _is_empty(updates.get(f))
     ]
+
+    ig_handle, ig_block = _build_instagram_block(instagram_insights, updates, lead)
 
     user = _SUMMARY_USER.format(
         business_name=lead.get("businessName", "N/A"),
@@ -410,9 +678,12 @@ async def generate_summary(state: DeepResearchState) -> dict:
         city=lead.get("city", "N/A"),
         state=lead.get("state", "N/A"),
         update_count=len(updates),
-        updates_json=json.dumps(updates, ensure_ascii=False, indent=2) if updates else "Nenhum campo atualizado.",
+        updates_json=json.dumps(updates, ensure_ascii=False, indent=2) if updates else "Nenhum campo novo preenchido.",
+        proposed_json=json.dumps(proposed_fields, ensure_ascii=False, indent=2) if proposed_fields else "Nenhum.",
         contact_count=len(new_contacts),
         contacts_json=json.dumps(new_contacts, ensure_ascii=False, indent=2) if new_contacts else "Nenhum contato novo.",
+        instagram_handle=ig_handle,
+        instagram_block=ig_block,
         still_missing=", ".join(still_missing) if still_missing else "Nenhum — pesquisa completa!",
     )
 

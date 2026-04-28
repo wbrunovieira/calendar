@@ -20,7 +20,9 @@ class DeepResearchState(TypedDict, total=False):
     web_results: list[dict]     # Tavily combined results
 
     # Extracted & output
-    updates: dict               # fields to patch on lead
+    updates: dict               # fields to patch on lead (only truly empty fields)
+    proposed_fields: dict       # fields agent found but lead already had a value (for audit)
     new_contacts: list[dict]
+    instagram_insights: dict | None   # followers, posts, frequency, meta ads — for summary only
     summary: str
     error: str | None
