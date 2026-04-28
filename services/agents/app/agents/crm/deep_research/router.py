@@ -77,6 +77,8 @@ class DeepResearchRequest(BaseModel):
     requesterId: str
     lead: LeadInput
     contacts: list[ContactInput] = []
+    previousSummary: str | None = None
+    previousResearchAt: str | None = None
 
 
 # ── Response model ────────────────────────────────────────────────────────
@@ -99,13 +101,17 @@ async def _run_deep_research(
     lead: dict,
     contacts: list[dict],
     trace_id: str | None,
+    previous_summary: str | None = None,
+    previous_research_at: str | None = None,
 ) -> None:
+    is_reresearch = bool(previous_summary)
     trace: Any = None
     if trace_id and langfuse.enabled:
         trace = langfuse.trace(
             name="crm-lead-deep-research",
             id=trace_id,
             input={"leadId": lead_id, "businessName": lead.get("businessName")},
+            metadata={"reresearch": is_reresearch},
         )
 
     graph = _get_graph()
@@ -114,6 +120,8 @@ async def _run_deep_research(
         "requester_id": requester_id,
         "lead": lead,
         "contacts": contacts,
+        "previous_summary": previous_summary,
+        "previous_research_at": previous_research_at,
         "_trace": trace,
     }
 
@@ -197,10 +205,13 @@ async def handle_lead_deep_research(
         req.lead.model_dump(),
         [c.model_dump() for c in req.contacts],
         trace_id,
+        req.previousSummary,
+        req.previousResearchAt,
     )
 
+    mode = "Re-pesquisa" if req.previousSummary else "Pesquisa aprofundada"
     return DeepResearchResponse(
         status="accepted",
         jobId=job_id,
-        reply=f"Pesquisa aprofundada iniciada para \"{req.lead.businessName}\". O CRM será notificado ao concluir.",
+        reply=f"{mode} iniciada para \"{req.lead.businessName}\". O CRM será notificado ao concluir.",
     )

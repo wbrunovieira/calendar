@@ -139,6 +139,106 @@ def _extract_cnpj_updates(data: dict, lead: dict) -> dict:
     return updates
 
 
+# ── Node: assess_previous_research ────────────────────────────────────────
+
+
+_ASSESS_SYSTEM = """\
+Você é um analista de CRM. Analise o resumo de uma pesquisa anterior sobre um lead
+e decida quais campos ainda precisam de pesquisa e quais podem ser ignorados.
+Retorne APENAS JSON válido, sem markdown."""
+
+_ASSESS_USER = """\
+Lead atual (campos com valor = já preenchidos no CRM):
+{lead_json}
+
+Data da pesquisa anterior: {previous_research_at}
+Resumo da pesquisa anterior:
+{previous_summary}
+
+Com base no que o resumo anterior JÁ confirmou e no estado atual do lead:
+1. Liste campos que ainda estão vazios E que a pesquisa anterior NÃO conseguiu encontrar
+   → devem ser re-pesquisados (podem ter info nova desde {previous_research_at})
+2. Liste campos que o resumo anterior JÁ verificou com sucesso
+   → podem ser ignorados nesta rodada
+
+Retorne JSON:
+{{
+  "skip_categories": ["cnpj"|"web"|"instagram"|"linkedin"|"social"|"contacts"],
+  "extra_queries": ["query focada em info nova 1", ...],
+  "research_note": "contexto em 1-2 frases para guiar esta re-pesquisa"
+}}
+
+Regras:
+- Coloque em skip_categories APENAS categorias cujos campos já estão preenchidos
+  E foram confirmados no resumo anterior
+- extra_queries deve ter no máximo 3 queries adicionais focadas em info que pode
+  ter surgido DESDE {previous_research_at} (ex: novos produtos, mudança de endereço)
+- Se nenhum campo relevante estiver vazio, retorne skip_categories com todas as
+  categorias e extra_queries vazio"""
+
+
+async def assess_previous_research(state: DeepResearchState) -> dict:
+    lead = state.get("lead", {})
+    previous_summary = state.get("previous_summary") or ""
+    previous_research_at = state.get("previous_research_at") or "data desconhecida"
+    trace = state.get("_trace")
+
+    # Only show filled fields to the LLM (empty ones are what we need to find)
+    lead_for_prompt = {k: v for k, v in lead.items() if not _is_empty(v)}
+
+    gen = (
+        trace.generation(
+            name="assess_previous_research",
+            model="claude-haiku-4-5-20251001",
+            input=[{"role": "user", "content": _ASSESS_USER}],
+        )
+        if trace else None
+    )
+
+    skip_categories: list[str] = []
+    extra_queries: list[str] = []
+    research_note: str | None = None
+
+    try:
+        raw = await _call_claude(
+            system=_ASSESS_SYSTEM,
+            user=_ASSESS_USER.format(
+                lead_json=json.dumps(lead_for_prompt, ensure_ascii=False, indent=2),
+                previous_summary=previous_summary[:4000],
+                previous_research_at=previous_research_at,
+            ),
+            model="claude-haiku-4-5-20251001",
+            max_tokens=512,
+        )
+        text = raw.content[0].text if raw.content else "{}"
+        text = re.sub(r"^```(?:json)?\s*", "", text.strip())
+        text = re.sub(r"\s*```$", "", text.strip())
+        parsed = json.loads(text)
+
+        skip_categories = parsed.get("skip_categories") or []
+        extra_queries = parsed.get("extra_queries") or []
+        research_note = parsed.get("research_note")
+
+        if gen:
+            gen.end(output={"skip": skip_categories, "extra_queries": len(extra_queries)})
+
+    except Exception:
+        logger.exception("[DeepResearch] assess_previous_research error — proceeding with full research")
+        if gen:
+            gen.end(output={"error": "parse_failed"})
+
+    logger.info(
+        "[DeepResearch] re-research lead=%s skip=%s extra_queries=%d",
+        state.get("lead_id"), skip_categories, len(extra_queries),
+    )
+
+    return {
+        "_skip_categories": skip_categories,
+        "_extra_queries": extra_queries,
+        "research_note": research_note,
+    }
+
+
 # ── Node: plan_research ────────────────────────────────────────────────────
 
 
@@ -147,30 +247,32 @@ async def plan_research(state: DeepResearchState) -> dict:
     contacts = state.get("contacts", [])
     name = lead.get("businessName", "") or lead.get("registeredName", "")
     cnpj = lead.get("companyRegistrationID", "")
+    skip = set(state.get("_skip_categories") or [])
+    extra_queries = list(state.get("_extra_queries") or [])
 
     missing: list[str] = []
     queries: list[str] = []
 
     # CNPJ data (legal, fiscal, address)
     legal_fields = ["legalNature", "companyOwner", "foundationDate", "companySize"]
-    if cnpj and any(_is_empty(lead.get(f)) for f in legal_fields):
+    if "cnpj" not in skip and cnpj and any(_is_empty(lead.get(f)) for f in legal_fields):
         missing.append("cnpj")
 
     # Website / description / services
     web_fields = ["website", "description", "segment"]
-    if name and any(_is_empty(lead.get(f)) for f in web_fields):
+    if "web" not in skip and name and any(_is_empty(lead.get(f)) for f in web_fields):
         missing.append("web")
         queries.append(f'"{name}" site oficial serviços')
         if lead.get("city"):
             queries.append(f'"{name}" {lead["city"]} empresa')
 
     # Instagram
-    if _is_empty(lead.get("instagram")) and name:
+    if "instagram" not in skip and _is_empty(lead.get("instagram")) and name:
         missing.append("instagram")
         queries.append(f'"{name}" instagram perfil')
 
     # LinkedIn
-    if _is_empty(lead.get("linkedin")) and name:
+    if "linkedin" not in skip and _is_empty(lead.get("linkedin")) and name:
         missing.append("linkedin")
         queries.append(f'"{name}" linkedin empresa')
 
@@ -179,29 +281,35 @@ async def plan_research(state: DeepResearchState) -> dict:
         s for s in ["facebook", "tiktok"]
         if _is_empty(lead.get(s)) and name
     ]
-    if social_missing:
+    if "social" not in skip and social_missing:
         missing.append("social")
         queries.append(f'"{name}" facebook tiktok redes sociais')
 
     # Contacts: enrich existing contacts missing email/phone, or discover new ones
-    if contacts:
-        incomplete = [c for c in contacts if _is_empty(c.get("email")) or _is_empty(c.get("phone"))]
-        if incomplete:
+    if "contacts" not in skip:
+        if contacts:
+            incomplete = [c for c in contacts if _is_empty(c.get("email")) or _is_empty(c.get("phone"))]
+            if incomplete:
+                missing.append("contacts")
+                for c in incomplete[:3]:
+                    cname = (c.get("name") or "").strip()
+                    if cname:
+                        queries.append(f'"{name}" "{cname}" email telefone linkedin contato')
+                queries.append(f'"{name}" contato email telefone')
+        elif name:
             missing.append("contacts")
-            for c in incomplete[:3]:
-                cname = (c.get("name") or "").strip()
-                if cname:
-                    queries.append(f'"{name}" "{cname}" email telefone linkedin contato')
-            queries.append(f'"{name}" contato email telefone')
-    elif name:
-        missing.append("contacts")
-        queries.append(f'"{name}" contato email telefone diretor gerente')
-        if lead.get("website"):
-            queries.append(f'site:{lead["website"]} contato equipe')
+            queries.append(f'"{name}" contato email telefone diretor gerente')
+            if lead.get("website"):
+                queries.append(f'site:{lead["website"]} contato equipe')
+
+    # Inject extra queries from assess_previous_research (info nova desde a última pesquisa)
+    queries.extend(extra_queries)
+    if extra_queries and not missing:
+        missing.append("web")  # ensure run_searches executes web path
 
     logger.info(
-        "[DeepResearch] lead=%s missing=%s queries=%d",
-        state.get("lead_id"), missing, len(queries),
+        "[DeepResearch] lead=%s missing=%s queries=%d skipped=%s",
+        state.get("lead_id"), missing, len(queries), list(skip),
     )
 
     return {"missing_fields": missing, "search_queries": queries}
@@ -607,13 +715,16 @@ Análise do Instagram (@{instagram_handle}):
 Campos que permanecem vazios:
 {still_missing}
 
+{previous_context}
+
 Escreva um resumo em pt-BR (3-5 parágrafos) cobrindo:
 1. O que foi encontrado e preenchido (campos que estavam vazios)
 2. Qualidade e confiabilidade dos dados (mencione se veio do CNPJ oficial)
 3. Destaques sobre a empresa (porte, segmento, presença digital)
 4. Instagram e maturidade digital: seguidores, frequência de posts, anúncios ativos na Meta (se disponível)
 5. Contatos encontrados e seus cargos
-6. Lacunas que permanecem e pontos de atenção para o time comercial"""
+6. Lacunas que permanecem e pontos de atenção para o time comercial
+{reresearch_instruction}"""
 
 
 def _build_instagram_block(insights: dict | None, updates: dict, lead: dict) -> tuple[str, str]:
@@ -657,6 +768,9 @@ async def generate_summary(state: DeepResearchState) -> dict:
     new_contacts = state.get("new_contacts", [])
     missing = state.get("missing_fields", [])
     instagram_insights = state.get("instagram_insights")
+    previous_summary = state.get("previous_summary")
+    previous_research_at = state.get("previous_research_at")
+    research_note = state.get("research_note")
     trace = state.get("_trace")
 
     # Fields still missing after research
@@ -672,6 +786,24 @@ async def generate_summary(state: DeepResearchState) -> dict:
 
     ig_handle, ig_block = _build_instagram_block(instagram_insights, updates, lead)
 
+    # Build previous research context block
+    if previous_summary:
+        previous_context = (
+            f"Resumo da pesquisa anterior ({previous_research_at or 'data desconhecida'}):\n"
+            f"{previous_summary[:2000]}"
+        )
+        reresearch_instruction = (
+            "IMPORTANTE: Este é um resumo de RE-PESQUISA. Escreva um resumo COMPLETO e ATUALIZADO "
+            "que incorpore tanto o que já era conhecido (pesquisa anterior) quanto os novos achados desta rodada. "
+            "O novo resumo substitui o anterior — deve ser autocontido. "
+            "Se nenhuma informação nova foi encontrada, diga explicitamente: "
+            f"\"Re-pesquisa realizada em {previous_research_at or 'hoje'}. "
+            "Nenhuma informação nova identificada além do já registrado.\""
+        )
+    else:
+        previous_context = ""
+        reresearch_instruction = ""
+
     user = _SUMMARY_USER.format(
         business_name=lead.get("businessName", "N/A"),
         cnpj=lead.get("companyRegistrationID", "N/A"),
@@ -685,6 +817,8 @@ async def generate_summary(state: DeepResearchState) -> dict:
         instagram_handle=ig_handle,
         instagram_block=ig_block,
         still_missing=", ".join(still_missing) if still_missing else "Nenhum — pesquisa completa!",
+        previous_context=previous_context,
+        reresearch_instruction=reresearch_instruction,
     )
 
     gen = (

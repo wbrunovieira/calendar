@@ -9,11 +9,16 @@ class DeepResearchState(TypedDict, total=False):
     requester_id: str
     lead: dict          # full lead data as received from CRM
     contacts: list[dict]
+    previous_summary: str | None      # summary from a prior research run (re-research mode)
+    previous_research_at: str | None  # ISO timestamp of the prior run
     _trace: Any
 
     # Research plan
     missing_fields: list[str]   # categories decided for research
     search_queries: list[str]   # Tavily queries to run
+    research_note: str | None   # context note from assess_previous_research
+    _skip_categories: list[str] # categories to skip (set by assess_previous_research)
+    _extra_queries: list[str]   # extra queries from assess_previous_research
 
     # Raw results
     cnpj_raw: dict | None       # BrasilAPI response
