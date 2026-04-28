@@ -49,7 +49,9 @@ app.add_middleware(
 from app.health import router as health_router  # noqa: E402
 from app.agents.finances.router import router as transaction_router  # noqa: E402
 from app.agents.crm.router import router as crm_router  # noqa: E402
+from app.agents.crm.deep_research.router import router as deep_research_router  # noqa: E402
 
 app.include_router(health_router)
 app.include_router(transaction_router)
 app.include_router(crm_router)
+app.include_router(deep_research_router)

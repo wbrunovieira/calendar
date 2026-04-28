@@ -93,3 +93,14 @@ async def send_webhook(payload: dict) -> None:
             resp.raise_for_status()
         except Exception:
             logger.warning("Webhook callback failed (CRM may not have the endpoint yet): %s", url)
+
+
+async def send_deep_research_webhook(payload: dict) -> None:
+    """POST /api/webhooks/lead-deep-research — Notify CRM that deep research is done."""
+    url = f"{settings.crm_base_url}/api/webhooks/lead-deep-research"
+    async with httpx.AsyncClient(timeout=10) as client:
+        try:
+            resp = await client.post(url, json=payload, headers=_auth_headers())
+            resp.raise_for_status()
+        except Exception:
+            logger.warning("Deep research webhook failed (CRM may not have the endpoint yet): %s", url)
