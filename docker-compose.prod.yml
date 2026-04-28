@@ -111,9 +111,9 @@ services:
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on:
-      langfuse-web:
-        condition: service_healthy
+    # depends_on:
+    #   langfuse-web:
+    #     condition: service_healthy
     networks:
       - calendar-network
     restart: unless-stopped
@@ -121,6 +121,7 @@ services:
       resources:
         limits:
           memory: 200M
+          cpus: "2.0"
 
   magic-formula:
     build:
@@ -240,6 +241,8 @@ services:
           memory: 100M
 
   # ── Langfuse v3 ─────────────────────────────────────────────
+  # Langfuse desabilitado temporariamente para reduzir consumo de recursos.
+  # Para reativar: mudar restart para "unless-stopped" e subir com docker-compose up -d
 
   langfuse-postgres:
     image: postgres:17-alpine
@@ -260,7 +263,7 @@ services:
       retries: 5
     networks:
       - calendar-network
-    restart: unless-stopped
+    restart: "no"
     deploy:
       resources:
         limits:
@@ -291,11 +294,12 @@ services:
       retries: 5
     networks:
       - calendar-network
-    restart: unless-stopped
+    restart: "no"
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 1536M
+          cpus: "1.5"
 
   langfuse-minio:
     image: cgr.dev/chainguard/minio
@@ -317,7 +321,7 @@ services:
       retries: 5
     networks:
       - calendar-network
-    restart: unless-stopped
+    restart: "no"
     deploy:
       resources:
         limits:
@@ -356,7 +360,7 @@ services:
       retries: 5
     networks:
       - calendar-network
-    restart: unless-stopped
+    restart: "no"
     deploy:
       resources:
         limits:
@@ -409,7 +413,7 @@ services:
       retries: 10
     networks:
       - calendar-network
-    restart: unless-stopped
+    restart: "no"
     deploy:
       resources:
         limits:
@@ -452,7 +456,7 @@ services:
         condition: service_healthy
     networks:
       - calendar-network
-    restart: unless-stopped
+    restart: "no"
     deploy:
       resources:
         limits:
