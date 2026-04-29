@@ -859,11 +859,24 @@ async def plan_focused_research(state: DeepResearchState) -> dict:
             f'"{name}" email contato fale conosco',
             f'"{name}" {city} email comercial' if city else f'"{name}" email',
         ]
+        # Use website domain for direct contact page search
+        website = lead.get("website") or ""
+        if website and not _is_link_aggregator(website):
+            domain = re.sub(r"https?://(www\.)?", "", website).rstrip("/").split("/")[0]
+            if domain:
+                queries.insert(0, f'site:{domain} contato email OR "fale conosco"')
+        elif name:
+            queries.append(f'"{name}" site:.com.br contato email -instagram.com -facebook.com')
     elif focus in ("phone", "phone2", "whatsapp"):
         queries = [
             f'"{name}" telefone whatsapp contato',
             f'"{name}" {city} telefone comercial' if city else f'"{name}" telefone DDD',
         ]
+        website = lead.get("website") or ""
+        if website and not _is_link_aggregator(website):
+            domain = re.sub(r"https?://(www\.)?", "", website).rstrip("/").split("/")[0]
+            if domain:
+                queries.insert(0, f'site:{domain} telefone contato OR "fale conosco"')
     elif focus == "companyRegistrationID":
         queries = [
             f'"{name}" CNPJ site:cnpj.biz OR site:casadosdados.com.br',
@@ -1001,9 +1014,9 @@ async def extract_focused_update(state: DeepResearchState) -> dict:
 
         if value and confidence in ("alta", "media"):
             forced_updates[focus] = value
-            logger.info("[DeepResearch] focused field=%s value=%s confidence=%s", focus, str(value)[:60], confidence)
+            logger.info("[DeepResearch] focused field=%s value=%s confidence=%s note=%s", focus, str(value)[:80], confidence, note)
         else:
-            logger.info("[DeepResearch] focused field=%s not found (confidence=%s)", focus, confidence)
+            logger.info("[DeepResearch] focused field=%s not found confidence=%s rejected_value=%s note=%s", focus, confidence, str(value)[:80] if value else "null", note)
 
         if gen:
             gen.end(output={"found": bool(value), "confidence": confidence})
