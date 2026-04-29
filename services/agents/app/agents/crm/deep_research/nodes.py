@@ -5,6 +5,7 @@ import logging
 import re
 import unicodedata
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 import httpx
 
@@ -77,6 +78,76 @@ def _extract_email_prefix(business_name: str) -> str | None:
     name = re.sub(r"[^\w\s]", "", _to_domain_slug(business_name).lower())
     words = [w for w in name.split() if len(w) > 2 and w not in _NAME_STOP_WORDS]
     return words[0] if words else None
+
+
+# Brazilian DDD area codes → state — used to detect city mismatch without Tavily
+_DDD_TO_STATE: dict[str, str] = {
+    **{str(n): "SP" for n in [11, 12, 13, 14, 15, 16, 17, 18, 19]},
+    **{str(n): "RJ" for n in [21, 22, 24]},
+    "27": "ES", "28": "ES",
+    **{str(n): "MG" for n in [31, 32, 33, 34, 35, 37, 38]},
+    **{str(n): "PR" for n in [41, 42, 43, 44, 45, 46]},
+    **{str(n): "SC" for n in [47, 48, 49]},
+    **{str(n): "RS" for n in [51, 53, 54, 55]},
+    "61": "DF", "62": "GO", "64": "GO", "63": "TO",
+    "65": "MT", "66": "MT", "67": "MS",
+    "68": "AC", "69": "RO",
+    **{str(n): "BA" for n in [71, 73, 74, 75, 77]},
+    "79": "SE",
+    "81": "PE", "87": "PE",
+    "82": "AL", "83": "PB", "84": "RN",
+    "85": "CE", "88": "CE",
+    "86": "PI", "89": "PI",
+    "91": "PA", "93": "PA", "94": "PA",
+    "92": "AM", "97": "AM",
+    "95": "RR", "96": "AP",
+    "98": "MA", "99": "MA",
+}
+
+_HTTP_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; CRM-research-bot/1.0)"}
+
+
+async def _fetch_website_text(url: str) -> str | None:
+    """Direct HTTP fetch for website validation — zero Tavily credit.
+    Tries the given URL first, then /contato, then homepage."""
+    candidates = [url]
+    parsed = urlparse(url)
+    base = f"{parsed.scheme}://{parsed.netloc}/"
+    if not url.rstrip("/").endswith(parsed.netloc.rstrip("/")):
+        candidates.append(base)
+    # Also try contact page
+    candidates += [base.rstrip("/") + "/contato", base.rstrip("/") + "/fale-conosco"]
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            for candidate in candidates[:3]:
+                try:
+                    resp = await client.get(candidate, headers=_HTTP_HEADERS)
+                    if resp.status_code == 200:
+                        html = resp.text[:30000]
+                        text = re.sub(r"<[^>]+>", " ", html)
+                        text = re.sub(r"\s+", " ", text).strip()
+                        return text[:6000]
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    logger.warning("[DeepResearch] _fetch_website_text failed for %s", url)
+    return None
+
+
+def _detect_website_city_mismatch(site_text: str, lead_state: str) -> tuple[str | None, str | None]:
+    """Return (ddd_found, site_state) if phone DDD implies a different state than the lead.
+    Returns (None, None) if no mismatch detected or can't determine."""
+    if not site_text or not lead_state:
+        return None, None
+    ddds = re.findall(r'\((\d{2})\)', site_text)
+    if not ddds:
+        return None, None
+    ddd = ddds[0]
+    site_state = _DDD_TO_STATE.get(ddd)
+    if site_state and site_state.upper() != lead_state.upper():
+        return ddd, site_state
+    return None, None
 
 
 def _clean_cnpj(cnpj: str) -> str:
@@ -379,13 +450,6 @@ async def plan_research(state: DeepResearchState) -> dict:
             if city else
             f'"{name}" email whatsapp contato'
         )
-        # Website city validation: when site is already set, confirm it belongs to THIS company/city
-        # before extract_updates uses its domain for email candidates
-        _existing_site = lead.get("website") or ""
-        if _existing_site and not _is_link_aggregator(_existing_site) and city:
-            _site_domain = re.sub(r"https?://(www\.)?", "", _existing_site).rstrip("/").split("/")[0]
-            if _site_domain:
-                queries.append(f'site:{_site_domain} "{city}" OR telefone endereço')
 
     # Instagram — always include city to avoid false match with same-named national chains
     if "instagram" not in skip and _is_empty(lead.get("instagram")) and name:
@@ -1006,17 +1070,12 @@ async def plan_focused_research(state: DeepResearchState) -> dict:
             f'site:linkedin.com/company "{name}"',
         ]
     elif focus == "website":
-        queries = []
-        existing_website = lead.get("website") or ""
-        if existing_website and not _is_link_aggregator(existing_website):
-            wdomain = re.sub(r"https?://(www\.)?", "", existing_website).rstrip("/").split("/")[0]
-            if wdomain:
-                # Validate existing site: fetch contact page to check city/DDD/phone
-                queries.append(f'site:{wdomain} contato telefone endereço')
-        # Search for the correct website for this company/city
-        queries += [
-            f'"{name}" site oficial',
+        # Existing site validation is done via direct HTTP fetch in extract_focused_update (no Tavily credit).
+        # Queries here focus on finding the CORRECT site for this company/city.
+        queries = [
+            f'"{name}" {city} site oficial site:.com.br' if city else f'"{name}" site oficial',
             f'"{name}" {city} site:.com.br -linktr.ee -instagram.com -facebook.com' if city else f'"{name}" site:.com.br -linktr.ee',
+            f'site:guiafacil.com "{name}" {city}' if city else f'site:guiafacil.com "{name}"',
         ]
     elif focus == "email":
         queries: list[str] = []
@@ -1262,19 +1321,41 @@ async def extract_focused_update(state: DeepResearchState) -> dict:
     instruction_parts = []
     if instruction:
         instruction_parts.append(f"Instrução adicional: {instruction}")
-    # For website: validate existing site belongs to this company's city
+    # For website: validate existing site via direct HTTP fetch (no Tavily credit)
     if focus == "website":
         _existing_site = lead.get("website") or ""
         _lead_city = lead.get("city") or ""
-        if _existing_site and not _is_link_aggregator(_existing_site) and _lead_city:
+        _lead_state = lead.get("state") or ""
+        if _existing_site and not _is_link_aggregator(_existing_site):
             _wdomain = re.sub(r"https?://(www\.)?", "", _existing_site).rstrip("/").split("/")[0]
-            if _wdomain:
+            site_text = await _fetch_website_text(_existing_site)
+            if site_text:
+                # Prepend real site content so LLM sees actual address/phone
+                search_context = (
+                    f"[CONTEÚDO DIRETO DO SITE {_existing_site} — via fetch]\n{site_text}\n\n---\n\n"
+                    + search_context
+                )
+                # Programmatic DDD check — definitive, no LLM required
+                mismatch_ddd, site_state = _detect_website_city_mismatch(site_text, _lead_state)
+                if mismatch_ddd:
+                    instruction_parts.append(
+                        f"ALERTA AUTOMÁTICO DE SITE INCORRETO: O site '{_existing_site}' exibe telefone com DDD {mismatch_ddd} "
+                        f"(estado {site_state}), mas este lead é de {_lead_city}/{_lead_state}. "
+                        f"Este site PERTENCE A OUTRA EMPRESA em outro estado. "
+                        f"Retorne value: null, confidence: 'alta', e em 'note' descreva o problema. "
+                        f"Não use este domínio para email nem como site do lead."
+                    )
+                elif _lead_city:
+                    instruction_parts.append(
+                        f"VALIDAÇÃO DO SITE ATUAL: O site cadastrado é '{_existing_site}'. "
+                        f"Verifique no conteúdo acima se este site menciona '{_lead_city}' ou DDD/telefone compatível. "
+                        f"Se o site pertence a outra cidade, retorne value: null e explique em 'note'. "
+                        f"Se encontrar o site CORRETO para {_lead_city}, retorne-o no value."
+                    )
+            elif _wdomain:
                 instruction_parts.append(
-                    f"VALIDAÇÃO DO SITE ATUAL: O site cadastrado é '{_existing_site}'. "
-                    f"Verifique nos resultados se esse site menciona '{_lead_city}', DDD ou telefone compatível com esta cidade. "
-                    f"Se o site parece pertencer a OUTRA cidade (ex: endereço ou DDD diferente), retorne value: null "
-                    f"e escreva em 'note' um alerta claro, ex: 'Site {_wdomain} parece ser de outra cidade — site incorreto cadastrado'. "
-                    f"Se encontrar o site CORRETO desta empresa em {_lead_city}, retorne-o no value."
+                    f"O site cadastrado '{_existing_site}' não respondeu ao fetch direto. "
+                    f"Verifique nos resultados de busca se é o site correto para {_lead_city}."
                 )
     # For email: warn LLM if existing email has mismatched domain
     if focus == "email":
