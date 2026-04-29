@@ -7,6 +7,7 @@ from app.agents.crm.deep_research.nodes import (
     enrich_instagram,
     extract_focused_update,
     extract_updates,
+    fetch_cnpj_if_discovered,
     generate_focused_summary,
     generate_summary,
     plan_focused_research,
@@ -43,7 +44,7 @@ def _after_searches(state: DeepResearchState) -> str:
     return "extract_updates"
 
 
-def _after_extract(state: DeepResearchState) -> str:
+def _after_fetch_cnpj(state: DeepResearchState) -> str:
     updates = state.get("updates", {})
     forced_updates = state.get("forced_updates") or {}
     lead = state.get("lead", {})
@@ -76,6 +77,7 @@ def build_deep_research_graph():
     builder.add_node("plan_research", plan_research)
     builder.add_node("run_searches", run_searches)
     builder.add_node("extract_updates", extract_updates)
+    builder.add_node("fetch_cnpj_if_discovered", fetch_cnpj_if_discovered)
     builder.add_node("enrich_instagram", enrich_instagram)
     builder.add_node("generate_summary", generate_summary)
 
@@ -89,7 +91,8 @@ def build_deep_research_graph():
     builder.add_edge("assess_previous_research", "plan_research")
     builder.add_conditional_edges("plan_research", _after_plan)
     builder.add_conditional_edges("run_searches", _after_searches)
-    builder.add_conditional_edges("extract_updates", _after_extract)
+    builder.add_edge("extract_updates", "fetch_cnpj_if_discovered")
+    builder.add_conditional_edges("fetch_cnpj_if_discovered", _after_fetch_cnpj)
     builder.add_edge("enrich_instagram", "generate_summary")
     builder.add_edge("generate_summary", END)
 

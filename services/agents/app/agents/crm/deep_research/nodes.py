@@ -171,15 +171,27 @@ def _extract_cnpj_updates(data: dict, lead: dict) -> dict:
         if val:
             updates["phone"] = val
 
-    # simplesNacional / isMei
-    simples = data.get("simples") or {}
-    if lead.get("simplesNacional") is None and simples.get("optante") is not None:
-        updates["simplesNacional"] = simples["optante"]
+    # simplesNacional — BrasilAPI returns opcao_pelo_simples (bool) directly
+    if lead.get("simplesNacional") is None:
+        simples_val = data.get("opcao_pelo_simples")
+        if simples_val is None:
+            simples_val = (data.get("simples") or {}).get("optante")
+        if simples_val is not None:
+            updates["simplesNacional"] = bool(simples_val)
 
+    # isMei — BrasilAPI returns opcao_pelo_mei (bool) directly
     if lead.get("isMei") is None:
-        mei = data.get("mei") or {}
-        if mei.get("optante") is not None:
-            updates["isMei"] = mei["optante"]
+        mei_val = data.get("opcao_pelo_mei")
+        if mei_val is None:
+            mei_val = (data.get("mei") or {}).get("optante")
+        if mei_val is not None:
+            updates["isMei"] = bool(mei_val)
+
+    # capitalSocial
+    if not lead.get("capitalSocial"):
+        cap = data.get("capital_social")
+        if cap:
+            updates["capitalSocial"] = cap
 
     return updates
 
@@ -324,6 +336,13 @@ async def plan_research(state: DeepResearchState) -> dict:
     legal_fields = ["legalNature", "companyOwner", "foundationDate", "companySize"]
     if "cnpj" not in skip and cnpj and any(_is_empty(lead.get(f)) for f in legal_fields):
         missing.append("cnpj")
+    elif "cnpj" not in skip and not cnpj and name and any(_is_empty(lead.get(f)) for f in legal_fields):
+        # CNPJ unknown — add discovery queries so LLM can extract it from web results
+        missing.append("cnpj_discover")
+        city = lead.get("city", "")
+        queries.insert(0, f'"{name}" CNPJ site:casadosdados.com.br OR site:cnpj.biz')
+        if city:
+            queries.insert(1, f'"{name}" {city} CNPJ razão social')
 
     # Website / description / services
     web_fields = ["website", "description", "segment"]
@@ -450,6 +469,7 @@ Resultados de busca:
 Extraia os campos ausentes no lead usando os resultados de busca.
 Retorne um objeto JSON com APENAS os campos encontrados, usando estas chaves exatas:
 {{
+  "companyRegistrationID": "CNPJ no formato XX.XXX.XXX/XXXX-XX — só inclua se encontrado com certeza",
   "registeredName": "razão social",
   "companyOwner": "nome do sócio/dono principal",
   "foundationDate": "data no formato YYYY-MM-DD ou DD/MM/YYYY",
@@ -624,6 +644,37 @@ async def extract_updates(state: DeepResearchState) -> dict:
     if proposed:
         result["proposed_fields"] = proposed
     return result
+
+
+# ── Node: fetch_cnpj_if_discovered ───────────────────────────────────────
+
+
+async def fetch_cnpj_if_discovered(state: DeepResearchState) -> dict:
+    """If the LLM found a CNPJ in web results that wasn't in the lead, fetch BrasilAPI now."""
+    if state.get("cnpj_raw"):
+        return {}  # Already have CNPJ data from run_searches
+
+    updates = state.get("updates", {})
+    lead = state.get("lead", {})
+    discovered = updates.get("companyRegistrationID") or ""
+    if not discovered:
+        return {}
+
+    data = await _fetch_cnpj(discovered)
+    if not data:
+        return {}
+
+    cnpj_updates = _extract_cnpj_updates(data, lead)
+    # Merge: BrasilAPI as base, then existing LLM updates take precedence
+    merged_updates = {**cnpj_updates, **updates}
+
+    # Also extract QSA contacts if none exist yet
+    new_contacts = state.get("new_contacts") or []
+    if not new_contacts:
+        new_contacts = _extract_cnpj_contacts(data)
+
+    logger.info("[DeepResearch] CNPJ %s discovered via web — applied legal data + %d QSA contacts", discovered, len(new_contacts))
+    return {"cnpj_raw": data, "updates": merged_updates, "new_contacts": new_contacts}
 
 
 # ── Node: enrich_instagram ────────────────────────────────────────────────
@@ -1199,6 +1250,19 @@ async def extract_focused_update(state: DeepResearchState) -> dict:
         logger.exception("[DeepResearch] extract_focused_update error for field=%s", focus)
         if gen:
             gen.end(output={"error": "parse_failed"})
+
+    # Special case: CNPJ found — immediately fetch BrasilAPI and populate all legal fields
+    if focus == "companyRegistrationID" and forced_updates.get("companyRegistrationID"):
+        cnpj_data = await _fetch_cnpj(forced_updates["companyRegistrationID"])
+        if cnpj_data:
+            legal_updates = _extract_cnpj_updates(cnpj_data, lead)
+            forced_updates.update(legal_updates)
+            qsa_contacts = _extract_cnpj_contacts(cnpj_data)
+            logger.info(
+                "[DeepResearch] CNPJ %s found via focused search — applied %d legal fields + %d QSA contacts",
+                forced_updates["companyRegistrationID"], len(legal_updates), len(qsa_contacts),
+            )
+            return {"forced_updates": forced_updates, "new_contacts": qsa_contacts, "cnpj_raw": cnpj_data}
 
     return {"forced_updates": forced_updates, "new_contacts": []}
 
