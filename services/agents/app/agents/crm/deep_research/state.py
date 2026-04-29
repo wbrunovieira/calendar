@@ -11,6 +11,8 @@ class DeepResearchState(TypedDict, total=False):
     contacts: list[dict]
     previous_summary: str | None      # summary from a prior research run (re-research mode)
     previous_research_at: str | None  # ISO timestamp of the prior run
+    focus_field: str | None           # focused research mode: target field
+    custom_instruction: str | None    # extra instruction for focused mode
     _trace: Any
 
     # Research plan
@@ -26,6 +28,7 @@ class DeepResearchState(TypedDict, total=False):
 
     # Extracted & output
     updates: dict               # fields to patch on lead (only truly empty fields)
+    forced_updates: dict        # focused mode: always overwrites regardless of existing value
     proposed_fields: dict       # fields agent found but lead already had a value (for audit)
     new_contacts: list[dict]
     instagram_insights: dict | None   # followers, posts, frequency, meta ads — for summary only

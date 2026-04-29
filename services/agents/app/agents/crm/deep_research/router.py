@@ -79,6 +79,8 @@ class DeepResearchRequest(BaseModel):
     contacts: list[ContactInput] = []
     previousSummary: str | None = None
     previousResearchAt: str | None = None
+    focusField: str | None = None
+    customInstruction: str | None = None
 
 
 # ── Response model ────────────────────────────────────────────────────────
@@ -103,15 +105,17 @@ async def _run_deep_research(
     trace_id: str | None,
     previous_summary: str | None = None,
     previous_research_at: str | None = None,
+    focus_field: str | None = None,
+    custom_instruction: str | None = None,
 ) -> None:
-    is_reresearch = bool(previous_summary)
+    mode = "focused" if focus_field else ("reresearch" if previous_summary else "full")
     trace: Any = None
     if trace_id and langfuse.enabled:
         trace = langfuse.trace(
             name="crm-lead-deep-research",
             id=trace_id,
             input={"leadId": lead_id, "businessName": lead.get("businessName")},
-            metadata={"reresearch": is_reresearch},
+            metadata={"mode": mode, "focusField": focus_field},
         )
 
     graph = _get_graph()
@@ -122,6 +126,8 @@ async def _run_deep_research(
         "contacts": contacts,
         "previous_summary": previous_summary,
         "previous_research_at": previous_research_at,
+        "focus_field": focus_field,
+        "custom_instruction": custom_instruction,
         "_trace": trace,
     }
 
@@ -137,6 +143,7 @@ async def _run_deep_research(
             "leadId": lead_id,
             "status": "error",
             "updates": {},
+            "forcedUpdates": {},
             "proposedFields": {},
             "newContacts": [],
             "summary": "Falha inesperada na execução da pesquisa.",
@@ -146,6 +153,7 @@ async def _run_deep_research(
 
     error = result.get("error")
     updates = result.get("updates") or {}
+    forced_updates = result.get("forced_updates") or {}
     proposed_fields = result.get("proposed_fields") or {}
     new_contacts = result.get("new_contacts") or []
     summary = result.get("summary") or ""
@@ -154,15 +162,17 @@ async def _run_deep_research(
     if trace:
         trace.update(output={
             "status": status,
+            "mode": mode,
             "updatedFields": list(updates.keys()),
+            "forcedFields": list(forced_updates.keys()),
             "proposedFields": list(proposed_fields.keys()),
             "newContacts": len(new_contacts),
         })
         langfuse.flush()
 
     logger.info(
-        "[DeepResearch] lead=%s status=%s updates=%d proposed=%d contacts=%d",
-        lead_id, status, len(updates), len(proposed_fields), len(new_contacts),
+        "[DeepResearch] lead=%s mode=%s status=%s updates=%d forced=%d contacts=%d",
+        lead_id, mode, status, len(updates), len(forced_updates), len(new_contacts),
     )
 
     await crm.send_deep_research_webhook({
@@ -170,6 +180,7 @@ async def _run_deep_research(
         "leadId": lead_id,
         "status": status,
         "updates": updates,
+        "forcedUpdates": forced_updates,
         "proposedFields": proposed_fields,
         "newContacts": new_contacts,
         "summary": summary,
@@ -207,9 +218,17 @@ async def handle_lead_deep_research(
         trace_id,
         req.previousSummary,
         req.previousResearchAt,
+        req.focusField,
+        req.customInstruction,
     )
 
-    mode = "Re-pesquisa" if req.previousSummary else "Pesquisa aprofundada"
+    if req.focusField:
+        mode = f"Pesquisa focada em \"{req.focusField}\""
+    elif req.previousSummary:
+        mode = "Re-pesquisa"
+    else:
+        mode = "Pesquisa aprofundada"
+
     return DeepResearchResponse(
         status="accepted",
         jobId=job_id,

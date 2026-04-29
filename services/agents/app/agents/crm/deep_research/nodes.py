@@ -662,11 +662,12 @@ Se o perfil não existir ou não houver dados, retorne o objeto com todos os cam
 async def enrich_instagram(state: DeepResearchState) -> dict:
     lead = state.get("lead", {})
     updates = state.get("updates", {})
+    forced_updates = state.get("forced_updates") or {}
     trace = state.get("_trace")
 
-    # Determine instagram source (newly found or already on lead)
-    instagram_val = updates.get("instagram") or lead.get("instagram")
-    tiktok_val = updates.get("tiktok") or lead.get("tiktok")
+    # Determine instagram/tiktok source (forced, newly found, or already on lead)
+    instagram_val = forced_updates.get("instagram") or updates.get("instagram") or lead.get("instagram")
+    tiktok_val = forced_updates.get("tiktok") or updates.get("tiktok") or lead.get("tiktok")
 
     if not instagram_val and not tiktok_val:
         return {"instagram_insights": None}
@@ -770,6 +771,312 @@ async def enrich_instagram(state: DeepResearchState) -> dict:
     if meta_ads_update is not None and _is_empty(lead.get("metaAds")):
         result["updates"] = {**updates, "metaAds": meta_ads_update}
     return result
+
+
+# ── Focused research nodes ────────────────────────────────────────────────
+
+
+_FOCUSED_EXTRACT_SYSTEM = """\
+Você é um analista de dados B2B especializado em enriquecimento de leads.
+Retorne APENAS JSON válido, sem markdown, sem explicações."""
+
+_FOCUSED_EXTRACT_USER = """\
+Lead: {business_name}
+CNPJ: {cnpj}
+Cidade: {city} / {state}
+Campo alvo: {focus_field}
+{instruction_block}
+
+Resultados de busca:
+{search_context}
+
+Encontre o valor mais confiável para "{focus_field}" nos resultados.
+
+{field_instructions}
+
+Retorne JSON:
+{{
+  "value": <valor encontrado ou null>,
+  "confidence": "alta" | "media" | "baixa",
+  "source": "breve descrição da fonte onde encontrou",
+  "note": "observação relevante (ex: perfil parece inativo, email pode ser de terceiro) ou null"
+}}
+
+Se não encontrar com confiança suficiente, retorne value: null."""
+
+_FIELD_INSTRUCTIONS: dict[str, str] = {
+    "instagram": "Retorne a URL completa (https://www.instagram.com/handle) ou apenas o @handle.",
+    "facebook": "Retorne a URL completa da página do Facebook.",
+    "linkedin": "Retorne a URL completa da página da empresa no LinkedIn.",
+    "website": "Retorne a URL com https://. NÃO retorne Linktree, bio.link ou outros agregadores — procure o domínio próprio.",
+    "email": "Retorne apenas email direto da empresa. Se for de contabilidade ou terceiro, retorne null.",
+    "phone": "Retorne o telefone com DDD. Priorize número comercial/fixo.",
+    "phone2": "Retorne um segundo telefone com DDD, diferente do principal.",
+    "whatsapp": "Retorne em formato E.164 (+55XXXXXXXXXXX) se possível.",
+    "companyRegistrationID": "Retorne no formato XX.XXX.XXX/XXXX-XX. Só retorne se tiver certeza — CNPJ errado é pior que null.",
+    "description": "Escreva 2-4 frases descrevendo a empresa: o que faz, segmento, diferenciais, localização.",
+    "companyOwner": "Retorne o nome completo do proprietário, sócio administrador ou CEO.",
+    "metaAds": "Retorne null — este campo usa tratamento especial abaixo.",
+    "contacts": "Retorne null — contatos usam tratamento especial abaixo.",
+    "custom": "Siga a instrução personalizada fornecida.",
+}
+
+
+async def plan_focused_research(state: DeepResearchState) -> dict:
+    lead = state.get("lead", {})
+    focus = state.get("focus_field", "") or ""
+    instruction = state.get("custom_instruction", "") or ""
+    name = lead.get("businessName", "") or lead.get("registeredName", "")
+    city = lead.get("city", "")
+    cnpj = lead.get("companyRegistrationID", "")
+
+    queries: list[str] = []
+    missing: list[str] = [focus] if focus else ["web"]
+
+    if focus == "instagram":
+        queries = [
+            f'"{name}" instagram perfil',
+            f'"{name}" {city} instagram' if city else f'"{name}" instagram @',
+            f'site:instagram.com "{name}"',
+        ]
+    elif focus == "facebook":
+        queries = [
+            f'"{name}" facebook página',
+            f'site:facebook.com "{name}"',
+        ]
+    elif focus == "linkedin":
+        queries = [
+            f'"{name}" linkedin empresa página',
+            f'site:linkedin.com/company "{name}"',
+        ]
+    elif focus == "website":
+        queries = [
+            f'"{name}" site oficial',
+            f'"{name}" {city} site:.com.br -linktr.ee -instagram.com -facebook.com' if city else f'"{name}" site:.com.br -linktr.ee',
+        ]
+    elif focus == "email":
+        queries = [
+            f'"{name}" email contato fale conosco',
+            f'"{name}" {city} email comercial' if city else f'"{name}" email',
+        ]
+    elif focus in ("phone", "phone2", "whatsapp"):
+        queries = [
+            f'"{name}" telefone whatsapp contato',
+            f'"{name}" {city} telefone comercial' if city else f'"{name}" telefone DDD',
+        ]
+    elif focus == "companyRegistrationID":
+        queries = [
+            f'"{name}" CNPJ site:cnpj.biz OR site:casadosdados.com.br',
+            f'"{name}" {city} CNPJ cadastro empresa' if city else f'"{name}" CNPJ',
+            f'"{name}" site:receitaws.com.br OR site:cnpja.com.br',
+        ]
+    elif focus == "description":
+        queries = [
+            f'"{name}" empresa sobre história serviços',
+            f'"{name}" {city} quem somos o que fazemos' if city else f'"{name}" sobre a empresa',
+        ]
+    elif focus == "companyOwner":
+        queries = [
+            f'"{name}" proprietário sócio fundador CEO dono',
+            f'"{name}" {city} responsável administrador' if city else f'"{name}" sócio administrador',
+        ]
+    elif focus == "contacts":
+        queries = [
+            f'"{name}" contato email telefone diretor gerente sócio',
+            f'"{name}" {city} equipe liderança linkedin' if city else f'"{name}" equipe liderança',
+        ]
+        if cnpj:
+            missing.append("cnpj")
+    elif focus == "metaAds":
+        queries = [
+            f'facebook.com/ads/library "{name}" anúncios ativos',
+            f'"{name}" anúncios facebook meta ads biblioteca',
+        ]
+    elif focus == "custom":
+        queries = [instruction] if instruction else [f'"{name}" informações']
+    else:
+        queries = [f'"{name}" {instruction}' if instruction else f'"{name}" informações']
+
+    # Append customInstruction as extra query (for non-custom modes)
+    if instruction and focus != "custom":
+        queries.append(instruction)
+
+    logger.info("[DeepResearch] focused lead=%s field=%s queries=%d", state.get("lead_id"), focus, len(queries))
+    return {"missing_fields": missing, "search_queries": queries[:4]}
+
+
+async def extract_focused_update(state: DeepResearchState) -> dict:
+    lead = state.get("lead", {})
+    focus = state.get("focus_field", "") or ""
+    instruction = state.get("custom_instruction", "") or ""
+    web_results = state.get("web_results", [])
+    cnpj_raw = state.get("cnpj_raw")
+    trace = state.get("_trace")
+
+    forced_updates: dict = {}
+    new_contacts: list[dict] = []
+
+    # Special case: contacts — use QSA + LLM contact extraction
+    if focus == "contacts":
+        if cnpj_raw:
+            new_contacts = _extract_cnpj_contacts(cnpj_raw)
+        if web_results:
+            search_context = _format_tavily_results(web_results)
+            if search_context.strip():
+                user = _EXTRACT_USER.format(
+                    lead_json=json.dumps({"businessName": lead.get("businessName"), "city": lead.get("city")}, ensure_ascii=False),
+                    already_found="nenhum",
+                    existing_contacts_json=json.dumps(state.get("contacts") or [], ensure_ascii=False),
+                    search_context=search_context[:5000],
+                )
+                try:
+                    raw = await _call_claude(system=_EXTRACT_SYSTEM, user=user, model="claude-haiku-4-5-20251001", max_tokens=1024)
+                    text = re.sub(r"^```(?:json)?\s*", "", (raw.content[0].text if raw.content else "{}").strip())
+                    text = re.sub(r"\s*```$", "", text.strip())
+                    parsed = json.loads(text)
+                    llm_contacts = [c for c in (parsed.get("contacts") or []) if c.get("name") and len(c["name"].split()) >= 2]
+                    existing_names = {(c.get("name") or "").lower().strip() for c in new_contacts}
+                    for c in llm_contacts:
+                        if c["name"].lower().strip() not in existing_names:
+                            new_contacts.append(c)
+                except Exception:
+                    logger.exception("[DeepResearch] extract_focused_update contacts LLM error")
+        return {"forced_updates": {}, "new_contacts": new_contacts}
+
+    # Special case: metaAds — use social enrichment logic
+    if focus == "metaAds":
+        name = lead.get("businessName", "")
+        checked_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        search_context = _format_tavily_results(web_results) if web_results else ""
+        if search_context.strip():
+            try:
+                raw = await _call_claude(
+                    system=_SOCIAL_SYSTEM,
+                    user=_SOCIAL_USER.format(ig_handle="N/A", tt_handle="N/A", business_name=name, search_context=search_context[:4000]),
+                    model="claude-haiku-4-5-20251001", max_tokens=256,
+                )
+                text = re.sub(r"^```(?:json)?\s*", "", (raw.content[0].text if raw.content else "{}").strip())
+                parsed = json.loads(re.sub(r"\s*```$", "", text.strip()))
+                meta = parsed.get("metaAds") or {}
+                has_ads = meta.get("hasAds")
+                if has_ads is not None:
+                    forced_updates["metaAds"] = {"hasAds": bool(has_ads), "activeCount": int(meta.get("activeCount") or 0), "checkedAt": checked_at}
+            except Exception:
+                logger.exception("[DeepResearch] extract_focused_update metaAds error")
+        return {"forced_updates": forced_updates, "new_contacts": []}
+
+    # General case: extract scalar value for the target field
+    if not web_results:
+        return {"forced_updates": {}, "new_contacts": []}
+
+    search_context = _format_tavily_results(web_results)
+    if not search_context.strip():
+        return {"forced_updates": {}, "new_contacts": []}
+
+    field_instruction = _FIELD_INSTRUCTIONS.get(focus, "Extraia o valor solicitado.")
+    instruction_block = f"Instrução adicional: {instruction}" if instruction else ""
+
+    gen = trace.generation(name="extract_focused", model="claude-haiku-4-5-20251001", input=[]) if trace else None
+    try:
+        raw = await _call_claude(
+            system=_FOCUSED_EXTRACT_SYSTEM,
+            user=_FOCUSED_EXTRACT_USER.format(
+                business_name=lead.get("businessName", "N/A"),
+                cnpj=lead.get("companyRegistrationID", "N/A"),
+                city=lead.get("city", "N/A"),
+                state=lead.get("state", "N/A"),
+                focus_field=focus,
+                instruction_block=instruction_block,
+                search_context=search_context[:6000],
+                field_instructions=field_instruction,
+            ),
+            model="claude-haiku-4-5-20251001",
+            max_tokens=512,
+        )
+        text = re.sub(r"^```(?:json)?\s*", "", (raw.content[0].text if raw.content else "{}").strip())
+        parsed = json.loads(re.sub(r"\s*```$", "", text.strip()))
+        value = parsed.get("value")
+        confidence = parsed.get("confidence", "baixa")
+        note = parsed.get("note")
+
+        if value and confidence in ("alta", "media"):
+            forced_updates[focus] = value
+            logger.info("[DeepResearch] focused field=%s value=%s confidence=%s", focus, str(value)[:60], confidence)
+        else:
+            logger.info("[DeepResearch] focused field=%s not found (confidence=%s)", focus, confidence)
+
+        if gen:
+            gen.end(output={"found": bool(value), "confidence": confidence})
+    except Exception:
+        logger.exception("[DeepResearch] extract_focused_update error for field=%s", focus)
+        if gen:
+            gen.end(output={"error": "parse_failed"})
+
+    return {"forced_updates": forced_updates, "new_contacts": []}
+
+
+_FOCUSED_SUMMARY_SYSTEM = """\
+Você é um analista de CRM. Escreva resumos concisos de pesquisa focada em português
+brasileiro, de forma profissional e útil para o time comercial."""
+
+_FOCUSED_SUMMARY_USER = """\
+Lead: {business_name} (CNPJ: {cnpj}, {city}/{state})
+Campo pesquisado: {focus_field}
+{instruction_block}
+
+Resultado encontrado:
+{result_block}
+
+Escreva um resumo em pt-BR (1-3 parágrafos) descrevendo:
+1. O que foi buscado e como
+2. O resultado encontrado (ou ausência dele) e nível de confiança
+3. Recomendações ou observações para o time comercial"""
+
+
+async def generate_focused_summary(state: DeepResearchState) -> dict:
+    lead = state.get("lead", {})
+    focus = state.get("focus_field", "") or ""
+    instruction = state.get("custom_instruction", "") or ""
+    forced_updates = state.get("forced_updates") or {}
+    new_contacts = state.get("new_contacts") or []
+    trace = state.get("_trace")
+
+    if forced_updates:
+        result_block = f"Encontrado: {json.dumps(forced_updates, ensure_ascii=False)}"
+    elif new_contacts:
+        result_block = f"Contatos encontrados ({len(new_contacts)}): {json.dumps(new_contacts, ensure_ascii=False, indent=2)}"
+    else:
+        result_block = "Nenhum resultado encontrado com confiança suficiente."
+
+    instruction_block = f"Instrução: {instruction}" if instruction else ""
+
+    gen = trace.generation(name="generate_focused_summary", model="claude-haiku-4-5-20251001", input=[]) if trace else None
+    try:
+        raw = await _call_claude(
+            system=_FOCUSED_SUMMARY_SYSTEM,
+            user=_FOCUSED_SUMMARY_USER.format(
+                business_name=lead.get("businessName", "N/A"),
+                cnpj=lead.get("companyRegistrationID", "N/A"),
+                city=lead.get("city", "N/A"),
+                state=lead.get("state", "N/A"),
+                focus_field=focus,
+                instruction_block=instruction_block,
+                result_block=result_block,
+            ),
+            model="claude-haiku-4-5-20251001",
+            max_tokens=512,
+        )
+        summary = raw.content[0].text.strip() if raw.content else result_block
+        if gen:
+            gen.end(output={"length": len(summary)})
+    except Exception:
+        logger.exception("[DeepResearch] generate_focused_summary error")
+        summary = result_block
+        if gen:
+            gen.end(output={"error": "llm_failed"})
+
+    logger.info("[DeepResearch] focused summary field=%s found=%s", focus, bool(forced_updates or new_contacts))
+    return {"summary": summary}
 
 
 # ── Node: generate_summary ─────────────────────────────────────────────────
