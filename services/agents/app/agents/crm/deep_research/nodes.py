@@ -1006,7 +1006,15 @@ async def plan_focused_research(state: DeepResearchState) -> dict:
             f'site:linkedin.com/company "{name}"',
         ]
     elif focus == "website":
-        queries = [
+        queries = []
+        existing_website = lead.get("website") or ""
+        if existing_website and not _is_link_aggregator(existing_website):
+            wdomain = re.sub(r"https?://(www\.)?", "", existing_website).rstrip("/").split("/")[0]
+            if wdomain:
+                # Validate existing site: fetch contact page to check city/DDD/phone
+                queries.append(f'site:{wdomain} contato telefone endereço')
+        # Search for the correct website for this company/city
+        queries += [
             f'"{name}" site oficial',
             f'"{name}" {city} site:.com.br -linktr.ee -instagram.com -facebook.com' if city else f'"{name}" site:.com.br -linktr.ee',
         ]
@@ -1254,6 +1262,20 @@ async def extract_focused_update(state: DeepResearchState) -> dict:
     instruction_parts = []
     if instruction:
         instruction_parts.append(f"Instrução adicional: {instruction}")
+    # For website: validate existing site belongs to this company's city
+    if focus == "website":
+        _existing_site = lead.get("website") or ""
+        _lead_city = lead.get("city") or ""
+        if _existing_site and not _is_link_aggregator(_existing_site) and _lead_city:
+            _wdomain = re.sub(r"https?://(www\.)?", "", _existing_site).rstrip("/").split("/")[0]
+            if _wdomain:
+                instruction_parts.append(
+                    f"VALIDAÇÃO DO SITE ATUAL: O site cadastrado é '{_existing_site}'. "
+                    f"Verifique nos resultados se esse site menciona '{_lead_city}', DDD ou telefone compatível com esta cidade. "
+                    f"Se o site parece pertencer a OUTRA cidade (ex: endereço ou DDD diferente), retorne value: null "
+                    f"e escreva em 'note' um alerta claro, ex: 'Site {_wdomain} parece ser de outra cidade — site incorreto cadastrado'. "
+                    f"Se encontrar o site CORRETO desta empresa em {_lead_city}, retorne-o no value."
+                )
     # For email: warn LLM if existing email has mismatched domain
     if focus == "email":
         existing_email = lead.get("email") or ""
@@ -1303,6 +1325,11 @@ async def extract_focused_update(state: DeepResearchState) -> dict:
         else:
             logger.info("[DeepResearch] focused field=%s not found confidence=%s rejected_value=%s note=%s", focus, confidence, str(value)[:80] if value else "null", note)
 
+        # Website invalid: LLM returned null + note — surface note as alert so CRM sees the warning
+        if focus == "website" and not value and note and lead.get("website"):
+            logger.warning("[DeepResearch] website validation failed for lead=%s note=%s", state.get("lead_id"), note)
+            return {"forced_updates": {}, "new_contacts": [], "proposed_fields": {"_websiteAlert": note}}
+
         if gen:
             gen.end(output={"found": bool(value), "confidence": confidence})
     except Exception:
@@ -1350,6 +1377,7 @@ async def generate_focused_summary(state: DeepResearchState) -> dict:
     instruction = state.get("custom_instruction", "") or ""
     forced_updates = state.get("forced_updates") or {}
     new_contacts = state.get("new_contacts") or []
+    proposed_fields = state.get("proposed_fields") or {}
     trace = state.get("_trace")
 
     if forced_updates:
@@ -1358,6 +1386,11 @@ async def generate_focused_summary(state: DeepResearchState) -> dict:
         result_block = f"Contatos encontrados ({len(new_contacts)}): {json.dumps(new_contacts, ensure_ascii=False, indent=2)}"
     else:
         result_block = "Nenhum resultado encontrado com confiança suficiente."
+
+    # Website alert: if existing site failed validation, surface it prominently
+    website_alert = proposed_fields.get("_websiteAlert")
+    if website_alert:
+        result_block += f"\n\n⚠️ ALERTA DE SITE INCORRETO: {website_alert}"
 
     instruction_block = f"Instrução: {instruction}" if instruction else ""
 
