@@ -1071,10 +1071,12 @@ async def plan_focused_research(state: DeepResearchState) -> dict:
         ]
     elif focus == "website":
         # Existing site validation is done via direct HTTP fetch in extract_focused_update (no Tavily credit).
-        # Queries here focus on finding the CORRECT site for this company/city.
+        # Query 1: NO site: restriction — always finds directories/mentions so LLM can tell if a website is listed
+        # Query 2: site:.com.br restricted — finds own domain ONLY if it exists (returns nothing = no website)
+        # Query 3: specific directory that lists website URL when available
         queries = [
-            f'"{name}" {city} site oficial site:.com.br' if city else f'"{name}" site oficial',
-            f'"{name}" {city} site:.com.br -linktr.ee -instagram.com -facebook.com' if city else f'"{name}" site:.com.br -linktr.ee',
+            f'"{name}" {city} site oficial' if city else f'"{name}" site oficial',
+            f'"{name}" {city} site:.com.br -instagram.com -facebook.com -solutudo.com.br -guiafacil.com -applocal.com.br -cnpj' if city else f'"{name}" site:.com.br -instagram.com -facebook.com',
             f'site:guiafacil.com "{name}" {city}' if city else f'site:guiafacil.com "{name}"',
         ]
     elif focus == "email":
@@ -1342,15 +1344,17 @@ async def extract_focused_update(state: DeepResearchState) -> dict:
                         f"ALERTA AUTOMÁTICO DE SITE INCORRETO: O site '{_existing_site}' exibe telefone com DDD {mismatch_ddd} "
                         f"(estado {site_state}), mas este lead é de {_lead_city}/{_lead_state}. "
                         f"Este site PERTENCE A OUTRA EMPRESA em outro estado. "
-                        f"Retorne value: null, confidence: 'alta', e em 'note' descreva o problema. "
-                        f"Não use este domínio para email nem como site do lead."
+                        f"Retorne value: null, confidence: 'alta', e em 'note' descreva o problema claramente. "
+                        f"Nos resultados de busca, verifique se há um site correto para este lead em {_lead_city} — "
+                        f"se os diretórios (guiafacil, solutudo, applocal) não listam website, conclua que a empresa NÃO POSSUI SITE PRÓPRIO e mencione isso no note."
                     )
                 elif _lead_city:
                     instruction_parts.append(
                         f"VALIDAÇÃO DO SITE ATUAL: O site cadastrado é '{_existing_site}'. "
                         f"Verifique no conteúdo acima se este site menciona '{_lead_city}' ou DDD/telefone compatível. "
                         f"Se o site pertence a outra cidade, retorne value: null e explique em 'note'. "
-                        f"Se encontrar o site CORRETO para {_lead_city}, retorne-o no value."
+                        f"Se não encontrar site correto nos resultados e os diretórios não listam website, "
+                        f"indique em 'note' que a empresa provavelmente não tem site próprio."
                     )
             elif _wdomain:
                 instruction_parts.append(
