@@ -33,6 +33,7 @@ class ContactInput(BaseModel):
     email: str | None = None
     phone: str | None = None
     role: str | None = None
+    linkedin: str | None = None
 
 
 class LeadInput(BaseModel):
