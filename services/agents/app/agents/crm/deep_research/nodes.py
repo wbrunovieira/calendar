@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import unicodedata
 from datetime import datetime, timezone
 
 import httpx
@@ -44,6 +45,11 @@ def _is_link_aggregator(url: str) -> bool:
     return any(d in url.lower() for d in _LINK_AGGREGATORS)
 
 
+def _to_domain_slug(text: str) -> str:
+    """Strip accents and normalize to ASCII for domain-name slug building."""
+    return unicodedata.normalize("NFKD", text).encode("ASCII", "ignore").decode()
+
+
 def _is_third_party_email(email: str) -> bool:
     if not email:
         return False
@@ -68,7 +74,7 @@ def _email_domain_matches_company(email: str, business_name: str) -> bool:
 
 def _extract_email_prefix(business_name: str) -> str | None:
     """Derive the likely email prefix from the business name (e.g. 'AREMIX LTDA' → 'aremix')."""
-    name = re.sub(r"[^\w\s]", "", business_name.lower())
+    name = re.sub(r"[^\w\s]", "", _to_domain_slug(business_name).lower())
     words = [w for w in name.split() if len(w) > 2 and w not in _NAME_STOP_WORDS]
     return words[0] if words else None
 
@@ -880,29 +886,56 @@ async def plan_focused_research(state: DeepResearchState) -> dict:
     elif focus == "email":
         queries: list[str] = []
 
+        # Strip branch suffix for cleaner directory searches (e.g. "Empresa - Centro" → "Empresa")
+        clean_name = re.sub(r"\s*[-–]\s*\w[\w\s]*$", "", name).strip() or name
+
         # Detect domain mismatch on existing email — treat as "no email" if domain is wrong company
         existing_email = lead.get("email") or ""
         domain_mismatch = existing_email and not _email_domain_matches_company(existing_email, name)
         if domain_mismatch:
             logger.info("[DeepResearch] email domain mismatch: %s vs company '%s' — searching for real email", existing_email, name)
 
-        # Brazilian business directories (best sources for SME emails)
-        queries += [
-            f'site:guiafacil.com "{name}" {city}' if city else f'site:guiafacil.com "{name}"',
-            f'site:solutudo.com.br "{name}" {city}' if city else f'site:solutudo.com.br "{name}"',
-            f'"{name}" email OR "@" {city}' if city else f'"{name}" email contato fale conosco',
-        ]
+        # 1. Domain-slug targeted search (finds email even when website is down/uncrawlable)
+        # Builds "temtudopetropolis" from "Tem Tudo Petrópolis" → searches "@temtudopetropolis.com.br"
+        _slug_words = [w for w in re.sub(r"[^\w\s]", "", _to_domain_slug(clean_name).lower()).split() if len(w) > 2 and w not in _NAME_STOP_WORDS]
+        if _slug_words:
+            full_slug = "".join(_slug_words)  # e.g. "temtudopetropolis"
+            queries.append(f'"@{full_slug}.com.br" OR "{full_slug}.com.br" email')
+            # Also try first meaningful word alone (e.g. "aremix.com.br") if different from full slug
+            first_slug = _slug_words[0]
+            if len(first_slug) >= 4 and first_slug != full_slug:
+                queries.append(f'"@{first_slug}.com.br" OR "{first_slug}.com.br" email')
 
-        # Website domain search
+        # 2. Website domain first when available (highest confidence)
         website = lead.get("website") or ""
         if website and not _is_link_aggregator(website):
             wdomain = re.sub(r"https?://(www\.)?", "", website).rstrip("/").split("/")[0]
             if wdomain:
-                queries.insert(0, f'site:{wdomain} contato email OR "fale conosco"')
+                queries.append(f'site:{wdomain} contato email OR "fale conosco"')
+        else:
+            # Discover the company's own .com.br domain
+            queries.append(
+                f'"{clean_name}" site:.com.br -instagram.com -facebook.com -guiafacil.com -solutudo.com.br'
+                if city else
+                f'"{clean_name}" site:.com.br -instagram.com -facebook.com'
+            )
 
-        # Pattern-based candidates (hotmail/gmail very common in Brazilian SMEs)
-        prefix = _extract_email_prefix(name)
-        if prefix:
+        # 3. Brazilian business directories
+        queries += [
+            f'site:guiafacil.com "{clean_name}" {city}' if city else f'site:guiafacil.com "{clean_name}"',
+            f'site:solutudo.com.br "{clean_name}" {city}' if city else f'site:solutudo.com.br "{clean_name}"',
+        ]
+
+        # 4. General email search using clean name
+        queries.append(
+            f'"{clean_name}" {city} email contato'
+            if city else
+            f'"{clean_name}" email contato fale conosco'
+        )
+
+        # 5. Pattern-based candidates (hotmail/gmail common in Brazilian SMEs — min prefix 4 chars)
+        prefix = _extract_email_prefix(clean_name)
+        if prefix and len(prefix) >= 4:
             queries.append(f'"{prefix}@hotmail.com" OR "{prefix}@gmail.com"')
     elif focus in ("phone", "phone2", "whatsapp"):
         queries = [
@@ -952,7 +985,8 @@ async def plan_focused_research(state: DeepResearchState) -> dict:
         queries.append(instruction)
 
     logger.info("[DeepResearch] focused lead=%s field=%s queries=%d", state.get("lead_id"), focus, len(queries))
-    return {"missing_fields": missing, "search_queries": queries[:4]}
+    limit = 5 if focus == "email" else 4
+    return {"missing_fields": missing, "search_queries": queries[:limit]}
 
 
 async def extract_focused_update(state: DeepResearchState) -> dict:
