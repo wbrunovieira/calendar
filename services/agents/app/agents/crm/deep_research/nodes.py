@@ -379,6 +379,13 @@ async def plan_research(state: DeepResearchState) -> dict:
             if city else
             f'"{name}" email whatsapp contato'
         )
+        # Website city validation: when site is already set, confirm it belongs to THIS company/city
+        # before extract_updates uses its domain for email candidates
+        _existing_site = lead.get("website") or ""
+        if _existing_site and not _is_link_aggregator(_existing_site) and city:
+            _site_domain = re.sub(r"https?://(www\.)?", "", _existing_site).rstrip("/").split("/")[0]
+            if _site_domain:
+                queries.append(f'site:{_site_domain} "{city}" OR telefone endereço')
 
     # Instagram — always include city to avoid false match with same-named national chains
     if "instagram" not in skip and _is_empty(lead.get("instagram")) and name:
@@ -526,6 +533,8 @@ Retorne um objeto JSON com APENAS os campos encontrados, usando estas chaves exa
 Para a chave "contacts", retorne TODOS os contatos relevantes encontrados (incluindo os já cadastrados se encontrou dados novos para eles):
 [{{"name": "...", "email": "...", "phone": "...", "role": "..."}}]
 Inclua email e telefone sempre que encontrar nos resultados. Omita campos que não encontrou.
+
+VALIDAÇÃO DE WEBSITE: Se o lead já possui um site cadastrado, antes de sugerir email com o domínio desse site, verifique nos resultados se o site menciona a cidade do lead ou DDD compatível. Empresas com nomes similares em outras cidades podem ter domínio parecido — se o site parece ser de outra localidade, NÃO use aquele domínio para email.
 
 Responda SOMENTE com JSON: {{"updates": {{...}}, "contacts": [...]}}"""
 
@@ -1029,6 +1038,8 @@ async def plan_focused_research(state: DeepResearchState) -> dict:
         if website and not _is_link_aggregator(website):
             wdomain = re.sub(r"https?://(www\.)?", "", website).rstrip("/").split("/")[0]
             if wdomain:
+                # Validation query: fetch site content so LLM can verify city/DDD before using domain for email
+                queries.append(f'site:{wdomain} contato telefone endereço')
                 queries.append(f'site:{wdomain} contato email OR "fale conosco"')
         else:
             # Discover the company's own .com.br domain
@@ -1248,6 +1259,19 @@ async def extract_focused_update(state: DeepResearchState) -> dict:
         existing_email = lead.get("email") or ""
         if existing_email and not _email_domain_matches_company(existing_email, lead.get("businessName", "")):
             instruction_parts.append(f"ATENÇÃO: O email atual '{existing_email}' parece pertencer a outra empresa — o domínio não corresponde ao nome desta empresa. Ignore-o e busque um email novo nos resultados.")
+        # Website domain city validation: warn if the registered site might belong to a different-city company
+        _website_val = lead.get("website") or ""
+        _lead_city = lead.get("city") or ""
+        if _website_val and not _is_link_aggregator(_website_val) and _lead_city:
+            _wdomain = re.sub(r"https?://(www\.)?", "", _website_val).rstrip("/").split("/")[0]
+            if _wdomain:
+                instruction_parts.append(
+                    f"ATENÇÃO — VALIDAÇÃO DO SITE: O site cadastrado é '{_wdomain}'. "
+                    f"Antes de sugerir email com este domínio, verifique nos resultados se o site menciona '{_lead_city}' "
+                    f"ou DDD/telefone compatível com esta cidade. "
+                    f"Empresas com nomes similares em outras cidades podem ter domínio parecido. "
+                    f"Se o site parece pertencer a outra cidade, NÃO use '@{_wdomain}' para email — prefira email de diretório ou @gmail/@hotmail."
+                )
     instruction_block = "\n".join(instruction_parts)
 
     gen = trace.generation(name="extract_focused", model="claude-haiku-4-5-20251001", input=[]) if trace else None
