@@ -193,6 +193,21 @@ def _extract_cnpj_updates(data: dict, lead: dict) -> dict:
         if cap:
             updates["capitalSocial"] = cap
 
+    # CNAE primário
+    if not lead.get("cnae"):
+        cnae_code = data.get("cnae_fiscal")
+        cnae_desc = data.get("cnae_fiscal_descricao", "")
+        if cnae_code and cnae_desc:
+            updates["cnae"] = f"{cnae_code} - {cnae_desc}"
+        elif cnae_code:
+            updates["cnae"] = str(cnae_code)
+
+    # Segment — fill from CNAE description if still empty
+    if _is_empty(lead.get("segment")) and not updates.get("segment"):
+        cnae_desc = data.get("cnae_fiscal_descricao", "")
+        if cnae_desc:
+            updates["segment"] = cnae_desc.capitalize()
+
     return updates
 
 
@@ -344,47 +359,67 @@ async def plan_research(state: DeepResearchState) -> dict:
         if city:
             queries.insert(1, f'"{name}" {city} CNPJ razão social')
 
+    city = lead.get("city", "")
+
     # Website / description / services
     web_fields = ["website", "description", "segment"]
     website_is_aggregator = _is_link_aggregator(lead.get("website") or "")
     if "web" not in skip and name and (any(_is_empty(lead.get(f)) for f in web_fields) or website_is_aggregator):
         missing.append("web")
         queries.append(f'"{name}" site oficial serviços')
-        if lead.get("city"):
-            queries.append(f'"{name}" {lead["city"]} empresa')
+        if city:
+            queries.append(f'"{name}" {city} empresa')
         if website_is_aggregator:
             queries.append(f'"{name}" site:.com.br OR site:.com -linktr.ee -instagram.com -facebook.com')
 
-    # Instagram
+    # Email — dedicated query with whatsapp keyword (directories list both together)
+    if _is_empty(lead.get("email")) and name:
+        queries.append(
+            f'"{name}" {city} email whatsapp contato'
+            if city else
+            f'"{name}" email whatsapp contato'
+        )
+
+    # Instagram — always include city to avoid false match with same-named national chains
     if "instagram" not in skip and _is_empty(lead.get("instagram")) and name:
         missing.append("instagram")
-        queries.append(f'"{name}" instagram perfil')
+        queries.append(
+            f'"{name}" {city} instagram'
+            if city else
+            f'"{name}" instagram perfil'
+        )
 
     # LinkedIn
     if "linkedin" not in skip and _is_empty(lead.get("linkedin")) and name:
         missing.append("linkedin")
         queries.append(f'"{name}" linkedin empresa')
 
-    # Facebook / TikTok
+    # Facebook — include city to avoid matching same-named chains
     social_missing = [
         s for s in ["facebook", "tiktok"]
         if _is_empty(lead.get(s)) and name
     ]
     if "social" not in skip and social_missing:
         missing.append("social")
-        queries.append(f'"{name}" facebook tiktok redes sociais')
+        queries.append(
+            f'"{name}" {city} facebook'
+            if city and "facebook" in social_missing else
+            f'"{name}" facebook tiktok redes sociais'
+        )
 
-    # Contacts: enrich existing contacts missing email/phone, or discover new ones
+    # Contacts: enrich existing contacts missing email/phone/linkedin, or discover new ones
     if "contacts" not in skip:
         if contacts:
-            incomplete = [c for c in contacts if _is_empty(c.get("email")) or _is_empty(c.get("phone"))]
+            incomplete = [c for c in contacts if _is_empty(c.get("email")) or _is_empty(c.get("phone")) or _is_empty(c.get("linkedin"))]
             if incomplete:
                 missing.append("contacts")
-                for c in incomplete[:3]:
+                for c in incomplete[:2]:
                     cname = (c.get("name") or "").strip()
                     if cname:
-                        queries.append(f'"{name}" "{cname}" email telefone linkedin contato')
-                queries.append(f'"{name}" contato email telefone')
+                        queries.append(f'"{name}" "{cname}" email telefone contato')
+                        if not c.get("linkedin"):
+                            queries.append(f'"{cname}" linkedin.com/in')
+                queries.append(f'"{name}" {city} contato email whatsapp' if city else f'"{name}" contato email telefone')
         elif name:
             missing.append("contacts")
             queries.append(f'"{name}" contato email telefone diretor gerente')
