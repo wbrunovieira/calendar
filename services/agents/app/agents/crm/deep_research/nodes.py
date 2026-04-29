@@ -50,6 +50,29 @@ def _is_third_party_email(email: str) -> bool:
     return any(p in email.lower() for p in _THIRD_PARTY_EMAIL_HINTS)
 
 
+_FREE_EMAIL_DOMAINS = {"gmail.com", "hotmail.com", "yahoo.com", "outlook.com", "uol.com.br", "bol.com.br", "terra.com.br", "ig.com.br", "live.com"}
+_NAME_STOP_WORDS = {"de", "da", "do", "dos", "das", "e", "em", "materiais", "comercio", "servicos", "industria", "construcao", "construção", "ltda", "me", "eireli", "sa", "epp", "mei"}
+
+
+def _email_domain_matches_company(email: str, business_name: str) -> bool:
+    """True if the email domain plausibly belongs to the company (or is a free provider)."""
+    if not email or "@" not in email:
+        return True
+    domain = email.split("@")[1].lower()
+    if domain in _FREE_EMAIL_DOMAINS:
+        return True
+    name_lower = re.sub(r"[^\w\s]", "", business_name.lower())
+    name_words = [w for w in name_lower.split() if len(w) > 2 and w not in _NAME_STOP_WORDS]
+    return any(w in domain for w in name_words)
+
+
+def _extract_email_prefix(business_name: str) -> str | None:
+    """Derive the likely email prefix from the business name (e.g. 'AREMIX LTDA' → 'aremix')."""
+    name = re.sub(r"[^\w\s]", "", business_name.lower())
+    words = [w for w in name.split() if len(w) > 2 and w not in _NAME_STOP_WORDS]
+    return words[0] if words else None
+
+
 def _clean_cnpj(cnpj: str) -> str:
     return re.sub(r"\D", "", cnpj)
 
@@ -809,7 +832,7 @@ _FIELD_INSTRUCTIONS: dict[str, str] = {
     "facebook": "Retorne a URL completa da página do Facebook.",
     "linkedin": "Retorne a URL completa da página da empresa no LinkedIn.",
     "website": "Retorne a URL com https://. NÃO retorne Linktree, bio.link ou outros agregadores — procure o domínio próprio.",
-    "email": "Retorne apenas email direto da empresa. Se for de contabilidade ou terceiro, retorne null.",
+    "email": "Retorne o email mais provável da empresa. Aceite emails @hotmail.com e @gmail.com — são comuns em PMEs brasileiras. Rejeite apenas se o domínio for claramente de outra empresa (ex: escritório de contabilidade). Se encontrar múltiplos, prefira o que parece ser da própria empresa.",
     "phone": "Retorne o telefone com DDD. Priorize número comercial/fixo.",
     "phone2": "Retorne um segundo telefone com DDD, diferente do principal.",
     "whatsapp": "Retorne em formato E.164 (+55XXXXXXXXXXX) se possível.",
@@ -855,18 +878,32 @@ async def plan_focused_research(state: DeepResearchState) -> dict:
             f'"{name}" {city} site:.com.br -linktr.ee -instagram.com -facebook.com' if city else f'"{name}" site:.com.br -linktr.ee',
         ]
     elif focus == "email":
-        queries = [
-            f'"{name}" email contato fale conosco',
-            f'"{name}" {city} email comercial' if city else f'"{name}" email',
+        queries: list[str] = []
+
+        # Detect domain mismatch on existing email — treat as "no email" if domain is wrong company
+        existing_email = lead.get("email") or ""
+        domain_mismatch = existing_email and not _email_domain_matches_company(existing_email, name)
+        if domain_mismatch:
+            logger.info("[DeepResearch] email domain mismatch: %s vs company '%s' — searching for real email", existing_email, name)
+
+        # Brazilian business directories (best sources for SME emails)
+        queries += [
+            f'site:guiafacil.com "{name}" {city}' if city else f'site:guiafacil.com "{name}"',
+            f'site:solutudo.com.br "{name}" {city}' if city else f'site:solutudo.com.br "{name}"',
+            f'"{name}" email OR "@" {city}' if city else f'"{name}" email contato fale conosco',
         ]
-        # Use website domain for direct contact page search
+
+        # Website domain search
         website = lead.get("website") or ""
         if website and not _is_link_aggregator(website):
-            domain = re.sub(r"https?://(www\.)?", "", website).rstrip("/").split("/")[0]
-            if domain:
-                queries.insert(0, f'site:{domain} contato email OR "fale conosco"')
-        elif name:
-            queries.append(f'"{name}" site:.com.br contato email -instagram.com -facebook.com')
+            wdomain = re.sub(r"https?://(www\.)?", "", website).rstrip("/").split("/")[0]
+            if wdomain:
+                queries.insert(0, f'site:{wdomain} contato email OR "fale conosco"')
+
+        # Pattern-based candidates (hotmail/gmail very common in Brazilian SMEs)
+        prefix = _extract_email_prefix(name)
+        if prefix:
+            queries.append(f'"{prefix}@hotmail.com" OR "{prefix}@gmail.com"')
     elif focus in ("phone", "phone2", "whatsapp"):
         queries = [
             f'"{name}" telefone whatsapp contato',
@@ -987,7 +1024,15 @@ async def extract_focused_update(state: DeepResearchState) -> dict:
         return {"forced_updates": {}, "new_contacts": []}
 
     field_instruction = _FIELD_INSTRUCTIONS.get(focus, "Extraia o valor solicitado.")
-    instruction_block = f"Instrução adicional: {instruction}" if instruction else ""
+    instruction_parts = []
+    if instruction:
+        instruction_parts.append(f"Instrução adicional: {instruction}")
+    # For email: warn LLM if existing email has mismatched domain
+    if focus == "email":
+        existing_email = lead.get("email") or ""
+        if existing_email and not _email_domain_matches_company(existing_email, lead.get("businessName", "")):
+            instruction_parts.append(f"ATENÇÃO: O email atual '{existing_email}' parece pertencer a outra empresa — o domínio não corresponde ao nome desta empresa. Ignore-o e busque um email novo nos resultados.")
+    instruction_block = "\n".join(instruction_parts)
 
     gen = trace.generation(name="extract_focused", model="claude-haiku-4-5-20251001", input=[]) if trace else None
     try:
