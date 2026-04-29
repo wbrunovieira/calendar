@@ -805,6 +805,38 @@ async def enrich_instagram(state: DeepResearchState) -> dict:
 # ── Focused research nodes ────────────────────────────────────────────────
 
 
+_CONTACTS_EXTRACT_SYSTEM = """\
+Você é um analista de CRM B2B especializado em identificar contatos-chave de empresas brasileiras.
+Extraia informações de contatos pessoais dos resultados de busca.
+Retorne APENAS JSON válido, sem markdown, sem explicações."""
+
+_CONTACTS_EXTRACT_USER = """\
+Empresa: {business_name} | Cidade: {city}
+{instruction_block}
+
+Contatos já cadastrados (enriqueça com dados novos se encontrar):
+{existing_contacts_json}
+
+Resultados de busca:
+{search_context}
+
+Encontre contatos da empresa: sócios, proprietários, gerentes, diretores, decisores, responsáveis por compras.
+Inclua apenas pessoas com nome completo (mínimo 2 palavras).
+Para CADA contato, extraia todos os campos que encontrar nos resultados:
+- name: nome completo
+- role: cargo/função exata encontrada (ex: "gerente financeiro e administrativo", "sócio-administrador")
+- email: email pessoal ou profissional
+- phone: telefone com DDD
+- linkedin: URL completa https://linkedin.com/in/...
+
+Para contatos já cadastrados: confirme ou corrija o cargo se encontrar informação mais precisa.
+Omita campos não encontrados nos resultados.
+
+Retorne JSON:
+{{"contacts": [{{"name": "...", "role": "...", "email": "...", "phone": "...", "linkedin": "..."}}]}}
+
+Se não encontrar nenhum contato novo ou dado para enriquecer, retorne {{"contacts": []}}"""
+
 _FOCUSED_EXTRACT_SYSTEM = """\
 Você é um analista de dados B2B especializado em enriquecimento de leads.
 Retorne APENAS JSON válido, sem markdown, sem explicações."""
@@ -964,10 +996,46 @@ async def plan_focused_research(state: DeepResearchState) -> dict:
             f'"{name}" {city} responsável administrador' if city else f'"{name}" sócio administrador',
         ]
     elif focus == "contacts":
-        queries = [
-            f'"{name}" contato email telefone diretor gerente sócio',
-            f'"{name}" {city} equipe liderança linkedin' if city else f'"{name}" equipe liderança',
-        ]
+        queries: list[str] = []
+        clean_name = re.sub(r"\s*[-–]\s*\w[\w\s]*$", "", name).strip() or name
+        existing_contacts = state.get("contacts") or []
+
+        # 1. Per-contact searches (highest value — names real people with context)
+        for contact in existing_contacts[:3]:
+            cname = (contact.get("name") or "").strip()
+            if cname and len(cname.split()) >= 2:
+                # Name + company/city for role confirmation and email hints
+                queries.append(
+                    f'"{cname}" "{clean_name}" OR "{city}"'
+                    if city else f'"{cname}" "{clean_name}"'
+                )
+                # LinkedIn personal search (without site: so typos/indirect hits work)
+                if not contact.get("linkedin"):
+                    queries.append(f'"{cname}" linkedin.com/in')
+
+        # 2. Regional news/press — names real employees with titles
+        queries.append(
+            f'"{clean_name}" {city} sócio gerente diretor fundador proprietário'
+            if city else
+            f'"{clean_name}" sócio gerente diretor fundador'
+        )
+
+        # 3. Company website about/team page
+        website = lead.get("website") or ""
+        if website and not _is_link_aggregator(website):
+            wdomain = re.sub(r"https?://(www\.)?", "", website).rstrip("/").split("/")[0]
+            if wdomain:
+                queries.append(f'site:{wdomain} equipe sobre contato')
+
+        # 4. Role-targeted discovery (if no instruction, use defaults)
+        if not instruction:
+            queries.append(
+                f'"{clean_name}" {city} equipe liderança linkedin'
+                if city else
+                f'"{clean_name}" equipe liderança linkedin'
+            )
+
+        # Always fetch CNPJ for QSA contacts
         if cnpj:
             missing.append("cnpj")
     elif focus == "metaAds":
@@ -985,7 +1053,7 @@ async def plan_focused_research(state: DeepResearchState) -> dict:
         queries.append(instruction)
 
     logger.info("[DeepResearch] focused lead=%s field=%s queries=%d", state.get("lead_id"), focus, len(queries))
-    limit = 5 if focus == "email" else 4
+    limit = 6 if focus == "contacts" else 5 if focus == "email" else 4
     return {"missing_fields": missing, "search_queries": queries[:limit]}
 
 
@@ -1000,31 +1068,59 @@ async def extract_focused_update(state: DeepResearchState) -> dict:
     forced_updates: dict = {}
     new_contacts: list[dict] = []
 
-    # Special case: contacts — use QSA + LLM contact extraction
+    # Special case: contacts — use QSA + dedicated LLM contact extraction
     if focus == "contacts":
-        if cnpj_raw:
-            new_contacts = _extract_cnpj_contacts(cnpj_raw)
+        # Start with QSA socios from CNPJ
+        qsa_contacts: list[dict] = _extract_cnpj_contacts(cnpj_raw) if cnpj_raw else []
+
+        # Merge QSA into base, preserving any existing CRM data
+        existing_crm = state.get("contacts") or []
+        existing_by_name: dict[str, dict] = {(c.get("name") or "").lower().strip(): dict(c) for c in existing_crm}
+
+        # QSA adds contacts not yet in CRM
+        for qc in qsa_contacts:
+            key = (qc.get("name") or "").lower().strip()
+            if key not in existing_by_name:
+                existing_by_name[key] = qc
+
+        base_contacts = list(existing_by_name.values())
+
         if web_results:
             search_context = _format_tavily_results(web_results)
             if search_context.strip():
-                user = _EXTRACT_USER.format(
-                    lead_json=json.dumps({"businessName": lead.get("businessName"), "city": lead.get("city")}, ensure_ascii=False),
-                    already_found="nenhum",
-                    existing_contacts_json=json.dumps(state.get("contacts") or [], ensure_ascii=False),
-                    search_context=search_context[:5000],
+                instruction_block = f"Instrução adicional: {instruction}" if instruction else ""
+                user = _CONTACTS_EXTRACT_USER.format(
+                    business_name=lead.get("businessName", "N/A"),
+                    city=lead.get("city", "N/A"),
+                    instruction_block=instruction_block,
+                    existing_contacts_json=json.dumps(base_contacts, ensure_ascii=False, indent=2) if base_contacts else "Nenhum contato cadastrado.",
+                    search_context=search_context[:6000],
                 )
                 try:
-                    raw = await _call_claude(system=_EXTRACT_SYSTEM, user=user, model="claude-haiku-4-5-20251001", max_tokens=1024)
+                    raw = await _call_claude(system=_CONTACTS_EXTRACT_SYSTEM, user=user, model="claude-haiku-4-5-20251001", max_tokens=1200)
                     text = re.sub(r"^```(?:json)?\s*", "", (raw.content[0].text if raw.content else "{}").strip())
                     text = re.sub(r"\s*```$", "", text.strip())
                     parsed = json.loads(text)
                     llm_contacts = [c for c in (parsed.get("contacts") or []) if c.get("name") and len(c["name"].split()) >= 2]
-                    existing_names = {(c.get("name") or "").lower().strip() for c in new_contacts}
-                    for c in llm_contacts:
-                        if c["name"].lower().strip() not in existing_names:
-                            new_contacts.append(c)
+
+                    for lc in llm_contacts:
+                        key = (lc.get("name") or "").lower().strip()
+                        if key in existing_by_name:
+                            # Enrich existing contact with any new fields found
+                            existing = existing_by_name[key]
+                            for field in ("email", "phone", "linkedin", "role"):
+                                if lc.get(field) and not existing.get(field):
+                                    existing[field] = lc[field]
+                                elif field == "role" and lc.get(field) and existing.get(field) in (None, "", "Sócio", "Proprietário"):
+                                    # Prefer more specific role from web (e.g. "gerente financeiro e administrativo")
+                                    existing[field] = lc[field]
+                        else:
+                            existing_by_name[key] = lc
+                            base_contacts.append(lc)
                 except Exception:
                     logger.exception("[DeepResearch] extract_focused_update contacts LLM error")
+
+        new_contacts = list(existing_by_name.values())
         return {"forced_updates": {}, "new_contacts": new_contacts}
 
     # Special case: metaAds — use social enrichment logic
