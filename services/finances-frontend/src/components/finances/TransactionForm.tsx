@@ -172,15 +172,42 @@ export default function TransactionForm({
       if (idx < batchEntries.length - 1) batchCellRefs.current.get(`${idx + 1}-${field}`)?.focus();
       return;
     }
+
+    const addEntryAfter = (rowIdx: number) => {
+      const newDate = batchEntries[rowIdx]?.date || getLocalDateString();
+      const newIdx = batchEntries.length;
+      setBatchEntries((prev) => [...prev, { date: newDate, amount: '' }]);
+      setTimeout(() => batchCellRefs.current.get(`${newIdx}-date`)?.focus(), 0);
+    };
+
+    if (e.key === 'Tab' && !e.shiftKey) {
+      if (field === 'date') {
+        // date → Tab → amount (same row, let browser handle naturally)
+        return;
+      }
+      // amount → Tab → add new entry and focus its date
+      e.preventDefault();
+      addEntryAfter(idx);
+      return;
+    }
+
+    if (e.key === 'Tab' && e.shiftKey) {
+      if (field === 'amount') {
+        // amount → Shift+Tab → date (same row, let browser handle naturally)
+        return;
+      }
+      // date → Shift+Tab → amount of previous row
+      e.preventDefault();
+      if (idx > 0) batchCellRefs.current.get(`${idx - 1}-amount`)?.focus();
+      return;
+    }
+
     if (e.key === 'Enter') {
       e.preventDefault();
       if (field === 'date') {
         batchCellRefs.current.get(`${idx}-amount`)?.focus();
       } else {
-        const newDate = batchEntries[idx]?.date || getLocalDateString();
-        const newIdx = batchEntries.length;
-        setBatchEntries((prev) => [...prev, { date: newDate, amount: '' }]);
-        setTimeout(() => batchCellRefs.current.get(`${newIdx}-date`)?.focus(), 0);
+        addEntryAfter(idx);
       }
     }
   };
