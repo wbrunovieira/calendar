@@ -52,6 +52,8 @@ from app.agents.crm.router import router as crm_router  # noqa: E402
 from app.agents.crm.deep_research.router import router as deep_research_router  # noqa: E402
 from app.agents.crm.call_analysis.router import router as call_analysis_router  # noqa: E402
 from app.agents.crm.meet_analysis.router import router as meet_analysis_router  # noqa: E402
+from app.agents.crm.gatekeeper_analysis.router import router as gatekeeper_analysis_router  # noqa: E402
+from app.agents.crm.gatekeeper_batch.router import router as gatekeeper_batch_router  # noqa: E402
 
 app.include_router(health_router)
 app.include_router(transaction_router)
@@ -59,3 +61,5 @@ app.include_router(crm_router)
 app.include_router(deep_research_router)
 app.include_router(call_analysis_router)
 app.include_router(meet_analysis_router)
+app.include_router(gatekeeper_analysis_router)
+app.include_router(gatekeeper_batch_router)
