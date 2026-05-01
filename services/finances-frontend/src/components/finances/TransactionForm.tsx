@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { getLocalDateString } from '@/utils/format';
 import type {
@@ -90,6 +90,7 @@ export default function TransactionForm({
   const [batchEntries, setBatchEntries] = useState<{ date: string; amount: string }[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const keepBankAccountRef = useRef<string | null>(null);
+  const batchCellRefs = useRef<Map<string, HTMLInputElement>>(new Map());
 
   const isEditing = !!editingTransaction;
 
@@ -146,6 +147,43 @@ export default function TransactionForm({
       }
     }
   }, [isOpen, defaultProfileId, defaultBankAccountId, accounts, categories, editingTransaction]);
+
+  // Auto-focus first date field when batch mode is toggled on
+  useEffect(() => {
+    if (batchMode) {
+      setTimeout(() => batchCellRefs.current.get('0-date')?.focus(), 50);
+    }
+  }, [batchMode]);
+
+  const setBatchRef = (idx: number, field: 'date' | 'amount') => (el: HTMLInputElement | null) => {
+    const key = `${idx}-${field}`;
+    if (el) batchCellRefs.current.set(key, el);
+    else batchCellRefs.current.delete(key);
+  };
+
+  const handleBatchKeyDown = (e: KeyboardEvent<HTMLInputElement>, idx: number, field: 'date' | 'amount') => {
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (idx > 0) batchCellRefs.current.get(`${idx - 1}-${field}`)?.focus();
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (idx < batchEntries.length - 1) batchCellRefs.current.get(`${idx + 1}-${field}`)?.focus();
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (field === 'date') {
+        batchCellRefs.current.get(`${idx}-amount`)?.focus();
+      } else {
+        const newDate = batchEntries[idx]?.date || getLocalDateString();
+        const newIdx = batchEntries.length;
+        setBatchEntries((prev) => [...prev, { date: newDate, amount: '' }]);
+        setTimeout(() => batchCellRefs.current.get(`${newIdx}-date`)?.focus(), 0);
+      }
+    }
+  };
 
   const availableCategories = useMemo(() => {
     // For cross-profile transfers, source side uses EXPENSE categories
@@ -567,6 +605,7 @@ export default function TransactionForm({
                   {batchEntries.map((entry, idx) => (
                     <div key={idx} className="flex items-center gap-2">
                       <input
+                        ref={setBatchRef(idx, 'date')}
                         type="date"
                         value={entry.date}
                         onChange={(e) => {
@@ -574,10 +613,12 @@ export default function TransactionForm({
                           updated[idx] = { ...updated[idx], date: e.target.value };
                           setBatchEntries(updated);
                         }}
+                        onKeyDown={(e) => handleBatchKeyDown(e, idx, 'date')}
                         required
                         className="flex-1 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                       />
                       <input
+                        ref={setBatchRef(idx, 'amount')}
                         type="number"
                         inputMode="decimal"
                         step="0.01"
@@ -588,6 +629,7 @@ export default function TransactionForm({
                           updated[idx] = { ...updated[idx], amount: e.target.value };
                           setBatchEntries(updated);
                         }}
+                        onKeyDown={(e) => handleBatchKeyDown(e, idx, 'amount')}
                         required
                         placeholder="0,00"
                         className="w-28 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -595,6 +637,7 @@ export default function TransactionForm({
                       {batchEntries.length > 1 && (
                         <button
                           type="button"
+                          tabIndex={-1}
                           onClick={() => setBatchEntries(batchEntries.filter((_, i) => i !== idx))}
                           className="text-red-400 hover:text-red-300 text-lg px-1"
                         >
@@ -605,7 +648,13 @@ export default function TransactionForm({
                   ))}
                   <button
                     type="button"
-                    onClick={() => setBatchEntries([...batchEntries, { date: batchEntries[batchEntries.length - 1]?.date || getLocalDateString(), amount: '' }])}
+                    tabIndex={-1}
+                    onClick={() => {
+                      const newDate = batchEntries[batchEntries.length - 1]?.date || getLocalDateString();
+                      const newIdx = batchEntries.length;
+                      setBatchEntries((prev) => [...prev, { date: newDate, amount: '' }]);
+                      setTimeout(() => batchCellRefs.current.get(`${newIdx}-date`)?.focus(), 0);
+                    }}
                     className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-sm font-medium mt-1"
                   >
                     <span className="text-lg leading-none">+</span> Adicionar entrada
