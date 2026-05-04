@@ -303,6 +303,10 @@ func (f *fakeTransactionRepo) CalculateBalanceSince(accountID string, since time
 	return 0, nil
 }
 
+func (f *fakeTransactionRepo) Count(_ transaction.ListFilter) (int, error) {
+	return len(f.created), nil
+}
+
 func (f *fakeTransactionRepo) CalculateBalanceUpTo(accountID string, upTo time.Time) (float64, error) {
 	// Sum confirmed transactions up to the given date
 	var balance float64

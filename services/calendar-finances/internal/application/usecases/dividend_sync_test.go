@@ -47,6 +47,9 @@ func (m *mockTransactionRepo) CalculateBalanceSince(_ string, _ time.Time) (floa
 func (m *mockTransactionRepo) CalculateBalanceUpTo(_ string, _ time.Time) (float64, error) {
 	return 0, nil
 }
+func (m *mockTransactionRepo) Count(_ transaction.ListFilter) (int, error) {
+	return 0, nil
+}
 
 func TestDividendSync_CreatesIncomeTransactions(t *testing.T) {
 	parentID := "clear-id"

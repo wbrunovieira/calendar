@@ -1,6 +1,7 @@
 package usecases
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -26,36 +27,58 @@ func (f *FakeTransactionRepository) GetByID(id string) (*transaction.Transaction
 	return nil, nil
 }
 
+func (f *FakeTransactionRepository) matchesFilter(tx *transaction.Transaction, filter transaction.ListFilter) bool {
+	if tx.ProfileID != filter.ProfileID {
+		return false
+	}
+	if filter.OccurredFrom != nil && tx.OccurredOn.Before(*filter.OccurredFrom) {
+		return false
+	}
+	if filter.OccurredTo != nil && tx.OccurredOn.After(*filter.OccurredTo) {
+		return false
+	}
+	if filter.Status != nil && tx.Status != *filter.Status {
+		return false
+	}
+	if filter.Type != nil && tx.Type != *filter.Type {
+		return false
+	}
+	if filter.InvoiceID != nil && (tx.InvoiceID == nil || *tx.InvoiceID != *filter.InvoiceID) {
+		return false
+	}
+	return true
+}
+
 func (f *FakeTransactionRepository) List(filter transaction.ListFilter) ([]*transaction.Transaction, error) {
 	var result []*transaction.Transaction
 	for _, tx := range f.transactions {
-		if tx.ProfileID != filter.ProfileID {
-			continue
+		if f.matchesFilter(tx, filter) {
+			result = append(result, tx)
 		}
-
-		// Filter by date range
-		if filter.OccurredFrom != nil && tx.OccurredOn.Before(*filter.OccurredFrom) {
-			continue
-		}
-		if filter.OccurredTo != nil && tx.OccurredOn.After(*filter.OccurredTo) {
-			continue
-		}
-
-		if filter.Status != nil && tx.Status != *filter.Status {
-			continue
-		}
-
-		if filter.Type != nil && tx.Type != *filter.Type {
-			continue
-		}
-
-		if filter.InvoiceID != nil && (tx.InvoiceID == nil || *tx.InvoiceID != *filter.InvoiceID) {
-			continue
-		}
-
-		result = append(result, tx)
 	}
+
+	if filter.Offset != nil && *filter.Offset > 0 {
+		if *filter.Offset >= len(result) {
+			return nil, nil
+		}
+		result = result[*filter.Offset:]
+	}
+
+	if filter.Limit != nil && *filter.Limit > 0 && len(result) > *filter.Limit {
+		result = result[:*filter.Limit]
+	}
+
 	return result, nil
+}
+
+func (f *FakeTransactionRepository) Count(filter transaction.ListFilter) (int, error) {
+	count := 0
+	for _, tx := range f.transactions {
+		if f.matchesFilter(tx, filter) {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func (f *FakeTransactionRepository) Update(tx *transaction.Transaction) error {
@@ -108,238 +131,287 @@ func (f *FakeTransactionRepository) CalculateBalanceByBankAccountID(bankAccountI
 func (f *FakeTransactionRepository) FindByExternalID(externalID string) (*transaction.Transaction, error) {
 	return nil, nil
 }
+
 func (f *FakeTransactionRepository) CalculateBalanceSince(_ string, _ time.Time) (float64, error) {
 	return 0, nil
 }
+
 func (f *FakeTransactionRepository) CalculateBalanceUpTo(_ string, _ time.Time) (float64, error) {
 	return 0, nil
 }
 
-func TestListTransactions_FilterByDateRange_ShouldReturnOnlyTransactionsInRange(t *testing.T) {
-	// Arrange
-	profileID := "profile-1"
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-	// Create transactions in different months
-	janTx := &transaction.Transaction{
-		ID:         "tx-jan",
+func makeTx(id string, profileID string, month time.Month) *transaction.Transaction {
+	return &transaction.Transaction{
+		ID:         id,
 		ProfileID:  profileID,
-		OccurredOn: time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC),
+		OccurredOn: time.Date(2026, month, 15, 0, 0, 0, 0, time.UTC),
 		Type:       transaction.TypeExpense,
 		Status:     transaction.StatusConfirmed,
 		Amount:     100,
 	}
+}
 
-	febTx1 := &transaction.Transaction{
-		ID:         "tx-feb-1",
-		ProfileID:  profileID,
-		OccurredOn: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
-		Type:       transaction.TypeExpense,
-		Status:     transaction.StatusConfirmed,
-		Amount:     200,
+func nTransactions(profileID string, n int) []*transaction.Transaction {
+	txns := make([]*transaction.Transaction, n)
+	for i := 0; i < n; i++ {
+		txns[i] = &transaction.Transaction{
+			ID:         fmt.Sprintf("tx-%02d", i+1),
+			ProfileID:  profileID,
+			OccurredOn: time.Date(2026, 1, i+1, 0, 0, 0, 0, time.UTC),
+			Type:       transaction.TypeExpense,
+			Status:     transaction.StatusConfirmed,
+			Amount:     float64(i + 1),
+		}
+	}
+	return txns
+}
+
+// ---------------------------------------------------------------------------
+// Pagination tests (RED — these will fail until the use case is updated)
+// ---------------------------------------------------------------------------
+
+func TestListTransactions_Pagination_DefaultsToPage1Size50(t *testing.T) {
+	profileID := "profile-1"
+	repo := &FakeTransactionRepository{transactions: nTransactions(profileID, 60)}
+	uc := NewListTransactionsUseCase(repo)
+
+	result, err := uc.Execute(ListTransactionsInput{ProfileID: profileID})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 
-	febTx2 := &transaction.Transaction{
-		ID:         "tx-feb-2",
-		ProfileID:  profileID,
-		OccurredOn: time.Date(2026, 2, 15, 0, 0, 0, 0, time.UTC),
-		Type:       transaction.TypeExpense,
-		Status:     transaction.StatusConfirmed,
-		Amount:     300,
+	if len(result.Items) != 50 {
+		t.Errorf("expected 50 items (default pageSize), got %d", len(result.Items))
+	}
+	if result.Total != 60 {
+		t.Errorf("expected total=60, got %d", result.Total)
+	}
+	if result.Page != 1 {
+		t.Errorf("expected page=1, got %d", result.Page)
+	}
+	if result.PageSize != 50 {
+		t.Errorf("expected pageSize=50, got %d", result.PageSize)
+	}
+}
+
+func TestListTransactions_Pagination_Page2ReturnsRemaining(t *testing.T) {
+	profileID := "profile-1"
+	repo := &FakeTransactionRepository{transactions: nTransactions(profileID, 60)}
+	uc := NewListTransactionsUseCase(repo)
+
+	result, err := uc.Execute(ListTransactionsInput{ProfileID: profileID, Page: 2, PageSize: 50})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 
-	marTx := &transaction.Transaction{
-		ID:         "tx-mar",
-		ProfileID:  profileID,
-		OccurredOn: time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC),
-		Type:       transaction.TypeExpense,
-		Status:     transaction.StatusConfirmed,
-		Amount:     400,
+	if len(result.Items) != 10 {
+		t.Errorf("expected 10 items on page 2, got %d", len(result.Items))
 	}
+	if result.Total != 60 {
+		t.Errorf("expected total=60, got %d", result.Total)
+	}
+}
+
+func TestListTransactions_Pagination_CustomPageSize(t *testing.T) {
+	profileID := "profile-1"
+	repo := &FakeTransactionRepository{transactions: nTransactions(profileID, 10)}
+	uc := NewListTransactionsUseCase(repo)
+
+	result, err := uc.Execute(ListTransactionsInput{ProfileID: profileID, Page: 2, PageSize: 3})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(result.Items) != 3 {
+		t.Errorf("expected 3 items, got %d", len(result.Items))
+	}
+	if result.Total != 10 {
+		t.Errorf("expected total=10, got %d", result.Total)
+	}
+	if result.Page != 2 {
+		t.Errorf("expected page=2, got %d", result.Page)
+	}
+}
+
+func TestListTransactions_Pagination_LastPageHasFewer(t *testing.T) {
+	profileID := "profile-1"
+	repo := &FakeTransactionRepository{transactions: nTransactions(profileID, 7)}
+	uc := NewListTransactionsUseCase(repo)
+
+	result, err := uc.Execute(ListTransactionsInput{ProfileID: profileID, Page: 2, PageSize: 5})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(result.Items) != 2 {
+		t.Errorf("expected 2 items on last page, got %d", len(result.Items))
+	}
+	if result.Total != 7 {
+		t.Errorf("expected total=7, got %d", result.Total)
+	}
+}
+
+func TestListTransactions_Pagination_BeyondLastPageReturnsEmpty(t *testing.T) {
+	profileID := "profile-1"
+	repo := &FakeTransactionRepository{transactions: nTransactions(profileID, 5)}
+	uc := NewListTransactionsUseCase(repo)
+
+	result, err := uc.Execute(ListTransactionsInput{ProfileID: profileID, Page: 3, PageSize: 5})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(result.Items) != 0 {
+		t.Errorf("expected 0 items beyond last page, got %d", len(result.Items))
+	}
+	if result.Total != 5 {
+		t.Errorf("expected total=5, got %d", result.Total)
+	}
+}
+
+func TestListTransactions_Pagination_TotalRespectsFilters(t *testing.T) {
+	profileID := "profile-1"
+	invoiceID := "inv-abc"
+
+	txns := nTransactions(profileID, 20)
+	// Only first 5 have an invoice
+	for i := 0; i < 5; i++ {
+		id := invoiceID
+		txns[i].InvoiceID = &id
+	}
+
+	repo := &FakeTransactionRepository{transactions: txns}
+	uc := NewListTransactionsUseCase(repo)
+
+	inv := invoiceID
+	result, err := uc.Execute(ListTransactionsInput{ProfileID: profileID, InvoiceID: &inv, PageSize: 10})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Total != 5 {
+		t.Errorf("total should reflect filter (5), got %d", result.Total)
+	}
+	if len(result.Items) != 5 {
+		t.Errorf("expected 5 items, got %d", len(result.Items))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Existing filter tests — updated to use result.Items
+// ---------------------------------------------------------------------------
+
+func TestListTransactions_FilterByDateRange_ShouldReturnOnlyTransactionsInRange(t *testing.T) {
+	profileID := "profile-1"
 
 	repo := &FakeTransactionRepository{
-		transactions: []*transaction.Transaction{janTx, febTx1, febTx2, marTx},
+		transactions: []*transaction.Transaction{
+			makeTx("tx-jan", profileID, time.January),
+			makeTx("tx-feb-1", profileID, time.February),
+			makeTx("tx-feb-2", profileID, time.February),
+			makeTx("tx-mar", profileID, time.March),
+		},
 	}
+	repo.transactions[2].OccurredOn = time.Date(2026, time.February, 28, 0, 0, 0, 0, time.UTC)
 
-	useCase := NewListTransactionsUseCase(repo)
+	uc := NewListTransactionsUseCase(repo)
 
-	// Act - filter for February only
-	fromDate := "2026-02-01"
-	toDate := "2026-02-28"
-
-	result, err := useCase.Execute(ListTransactionsInput{
-		ProfileID:    profileID,
-		OccurredFrom: &fromDate,
-		OccurredTo:   &toDate,
-	})
-
-	// Assert
+	from := "2026-02-01"
+	to := "2026-02-28"
+	result, err := uc.Execute(ListTransactionsInput{ProfileID: profileID, OccurredFrom: &from, OccurredTo: &to})
 	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(result) != 2 {
-		t.Errorf("Expected 2 transactions for February, got %d", len(result))
+	if len(result.Items) != 2 {
+		t.Errorf("expected 2 transactions for February, got %d", len(result.Items))
 	}
-
-	// Verify we got the right transactions
-	for _, tx := range result {
+	for _, tx := range result.Items {
 		if tx.OccurredOn.Month() != time.February {
-			t.Errorf("Expected transaction in February, got %v", tx.OccurredOn)
+			t.Errorf("expected transaction in February, got %v", tx.OccurredOn)
 		}
 	}
 }
 
 func TestListTransactions_FilterByDateRange_ShouldExcludeTransactionsBeforeFrom(t *testing.T) {
-	// Arrange
 	profileID := "profile-1"
 
-	oldTx := &transaction.Transaction{
-		ID:         "tx-old",
-		ProfileID:  profileID,
-		OccurredOn: time.Date(2025, 12, 31, 0, 0, 0, 0, time.UTC),
-		Type:       transaction.TypeExpense,
-		Status:     transaction.StatusConfirmed,
-		Amount:     100,
-	}
-
-	newTx := &transaction.Transaction{
-		ID:         "tx-new",
-		ProfileID:  profileID,
-		OccurredOn: time.Date(2026, 2, 15, 0, 0, 0, 0, time.UTC),
-		Type:       transaction.TypeExpense,
-		Status:     transaction.StatusConfirmed,
-		Amount:     200,
-	}
-
 	repo := &FakeTransactionRepository{
-		transactions: []*transaction.Transaction{oldTx, newTx},
+		transactions: []*transaction.Transaction{
+			{ID: "tx-old", ProfileID: profileID, OccurredOn: time.Date(2025, 12, 31, 0, 0, 0, 0, time.UTC), Type: transaction.TypeExpense, Status: transaction.StatusConfirmed, Amount: 100},
+			{ID: "tx-new", ProfileID: profileID, OccurredOn: time.Date(2026, 2, 15, 0, 0, 0, 0, time.UTC), Type: transaction.TypeExpense, Status: transaction.StatusConfirmed, Amount: 200},
+		},
 	}
 
-	useCase := NewListTransactionsUseCase(repo)
+	uc := NewListTransactionsUseCase(repo)
 
-	// Act - filter from February 2026
-	fromDate := "2026-02-01"
-	toDate := "2026-02-28"
-
-	result, err := useCase.Execute(ListTransactionsInput{
-		ProfileID:    profileID,
-		OccurredFrom: &fromDate,
-		OccurredTo:   &toDate,
-	})
-
-	// Assert
+	from := "2026-02-01"
+	to := "2026-02-28"
+	result, err := uc.Execute(ListTransactionsInput{ProfileID: profileID, OccurredFrom: &from, OccurredTo: &to})
 	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(result) != 1 {
-		t.Errorf("Expected 1 transaction, got %d", len(result))
+	if len(result.Items) != 1 {
+		t.Errorf("expected 1 transaction, got %d", len(result.Items))
 	}
-
-	if len(result) > 0 && result[0].ID != "tx-new" {
-		t.Errorf("Expected tx-new, got %s", result[0].ID)
+	if len(result.Items) > 0 && result.Items[0].ID != "tx-new" {
+		t.Errorf("expected tx-new, got %s", result.Items[0].ID)
 	}
 }
 
 func TestListTransactions_FilterByDateRange_ShouldExcludeTransactionsAfterTo(t *testing.T) {
-	// Arrange
 	profileID := "profile-1"
 
-	febTx := &transaction.Transaction{
-		ID:         "tx-feb",
-		ProfileID:  profileID,
-		OccurredOn: time.Date(2026, 2, 15, 0, 0, 0, 0, time.UTC),
-		Type:       transaction.TypeExpense,
-		Status:     transaction.StatusConfirmed,
-		Amount:     100,
-	}
-
-	futureTx := &transaction.Transaction{
-		ID:         "tx-future",
-		ProfileID:  profileID,
-		OccurredOn: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
-		Type:       transaction.TypeExpense,
-		Status:     transaction.StatusConfirmed,
-		Amount:     200,
-	}
-
 	repo := &FakeTransactionRepository{
-		transactions: []*transaction.Transaction{febTx, futureTx},
+		transactions: []*transaction.Transaction{
+			{ID: "tx-feb", ProfileID: profileID, OccurredOn: time.Date(2026, 2, 15, 0, 0, 0, 0, time.UTC), Type: transaction.TypeExpense, Status: transaction.StatusConfirmed, Amount: 100},
+			{ID: "tx-future", ProfileID: profileID, OccurredOn: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC), Type: transaction.TypeExpense, Status: transaction.StatusConfirmed, Amount: 200},
+		},
 	}
 
-	useCase := NewListTransactionsUseCase(repo)
+	uc := NewListTransactionsUseCase(repo)
 
-	// Act - filter until end of February 2026
-	fromDate := "2026-02-01"
-	toDate := "2026-02-28"
-
-	result, err := useCase.Execute(ListTransactionsInput{
-		ProfileID:    profileID,
-		OccurredFrom: &fromDate,
-		OccurredTo:   &toDate,
-	})
-
-	// Assert
+	from := "2026-02-01"
+	to := "2026-02-28"
+	result, err := uc.Execute(ListTransactionsInput{ProfileID: profileID, OccurredFrom: &from, OccurredTo: &to})
 	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(result) != 1 {
-		t.Errorf("Expected 1 transaction, got %d", len(result))
+	if len(result.Items) != 1 {
+		t.Errorf("expected 1 transaction, got %d", len(result.Items))
 	}
-
-	if len(result) > 0 && result[0].ID != "tx-feb" {
-		t.Errorf("Expected tx-feb, got %s", result[0].ID)
+	if len(result.Items) > 0 && result.Items[0].ID != "tx-feb" {
+		t.Errorf("expected tx-feb, got %s", result.Items[0].ID)
 	}
 }
 
 func TestListTransactions_FilterByDateRange_InclusiveBoundaries(t *testing.T) {
-	// Arrange
 	profileID := "profile-1"
 
-	// Transaction exactly on the first day
-	firstDayTx := &transaction.Transaction{
-		ID:         "tx-first",
-		ProfileID:  profileID,
-		OccurredOn: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
-		Type:       transaction.TypeExpense,
-		Status:     transaction.StatusConfirmed,
-		Amount:     100,
-	}
-
-	// Transaction exactly on the last day
-	lastDayTx := &transaction.Transaction{
-		ID:         "tx-last",
-		ProfileID:  profileID,
-		OccurredOn: time.Date(2026, 2, 28, 0, 0, 0, 0, time.UTC),
-		Type:       transaction.TypeExpense,
-		Status:     transaction.StatusConfirmed,
-		Amount:     200,
-	}
-
 	repo := &FakeTransactionRepository{
-		transactions: []*transaction.Transaction{firstDayTx, lastDayTx},
+		transactions: []*transaction.Transaction{
+			{ID: "tx-first", ProfileID: profileID, OccurredOn: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), Type: transaction.TypeExpense, Status: transaction.StatusConfirmed, Amount: 100},
+			{ID: "tx-last", ProfileID: profileID, OccurredOn: time.Date(2026, 2, 28, 0, 0, 0, 0, time.UTC), Type: transaction.TypeExpense, Status: transaction.StatusConfirmed, Amount: 200},
+		},
 	}
 
-	useCase := NewListTransactionsUseCase(repo)
+	uc := NewListTransactionsUseCase(repo)
 
-	// Act
-	fromDate := "2026-02-01"
-	toDate := "2026-02-28"
-
-	result, err := useCase.Execute(ListTransactionsInput{
-		ProfileID:    profileID,
-		OccurredFrom: &fromDate,
-		OccurredTo:   &toDate,
-	})
-
-	// Assert
+	from := "2026-02-01"
+	to := "2026-02-28"
+	result, err := uc.Execute(ListTransactionsInput{ProfileID: profileID, OccurredFrom: &from, OccurredTo: &to})
 	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(result) != 2 {
-		t.Errorf("Expected 2 transactions (inclusive boundaries), got %d", len(result))
+	if len(result.Items) != 2 {
+		t.Errorf("expected 2 transactions (inclusive boundaries), got %d", len(result.Items))
 	}
 }
 
@@ -348,52 +420,25 @@ func TestListTransactions_FilterByInvoiceID_ShouldReturnOnlyMatchingInvoice(t *t
 	invoiceA := "invoice-a"
 	invoiceB := "invoice-b"
 
-	txA := &transaction.Transaction{
-		ID:        "tx-a",
-		ProfileID: profileID,
-		InvoiceID: &invoiceA,
-		Type:      transaction.TypeExpense,
-		Status:    transaction.StatusConfirmed,
-		Amount:    50,
-	}
-
-	txB := &transaction.Transaction{
-		ID:        "tx-b",
-		ProfileID: profileID,
-		InvoiceID: &invoiceB,
-		Type:      transaction.TypeExpense,
-		Status:    transaction.StatusConfirmed,
-		Amount:    75,
-	}
-
-	txNoInvoice := &transaction.Transaction{
-		ID:        "tx-no-inv",
-		ProfileID: profileID,
-		Type:      transaction.TypeExpense,
-		Status:    transaction.StatusConfirmed,
-		Amount:    100,
-	}
-
 	repo := &FakeTransactionRepository{
-		transactions: []*transaction.Transaction{txA, txB, txNoInvoice},
+		transactions: []*transaction.Transaction{
+			{ID: "tx-a", ProfileID: profileID, InvoiceID: &invoiceA, Type: transaction.TypeExpense, Status: transaction.StatusConfirmed, Amount: 50},
+			{ID: "tx-b", ProfileID: profileID, InvoiceID: &invoiceB, Type: transaction.TypeExpense, Status: transaction.StatusConfirmed, Amount: 75},
+			{ID: "tx-no-inv", ProfileID: profileID, Type: transaction.TypeExpense, Status: transaction.StatusConfirmed, Amount: 100},
+		},
 	}
 
-	useCase := NewListTransactionsUseCase(repo)
+	uc := NewListTransactionsUseCase(repo)
 
-	result, err := useCase.Execute(ListTransactionsInput{
-		ProfileID: profileID,
-		InvoiceID: &invoiceA,
-	})
-
+	result, err := uc.Execute(ListTransactionsInput{ProfileID: profileID, InvoiceID: &invoiceA})
 	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(result) != 1 {
-		t.Fatalf("Expected 1 transaction for invoice-a, got %d", len(result))
+	if len(result.Items) != 1 {
+		t.Fatalf("expected 1 transaction for invoice-a, got %d", len(result.Items))
 	}
-
-	if result[0].ID != "tx-a" {
-		t.Errorf("Expected tx-a, got %s", result[0].ID)
+	if result.Items[0].ID != "tx-a" {
+		t.Errorf("expected tx-a, got %s", result.Items[0].ID)
 	}
 }

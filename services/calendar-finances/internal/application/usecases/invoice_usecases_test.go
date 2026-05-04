@@ -194,6 +194,9 @@ func (f *fakeTransactionRepoWithInvoice) CalculateBalanceSince(_ string, _ time.
 func (f *fakeTransactionRepoWithInvoice) CalculateBalanceUpTo(_ string, _ time.Time) (float64, error) {
 	return 0, nil
 }
+func (f *fakeTransactionRepoWithInvoice) Count(_ transaction.ListFilter) (int, error) {
+	return len(f.transactions), nil
+}
 
 // Test: GetCurrentInvoice should return confirmed and planned amounts separately
 func TestGetCurrentInvoice_ShouldReturnConfirmedAndPlannedAmounts(t *testing.T) {

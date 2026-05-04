@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/brunovieira/calendar-finances/internal/application/usecases"
 	"github.com/gorilla/mux"
@@ -42,14 +43,18 @@ func (h *TransactionHandlers) SetDailyBalancesUseCase(uc *usecases.GetDailyBalan
 
 // List handles GET /api/v1/transactions
 func (h *TransactionHandlers) List(w http.ResponseWriter, r *http.Request) {
-	profileID := r.URL.Query().Get("profileId")
-	bankAccountID := r.URL.Query().Get("bankAccountId")
-	invoiceID := r.URL.Query().Get("invoiceId")
-	status := r.URL.Query().Get("status")
-	typeValue := r.URL.Query().Get("type")
-	occurredFrom := r.URL.Query().Get("occurredFrom")
-	occurredTo := r.URL.Query().Get("occurredTo")
-	includeAsDestination := r.URL.Query().Get("includeAsDestination") == "true"
+	q := r.URL.Query()
+	profileID := q.Get("profileId")
+	bankAccountID := q.Get("bankAccountId")
+	invoiceID := q.Get("invoiceId")
+	status := q.Get("status")
+	typeValue := q.Get("type")
+	occurredFrom := q.Get("occurredFrom")
+	occurredTo := q.Get("occurredTo")
+	includeAsDestination := q.Get("includeAsDestination") == "true"
+
+	page, _ := strconv.Atoi(q.Get("page"))
+	pageSize, _ := strconv.Atoi(q.Get("pageSize"))
 
 	var bankAccountPtr, invoicePtr, statusPtr, typePtr, fromPtr, toPtr *string
 	if bankAccountID != "" {
@@ -71,7 +76,7 @@ func (h *TransactionHandlers) List(w http.ResponseWriter, r *http.Request) {
 		toPtr = &occurredTo
 	}
 
-	transactions, err := h.listUseCase.Execute(usecases.ListTransactionsInput{
+	result, err := h.listUseCase.Execute(usecases.ListTransactionsInput{
 		ProfileID:            profileID,
 		BankAccountID:        bankAccountPtr,
 		InvoiceID:            invoicePtr,
@@ -80,6 +85,8 @@ func (h *TransactionHandlers) List(w http.ResponseWriter, r *http.Request) {
 		OccurredFrom:         fromPtr,
 		OccurredTo:           toPtr,
 		IncludeAsDestination: includeAsDestination,
+		Page:                 page,
+		PageSize:             pageSize,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -88,8 +95,10 @@ func (h *TransactionHandlers) List(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"data":  transactions,
-		"total": len(transactions),
+		"data":     result.Items,
+		"total":    result.Total,
+		"page":     result.Page,
+		"pageSize": result.PageSize,
 	})
 }
 

@@ -231,6 +231,16 @@ func (r *TransactionRepository) List(filter transaction.ListFilter) ([]*transact
 
 	baseQuery += " ORDER BY occurred_on DESC, created_at DESC"
 
+	if filter.Limit != nil && *filter.Limit > 0 {
+		baseQuery += fmt.Sprintf(" LIMIT $%d", len(args)+1)
+		args = append(args, *filter.Limit)
+	}
+
+	if filter.Offset != nil && *filter.Offset > 0 {
+		baseQuery += fmt.Sprintf(" OFFSET $%d", len(args)+1)
+		args = append(args, *filter.Offset)
+	}
+
 	rows, err := r.db.Query(baseQuery, args...)
 	if err != nil {
 		return nil, err
@@ -251,6 +261,64 @@ func (r *TransactionRepository) List(filter transaction.ListFilter) ([]*transact
 	}
 
 	return transactions, nil
+}
+
+func (r *TransactionRepository) Count(filter transaction.ListFilter) (int, error) {
+	if strings.TrimSpace(filter.ProfileID) == "" {
+		return 0, errors.New("profileID is required")
+	}
+
+	baseQuery := `SELECT COUNT(*) FROM finance.transactions WHERE profile_id = $1`
+	args := []interface{}{filter.ProfileID}
+
+	addCondition := func(column string, operator string, value interface{}) string {
+		placeholder := fmt.Sprintf("$%d", len(args)+1)
+		args = append(args, value)
+		return fmt.Sprintf("%s %s %s", column, operator, placeholder)
+	}
+
+	var conditions []string
+
+	if filter.BankAccountID != nil {
+		trimmed := strings.TrimSpace(*filter.BankAccountID)
+		if trimmed != "" {
+			if filter.IncludeAsDestination {
+				p1 := fmt.Sprintf("$%d", len(args)+1)
+				p2 := fmt.Sprintf("$%d", len(args)+2)
+				conditions = append(conditions, fmt.Sprintf("(bank_account_id = %s OR destination_account_id = %s)", p1, p2))
+				args = append(args, trimmed, trimmed)
+			} else {
+				conditions = append(conditions, addCondition("bank_account_id", "=", trimmed))
+			}
+		}
+	}
+	if filter.InvoiceID != nil {
+		if trimmed := strings.TrimSpace(*filter.InvoiceID); trimmed != "" {
+			conditions = append(conditions, addCondition("invoice_id", "=", trimmed))
+		}
+	}
+	if filter.Status != nil {
+		conditions = append(conditions, addCondition("status", "=", *filter.Status))
+	}
+	if filter.Type != nil {
+		conditions = append(conditions, addCondition("type", "=", *filter.Type))
+	}
+	if filter.OccurredFrom != nil {
+		conditions = append(conditions, addCondition("occurred_on", ">=", *filter.OccurredFrom))
+	}
+	if filter.OccurredTo != nil {
+		conditions = append(conditions, addCondition("occurred_on", "<=", *filter.OccurredTo))
+	}
+
+	if len(conditions) > 0 {
+		baseQuery += " AND " + strings.Join(conditions, " AND ")
+	}
+
+	var count int
+	if err := r.db.QueryRow(baseQuery, args...).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 type transactionScanner interface {

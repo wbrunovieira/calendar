@@ -6,6 +6,8 @@ import (
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
 )
 
+const DefaultPageSize = 50
+
 type ListTransactionsInput struct {
 	ProfileID            string
 	BankAccountID        *string
@@ -15,6 +17,15 @@ type ListTransactionsInput struct {
 	OccurredFrom         *string
 	OccurredTo           *string
 	IncludeAsDestination bool
+	Page                 int // 1-based; 0 or negative defaults to 1
+	PageSize             int // defaults to DefaultPageSize
+}
+
+type ListTransactionsResult struct {
+	Items    []*transaction.Transaction
+	Total    int
+	Page     int
+	PageSize int
 }
 
 type ListTransactionsUseCase struct {
@@ -25,7 +36,7 @@ func NewListTransactionsUseCase(repo transaction.Repository) *ListTransactionsUs
 	return &ListTransactionsUseCase{repo: repo}
 }
 
-func (uc *ListTransactionsUseCase) Execute(input ListTransactionsInput) ([]*transaction.Transaction, error) {
+func (uc *ListTransactionsUseCase) Execute(input ListTransactionsInput) (*ListTransactionsResult, error) {
 	if strings.TrimSpace(input.ProfileID) == "" {
 		return nil, ErrInvalidInput
 	}
@@ -66,7 +77,7 @@ func (uc *ListTransactionsUseCase) Execute(input ListTransactionsInput) ([]*tran
 	if input.OccurredFrom != nil {
 		t, err := parseDate(*input.OccurredFrom)
 		if err != nil {
-			return nil, err
+			return nil, ErrInvalidInput
 		}
 		filter.OccurredFrom = &t
 	}
@@ -74,10 +85,42 @@ func (uc *ListTransactionsUseCase) Execute(input ListTransactionsInput) ([]*tran
 	if input.OccurredTo != nil {
 		t, err := parseDate(*input.OccurredTo)
 		if err != nil {
-			return nil, err
+			return nil, ErrInvalidInput
 		}
 		filter.OccurredTo = &t
 	}
 
-	return uc.repo.List(filter)
+	page := input.Page
+	if page < 1 {
+		page = 1
+	}
+	pageSize := input.PageSize
+	if pageSize <= 0 {
+		pageSize = DefaultPageSize
+	}
+
+	total, err := uc.repo.Count(filter)
+	if err != nil {
+		return nil, err
+	}
+
+	offset := (page - 1) * pageSize
+	filter.Limit = &pageSize
+	filter.Offset = &offset
+
+	items, err := uc.repo.List(filter)
+	if err != nil {
+		return nil, err
+	}
+
+	if items == nil {
+		items = []*transaction.Transaction{}
+	}
+
+	return &ListTransactionsResult{
+		Items:    items,
+		Total:    total,
+		Page:     page,
+		PageSize: pageSize,
+	}, nil
 }

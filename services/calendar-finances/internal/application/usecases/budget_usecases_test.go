@@ -115,6 +115,9 @@ func (f *fakeTxRepoForBudget) CalculateBalanceSince(_ string, _ time.Time) (floa
 func (f *fakeTxRepoForBudget) CalculateBalanceUpTo(_ string, _ time.Time) (float64, error) {
 	return 0, nil
 }
+func (f *fakeTxRepoForBudget) Count(_ transaction.ListFilter) (int, error) {
+	return 0, nil
+}
 
 type fakeCategoryRepoForBudget struct {
 	categories map[string]*category.Category

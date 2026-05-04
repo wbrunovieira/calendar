@@ -93,6 +93,23 @@ func (f *FakeTransactionRepository) CalculateBalanceUpTo(_ string, _ time.Time) 
 	return 0, nil
 }
 
+func (f *FakeTransactionRepository) Count(filter transaction.ListFilter) (int, error) {
+	count := 0
+	for _, tx := range f.transactions {
+		if tx.ProfileID != filter.ProfileID {
+			continue
+		}
+		if filter.OccurredFrom != nil && tx.OccurredOn.Before(*filter.OccurredFrom) {
+			continue
+		}
+		if filter.OccurredTo != nil && tx.OccurredOn.After(*filter.OccurredTo) {
+			continue
+		}
+		count++
+	}
+	return count, nil
+}
+
 func TestTransactionHandlers_List_ShouldAcceptOccurredFromAndOccurredToParams(t *testing.T) {
 	// Arrange
 	profileID := "test-profile"

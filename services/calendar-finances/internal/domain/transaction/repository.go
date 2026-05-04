@@ -12,6 +12,8 @@ type ListFilter struct {
 	OccurredFrom         *time.Time
 	OccurredTo           *time.Time
 	IncludeAsDestination bool // Also match transfers where BankAccountID is the destination
+	Limit                *int
+	Offset               *int
 }
 
 // Repository represents the persistence contract for transactions.
@@ -19,6 +21,7 @@ type Repository interface {
 	Create(tx *Transaction) error
 	GetByID(id string) (*Transaction, error)
 	List(filter ListFilter) ([]*Transaction, error)
+	Count(filter ListFilter) (int, error)
 	Update(tx *Transaction) error
 	UpdateStatus(id string, status Status, occurredOn time.Time, notes *string) error
 	Delete(id string) error
