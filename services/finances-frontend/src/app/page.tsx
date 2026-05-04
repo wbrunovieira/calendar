@@ -160,8 +160,9 @@ export default function FinancesPage() {
       if (filters.status && filters.status !== 'ALL') params.append('status', filters.status);
       if (filters.from) params.append('occurredFrom', filters.from);
       if (filters.to) params.append('occurredTo', filters.to);
+      params.append('pageSize', '500');
 
-      const data = await api.get<{ data: Transaction[] }>(`/transactions?${params.toString()}`);
+      const data = await api.get<{ data: Transaction[]; total: number }>(`/transactions?${params.toString()}`);
       setTransactions(data.data || []);
     } catch (error) {
       console.warn('Erro ao carregar lançamentos:', error);
@@ -198,8 +199,8 @@ export default function FinancesPage() {
       const lastDayBefore = new Date(now.getFullYear(), now.getMonth(), 0);
       const to = formatLocalDate(lastDayBefore);
       if (from >= currentMonthStart) return; // safety check
-      const params = new URLSearchParams({ profileId, status: 'PLANNED', occurredFrom: from, occurredTo: to });
-      const data = await api.get<{ data: Transaction[] }>(`/transactions?${params.toString()}`);
+      const params = new URLSearchParams({ profileId, status: 'PLANNED', occurredFrom: from, occurredTo: to, pageSize: '200' });
+      const data = await api.get<{ data: Transaction[]; total: number }>(`/transactions?${params.toString()}`);
       setOverdueTransactions(data.data || []);
     } catch (error) {
       console.warn('Erro ao carregar transacoes atrasadas:', error);
@@ -354,6 +355,7 @@ export default function FinancesPage() {
 
       if (selectedProfileId) {
         await fetchTransactions(selectedProfileId, transactionFilters);
+        await fetchOverdueTransactions(selectedProfileId);
         await fetchBankAccounts();
       }
       toast('Lancamento excluido com sucesso');
