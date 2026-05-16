@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/brunovieira/calendar-finances/internal/domain/balancecheckpoint"
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
 )
@@ -237,6 +238,53 @@ func TestRecalculateBalance_ReportsOldAndNewBalance(t *testing.T) {
 	}
 	if result2.NewBalance != 1500 { // 1000 initial + 500 income
 		t.Fatalf("expected NewBalance 1500, got %.2f", result2.NewBalance)
+	}
+}
+
+// Given: account with initial=0, one retroactive income of R$100 added AFTER a checkpoint was created
+//        (checkpoint has closing_balance=1000 but doesn't know about the retroactive income)
+// When: recalculate
+// Then: new balance = 100 (initialBalance + all confirmed txns), NOT 1000 (stale checkpoint)
+func TestRecalculateBalance_StaleCheckpoint_MustBeIgnoredAndUseDirectCalculation(t *testing.T) {
+	accountID := "acc"
+
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		accountID: makeAccount(accountID, 0, 0),
+	}}
+
+	retroactiveTx := &transaction.Transaction{
+		ID:            "retro-income",
+		ProfileID:     "profile-1",
+		BankAccountID: accountID,
+		Type:          transaction.TypeIncome,
+		Status:        transaction.StatusConfirmed,
+		Amount:        100,
+		OccurredOn:    time.Date(2026, 4, 20, 0, 0, 0, 0, time.UTC),
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+	}
+
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{retroactiveTx}}
+
+	// Stale checkpoint: was created before the retroactive income was added.
+	// closing_balance=1000 does not include the R$100 income above.
+	staleCheckpoint := &balancecheckpoint.BalanceCheckpoint{
+		AccountID:      accountID,
+		ReferenceMonth: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
+		ClosingBalance: 1000,
+	}
+	checkpointRepo := &fakeCheckpointRepo{latest: staleCheckpoint}
+
+	uc := NewRecalculateBalanceUseCase(accountRepo, txRepo, checkpointRepo)
+	result, err := uc.Execute(accountID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Correct: initialBalance(0) + CalculateBalanceByBankAccountID(100) = 100
+	// Bug returns: staleCheckpoint(1000) + CalculateBalanceSince(0) = 1000
+	if result.NewBalance != 100 {
+		t.Errorf("expected balance 100 (all confirmed txns, no checkpoint), got %.2f", result.NewBalance)
 	}
 }
 

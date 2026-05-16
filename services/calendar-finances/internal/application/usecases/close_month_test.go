@@ -198,21 +198,24 @@ func TestCloseMonth_UpsertExistingCheckpoint(t *testing.T) {
 // RecalculateBalance — with checkpoint tests
 // ---------------------------------------------------------------------------
 
-func TestRecalculateBalance_WithCheckpoint_OnlySumsRecentTransactions(t *testing.T) {
+// TestRecalculateBalance_WithCheckpoint_AlwaysUsesFullScan verifies that even when a checkpoint
+// exists, computeBalance ignores it and always calls CalculateBalanceByBankAccountID.
+// This prevents stale checkpoints from causing wrong balances when retroactive transactions are added.
+func TestRecalculateBalance_WithCheckpoint_AlwaysUsesFullScan(t *testing.T) {
 	acc := checkingAccount(testProfile, "acc-cp", 1000)
+	acc.InitialBalance = 500
 	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"acc-cp": acc}}
 
-	// Checkpoint: end of Feb 2026, balance = 1500
 	cp := &balancecheckpoint.BalanceCheckpoint{
 		ID:             "cp-1",
 		AccountID:      "acc-cp",
 		ReferenceMonth: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
-		ClosingBalance: 1500,
+		ClosingBalance: 9999, // stale value — must be ignored
 	}
 	cpRepo := &fakeCheckpointRepo{latest: cp}
 
-	// Transactions since March 1st net to -200 (some expenses in March/April)
-	txRepo := &balanceSinceRepo{sinceResult: map[string]float64{"acc-cp": -200}}
+	// Full scan returns 800
+	txRepo := &balanceSinceRepo{fullResult: map[string]float64{"acc-cp": 800}}
 
 	uc := NewRecalculateBalanceUseCase(accountRepo, txRepo, cpRepo)
 	result, err := uc.Execute("acc-cp")
@@ -220,17 +223,16 @@ func TestRecalculateBalance_WithCheckpoint_OnlySumsRecentTransactions(t *testing
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Expected: 1500 (checkpoint) + (-200) since March = 1300
+	// Expected: initialBalance(500) + fullScan(800) = 1300, NOT staleCheckpoint(9999)
 	if result.NewBalance != 1300 {
-		t.Errorf("expected new balance 1300, got %.2f", result.NewBalance)
+		t.Errorf("expected new balance 1300 (initial+fullScan), got %.2f", result.NewBalance)
 	}
-	// Must NOT call CalculateBalanceByBankAccountID (full scan)
-	if txRepo.fullScanCalled {
-		t.Errorf("full scan must NOT be called when checkpoint exists")
+	if !txRepo.fullScanCalled {
+		t.Errorf("full scan must be called even when checkpoint exists")
 	}
 }
 
-func TestRecalculateBalance_NoCheckpoint_FallsBackToFullRecalc(t *testing.T) {
+func TestRecalculateBalance_AlwaysUsesFullRecalc(t *testing.T) {
 	acc := checkingAccount(testProfile, "acc-full", 0)
 	acc.InitialBalance = 500
 	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"acc-full": acc}}
@@ -244,12 +246,12 @@ func TestRecalculateBalance_NoCheckpoint_FallsBackToFullRecalc(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Expected: 500 (initial) + 800 (full scan) = 1300
+	// Expected: initialBalance(500) + fullScan(800) = 1300
 	if result.NewBalance != 1300 {
 		t.Errorf("expected new balance 1300, got %.2f", result.NewBalance)
 	}
 	if !txRepo.fullScanCalled {
-		t.Errorf("full scan must be called when no checkpoint exists")
+		t.Errorf("full scan must always be called")
 	}
 }
 

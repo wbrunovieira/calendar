@@ -57,24 +57,10 @@ func (uc *RecalculateBalanceUseCase) Execute(accountID string) (*RecalculateBala
 	}, nil
 }
 
-// computeBalance returns initial_balance + all confirmed transaction impact.
-// When a checkpoint exists it only sums transactions since the checkpoint,
-// keeping the query O(recent) regardless of total history.
+// computeBalance returns initial_balance + net impact of ALL confirmed transactions.
+// Always does a full sum — no checkpoint shortcut — so retroactive transactions
+// (added after a checkpoint was created) are never missed.
 func (uc *RecalculateBalanceUseCase) computeBalance(accountID string, initialBalance float64) (float64, error) {
-	if uc.checkpointRepo != nil {
-		cp, err := uc.checkpointRepo.FindLatestBefore(accountID, time.Now())
-		if err == nil && cp != nil {
-			// Only sum transactions that arrived after the checkpoint's month
-			since := addOneMonth(cp.ReferenceMonth)
-			delta, err := uc.transactionRepo.CalculateBalanceSince(accountID, since)
-			if err != nil {
-				return 0, err
-			}
-			return round2(cp.ClosingBalance + delta), nil
-		}
-	}
-
-	// No checkpoint available — full recalculation from all confirmed transactions
 	txBalance, err := uc.transactionRepo.CalculateBalanceByBankAccountID(accountID)
 	if err != nil {
 		return 0, err
