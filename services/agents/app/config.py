@@ -37,10 +37,11 @@ class Settings:
     langfuse_secret_key: str = os.getenv("LANGFUSE_SECRET_KEY", "")
     langfuse_host: str = os.getenv("LANGFUSE_HOST", "http://langfuse-web:3000")
 
-    # Google Drive (proposal uploads)
-    google_service_account_json: str = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
-    google_service_account_path: str = os.getenv("GOOGLE_SERVICE_ACCOUNT_PATH", "")
-    google_drive_folder_id: str = os.getenv("GOOGLE_DRIVE_FOLDER_ID", "")
+    # Google OAuth (shared with CRM — used for Drive uploads)
+    google_client_id: str = os.getenv("GOOGLE_CLIENT_ID", "")
+    google_client_secret: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
+    google_refresh_token: str = os.getenv("GOOGLE_REFRESH_TOKEN", "")
+    google_drive_folder_name: str = os.getenv("GOOGLE_DRIVE_FOLDER_NAME", "Propostas CRM")
 
     # Proposal templates (bundled in Docker image — copy from Comercial/Propostas/ at build time)
     _pkg_proposal = os.path.join(os.path.dirname(__file__), "agents", "crm", "proposal")

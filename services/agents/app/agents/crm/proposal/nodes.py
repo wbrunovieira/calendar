@@ -660,7 +660,7 @@ async def upload_to_drive(state: ProposalState) -> dict:
         return {"error": f"Falha ao ler PDF: {exc}"}
 
     try:
-        result = await upload_pdf(pdf_bytes, file_name, folder_id=settings.google_drive_folder_id or None)
+        result = await upload_pdf(pdf_bytes, file_name, folder_name=settings.google_drive_folder_name or None)
         logger.info("[Proposal] uploaded to Drive job=%s file_id=%s", job_id, result["file_id"])
         try:
             os.remove(pdf_path)
