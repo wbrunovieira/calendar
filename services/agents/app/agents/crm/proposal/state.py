@@ -45,13 +45,9 @@ class ProposalState(TypedDict, total=False):
     filled_html: str
 
     # ── Node 4: convert_to_pdf ────────────────────────────────────────────
-    pdf_path: str
     file_name: str
-
-    # ── Node 5: upload_to_drive ───────────────────────────────────────────
-    drive_file_id: str
-    drive_url: str
     file_size: int
+    pdf_base64: str   # base64-encoded PDF sent to CRM in completed webhook
 
     # ── Error global ──────────────────────────────────────────────────────
     error: str | None

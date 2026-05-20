@@ -5,7 +5,6 @@ import json
 import logging
 import os
 import re
-import tempfile
 import unicodedata
 
 import httpx
@@ -619,6 +618,7 @@ def _html_to_pdf_sync(html: str) -> bytes:
 
 
 async def convert_to_pdf(state: ProposalState) -> dict:
+    import base64
     job_id = state.get("job_id", "unknown")
     lead = state.get("lead", {})
     brand = state.get("brand", "wb")
@@ -628,52 +628,20 @@ async def convert_to_pdf(state: ProposalState) -> dict:
     now = datetime.now(timezone.utc)
     prefix = "Proposta_Salto" if brand == "salto" else "Proposta_WB"
     file_name = f"{prefix}_{company}_{now.strftime('%m%y')}.pdf"
-    pdf_path = os.path.join(tempfile.gettempdir(), f"proposal_{job_id}.pdf")
 
     try:
         loop = asyncio.get_event_loop()
         pdf_bytes = await loop.run_in_executor(None, _html_to_pdf_sync, state["filled_html"])
-        with open(pdf_path, "wb") as f:
-            f.write(pdf_bytes)
+        pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
         logger.info("[Proposal] PDF generated job=%s size=%d bytes", job_id, len(pdf_bytes))
-        return {"pdf_path": pdf_path, "file_name": file_name}
+        return {
+            "file_name": file_name,
+            "file_size": len(pdf_bytes),
+            "pdf_base64": pdf_base64,
+        }
     except Exception as exc:
         logger.exception("[Proposal] convert_to_pdf failed job=%s", job_id)
         return {"error": f"Falha ao gerar PDF: {exc}"}
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# NODE 5 — upload_to_drive
-# ══════════════════════════════════════════════════════════════════════════
-
-async def upload_to_drive(state: ProposalState) -> dict:
-    from app.agents.crm.proposal.drive import upload_pdf
-
-    job_id = state.get("job_id", "unknown")
-    pdf_path = state.get("pdf_path", "")
-    file_name = state.get("file_name", "proposta.pdf")
-
-    try:
-        with open(pdf_path, "rb") as f:
-            pdf_bytes = f.read()
-    except Exception as exc:
-        return {"error": f"Falha ao ler PDF: {exc}"}
-
-    try:
-        result = await upload_pdf(pdf_bytes, file_name, folder_name=settings.google_drive_folder_name or None)
-        logger.info("[Proposal] uploaded to Drive job=%s file_id=%s", job_id, result["file_id"])
-        try:
-            os.remove(pdf_path)
-        except Exception:
-            pass
-        return {
-            "drive_file_id": result["file_id"],
-            "drive_url": result["url"],
-            "file_size": result["size"],
-        }
-    except Exception as exc:
-        logger.exception("[Proposal] upload_to_drive failed job=%s", job_id)
-        return {"error": f"Falha ao fazer upload no Google Drive: {exc}"}
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -704,13 +672,12 @@ async def send_completed_webhook(state: ProposalState) -> dict:
         "jobId": job_id,
         "proposalId": state.get("proposal_id", job_id),
         "status": "completed",
-        "driveFileId": state.get("drive_file_id", ""),
-        "driveUrl": state.get("drive_url", ""),
         "fileName": state.get("file_name", ""),
         "fileSize": state.get("file_size", 0),
+        "fileBase64": state.get("pdf_base64", ""),
     }
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=30) as client:
             await client.post(state.get("webhook_url", ""), json=payload, headers=_auth_headers())
         logger.info("[Proposal] completed job=%s number=%s", job_id, state.get("proposal_number"))
     except Exception as exc:
