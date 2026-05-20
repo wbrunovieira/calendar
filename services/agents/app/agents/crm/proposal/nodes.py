@@ -153,6 +153,20 @@ def _auth_headers() -> dict[str, str]:
     return headers
 
 
+def _resolve_webhook_url(url: str) -> str:
+    """Replace localhost URLs with the configured CRM base URL.
+
+    The CRM may send http://localhost:PORT/... which is unreachable from inside
+    the agents Docker container. Rewrite to the external CRM URL instead.
+    """
+    if not url or "localhost" not in url:
+        return url
+    import re as _re
+    rewritten = _re.sub(r"https?://localhost(:\d+)?", settings.crm_base_url.rstrip("/"), url)
+    logger.info("[Proposal] rewrote webhook url: %s → %s", url, rewritten)
+    return rewritten
+
+
 def _build_context_block(state: ProposalState) -> str:
     lead = state.get("lead", {})
     contacts = state.get("contacts", [])
@@ -685,7 +699,7 @@ async def send_asking_webhook(state: ProposalState) -> dict:
     }
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            await client.post(state.get("webhook_url", ""), json=payload, headers=_auth_headers())
+            await client.post(_resolve_webhook_url(state.get("webhook_url", "")), json=payload, headers=_auth_headers())
         logger.info("[Proposal] question webhook sent job=%s", job_id)
     except Exception as exc:
         logger.exception("[Proposal] question webhook failed job=%s", job_id)
@@ -695,7 +709,7 @@ async def send_asking_webhook(state: ProposalState) -> dict:
 
 async def send_completed_webhook(state: ProposalState) -> dict:
     job_id = state.get("job_id", "")
-    webhook_url = state.get("webhook_url", "")
+    webhook_url = _resolve_webhook_url(state.get("webhook_url", ""))
     logger.info("[Proposal] sending completed webhook job=%s url=%s size=%d",
                 job_id, webhook_url, state.get("file_size", 0))
     payload = {
@@ -718,7 +732,7 @@ async def send_completed_webhook(state: ProposalState) -> dict:
 
 async def send_error_webhook(state: ProposalState) -> dict:
     job_id = state.get("job_id", "")
-    webhook_url = state.get("webhook_url", "")
+    webhook_url = _resolve_webhook_url(state.get("webhook_url", ""))
     payload = {
         "jobId": job_id,
         "proposalId": state.get("proposal_id", job_id),

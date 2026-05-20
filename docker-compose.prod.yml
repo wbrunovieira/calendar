@@ -104,7 +104,7 @@ services:
       - FINANCES_BASE_URL=http://calendar-finances:3335
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-opus-4-6}
-      - CRM_BASE_URL=${CRM_BASE_URL:-http://host.docker.internal:3000}
+      - CRM_BASE_URL=${CRM_BASE_URL:-https://crm.wbdigitalsolutions.com}
       - CRM_WEBHOOK_SECRET=${CRM_WEBHOOK_SECRET:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - EXPERIMENT_MODEL=${EXPERIMENT_MODEL:-z-ai/glm-5}
