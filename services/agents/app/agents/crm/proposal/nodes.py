@@ -616,9 +616,32 @@ async def merge_sections(state: ProposalState) -> dict:
 # NODE 4 — convert_to_pdf (WeasyPrint, executor thread)
 # ══════════════════════════════════════════════════════════════════════════
 
+_WEASYPRINT_OVERRIDES = """<style>
+  /* WeasyPrint PDF rendering overrides */
+  @page       { margin: 15mm 15mm 15mm 15mm; }
+  @page :first { margin: 15mm 0   15mm 0;   }  /* cover page: zero side margins for full-bleed hero */
+  body { background: #fff !important; }
+  .page-block { box-shadow: none !important; padding-left: 15mm !important; padding-right: 15mm !important; }
+  .document-wrapper { padding: 0 !important; }
+  .page-break-visual { display: none !important; }
+  /* Hide fixed running header/footer (causes duplicate logo and content overlap) */
+  .print-header { display: none !important; }
+  .print-footer { display: none !important; }
+  /* Show per-section logo at top of each section page */
+  .preview-header { display: flex !important; align-items: center; padding-bottom: 4mm; margin-bottom: 6mm; border-bottom: 1px solid #e0e0e0; }
+  /* Cover page: full-bleed hero — zero out page-block side padding, hero fills full width */
+  .page-block-cover { padding-left: 0 !important; padding-right: 0 !important; }
+  .cover-hero { margin-left: 0 !important; margin-right: 0 !important; padding-left: 15mm !important; padding-right: 15mm !important; }
+  /* Re-add side spacing to cover content below the hero */
+  .proposal-pill  { margin-left: 15mm !important; }
+  .opening-letter { padding-left: 15mm !important; padding-right: 15mm !important; }
+</style>"""
+
+
 def _html_to_pdf_sync(html: str) -> bytes:
     from weasyprint import HTML
-    return HTML(string=html, base_url="").write_pdf()
+    html = html.replace("</head>", _WEASYPRINT_OVERRIDES + "</head>", 1)
+    return HTML(string=html, base_url=None).write_pdf()
 
 
 async def convert_to_pdf(state: ProposalState) -> dict:

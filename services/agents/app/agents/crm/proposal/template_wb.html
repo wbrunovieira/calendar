@@ -59,6 +59,10 @@
       .preview-header    { display: none !important; }
       .page-break-visual { display: none !important; }
 
+      /* Remove browser-preview decorations that look wrong in PDF */
+      .page-block    { box-shadow: none !important; }
+      .document-wrapper { padding: 0 !important; }
+
       .section       { page-break-before: always; break-before: page; }
       .section-cover { page-break-before: avoid; }
 
