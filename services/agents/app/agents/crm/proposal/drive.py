@@ -20,13 +20,15 @@ def _get_credentials():
             "No Google refresh token configured. Set GOOGLE_REFRESH_TOKEN."
         )
 
+    # Do not pass scopes= here — the refresh token already encodes what was
+    # granted. Passing an explicit scope list causes Google to re-request those
+    # specific scopes, which fails if the token wasn't originally issued for them.
     creds = Credentials(
         token=None,
         refresh_token=settings.google_refresh_token,
         client_id=settings.google_client_id,
         client_secret=settings.google_client_secret,
         token_uri="https://oauth2.googleapis.com/token",
-        scopes=_SCOPES,
     )
     creds.refresh(Request())
     return creds
