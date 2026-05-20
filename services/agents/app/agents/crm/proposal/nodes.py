@@ -325,14 +325,21 @@ PORTFÓLIO:
 - DevOps: Docker, Terraform, Ansible, CI/CD, AWS
 - Design: Figma + Tailwind CSS
 - Automação: n8n, Make, Zapier
-- Websites: Next.js, WordPress
+- Websites / Landing Pages: Next.js, WordPress
+
+REGRAS OBRIGATÓRIAS:
+- Use SOMENTE tecnologias que o cliente mencionou ou que são padrão WB para o tipo de projeto.
+- NUNCA invente serviços de hospedagem específicos (Vercel, AWS, Netlify, etc.) a menos que o cliente mencione. Se o cliente mencionou "hospedagem gratuita", descreva apenas como "Hospedagem gratuita incluída no primeiro ano" — sem nomear a plataforma.
+- NUNCA invente pipeline de CI/CD, deploy contínuo ou DevOps para websites/landing pages simples.
+- Para LANDING PAGES e SITES SIMPLES: TECH_SECTIONS tem apenas a seção "Frontend" com a stack usada. Não adicione Backend, Infraestrutura, DevOps.
+- Features devem refletir o escopo real descrito pelo cliente. Não invente funcionalidades não mencionadas.
 
 Identifique o tipo de projeto pelo businessLine e adapte a stack.
 
 Retorne APENAS JSON válido sem markdown. Valores são HTML:
 {
-  "TECH_SECTIONS": "(HTML) <h3 class='subsection-title'> + <ul> com a stack técnica. Seções: Frontend, Backend, Infraestrutura (adapte ao tipo de projeto).",
-  "FEATURES_LIST": "(HTML) <ul> com 5-8 <li>. Formato: <li><strong>Nome:</strong> Descrição breve.</li>"
+  "TECH_SECTIONS": "(HTML) <h3 class='subsection-title'> + <ul> com a stack técnica. Para landing pages: apenas seção Frontend.",
+  "FEATURES_LIST": "(HTML) <ul> com 4-7 <li> baseados no escopo real do cliente. Formato: <li><strong>Nome:</strong> Descrição breve.</li>"
 }"""
 
 _TECHNICAL_SYSTEM_SALTO = """\
@@ -387,13 +394,19 @@ Você escreve o conteúdo financeiro de uma proposta da WB Digital Solutions.
 
 Regras:
 - Valores em formato brasileiro: R$ X.XXX,00
-- INVESTMENT_TABLE: divida o total em componentes (Frontend, Backend, Design, Infra, etc.)
-- Custos de terceiros (AWS, domínios, APIs) NÃO entram na tabela
-- ADDITIONAL_CONSIDERATIONS_ITEMS: sempre inclua aprovações/disponibilidade. Para projetos com infra cloud, adicione item sobre custos externos. Adapte a linguagem ao perfil do cliente.
+- INVESTMENT_TABLE: liste os itens/entregáveis incluídos no projeto, mas NUNCA divida o valor total em sub-valores por item.
+  Cada item de linha deve mostrar R$ 0,00 (indicando que está incluso no pacote).
+  Apenas a linha "Total do Investimento" exibe o valor real acordado.
+  Exemplo correto para projeto de R$ 850:
+    <tr><td><strong>Desenvolvimento Landing Page (Next.js TypeScript)</strong><br/><small>Design, animações e SEO.</small></td><td>R$ 0,00</td></tr>
+    <tr><td><strong>Botão Flutuante de WhatsApp</strong><br/><small>Incluído sem custo adicional.</small></td><td>R$ 0,00</td></tr>
+    <tr class='total-row'><td>Total do Investimento</td><td>R$ 850,00</td></tr>
+- Custos de terceiros (domínio, APIs externas) NÃO entram na tabela — vão em ADDITIONAL_CONSIDERATIONS_ITEMS.
+- ADDITIONAL_CONSIDERATIONS_ITEMS: sempre inclua aprovações/disponibilidade. Adapte a linguagem ao perfil do cliente.
 
 Retorne APENAS JSON válido sem markdown. Valores são HTML:
 {
-  "INVESTMENT_TABLE": "<table class='investment-table'>. Cada linha: <tr><td><strong>Item</strong><br/><small>Descrição</small></td><td>R$ X.XXX,00</td></tr>. Total: <tr class='total-row'><td>Total do Investimento</td><td>R$ XX.XXX,00</td></tr>",
+  "INVESTMENT_TABLE": "<table class='investment-table'>. Itens com R$ 0,00 + total-row com valor real.",
   "PAYMENT_SCHEDULE": "<ol class='payment-list'> com parcelas. Cada: <li><strong>Parcela — Gatilho:</strong> R$ X.XXX,00 — descrição.</li>",
   "ADDITIONAL_CONSIDERATIONS_ITEMS": "Um ou mais <li> com considerações. Sempre inclua o item de aprovações."
 }"""
@@ -448,15 +461,15 @@ _OPTIONAL_SYSTEM_WB = """\
 Você decide e gera as seções opcionais de uma proposta da WB Digital Solutions.
 Para cada placeholder, retorne o BLOCO HTML COMPLETO (incluindo o <h2>) OU "" se não se aplicar.
 
-CRITÉRIOS:
-- PLANNING_SECTION: incluir para sistemas/plataformas complexas com arquitetura. Omitir para websites simples, landing pages, automações pontuais.
-- METHODOLOGY_SECTION: incluir para projetos iterativos com sprints. Omitir para entrega única.
-- POST_LAUNCH_SECTION: incluir para plataformas/sistemas que precisam de manutenção. Omitir para entregas fechadas.
-- PENALTY_CLAUSE: incluir para projetos com prazo crítico ou valor > R$ 15.000. Omitir para projetos simples.
-- LGPD_SECTION: incluir se coleta dados pessoais (login, e-commerce, CRM). Omitir para sites institucionais, landing pages.
-- FUTURE_EVOLUTION_SECTION: incluir para produtos digitais com roadmap. Omitir para entregas pontuais.
+CRITÉRIOS OBRIGATÓRIOS — seja conservador, inclua apenas o que agrega valor real:
+- PLANNING_SECTION: incluir APENAS para sistemas/plataformas complexas com arquitetura significativa (projetos > R$ 15.000). NUNCA para landing pages, sites simples ou automações pontuais.
+- METHODOLOGY_SECTION: incluir APENAS para projetos com múltiplos sprints (prazo > 4 semanas). NUNCA para projetos de entrega única.
+- POST_LAUNCH_SECTION: incluir APENAS para plataformas/sistemas com código proprietário que requerem manutenção recorrente real (ex: SaaS, e-commerce, app). NUNCA para landing pages, sites institucionais ou automações pontuais. NÃO invente preço — omita se o valor de suporte não foi discutido com o cliente.
+- PENALTY_CLAUSE: incluir APENAS para projetos com prazo crítico E valor > R$ 15.000. NUNCA para projetos simples.
+- LGPD_SECTION: incluir APENAS se o projeto coleta/armazena dados pessoais de usuários (login, cadastro, e-commerce, CRM). NUNCA para landing pages sem formulários complexos.
+- FUTURE_EVOLUTION_SECTION: incluir APENAS para produtos digitais escaláveis com roadmap real (plataformas, apps, SaaS). NUNCA para landing pages, sites institucionais, automações pontuais ou projetos de entrega fechada. As sugestões devem ser RELEVANTES ao negócio do cliente — não invente features genéricas.
 
-REGRA: Se todos os opcionais seriam omitidos, inclua ao menos POST_LAUNCH_SECTION.
+LANDING PAGES, SITES SIMPLES e PROJETOS PONTUAIS (valor < R$ 5.000): retornar "" para TODAS as seções opcionais é o comportamento correto. Não force seções desnecessárias.
 
 FORMATOS OBRIGATÓRIOS:
 
@@ -632,10 +645,10 @@ async def merge_sections(state: ProposalState) -> dict:
 
 _WEASYPRINT_OVERRIDES = """<style>
   /* WeasyPrint PDF rendering overrides */
-  @page       { margin: 15mm 15mm 15mm 15mm; }
+  @page       { margin: 15mm 18mm 15mm 18mm; }
   @page :first { margin: 15mm 0   15mm 0;   }  /* cover page: zero side margins for full-bleed hero */
   body { background: #fff !important; }
-  .page-block { box-shadow: none !important; padding-left: 15mm !important; padding-right: 15mm !important; }
+  .page-block { box-shadow: none !important; padding-left: 18mm !important; padding-right: 18mm !important; }
   .document-wrapper { padding: 0 !important; }
   .page-break-visual { display: none !important; }
   /* Hide fixed running header/footer (causes duplicate logo and content overlap) */
@@ -645,10 +658,10 @@ _WEASYPRINT_OVERRIDES = """<style>
   .preview-header { display: flex !important; align-items: center; padding-bottom: 4mm; margin-bottom: 6mm; border-bottom: 1px solid #e0e0e0; }
   /* Cover page: full-bleed hero — zero out page-block side padding, hero fills full width */
   .page-block-cover { padding-left: 0 !important; padding-right: 0 !important; }
-  .cover-hero { margin-left: 0 !important; margin-right: 0 !important; padding-left: 15mm !important; padding-right: 15mm !important; }
+  .cover-hero { margin-left: 0 !important; margin-right: 0 !important; padding-left: 18mm !important; padding-right: 18mm !important; }
   /* Re-add side spacing to cover content below the hero */
-  .proposal-pill  { margin-left: 15mm !important; }
-  .opening-letter { padding-left: 15mm !important; padding-right: 15mm !important; }
+  .proposal-pill  { margin-left: 18mm !important; margin-right: 18mm !important; }
+  .opening-letter { padding-left: 18mm !important; padding-right: 18mm !important; }
 </style>"""
 
 
