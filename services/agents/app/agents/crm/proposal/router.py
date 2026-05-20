@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 from app.agents.crm.proposal.graph import build_proposal_graph
@@ -80,6 +80,8 @@ class AcceptedResponse(BaseModel):
     jobId: str
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────
+
 # ── Background worker ─────────────────────────────────────────────────────
 
 async def _run_proposal(job_id: str, state_input: dict, trace_id: str | None) -> None:
@@ -152,19 +154,11 @@ async def _run_proposal(job_id: str, state_input: dict, trace_id: str | None) ->
 
 # ── Endpoints ─────────────────────────────────────────────────────────────
 
-def _validate_secret(secret: str | None) -> None:
-    expected = settings.crm_webhook_secret
-    if expected and secret != expected:
-        raise HTTPException(status_code=401, detail="Invalid webhook secret")
-
-
 @router.post("/crm/proposal", response_model=AcceptedResponse, status_code=202)
 async def handle_proposal_agent(
     req: ProposalRequest,
     background_tasks: BackgroundTasks,
-    x_webhook_secret: str | None = Header(default=None),
 ):
-    _validate_secret(x_webhook_secret)
 
     trace_id = None
     if langfuse.enabled:
@@ -198,10 +192,7 @@ async def handle_proposal_agent(
 async def handle_proposal_answer(
     req: ProposalAnswerRequest,
     background_tasks: BackgroundTasks,
-    x_webhook_secret: str | None = Header(default=None),
 ):
-    _validate_secret(x_webhook_secret)
-
     job = await load_job(req.jobId)
     if not job:
         raise HTTPException(status_code=404, detail=f"Job {req.jobId} not found or already completed")
