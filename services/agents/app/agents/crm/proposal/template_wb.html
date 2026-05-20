@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Proposta Comercial — WB Digital Solutions</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+
+    :root {
+      --purple:       #792990;
+      --purple-dark:  #5c1f70;
+      --purple-light: #f4e6f7;
+      --dark:         #1a1a1a;
+      --gray:         #555555;
+      --light-gray:   #f5f5f5;
+      --border:       #e0e0e0;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    /* ─── PRINT: regras de página ─── */
+    @page {
+      size: A4;
+      margin: 30mm 22mm 22mm 22mm;
+    }
+
+    .print-header { display: none; }
+    .print-footer  { display: none; }
+
+    @media print {
+      body { background: #fff; }
+
+      .print-header {
+        display: flex;
+        align-items: center;
+        position: fixed;
+        top: 0; left: 0; right: 0;
+        background: #fff;
+        padding: 10mm 22mm 4mm 22mm;
+        border-bottom: 1px solid var(--border);
+        z-index: 100;
+      }
+
+      .print-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        position: fixed;
+        bottom: 0; left: 0; right: 0;
+        background: #fff;
+        padding: 3mm 22mm 8mm 22mm;
+        border-top: 1px solid var(--border);
+        font-size: 8pt;
+        color: var(--gray);
+        z-index: 100;
+      }
+
+      .preview-header    { display: none !important; }
+      .page-break-visual { display: none !important; }
+
+      .section       { page-break-before: always; break-before: page; }
+      .section-cover { page-break-before: avoid; }
+
+      h2, h3, .signature, .investment-table tr, .payment-list li {
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+    }
+
+    /* ─── BROWSER PREVIEW ─── */
+    body {
+      font-family: 'Inter', Helvetica, Arial, sans-serif;
+      font-size: 11pt;
+      color: var(--dark);
+      line-height: 1.6;
+      background: #d0d0d0;
+    }
+
+    .document-wrapper { width: 210mm; margin: 0 auto; padding: 16px 0; }
+
+    .logo-img       { height: 28px; width: auto; }
+    .logo-img-cover { height: 34px; width: auto; }
+    .logo-salto     { height: 22px; width: auto; }
+
+    .page-break-visual { height: 16px; background: #d0d0d0; }
+
+    .page-block {
+      background: #fff;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+      padding: 10mm 22mm 14mm 22mm;
+    }
+
+    .preview-header {
+      display: flex;
+      align-items: center;
+      padding-bottom: 4mm;
+      margin-bottom: 6mm;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* ─── CAPA: remove top padding para o hero começar na borda ─── */
+    .page-block-cover {
+      padding-top: 0;
+    }
+
+    /* ─── CAPA: HERO — ocupa ~45% da capa, contém logo + título + projeto ─── */
+    .cover-hero {
+      margin: 0 -22mm 10mm -22mm;
+      background: linear-gradient(150deg, var(--purple-dark) 0%, var(--purple) 50%, #8f32a8 100%);
+      padding: 14mm 22mm 18mm 22mm;
+      position: relative;
+      overflow: hidden;
+    }
+    /* círculo decorativo grande — canto inferior direito */
+    .cover-hero::after {
+      content: '';
+      position: absolute;
+      bottom: -60px; right: -40px;
+      width: 220px; height: 220px;
+      border-radius: 50%;
+      border: 40px solid rgba(255,255,255,0.06);
+      pointer-events: none;
+    }
+    /* círculo menor — canto superior direito */
+    .cover-hero::before {
+      content: '';
+      position: absolute;
+      top: -20px; right: 80px;
+      width: 90px; height: 90px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.05);
+      pointer-events: none;
+    }
+
+    /* Logo em container branco (vazado) dentro do hero */
+    .cover-hero-logo-wrap {
+      display: inline-flex;
+      align-items: center;
+      background: #fff;
+      border-radius: 6px;
+      padding: 5px 12px;
+      position: relative;
+      z-index: 1;
+    }
+    .cover-hero-logo {
+      height: 26px;
+      width: auto;
+      display: block;
+    }
+
+    /* Label "PROPOSTA COMERCIAL" — pequeno, caps, acima do título */
+    .cover-hero-label {
+      font-size: 8pt;
+      font-weight: 600;
+      color: rgba(255,255,255,0.55);
+      letter-spacing: 3.5px;
+      text-transform: uppercase;
+      margin-top: 12mm;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Linha divisória branca sutil */
+    .cover-hero-rule {
+      width: 36px;
+      height: 1px;
+      background: rgba(255,255,255,0.3);
+      margin: 3.5mm 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Título do projeto — o elemento hero da capa */
+    .cover-hero-project {
+      font-size: 22pt;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1.25;
+      letter-spacing: -0.3px;
+      position: relative;
+      z-index: 1;
+      max-width: 85%;
+    }
+
+    /* ─── CAPA: NÚMERO DA PROPOSTA (pill) ─── */
+    .proposal-pill {
+      display: inline-flex;
+      align-items: center;
+      background: var(--light-gray);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 1.5mm 5mm;
+      font-size: 9pt;
+      color: var(--gray);
+      margin-bottom: 6mm;
+    }
+
+    /* ─── TIPOGRAFIA ─── */
+    /* .project-title foi absorvido pelo .cover-hero-project */
+
+    .section-title {
+      font-size: 13pt;
+      font-weight: 700;
+      border-left: 3px solid var(--purple);
+      padding-left: 8px;
+      margin: 8mm 0 4mm 0;
+      color: var(--dark);
+    }
+
+    .subsection-title {
+      font-size: 11pt;
+      font-weight: 700;
+      margin: 5mm 0 2mm 0;
+    }
+
+    p  { margin-bottom: 3mm; }
+    ul { padding-left: 6mm; margin-bottom: 4mm; }
+    ol { padding-left: 6mm; margin-bottom: 4mm; }
+    li { margin-bottom: 2mm; }
+
+    /* ─── SPRINT BADGES ─── */
+    .sprint-list { padding: 0; margin: 4mm 0; }
+    .sprint-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 4mm;
+      margin-bottom: 4mm;
+    }
+    .sprint-badge {
+      flex-shrink: 0;
+      width: 7mm;
+      height: 7mm;
+      border-radius: 50%;
+      background: var(--purple);
+      color: #fff;
+      font-size: 8pt;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 1px;
+    }
+    .sprint-content { flex: 1; line-height: 1.5; }
+
+    /* ─── TABELA DE INVESTIMENTO ─── */
+    .investment-table { width: 100%; border-collapse: collapse; margin: 4mm 0; }
+    .investment-table td { padding: 3mm 2mm; vertical-align: top; }
+    .investment-table tr:not(:last-child) td { border-bottom: 1px solid var(--border); }
+    .investment-table td:first-child { font-weight: 600; width: 60%; }
+    .investment-table td:last-child  { text-align: right; width: 40%; }
+    .total-row td {
+      font-size: 14pt;
+      font-weight: 700;
+      padding: 4mm 2mm;
+      background: var(--purple-light);
+      color: var(--purple);
+      border-top: 2px solid var(--purple) !important;
+    }
+
+    /* ─── PAGAMENTO ─── */
+    .payment-list { list-style: none; padding: 0; }
+    .payment-list li { padding: 2mm 0; border-bottom: 1px solid var(--border); }
+    .payment-list li:last-child { border-bottom: none; }
+
+    /* ─── ASSINATURA ─── */
+    .signature {
+      margin-top: 10mm;
+      border-top: 1px solid var(--border);
+      padding-top: 6mm;
+    }
+    .signature p  { margin-bottom: 1mm; }
+    .signature .name { font-weight: 700; font-size: 12pt; margin-top: 3mm; }
+    .signature .role { color: var(--gray); }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════
+     HEADER FIXO (apenas no print)
+     Aparece no topo de todas as páginas
+════════════════════════════════════ -->
+<div class="print-header">
+  <img class="logo-img" src="https://www.wbdigitalsolutions.com/svg/logo.svg" alt="WB Digital Solutions" />
+  <!--
+    Para propostas Salto, trocar por:
+    <img class="logo-salto" src="https://saltoup.com/logo-dark.svg" alt="Salto" />
+  -->
+</div>
+
+<!-- FOOTER FIXO (apenas no print) -->
+<div class="print-footer">
+  <span>WB Digital Solutions — Proposta Confidencial</span>
+  <span><!-- número de página via CSS counter se necessário --></span>
+</div>
+
+
+<div class="document-wrapper">
+
+  <!-- ═══════════════════════════════════
+       PÁGINA 1 — CAPA
+  ════════════════════════════════════ -->
+  <div class="page-block page-block-cover">
+    <!-- Hero zone: logo + label + divider + project title — tudo dentro do roxo -->
+    <div class="cover-hero">
+      <div class="cover-hero-logo-wrap">
+        <img
+          class="cover-hero-logo"
+          src="https://www.wbdigitalsolutions.com/svg/logo.svg"
+          alt="WB Digital Solutions"
+        />
+      </div>
+      <!--
+        Para propostas Salto, trocar por:
+        <div class="cover-hero-logo-wrap">
+          <img class="cover-hero-logo" src="https://saltoup.com/logo-dark.svg" alt="Salto" />
+        </div>
+      -->
+
+      <div class="cover-hero-label">Proposta Comercial</div>
+      <div class="cover-hero-rule"></div>
+      <div class="cover-hero-project">{{PROJECT_TITLE}}</div>
+      <!--
+        Ex: "Desenvolvimento de Plataforma EAD"
+            "Automação de Processos via n8n"
+            "Website Institucional com Blog"
+      -->
+    </div>
+
+    <!-- NÚMERO DA PROPOSTA — pill abaixo do hero -->
+    <div class="proposal-pill">
+      Proposta Nº <strong style="margin-left:4px">{{PROPOSAL_NUMBER}}</strong>
+      <!-- Formato: WB-P027-0526-REV1 -->
+    </div>
+
+    <div class="opening-letter">
+      <p>{{GREETING}},</p>
+      <!--
+        O agente gera {{GREETING}} com base nos contatos selecionados e seus gêneros.
+        Exemplos:
+          1 homem:       "Prezado Sr. João Silva"
+          1 mulher:      "Prezada Sra. Maria Santos"
+          2+ homens:     "Prezados Srs. João Silva e Carlos Oliveira"
+          2+ mulheres:   "Prezadas Sras. Maria Santos e Ana Costa"
+          misto:         "Prezados Sr. João Silva e Sra. Maria Santos"
+          3+:            "Prezados Srs. João Silva, Carlos Oliveira e Ana Costa"
+        Inferir gênero pelo nome quando não informado explicitamente.
+      -->
+
+      <p>{{OPENING_PARAGRAPH_1}}</p>
+      <!-- Contextualizar: alinhamento prévio + descrição do projeto -->
+
+      <p>{{OPENING_PARAGRAPH_2}}</p>
+      <!-- Demonstrar entendimento do negócio do cliente -->
+
+      <p>Estamos entusiasmados com a perspectiva de colaborar neste projeto e atuaremos como
+      parceiros de confiança para materializar sua visão.</p>
+
+      <p>Em toda a condução do trabalho, manteremos um perfil profissional e humano, priorizando
+      a qualidade em cada entrega, a transparência na comunicação e o cumprimento de prazos e
+      resultados. Esta proposta foi elaborada com cuidado, refletindo nosso compromisso em
+      construir uma relação sólida de parceria — <u>focada na sua satisfação e no sucesso do projeto</u>.</p>
+    </div>
+
+  </div><!-- /page-block capa -->
+
+
+  <div class="page-break-visual"></div>
+
+  <!-- ═══════════════════════════════════
+       SEÇÃO: SOLUÇÃO PROPOSTA
+  ════════════════════════════════════ -->
+  <div class="page-block section">
+    <div class="preview-header">
+      <img class="logo-img" src="https://www.wbdigitalsolutions.com/svg/logo.svg" alt="WB Digital Solutions" />
+    </div>
+
+    <h2 class="section-title">Solução Proposta e Tecnologias</h2>
+
+    <p>Para atender plenamente aos requisitos do projeto, apresentamos uma solução técnica
+    robusta e escalável, utilizando tecnologias reconhecidas no mercado por sua eficiência e
+    flexibilidade:</p>
+
+    {{PLANNING_SECTION}}
+    <!--
+      OPCIONAL — incluir apenas em sistemas/plataformas complexas. Omitir em websites, landing pages e automações simples.
+
+      Se incluído:
+      <h3 class="subsection-title">Planejamento Inicial</h3>
+      <ul>
+        <li><strong>Estudo Inicial e Arquitetura:</strong> Nas duas primeiras semanas do projeto, será
+        realizado um estudo aprofundado para desenhar detalhadamente toda a arquitetura do sistema,
+        definindo claramente os componentes e as camadas técnicas necessárias. Nessa fase, iremos
+        mapear e decompor todo o escopo em tarefas granulares, que serão organizadas e priorizadas
+        em sprints, garantindo máxima clareza, eficiência e agilidade na execução.</li>
+      </ul>
+    -->
+
+    {{TECH_SECTIONS}}
+    <!--
+      Gerar seções conforme o tipo de projeto. Exemplos:
+
+      SISTEMAS WEB / PLATAFORMAS:
+      ───────────────────────────
+      <h3 class="subsection-title">Frontend</h3>
+      <ul>
+        <li><strong>Next.js com ReactJS e TypeScript:</strong> Desempenho excepcional, renderização rápida e SEO avançado.</li>
+        <li><strong>Tailwind CSS:</strong> Desenvolvimento ágil com alta consistência visual.</li>
+        <li><strong>Design Profissional com Figma:</strong> Telas desenhadas previamente garantindo interface intuitiva.</li>
+      </ul>
+
+      <h3 class="subsection-title">Backend</h3>
+      <ul>
+        <li><strong>NestJS (Node.js):</strong> Estrutura sólida e escalável baseada em TypeScript com DDD.</li>
+        <li><strong>Banco de Dados PostgreSQL:</strong> Banco relacional robusto e de alta performance.</li>
+        <li><strong>Testes Automatizados:</strong> Testes unitários e end-to-end em cada etapa.</li>
+      </ul>
+
+      <h3 class="subsection-title">Infraestrutura e Hospedagem</h3>
+      <ul>
+        <li><strong>AWS:</strong> Infraestrutura segura, escalável e de alta disponibilidade.</li>
+        <li><strong>Containers Docker:</strong> Padronização de ambientes dev, teste e produção.</li>
+        <li><strong>CI/CD Automatizado:</strong> Integração e entrega contínua para deploys seguros.</li>
+      </ul>
+
+      AUTOMAÇÃO:
+      ──────────
+      <h3 class="subsection-title">Ferramentas de Automação</h3>
+      <ul>
+        <li><strong>n8n / Make / Zapier:</strong> Plataformas visuais de automação de fluxos.</li>
+        <li><strong>Integrações via API REST:</strong> Conexão com sistemas externos e ERPs.</li>
+      </ul>
+    -->
+
+  </div><!-- /page-block solução -->
+
+
+  <div class="page-break-visual"></div>
+
+  <!-- ═══════════════════════════════════
+       SEÇÃO: ESCOPO E CRONOGRAMA
+  ════════════════════════════════════ -->
+  <div class="page-block section">
+    <div class="preview-header">
+      <img class="logo-img" src="https://www.wbdigitalsolutions.com/svg/logo.svg" alt="WB Digital Solutions" />
+    </div>
+
+    <h2 class="section-title">Funcionalidades Principais</h2>
+
+    <p>{{SCOPE_INTRO}}</p>
+
+    {{FEATURES_LIST}}
+    <!--
+      <ul>
+        <li><strong>Autenticação e Área do Usuário:</strong> Cadastro, login seguro e painel personalizado.</li>
+        <li><strong>Módulo Principal:</strong> Descrição da feature principal.</li>
+        <li><strong>Painel Administrativo:</strong> Gerenciamento de conteúdos e usuários.</li>
+        <li><strong>Responsividade:</strong> Total compatibilidade com desktops, tablets e celulares.</li>
+      </ul>
+    -->
+
+    {{METHODOLOGY_SECTION}}
+    <!--
+      OPCIONAL — incluir em projetos com desenvolvimento iterativo (sistemas, plataformas, apps).
+      Omitir em websites simples, landing pages e automações pontuais onde há entrega única.
+
+      Se incluído, o bloco COMPLETO (título + parágrafo + sprint-list):
+
+      <h2 class="section-title">Metodologia e Cronograma</h2>
+      <p>Para garantir flexibilidade e alinhamento contínuo com o cliente durante o desenvolvimento,
+      adotaremos a metodologia ágil (Scrum) com sprints quinzenais (ciclos de desenvolvimento de
+      2 semanas). Essa abordagem permitirá entregas incrementais frequentes e coleta de feedback
+      ao final de cada sprint, ajustando o projeto de forma dinâmica conforme necessário.</p>
+
+      <div class="sprint-list">
+        <div class="sprint-item">
+          <div class="sprint-badge">1</div>
+          <div class="sprint-content"><strong>Sprint 1 (Semanas 1–2):</strong> Planejamento, configuração do ambiente e arquitetura base.</div>
+        </div>
+        <div class="sprint-item">
+          <div class="sprint-badge">2</div>
+          <div class="sprint-content"><strong>Sprint 2 (Semanas 3–4):</strong> Desenvolvimento do módulo principal.</div>
+        </div>
+        ...
+        <div class="sprint-item">
+          <div class="sprint-badge">✓</div>
+          <div class="sprint-content"><strong>Sprint Final:</strong> Testes, implantação em produção e entrega.</div>
+        </div>
+      </div>
+    -->
+
+  </div><!-- /page-block cronograma -->
+
+
+  <div class="page-break-visual"></div>
+
+  <!-- ═══════════════════════════════════
+       SEÇÃO: CLÁUSULAS OPCIONAIS
+       Cada placeholder retorna o bloco completo (h2 + conteúdo) ou string vazia.
+       Ao menos uma seção deve estar presente para evitar página em branco.
+  ════════════════════════════════════ -->
+  <div class="page-block section">
+    <div class="preview-header">
+      <img class="logo-img" src="https://www.wbdigitalsolutions.com/svg/logo.svg" alt="WB Digital Solutions" />
+    </div>
+
+    {{POST_LAUNCH_SECTION}}
+    <!--
+      OPCIONAL — incluir quando há plataforma/sistema que requer manutenção contínua.
+      Omitir em projetos pontuais (landing page, automação sem monitoramento).
+
+      Se incluído:
+      <h2 class="section-title">Suporte Pós-Lançamento</h2>
+      <p>Após o go-live, oferecemos um plano de suporte técnico mensal no valor fixo de
+      <strong>R$ X.XXX,00</strong>. Esse suporte cobre correções técnicas, manutenção preventiva
+      e pequenas melhorias contínuas. O contrato especificará a quantidade de horas incluídas
+      por mês e o tipo de solicitações contempladas nesse pacote.</p>
+    -->
+
+    {{PENALTY_CLAUSE}}
+    <!--
+      OPCIONAL — incluir em projetos com prazo crítico ou valor alto.
+      Pode ser omitido em projetos pequenos onde prejudicaria o fechamento.
+
+      Se incluído (texto padrão, não alterar valores):
+      <h2 class="section-title">Cláusula de Multa por Atraso</h2>
+      <p>Fica acordado que, em caso de atraso na entrega do projeto, será aplicada uma multa de
+      5% do valor total por semana, limitada a 20%. A aplicação dessa penalidade ocorrerá apenas
+      após 4 semanas de atraso além do prazo acordado, contados a partir do início oficial do projeto.</p>
+    -->
+
+    {{LGPD_SECTION}}
+    <!--
+      OPCIONAL — incluir quando o projeto envolve coleta, armazenamento ou tratamento de dados
+      pessoais de usuários (sistemas com login, e-commerce, plataformas, CRMs).
+      Omitir em websites institucionais simples, landing pages e automações sem dados pessoais.
+
+      Se incluído (texto padrão):
+      <h2 class="section-title">Proteção de Dados e Conformidade com a LGPD</h2>
+      <p>Todos os processos de desenvolvimento e operação da plataforma respeitarão as diretrizes
+      da Lei Geral de Proteção de Dados (LGPD), assegurando a confidencialidade, integridade e
+      segurança das informações dos usuários. Implementaremos boas práticas de governança de dados,
+      autenticação segura, controle de acesso e armazenamento protegido, garantindo o cumprimento
+      das obrigações legais referentes ao tratamento de dados pessoais.</p>
+    -->
+
+    {{FUTURE_EVOLUTION_SECTION}}
+    <!--
+      OPCIONAL — incluir quando faz sentido estratégico apresentar continuidade (sistemas,
+      plataformas, produtos digitais). Omitir em entregas pontuais e fechadas.
+
+      Se incluído:
+      <h2 class="section-title">Evolução Futura e Uso de Inteligência Artificial</h2>
+      <p>Nossa empresa estará preparada para continuar a evoluir o projeto após a entrega inicial,
+      oferecendo melhorias contínuas em diversos aspectos estratégicos.</p>
+      <p>Podemos implementar:</p>
+      <ul>
+        <li><strong>Aplicativos Mobile:</strong> Versões iOS e Android para ampliar o alcance.</li>
+        <li><strong>Inteligência Artificial:</strong> Recomendações, assistentes virtuais e análise preditiva.</li>
+        <li><strong>Escalabilidade:</strong> Expansão da infraestrutura conforme o crescimento da operação.</li>
+      </ul>
+    -->
+
+  </div><!-- /page-block cláusulas opcionais -->
+
+
+  <div class="page-break-visual"></div>
+
+  <!-- ═══════════════════════════════════
+       SEÇÃO: INVESTIMENTO
+  ════════════════════════════════════ -->
+  <div class="page-block section">
+    <div class="preview-header">
+      <img class="logo-img" src="https://www.wbdigitalsolutions.com/svg/logo.svg" alt="WB Digital Solutions" />
+    </div>
+
+    <h2 class="section-title">Investimento Detalhado</h2>
+
+    {{INVESTMENT_TABLE}}
+    <!--
+      <table class="investment-table">
+        <tr>
+          <td><strong>Desenvolvimento Front-end (Next.js)</strong><br/><small>Interface do usuário, páginas responsivas e integrações.</small></td>
+          <td>R$ 12.000,00</td>
+        </tr>
+        <tr>
+          <td><strong>Desenvolvimento Back-end (NestJS)</strong><br/><small>APIs, autenticação e banco de dados.</small></td>
+          <td>R$ 15.000,00</td>
+        </tr>
+        <tr>
+          <td><strong>Design UX/UI</strong><br/><small>Criação de telas no Figma.</small></td>
+          <td>R$ 6.000,00</td>
+        </tr>
+        <tr>
+          <td><strong>Infraestrutura e DevOps</strong><br/><small>AWS, Docker, CI/CD.</small></td>
+          <td>R$ 11.000,00</td>
+        </tr>
+        <tr class="total-row">
+          <td>Total do Investimento</td>
+          <td>R$ 44.000,00</td>
+        </tr>
+      </table>
+    -->
+
+    <p>Nossa abordagem garante não apenas atender plenamente aos requisitos técnicos e funcionais,
+    mas também proporciona uma solução flexível e preparada para evoluir conforme as futuras
+    demandas do projeto.</p>
+
+    <h2 class="section-title">Condições de Pagamento</h2>
+    <p>Sugerimos um cronograma de pagamento distribuído da seguinte forma:</p>
+
+    {{PAYMENT_SCHEDULE}}
+    <!--
+      OPÇÃO A — 30/70:
+      <ol class="payment-list">
+        <li><strong>30% – Sinal de Início:</strong> R$ XX.XXX,00 – No aceite e assinatura do contrato.</li>
+        <li><strong>70% – Na Entrega:</strong> R$ XX.XXX,00 – Após entrega e aprovação do projeto.</li>
+      </ol>
+
+      OPÇÃO B — 10% + sprints iguais:
+      <ol class="payment-list">
+        <li><strong>10% – Sinal de Início:</strong> R$ X.XXX,00 – No aceite da proposta.</li>
+        <li><strong>Sprint 1:</strong> 18% – R$ X.XXX,00</li>
+        <li><strong>Sprint 2:</strong> 18% – R$ X.XXX,00</li>
+        <li><strong>Sprint 3:</strong> 18% – R$ X.XXX,00</li>
+        <li><strong>Sprint 4:</strong> 18% – R$ X.XXX,00</li>
+        <li><strong>Sprint Final (Entrega):</strong> 18% – R$ X.XXX,00</li>
+      </ol>
+    -->
+
+    <p>Essa distribuição mantém o fluxo financeiro equilibrado e proporcional ao avanço do projeto.</p>
+
+  </div><!-- /page-block investimento -->
+
+
+  <div class="page-break-visual"></div>
+
+  <!-- ═══════════════════════════════════
+       SEÇÃO: CONSIDERAÇÕES FINAIS
+  ════════════════════════════════════ -->
+  <div class="page-block section">
+    <div class="preview-header">
+      <img class="logo-img" src="https://www.wbdigitalsolutions.com/svg/logo.svg" alt="WB Digital Solutions" />
+    </div>
+
+    <h2 class="section-title">Considerações Finais e Próximos Passos</h2>
+
+    <p>{{CLOSING_PARAGRAPH_1}}</p>
+    <!-- Reafirmar compromisso e confiança, referência ao projeto específico -->
+
+    <p>Colocamo-nos à disposição para um alinhamento final de quaisquer detalhes pendentes e
+    para esclarecer eventuais dúvidas sobre esta proposta.</p>
+
+    <p>Agradecemos a oportunidade de participar deste projeto e confiamos que nossa parceria
+    será marcada por transparência, dedicação e ótimos resultados.</p>
+
+    <p>Conte conosco para transformar esta visão em realidade — estamos ansiosos e preparados
+    para iniciar imediatamente, construindo junto com você uma solução de qualidade, confiável
+    e de grande impacto.</p>
+
+    <!-- PRÓXIMOS PASSOS — TEXTO FIXO -->
+    <p><strong>Próximo Passo:</strong></p>
+    <ol>
+      <li>Confirmação de concordância com esta proposta.</li>
+      <li>Envio da minuta do contrato para formalização.</li>
+      <li>Assinatura do contrato e pagamento do sinal, permitindo o kickoff imediato.</li>
+    </ol>
+
+    <br/>
+    <p>Agradecemos a oportunidade de colaborar neste projeto estratégico. Fico à disposição para
+    esclarecer quaisquer dúvidas e ajustar detalhes finais.</p>
+
+    <!-- CONSIDERAÇÕES ADICIONAIS — itens gerados pelo agente conforme o projeto -->
+    <h2 class="section-title">Considerações Adicionais</h2>
+    <ul>
+      {{ADDITIONAL_CONSIDERATIONS_ITEMS}}
+    </ul>
+    <!--
+      O agente gera os <li> relevantes para o tipo de projeto. Exemplos por contexto:
+
+      SISTEMAS / PLATAFORMAS COMPLEXAS:
+      <li><strong>Custos com infraestrutura:</strong> Os valores desta proposta não incluem custos
+      com serviços de hospedagem, banco de dados em nuvem e ferramentas de terceiros necessárias
+      à operação do sistema. Esses serviços são contratados e mantidos diretamente pelo cliente.</li>
+
+      WEBSITES / LANDING PAGES:
+      <li><strong>Domínio e hospedagem:</strong> Os valores desta proposta não incluem custos com
+      registro de domínio e plano de hospedagem. Esses itens são contratados pelo cliente
+      e têm custo anual reduzido.</li>
+
+      AUTOMAÇÕES:
+      <li><strong>Plataformas de automação:</strong> Dependendo da solução, pode ser necessário
+      contratar um plano pago na ferramenta utilizada (n8n, Make, etc.). Esse custo é do cliente.</li>
+
+      SEMPRE INCLUIR (adaptar a linguagem ao perfil do cliente — evitar jargões técnicos):
+      <li><strong>Aprovações e disponibilidade:</strong> Para garantir o cumprimento dos prazos,
+      é importante que o cliente esteja disponível para aprovações, feedbacks e fornecimento
+      de materiais dentro das datas combinadas.</li>
+    -->
+
+    <!-- ASSINATURA — FIXA -->
+    <div class="signature">
+      <p>Atenciosamente,</p>
+      <p class="name">Bruno Vieira</p>
+      <p class="role">Fundador &amp; Desenvolvedor Full Stack</p>
+      <p class="role">WB Digital Solutions</p>
+      <br/>
+      <p><span style="color:var(--gray);font-size:9pt;">Tel.</span> +55 11 98286-4581</p>
+      <p><span style="color:var(--gray);font-size:9pt;">E-mail</span> bruno@wbdigitalsolutions.com</p>
+    </div>
+
+  </div><!-- /page-block considerações -->
+
+</div><!-- /document-wrapper -->
+
+</body>
+</html>

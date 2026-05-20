@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Proposta Comercial — Salto</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap');
+
+    :root {
+      --orange:       #ff5c00;
+      --orange-dark:  #cc3d00;
+      --orange-light: #fff3ed;
+      --dark:         #1a1a1a;
+      --gray:         #555555;
+      --light-gray:   #f5f5f5;
+      --border:       #e0e0e0;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    @page {
+      size: A4;
+      margin: 30mm 22mm 22mm 22mm;
+    }
+
+    .print-header { display: none; }
+    .print-footer  { display: none; }
+
+    @media print {
+      body { background: #fff; }
+
+      .print-header {
+        display: flex;
+        align-items: center;
+        position: fixed;
+        top: 0; left: 0; right: 0;
+        background: #fff;
+        padding: 10mm 22mm 4mm 22mm;
+        border-bottom: 1px solid var(--border);
+        z-index: 100;
+      }
+
+      .print-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        position: fixed;
+        bottom: 0; left: 0; right: 0;
+        background: #fff;
+        padding: 3mm 22mm 8mm 22mm;
+        border-top: 1px solid var(--border);
+        font-size: 8pt;
+        color: var(--gray);
+        z-index: 100;
+      }
+
+      .preview-header    { display: none !important; }
+      .page-break-visual { display: none !important; }
+
+      .section       { page-break-before: always; break-before: page; }
+      .section-cover { page-break-before: avoid; }
+
+      h2, h3, .signature, .investment-table tr, .payment-list li {
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+    }
+
+    /* ─── BROWSER PREVIEW ─── */
+    body {
+      font-family: 'Montserrat', Arial, sans-serif;
+      font-size: 11pt;
+      color: var(--dark);
+      line-height: 1.6;
+      background: #d0d0d0;
+    }
+
+    .document-wrapper { width: 210mm; margin: 0 auto; padding: 16px 0; }
+
+    .logo-img { height: 22px; width: auto; }
+
+    .page-break-visual { height: 16px; background: #d0d0d0; }
+
+    .page-block {
+      background: #fff;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+      padding: 10mm 22mm 14mm 22mm;
+    }
+
+    .preview-header {
+      display: flex;
+      align-items: center;
+      padding-bottom: 4mm;
+      margin-bottom: 6mm;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* ─── CAPA ─── */
+    .page-block-cover { padding-top: 0; }
+
+    .cover-hero {
+      margin: 0 -22mm 10mm -22mm;
+      background: linear-gradient(150deg, var(--orange-dark) 0%, var(--orange) 55%, #ff7a1a 100%);
+      padding: 14mm 22mm 18mm 22mm;
+      position: relative;
+      overflow: hidden;
+    }
+    .cover-hero::after {
+      content: '';
+      position: absolute;
+      bottom: -60px; right: -40px;
+      width: 220px; height: 220px;
+      border-radius: 50%;
+      border: 40px solid rgba(255,255,255,0.06);
+      pointer-events: none;
+    }
+    .cover-hero::before {
+      content: '';
+      position: absolute;
+      top: -20px; right: 80px;
+      width: 90px; height: 90px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.05);
+      pointer-events: none;
+    }
+
+    .cover-hero-logo-wrap {
+      display: inline-flex;
+      align-items: center;
+      background: #fff;
+      border-radius: 6px;
+      padding: 5px 12px;
+      position: relative;
+      z-index: 1;
+    }
+    .cover-hero-logo { height: 22px; width: auto; display: block; }
+
+    .cover-hero-label {
+      font-size: 8pt;
+      font-weight: 600;
+      color: rgba(255,255,255,0.55);
+      letter-spacing: 3.5px;
+      text-transform: uppercase;
+      margin-top: 12mm;
+      position: relative;
+      z-index: 1;
+    }
+    .cover-hero-rule {
+      width: 36px; height: 1px;
+      background: rgba(255,255,255,0.3);
+      margin: 3.5mm 0;
+      position: relative;
+      z-index: 1;
+    }
+    .cover-hero-project {
+      font-size: 22pt;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1.25;
+      letter-spacing: -0.3px;
+      position: relative;
+      z-index: 1;
+      max-width: 85%;
+    }
+
+    .proposal-pill {
+      display: inline-flex;
+      align-items: center;
+      background: var(--light-gray);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 1.5mm 5mm;
+      font-size: 9pt;
+      color: var(--gray);
+      margin-bottom: 6mm;
+    }
+
+    /* ─── TIPOGRAFIA ─── */
+    .section-title {
+      font-size: 13pt;
+      font-weight: 700;
+      border-left: 3px solid var(--orange);
+      padding-left: 8px;
+      margin: 8mm 0 4mm 0;
+      color: var(--dark);
+    }
+
+    .subsection-title {
+      font-size: 11pt;
+      font-weight: 700;
+      margin: 5mm 0 2mm 0;
+    }
+
+    p  { margin-bottom: 3mm; }
+    ul { padding-left: 6mm; margin-bottom: 4mm; }
+    ol { padding-left: 6mm; margin-bottom: 4mm; }
+    li { margin-bottom: 2mm; }
+
+    /* ─── FASES / ETAPAS (equivalente dos sprints) ─── */
+    .phase-list { padding: 0; margin: 4mm 0; }
+    .phase-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 4mm;
+      margin-bottom: 4mm;
+    }
+    .phase-badge {
+      flex-shrink: 0;
+      width: 7mm;
+      height: 7mm;
+      border-radius: 50%;
+      background: var(--orange);
+      color: #fff;
+      font-size: 8pt;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 1px;
+    }
+    .phase-content { flex: 1; line-height: 1.5; }
+
+    /* ─── TABELA DE INVESTIMENTO ─── */
+    .investment-table { width: 100%; border-collapse: collapse; margin: 4mm 0; }
+    .investment-table td { padding: 3mm 2mm; vertical-align: top; }
+    .investment-table tr:not(:last-child) td { border-bottom: 1px solid var(--border); }
+    .investment-table td:first-child { font-weight: 600; width: 60%; }
+    .investment-table td:last-child  { text-align: right; width: 40%; }
+    .total-row td {
+      font-size: 14pt;
+      font-weight: 700;
+      padding: 4mm 2mm;
+      background: var(--orange-light);
+      color: var(--orange);
+      border-top: 2px solid var(--orange) !important;
+    }
+
+    /* ─── PAGAMENTO ─── */
+    .payment-list { list-style: none; padding: 0; }
+    .payment-list li { padding: 2mm 0; border-bottom: 1px solid var(--border); }
+    .payment-list li:last-child { border-bottom: none; }
+
+    /* ─── ASSINATURA ─── */
+    .signature {
+      margin-top: 10mm;
+      border-top: 1px solid var(--border);
+      padding-top: 6mm;
+    }
+    .signature p  { margin-bottom: 1mm; }
+    .signature .name { font-weight: 700; font-size: 12pt; margin-top: 3mm; }
+    .signature .role { color: var(--gray); }
+  </style>
+</head>
+<body>
+
+<div class="print-header">
+  <img class="logo-img" src="https://saltoup.com/logo-dark.svg" alt="Salto" />
+</div>
+
+<div class="print-footer">
+  <span>Salto — Proposta Confidencial</span>
+  <span></span>
+</div>
+
+
+<div class="document-wrapper">
+
+  <!-- ═══════════════════════════════════
+       PÁGINA 1 — CAPA
+  ════════════════════════════════════ -->
+  <div class="page-block page-block-cover">
+    <div class="cover-hero">
+      <div class="cover-hero-logo-wrap">
+        <img class="cover-hero-logo" src="https://saltoup.com/logo-dark.svg" alt="Salto" />
+      </div>
+
+      <div class="cover-hero-label">Proposta Comercial</div>
+      <div class="cover-hero-rule"></div>
+      <div class="cover-hero-project">{{PROJECT_TITLE}}</div>
+      <!--
+        Ex: "Consultoria Comercial e Tráfego Pago"
+            "Estratégia de Vendas e Treinamento de Equipe"
+            "Gestão de Tráfego Pago — Google e Meta Ads"
+      -->
+    </div>
+
+    <div class="proposal-pill">
+      Proposta Nº <strong style="margin-left:4px">{{PROPOSAL_NUMBER}}</strong>
+      <!-- Formato: SALTO-P001-0526-REV1 -->
+    </div>
+
+    <div class="opening-letter">
+      <p>{{GREETING}},</p>
+      <!--
+        O agente gera {{GREETING}} com base nos contatos selecionados e seus gêneros.
+        Ex: "Prezado Sr. João Silva", "Prezada Sra. Maria Santos"
+      -->
+
+      <p>{{OPENING_PARAGRAPH_1}}</p>
+      <!-- Contextualizar: diagnóstico inicial / conversa que levou à proposta -->
+
+      <p>{{OPENING_PARAGRAPH_2}}</p>
+      <!-- Demonstrar entendimento do momento e desafio comercial do cliente -->
+
+      <p>Estamos entusiasmados com a perspectiva de colaborar neste projeto e atuaremos como
+      parceiros de confiança para acelerar seus resultados.</p>
+
+      <p>Em toda a condução do trabalho, manteremos um perfil profissional e próximo, priorizando
+      a clareza nas entregas, a comunicação direta e o cumprimento dos objetivos acordados.
+      Esta proposta foi elaborada com atenção ao seu negócio, refletindo nosso compromisso em
+      construir uma parceria focada em — <u>resultados reais e crescimento sustentável</u>.</p>
+    </div>
+
+  </div><!-- /page-block capa -->
+
+
+  <div class="page-break-visual"></div>
+
+  <!-- ═══════════════════════════════════
+       SEÇÃO: NOSSA SOLUÇÃO
+  ════════════════════════════════════ -->
+  <div class="page-block section">
+    <div class="preview-header">
+      <img class="logo-img" src="https://saltoup.com/logo-dark.svg" alt="Salto" />
+    </div>
+
+    <h2 class="section-title">Nossa Solução</h2>
+
+    <p>Para alavancar os resultados comerciais do seu negócio, apresentamos uma solução
+    estratégica integrada — combinando diagnóstico, execução e acompanhamento com foco
+    total em performance e crescimento:</p>
+
+    {{DIAGNOSIS_SECTION}}
+    <!--
+      OPCIONAL — incluir quando há uma etapa inicial de diagnóstico/imersão antes da execução.
+      Omitir quando o escopo já está totalmente definido desde o início.
+
+      Se incluído:
+      <h3 class="subsection-title">Diagnóstico Inicial</h3>
+      <ul>
+        <li><strong>Imersão no Negócio:</strong> Nas primeiras semanas, realizamos um diagnóstico
+        completo do cenário comercial atual — mapeando funil de vendas, perfil de cliente ideal,
+        posicionamento e principais gargalos de crescimento. Esse estudo fundamenta toda a
+        estratégia de execução.</li>
+      </ul>
+    -->
+
+    {{SERVICE_SECTIONS}}
+    <!--
+      Gerar seções conforme os serviços contratados. Exemplos:
+
+      CONSULTORIA COMERCIAL:
+      ──────────────────────
+      <h3 class="subsection-title">Consultoria Comercial</h3>
+      <ul>
+        <li><strong>Estruturação do Funil de Vendas:</strong> Mapeamento e otimização de cada etapa do processo comercial.</li>
+        <li><strong>Definição de ICP e Posicionamento:</strong> Clareza sobre o cliente ideal e como se comunicar com ele.</li>
+        <li><strong>Roteiros e Scripts de Vendas:</strong> Materiais práticos para aumentar a conversão da equipe.</li>
+      </ul>
+
+      TRÁFEGO PAGO:
+      ─────────────
+      <h3 class="subsection-title">Gestão de Tráfego Pago</h3>
+      <ul>
+        <li><strong>Campanhas no Meta Ads (Facebook e Instagram):</strong> Criação, segmentação e otimização contínua.</li>
+        <li><strong>Campanhas no Google Ads:</strong> Busca, display e remarketing para captura de demanda qualificada.</li>
+        <li><strong>Relatórios de Performance:</strong> Acompanhamento semanal de métricas e resultados.</li>
+      </ul>
+
+      TREINAMENTO DE VENDAS:
+      ──────────────────────
+      <h3 class="subsection-title">Treinamento de Equipe Comercial</h3>
+      <ul>
+        <li><strong>Capacitação em Técnicas de Vendas:</strong> Abordagem, qualificação, objeções e fechamento.</li>
+        <li><strong>Simulações Práticas:</strong> Role-plays e feedbacks individualizados.</li>
+        <li><strong>Material de Apoio:</strong> Playbook comercial personalizado para o time.</li>
+      </ul>
+    -->
+
+  </div><!-- /page-block solução -->
+
+
+  <div class="page-break-visual"></div>
+
+  <!-- ═══════════════════════════════════
+       SEÇÃO: ENTREGAS E CRONOGRAMA
+  ════════════════════════════════════ -->
+  <div class="page-block section">
+    <div class="preview-header">
+      <img class="logo-img" src="https://saltoup.com/logo-dark.svg" alt="Salto" />
+    </div>
+
+    <h2 class="section-title">O Que Está Incluído</h2>
+
+    <p>{{SCOPE_INTRO}}</p>
+
+    {{DELIVERABLES_LIST}}
+    <!--
+      <ul>
+        <li><strong>Diagnóstico Comercial Completo:</strong> Análise do funil, ICP e posicionamento atual.</li>
+        <li><strong>Estratégia de Crescimento Personalizada:</strong> Plano de ação com metas e indicadores.</li>
+        <li><strong>Gestão Mensal de Campanhas:</strong> Criação, segmentação e otimização contínua.</li>
+        <li><strong>Relatórios Semanais:</strong> Acompanhamento de resultados com transparência total.</li>
+        <li><strong>Reuniões de Alinhamento:</strong> Check-ins periódicos para ajustes estratégicos.</li>
+      </ul>
+    -->
+
+    {{TIMELINE_SECTION}}
+    <!--
+      OPCIONAL — incluir quando há fases ou etapas claras de entrega.
+      Omitir em contratos mensais recorrentes sem fases definidas.
+
+      Se incluído, o bloco COMPLETO (título + parágrafo + phase-list):
+
+      <h2 class="section-title">Cronograma de Execução</h2>
+      <p>A execução será organizada em fases progressivas, garantindo evolução contínua
+      e entregas tangíveis a cada etapa:</p>
+
+      <div class="phase-list">
+        <div class="phase-item">
+          <div class="phase-badge">1</div>
+          <div class="phase-content"><strong>Fase 1 (Semanas 1–2):</strong> Diagnóstico, imersão e definição de estratégia.</div>
+        </div>
+        <div class="phase-item">
+          <div class="phase-badge">2</div>
+          <div class="phase-content"><strong>Fase 2 (Semanas 3–4):</strong> Implementação das primeiras ações e campanhas.</div>
+        </div>
+        <div class="phase-item">
+          <div class="phase-badge">3</div>
+          <div class="phase-content"><strong>Fase 3 (Mês 2):</strong> Otimização baseada nos primeiros resultados.</div>
+        </div>
+        <div class="phase-item">
+          <div class="phase-badge">✓</div>
+          <div class="phase-content"><strong>Fase Final:</strong> Entrega do playbook, treinamento e relatório de resultados.</div>
+        </div>
+      </div>
+    -->
+
+  </div><!-- /page-block entregas -->
+
+
+  <div class="page-break-visual"></div>
+
+  <!-- ═══════════════════════════════════
+       SEÇÃO: CLÁUSULAS OPCIONAIS
+       Cada placeholder retorna o bloco completo (h2 + conteúdo) ou string vazia.
+       Ao menos uma seção deve estar presente para evitar página em branco.
+  ════════════════════════════════════ -->
+  <div class="page-block section">
+    <div class="preview-header">
+      <img class="logo-img" src="https://saltoup.com/logo-dark.svg" alt="Salto" />
+    </div>
+
+    {{CONTINUITY_SECTION}}
+    <!--
+      OPCIONAL — incluir quando há possibilidade de continuidade após o escopo inicial
+      (ex: gestão mensal de tráfego, acompanhamento comercial recorrente).
+      Omitir em projetos de entrega única sem renovação prevista.
+
+      Se incluído:
+      <h2 class="section-title">Acompanhamento Contínuo</h2>
+      <p>Após a conclusão do escopo inicial, oferecemos um plano de acompanhamento mensal
+      com valor fixo de <strong>R$ X.XXX,00</strong>. Esse plano inclui gestão de campanhas,
+      relatórios de performance e reuniões de alinhamento estratégico mensais.</p>
+    -->
+
+    {{PENALTY_CLAUSE}}
+    <!--
+      OPCIONAL — incluir em contratos de maior valor ou com prazo crítico.
+      Pode ser omitido em projetos menores onde prejudicaria o fechamento.
+
+      Se incluído (texto padrão, não alterar valores):
+      <h2 class="section-title">Cláusula de Multa por Atraso</h2>
+      <p>Fica acordado que, em caso de atraso na entrega do projeto, será aplicada uma multa de
+      5% do valor total por semana, limitada a 20%. A aplicação dessa penalidade ocorrerá apenas
+      após 4 semanas de atraso além do prazo acordado, contados a partir do início oficial do projeto.</p>
+    -->
+
+    {{CONFIDENTIALITY_SECTION}}
+    <!--
+      OPCIONAL — incluir quando envolve acesso a dados sensíveis do negócio do cliente
+      (faturamento, base de clientes, processos internos).
+
+      Se incluído:
+      <h2 class="section-title">Confidencialidade</h2>
+      <p>Todas as informações compartilhadas pelo cliente durante a execução deste trabalho
+      serão tratadas com total sigilo. A Salto compromete-se a não divulgar dados estratégicos,
+      financeiros ou operacionais a terceiros, garantindo a proteção das informações do seu negócio.</p>
+    -->
+
+    {{RESULTS_DISCLAIMER}}
+    <!--
+      RECOMENDADO — incluir sempre que houver expectativa de resultados quantitativos
+      (ROI, número de leads, faturamento). Protege a Salto de promessas não mensuráveis.
+
+      Se incluído:
+      <h2 class="section-title">Sobre Resultados e Metas</h2>
+      <p>Os resultados de estratégias de marketing e vendas dependem de variáveis externas
+      como sazonalidade, mercado e engajamento do cliente. A Salto compromete-se com a
+      excelência na execução e na otimização contínua das ações, mas não garante métricas
+      específicas de retorno. Metas e indicadores serão definidos em conjunto no início
+      do projeto e revisados periodicamente.</p>
+    -->
+
+  </div><!-- /page-block cláusulas opcionais -->
+
+
+  <div class="page-break-visual"></div>
+
+  <!-- ═══════════════════════════════════
+       SEÇÃO: INVESTIMENTO
+  ════════════════════════════════════ -->
+  <div class="page-block section">
+    <div class="preview-header">
+      <img class="logo-img" src="https://saltoup.com/logo-dark.svg" alt="Salto" />
+    </div>
+
+    <h2 class="section-title">Investimento</h2>
+
+    {{INVESTMENT_TABLE}}
+    <!--
+      <table class="investment-table">
+        <tr>
+          <td><strong>Diagnóstico e Estratégia Comercial</strong><br/><small>Imersão, mapeamento de funil e plano de ação.</small></td>
+          <td>R$ 2.500,00</td>
+        </tr>
+        <tr>
+          <td><strong>Gestão de Tráfego Pago (3 meses)</strong><br/><small>Meta Ads e Google Ads — criação, gestão e relatórios.</small></td>
+          <td>R$ 6.000,00</td>
+        </tr>
+        <tr>
+          <td><strong>Treinamento de Equipe Comercial</strong><br/><small>2 sessões práticas + playbook personalizado.</small></td>
+          <td>R$ 3.500,00</td>
+        </tr>
+        <tr class="total-row">
+          <td>Total do Investimento</td>
+          <td>R$ 12.000,00</td>
+        </tr>
+      </table>
+    -->
+
+    <p>Este investimento representa uma solução completa, focada em resultados mensuráveis
+    e no crescimento sustentável do seu negócio.</p>
+
+    <h2 class="section-title">Condições de Pagamento</h2>
+    <p>Sugerimos um cronograma de pagamento distribuído da seguinte forma:</p>
+
+    {{PAYMENT_SCHEDULE}}
+    <!--
+      OPÇÃO A — 50/50:
+      <ol class="payment-list">
+        <li><strong>50% – Sinal de Início:</strong> R$ X.XXX,00 – No aceite e assinatura do contrato.</li>
+        <li><strong>50% – Na Entrega:</strong> R$ X.XXX,00 – Ao final do projeto.</li>
+      </ol>
+
+      OPÇÃO B — Mensal:
+      <ol class="payment-list">
+        <li><strong>Mês 1:</strong> R$ X.XXX,00 – No início da execução.</li>
+        <li><strong>Mês 2:</strong> R$ X.XXX,00</li>
+        <li><strong>Mês 3:</strong> R$ X.XXX,00</li>
+      </ol>
+    -->
+
+    <p>Essa distribuição mantém o fluxo financeiro equilibrado e alinhado ao progresso do trabalho.</p>
+
+  </div><!-- /page-block investimento -->
+
+
+  <div class="page-break-visual"></div>
+
+  <!-- ═══════════════════════════════════
+       SEÇÃO: CONSIDERAÇÕES FINAIS
+  ════════════════════════════════════ -->
+  <div class="page-block section">
+    <div class="preview-header">
+      <img class="logo-img" src="https://saltoup.com/logo-dark.svg" alt="Salto" />
+    </div>
+
+    <h2 class="section-title">Considerações Finais e Próximos Passos</h2>
+
+    <p>{{CLOSING_PARAGRAPH_1}}</p>
+    <!-- Reafirmar compromisso com resultados, referência ao desafio específico do cliente -->
+
+    <p>Colocamo-nos à disposição para um alinhamento final de quaisquer detalhes e para
+    esclarecer eventuais dúvidas sobre esta proposta.</p>
+
+    <p>Agradecemos a oportunidade de participar desta jornada e confiamos que nossa parceria
+    será marcada por clareza, execução impecável e resultados concretos.</p>
+
+    <p>Conte conosco para dar o próximo salto — estamos prontos para começar imediatamente,
+    com foco total no crescimento do seu negócio.</p>
+
+    <!-- PRÓXIMOS PASSOS — TEXTO FIXO -->
+    <p><strong>Próximo Passo:</strong></p>
+    <ol>
+      <li>Confirmação de concordância com esta proposta.</li>
+      <li>Envio do contrato para formalização.</li>
+      <li>Assinatura e pagamento do sinal, permitindo o início imediato.</li>
+    </ol>
+
+    <br/>
+    <p>Fico à disposição para esclarecer quaisquer dúvidas e ajustar detalhes finais.</p>
+
+    <!-- CONSIDERAÇÕES ADICIONAIS -->
+    <h2 class="section-title">Considerações Adicionais</h2>
+    <ul>
+      {{ADDITIONAL_CONSIDERATIONS_ITEMS}}
+    </ul>
+    <!--
+      O agente gera os <li> relevantes. Exemplos para o contexto Salto:
+
+      TRÁFEGO PAGO:
+      <li><strong>Verba de mídia não incluída:</strong> O investimento desta proposta cobre
+      a gestão das campanhas. O valor destinado aos anúncios (verba de mídia) é pago
+      diretamente pelo cliente às plataformas de anúncio.</li>
+
+      CONSULTORIA / TREINAMENTO:
+      <li><strong>Engajamento e disponibilidade:</strong> Para garantir os melhores resultados,
+      é fundamental que o cliente e/ou sua equipe estejam disponíveis para reuniões,
+      treinamentos e fornecimento de informações dentro dos prazos combinados.</li>
+
+      SEMPRE INCLUIR:
+      <li><strong>Aprovações e feedbacks:</strong> Atrasos em aprovações e retornos por parte
+      do cliente podem impactar o cronograma de execução, mas não alteram as condições
+      de pagamento desta proposta.</li>
+    -->
+
+    <!-- ASSINATURA -->
+    <div class="signature">
+      <p>Atenciosamente,</p>
+      <p class="name">Bruno Vieira</p>
+      <p class="role">Consultor</p>
+      <p class="role">Salto</p>
+      <br/>
+      <p><span style="color:var(--gray);font-size:9pt;">Tel.</span> +55 11 98286-4581</p>
+      <p><span style="color:var(--gray);font-size:9pt;">E-mail</span> bruno@wbdigitalsolutions.com</p>
+    </div>
+
+  </div><!-- /page-block considerações -->
+
+</div><!-- /document-wrapper -->
+
+</body>
+</html>

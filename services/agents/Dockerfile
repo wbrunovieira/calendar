@@ -14,6 +14,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpango-1.0-0 \
+    libpangoft2-1.0-0 \
+    libharfbuzz0b \
+    libfontconfig1 \
+    libcairo2 \
+    libglib2.0-0 \
+    fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN addgroup --system agents && \
     adduser --system --ingroup agents agents
 

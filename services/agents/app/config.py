@@ -37,5 +37,21 @@ class Settings:
     langfuse_secret_key: str = os.getenv("LANGFUSE_SECRET_KEY", "")
     langfuse_host: str = os.getenv("LANGFUSE_HOST", "http://langfuse-web:3000")
 
+    # Google Drive (proposal uploads)
+    google_service_account_json: str = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+    google_service_account_path: str = os.getenv("GOOGLE_SERVICE_ACCOUNT_PATH", "")
+    google_drive_folder_id: str = os.getenv("GOOGLE_DRIVE_FOLDER_ID", "")
+
+    # Proposal templates (bundled in Docker image — copy from Comercial/Propostas/ at build time)
+    _pkg_proposal = os.path.join(os.path.dirname(__file__), "agents", "crm", "proposal")
+    proposal_template_wb: str = os.getenv(
+        "PROPOSAL_TEMPLATE_WB",
+        os.path.join(_pkg_proposal, "template_wb.html"),
+    )
+    proposal_template_salto: str = os.getenv(
+        "PROPOSAL_TEMPLATE_SALTO",
+        os.path.join(_pkg_proposal, "template_salto.html"),
+    )
+
 
 settings = Settings()

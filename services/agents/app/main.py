@@ -55,6 +55,7 @@ from app.agents.crm.meet_analysis.router import router as meet_analysis_router  
 from app.agents.crm.gatekeeper_analysis.router import router as gatekeeper_analysis_router  # noqa: E402
 from app.agents.crm.gatekeeper_batch.router import router as gatekeeper_batch_router  # noqa: E402
 from app.agents.crm.transfer_analysis.router import router as transfer_analysis_router  # noqa: E402
+from app.agents.crm.proposal.router import router as proposal_router  # noqa: E402
 
 app.include_router(health_router)
 app.include_router(transaction_router)
@@ -65,3 +66,4 @@ app.include_router(meet_analysis_router)
 app.include_router(gatekeeper_analysis_router)
 app.include_router(gatekeeper_batch_router)
 app.include_router(transfer_analysis_router)
+app.include_router(proposal_router)
