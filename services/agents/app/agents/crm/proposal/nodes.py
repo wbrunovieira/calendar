@@ -672,6 +672,9 @@ async def send_asking_webhook(state: ProposalState) -> dict:
 
 async def send_completed_webhook(state: ProposalState) -> dict:
     job_id = state.get("job_id", "")
+    webhook_url = state.get("webhook_url", "")
+    logger.info("[Proposal] sending completed webhook job=%s url=%s size=%d",
+                job_id, webhook_url, state.get("file_size", 0))
     payload = {
         "jobId": job_id,
         "proposalId": state.get("proposal_id", job_id),
@@ -682,7 +685,7 @@ async def send_completed_webhook(state: ProposalState) -> dict:
     }
     try:
         async with httpx.AsyncClient(timeout=30) as client:
-            await client.post(state.get("webhook_url", ""), json=payload, headers=_auth_headers())
+            await client.post(webhook_url, json=payload, headers=_auth_headers())
         logger.info("[Proposal] completed job=%s number=%s", job_id, state.get("proposal_number"))
     except Exception as exc:
         logger.exception("[Proposal] completed webhook failed job=%s", job_id)
