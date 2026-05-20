@@ -6,6 +6,7 @@ import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
+from app.agents.crm.proposal.correct_nodes import run_correction_pipeline
 from app.agents.crm.proposal.graph import build_proposal_graph
 from app.agents.crm.proposal.store import delete_job, load_job, save_job
 from app.agents.finances.nodes import langfuse
@@ -74,6 +75,27 @@ class ProposalAnswerRequest(BaseModel):
     jobId: str               # same proposalId returned in the "question" webhook
     webhookUrl: str
     answer: str
+
+
+class ProposalCorrectRequest(BaseModel):
+    jobId: str
+    proposalId: str
+    driveUrl: str
+    instructions: str
+    webhookUrl: str
+    brand: str = "wb"
+    lead: ProposalLeadInput
+
+
+class ProposalReviseRequest(BaseModel):
+    jobId: str
+    proposalId: str
+    revisionNumber: int = 1
+    driveUrl: str
+    revisionNotes: str
+    webhookUrl: str
+    brand: str = "wb"
+    lead: ProposalLeadInput
 
 
 class AcceptedResponse(BaseModel):
@@ -218,4 +240,45 @@ async def handle_proposal_answer(
     background_tasks.add_task(_run_proposal, req.jobId, state_input, None)
 
     logger.info("[Proposal] answer received job=%s", req.jobId)
+    return AcceptedResponse(jobId=req.jobId)
+
+
+@router.post("/crm/proposal/correct", response_model=AcceptedResponse, status_code=202)
+async def handle_proposal_correct(
+    req: ProposalCorrectRequest,
+    background_tasks: BackgroundTasks,
+):
+    background_tasks.add_task(
+        run_correction_pipeline,
+        job_id=req.jobId,
+        proposal_id=req.proposalId,
+        drive_url=req.driveUrl,
+        instructions=req.instructions,
+        brand=req.brand,
+        lead=req.lead.model_dump(),
+        webhook_url=req.webhookUrl,
+        mode="correct",
+    )
+    logger.info("[Proposal] correct accepted jobId=%s proposalId=%s", req.jobId, req.proposalId)
+    return AcceptedResponse(jobId=req.jobId)
+
+
+@router.post("/crm/proposal/revise", response_model=AcceptedResponse, status_code=202)
+async def handle_proposal_revise(
+    req: ProposalReviseRequest,
+    background_tasks: BackgroundTasks,
+):
+    background_tasks.add_task(
+        run_correction_pipeline,
+        job_id=req.jobId,
+        proposal_id=req.proposalId,
+        drive_url=req.driveUrl,
+        instructions=req.revisionNotes,
+        brand=req.brand,
+        lead=req.lead.model_dump(),
+        webhook_url=req.webhookUrl,
+        mode="revise",
+        revision_number=req.revisionNumber,
+    )
+    logger.info("[Proposal] revise accepted jobId=%s proposalId=%s rev=%d", req.jobId, req.proposalId, req.revisionNumber)
     return AcceptedResponse(jobId=req.jobId)
