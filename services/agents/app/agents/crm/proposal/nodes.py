@@ -684,15 +684,16 @@ async def send_asking_webhook(state: ProposalState) -> dict:
     job_id = state.get("job_id", "")
     payload = {
         "jobId": job_id,
-        "status": "asking",
+        "proposalId": state.get("proposal_id", job_id),
+        "status": "question",
         "question": state.get("question", "Poderia fornecer mais detalhes sobre o projeto?"),
     }
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             await client.post(state.get("webhook_url", ""), json=payload, headers=_auth_headers())
-        logger.info("[Proposal] asking webhook sent job=%s", job_id)
+        logger.info("[Proposal] question webhook sent job=%s", job_id)
     except Exception as exc:
-        logger.exception("[Proposal] asking webhook failed job=%s", job_id)
+        logger.exception("[Proposal] question webhook failed job=%s", job_id)
         return {"error": f"Falha ao enviar pergunta ao CRM: {exc}"}
     return {}
 
@@ -701,16 +702,12 @@ async def send_completed_webhook(state: ProposalState) -> dict:
     job_id = state.get("job_id", "")
     payload = {
         "jobId": job_id,
+        "proposalId": state.get("proposal_id", job_id),
         "status": "completed",
-        "proposal": {
-            "title": state.get("project_title", ""),
-            "proposalNumber": state.get("proposal_number", ""),
-            "driveFileId": state.get("drive_file_id", ""),
-            "driveUrl": state.get("drive_url", ""),
-            "fileName": state.get("file_name", ""),
-            "fileSize": state.get("file_size", 0),
-            "summary": f"Proposta {state.get('proposal_number', '')} gerada com sucesso",
-        },
+        "driveFileId": state.get("drive_file_id", ""),
+        "driveUrl": state.get("drive_url", ""),
+        "fileName": state.get("file_name", ""),
+        "fileSize": state.get("file_size", 0),
     }
     try:
         async with httpx.AsyncClient(timeout=15) as client:
@@ -724,7 +721,12 @@ async def send_completed_webhook(state: ProposalState) -> dict:
 
 async def send_error_webhook(state: ProposalState) -> dict:
     job_id = state.get("job_id", "")
-    payload = {"jobId": job_id, "status": "error", "error": state.get("error", "Erro desconhecido")}
+    payload = {
+        "jobId": job_id,
+        "proposalId": state.get("proposal_id", job_id),
+        "status": "error",
+        "errorMessage": state.get("error", "Erro desconhecido"),
+    }
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             await client.post(state.get("webhook_url", ""), json=payload, headers=_auth_headers())

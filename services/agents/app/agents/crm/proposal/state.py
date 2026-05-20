@@ -7,7 +7,8 @@ from typing_extensions import TypedDict
 
 class ProposalState(TypedDict, total=False):
     # ── Input ─────────────────────────────────────────────────────────────
-    job_id: str
+    job_id: str        # = proposalId sent by CRM (used as correlation key)
+    proposal_id: str   # CRM's proposalId — echoed back in all webhook calls
     webhook_url: str
     brand: str          # "wb" | "salto"
     lead: dict

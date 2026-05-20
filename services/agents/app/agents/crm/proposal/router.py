@@ -28,13 +28,14 @@ def _get_graph():
 # ── Request models ────────────────────────────────────────────────────────
 
 class ProposalLeadInput(BaseModel):
-    id: str
     businessName: str
     registeredName: str | None = None
     email: str | None = None
     phone: str | None = None
+    whatsapp: str | None = None
     website: str | None = None
     city: str | None = None
+    state: str | None = None
     country: str | None = None
     description: str | None = None
     segment: str | None = None
@@ -58,24 +59,25 @@ class ProposalProductInput(BaseModel):
 
 
 class ProposalRequest(BaseModel):
-    jobId: str
+    proposalId: str          # CRM's proposal ID — used as jobId and echoed in webhooks
+    leadId: str | None = None
+    requesterId: str | None = None
     webhookUrl: str
-    brand: str = "wb"  # "wb" | "salto"
+    brand: str = "wb"        # "wb" | "salto"
     lead: ProposalLeadInput
     contacts: list[ProposalContactInput] = []
     products: list[ProposalProductInput] = []
-    userInstructions: str = ""
+    instructions: str = ""   # free-text seller instructions
 
 
 class ProposalAnswerRequest(BaseModel):
-    jobId: str
+    jobId: str               # same proposalId returned in the "question" webhook
     webhookUrl: str
     answer: str
 
 
 class AcceptedResponse(BaseModel):
     jobId: str
-    status: str
 
 
 # ── Background worker ─────────────────────────────────────────────────────
@@ -104,7 +106,12 @@ async def _run_proposal(job_id: str, state_input: dict, trace_id: str | None) ->
             async with httpx.AsyncClient(timeout=10) as client:
                 await client.post(
                     webhook_url,
-                    json={"jobId": job_id, "status": "error", "error": "background_task_failed"},
+                    json={
+                        "jobId": job_id,
+                        "proposalId": job_id,
+                        "status": "error",
+                        "errorMessage": "background_task_failed",
+                    },
                     headers=headers,
                 )
         except Exception:
@@ -115,6 +122,7 @@ async def _run_proposal(job_id: str, state_input: dict, trace_id: str | None) ->
     if result.get("question") and not result.get("error"):
         await save_job(job_id, {
             "job_id": job_id,
+            "proposal_id": job_id,
             "webhook_url": state_input["webhook_url"],
             "brand": state_input.get("brand", "wb"),
             "lead": state_input["lead"],
@@ -126,7 +134,6 @@ async def _run_proposal(job_id: str, state_input: dict, trace_id: str | None) ->
             ],
         })
     else:
-        # Job finished (completed or error) — clean up persisted context
         await delete_job(job_id)
 
     if trace:
@@ -151,7 +158,7 @@ def _validate_secret(secret: str | None) -> None:
         raise HTTPException(status_code=401, detail="Invalid webhook secret")
 
 
-@router.post("/crm/proposal-agent", response_model=AcceptedResponse, status_code=202)
+@router.post("/crm/proposal", response_model=AcceptedResponse, status_code=202)
 async def handle_proposal_agent(
     req: ProposalRequest,
     background_tasks: BackgroundTasks,
@@ -163,30 +170,31 @@ async def handle_proposal_agent(
     if langfuse.enabled:
         trace = langfuse.trace(
             name="crm-proposal-agent",
-            input={"jobId": req.jobId, "businessName": req.lead.businessName},
+            input={"proposalId": req.proposalId, "businessName": req.lead.businessName},
             metadata={"async": True},
         )
         trace_id = trace.id
         langfuse.flush()
 
     state_input = {
-        "job_id": req.jobId,
+        "job_id": req.proposalId,
+        "proposal_id": req.proposalId,
         "webhook_url": req.webhookUrl,
         "brand": req.brand,
         "lead": req.lead.model_dump(),
         "contacts": [c.model_dump() for c in req.contacts],
         "products": [p.model_dump() for p in req.products],
-        "user_instructions": req.userInstructions,
+        "user_instructions": req.instructions,
         "qa_history": [],
     }
 
-    background_tasks.add_task(_run_proposal, req.jobId, state_input, trace_id)
+    background_tasks.add_task(_run_proposal, req.proposalId, state_input, trace_id)
 
-    logger.info("[Proposal] accepted job=%s lead=%s", req.jobId, req.lead.businessName)
-    return AcceptedResponse(jobId=req.jobId, status="accepted")
+    logger.info("[Proposal] accepted proposalId=%s lead=%s", req.proposalId, req.lead.businessName)
+    return AcceptedResponse(jobId=req.proposalId)
 
 
-@router.post("/crm/proposal-agent/answer", response_model=AcceptedResponse, status_code=202)
+@router.post("/crm/proposal/answer", response_model=AcceptedResponse, status_code=202)
 async def handle_proposal_answer(
     req: ProposalAnswerRequest,
     background_tasks: BackgroundTasks,
@@ -198,7 +206,6 @@ async def handle_proposal_answer(
     if not job:
         raise HTTPException(status_code=404, detail=f"Job {req.jobId} not found or already completed")
 
-    # Attach answer to the last pending question
     qa_history: list = job.get("qa_history", [])
     if qa_history and not qa_history[-1].get("answer"):
         qa_history[-1]["answer"] = req.answer
@@ -207,6 +214,7 @@ async def handle_proposal_answer(
 
     state_input = {
         "job_id": req.jobId,
+        "proposal_id": job.get("proposal_id", req.jobId),
         "webhook_url": req.webhookUrl or job["webhook_url"],
         "brand": job.get("brand", "wb"),
         "lead": job["lead"],
@@ -219,4 +227,4 @@ async def handle_proposal_answer(
     background_tasks.add_task(_run_proposal, req.jobId, state_input, None)
 
     logger.info("[Proposal] answer received job=%s", req.jobId)
-    return AcceptedResponse(jobId=req.jobId, status="accepted")
+    return AcceptedResponse(jobId=req.jobId)
