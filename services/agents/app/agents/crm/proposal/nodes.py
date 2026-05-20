@@ -139,7 +139,11 @@ def _build_greeting(contacts: list) -> str:
 def _parse_json(text: str) -> dict:
     text = re.sub(r"^```(?:json)?\s*", "", text.strip())
     text = re.sub(r"\s*```$", "", text.strip())
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        from json_repair import repair_json
+        return json.loads(repair_json(text))
 
 
 def _auth_headers() -> dict[str, str]:
@@ -688,15 +692,17 @@ async def send_completed_webhook(state: ProposalState) -> dict:
 
 async def send_error_webhook(state: ProposalState) -> dict:
     job_id = state.get("job_id", "")
+    webhook_url = state.get("webhook_url", "")
     payload = {
         "jobId": job_id,
         "proposalId": state.get("proposal_id", job_id),
         "status": "error",
         "errorMessage": state.get("error", "Erro desconhecido"),
     }
+    logger.info("[Proposal] sending error webhook job=%s url=%s", job_id, webhook_url)
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            await client.post(state.get("webhook_url", ""), json=payload, headers=_auth_headers())
+            await client.post(webhook_url, json=payload, headers=_auth_headers())
     except Exception:
-        logger.exception("[Proposal] error webhook also failed job=%s", job_id)
+        logger.exception("[Proposal] error webhook also failed job=%s url=%s", job_id, webhook_url)
     return {}
