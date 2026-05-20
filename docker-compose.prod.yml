@@ -109,6 +109,10 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - EXPERIMENT_MODEL=${EXPERIMENT_MODEL:-z-ai/glm-5}
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - GOOGLE_REFRESH_TOKEN=${GOOGLE_REFRESH_TOKEN:-}
+      - GOOGLE_DRIVE_FOLDER_NAME=${GOOGLE_DRIVE_FOLDER_NAME:-Propostas CRM}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # depends_on:
