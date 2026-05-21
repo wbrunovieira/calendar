@@ -591,6 +591,18 @@ async def write_optional_sections(state: ProposalState) -> dict:
 # Combina os 4 dicts, mapeia chaves internas → placeholders do template correto
 # ══════════════════════════════════════════════════════════════════════════
 
+def _fill_with_markers(template: str, sections: dict, placeholder_map: dict) -> str:
+    """Fill template placeholders and embed layout markers for the diagrammer node."""
+    filled = template
+    for key, value in sections.items():
+        tpl_key = placeholder_map.get(key, key)
+        content = str(value) if value else ""
+        if content:
+            content = f"<!--ls:{key}-->{content}"
+        filled = filled.replace(f"{{{{{tpl_key}}}}}", content)
+    return filled
+
+
 async def merge_sections(state: ProposalState) -> dict:
     errors = [e for e in [
         state.get("narrative_error"),
@@ -625,10 +637,7 @@ async def merge_sections(state: ProposalState) -> dict:
 
     # Substitute: map internal key → brand-specific placeholder name, then replace
     placeholder_map = _BRAND_PLACEHOLDER_MAP.get(brand, _BRAND_PLACEHOLDER_MAP["wb"])
-    filled = template
-    for internal_key, value in all_sections.items():
-        template_key = placeholder_map.get(internal_key, internal_key)
-        filled = filled.replace(f"{{{{{template_key}}}}}", str(value) if value else "")
+    filled = _fill_with_markers(template, all_sections, placeholder_map)
 
     logger.info("[Proposal] sections merged job=%s brand=%s number=%s",
                 state.get("job_id"), brand, proposal_number)
@@ -637,6 +646,69 @@ async def merge_sections(state: ProposalState) -> dict:
         "project_title": all_sections.get("PROJECT_TITLE", "Proposta Comercial"),
         "filled_html": filled,
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# NODE 3.5 — layout_agent (Haiku) — page-break diagrammer
+# ══════════════════════════════════════════════════════════════════════════
+
+_LAYOUT_SYSTEM = """\
+Você é um diagramador de propostas comerciais em PDF (formato A4).
+Analise os tamanhos das seções (em caracteres de HTML) e decida quais precisam forçar
+uma nova página para evitar páginas com muito pouco conteúdo.
+
+CONTEXTO: Uma página A4 com as margens do template comporta ~3500 chars de HTML.
+
+REGRAS:
+- INVESTMENT_TABLE: SEMPRE break-before (bloco financeiro principal, deve começar nova página).
+- PAYMENT_SCHEDULE: break-before se INVESTMENT_TABLE também tiver break-before E o seu tamanho for < 600 chars (senão ficam separadas).
+- Seções opcionais longas (METHODOLOGY_SECTION, FUTURE_EVOLUTION_SECTION > 800 chars) que seguem um bloco grande (> 2500 chars): adicionar break-before.
+- Seções narrativas de abertura (OPENING_PARAGRAPH_1, OPENING_PARAGRAPH_2, SCOPE_INTRO, CLOSING_PARAGRAPH_1): NUNCA break-before.
+- Seções vazias (0 chars): ignorar.
+- Prefira menos quebras a mais; só adicione quando realmente evitar página quase vazia.
+
+Retorne APENAS JSON válido sem markdown:
+{"break_before": ["CHAVE1", "CHAVE2"]}"""
+
+
+async def apply_layout_breaks(filled: str, job_id: str = "") -> str:
+    """Call Haiku to decide page breaks, inject them, then strip layout markers. Never raises."""
+    if "<!--ls:" not in filled:
+        return filled
+
+    # Extract section sizes from markers
+    sections_info: dict[str, int] = {}
+    for m in re.finditer(r"<!--ls:(\w+)-->", filled):
+        key = m.group(1)
+        start = m.end()
+        next_m = re.search(r"<!--ls:\w+-->", filled[start:])
+        size = next_m.start() if next_m else len(filled) - start
+        sections_info[key] = size
+
+    break_before: list[str] = []
+    try:
+        summary = json.dumps(sections_info, ensure_ascii=False)
+        resp = await _call_claude(_LAYOUT_SYSTEM, f"SEÇÕES:\n{summary}", model=_HAIKU, max_tokens=256)
+        hints = _parse_json(resp.content[0].text)
+        break_before = hints.get("break_before", [])
+    except Exception:
+        logger.exception("[Proposal] layout_agent LLM failed job=%s — skipping breaks", job_id)
+
+    for key in break_before:
+        marker = f"<!--ls:{key}-->"
+        if marker in filled:
+            filled = filled.replace(marker, f'<div style="break-before:page"></div>{marker}')
+
+    # Strip all markers regardless of success/failure
+    filled = re.sub(r"<!--ls:\w+-->", "", filled)
+
+    logger.info("[Proposal] layout_agent breaks=%s job=%s", break_before, job_id)
+    return filled
+
+
+async def layout_agent(state: ProposalState) -> dict:
+    filled = await apply_layout_breaks(state.get("filled_html", ""), state.get("job_id", ""))
+    return {"filled_html": filled}
 
 
 # ══════════════════════════════════════════════════════════════════════════

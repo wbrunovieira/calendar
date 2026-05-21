@@ -14,9 +14,11 @@ import httpx
 from app.agents.crm.nodes import _call_claude
 from app.agents.crm.proposal.nodes import (
     _auth_headers,
+    _fill_with_markers,
     _html_to_pdf_sync,
     _parse_json,
     _resolve_webhook_url,
+    apply_layout_breaks,
     _BRAND_PLACEHOLDER_MAP,
     _TEMPLATE_PATHS,
 )
@@ -192,10 +194,10 @@ async def run_correction_pipeline(
             template = f.read()
 
         placeholder_map = _BRAND_PLACEHOLDER_MAP.get(brand, _BRAND_PLACEHOLDER_MAP["wb"])
-        filled = template
-        for key, value in sections.items():
-            tpl_key = placeholder_map.get(key, key)
-            filled = filled.replace(f"{{{{{tpl_key}}}}}", str(value) if value else "")
+        filled = _fill_with_markers(template, sections, placeholder_map)
+
+        # 5.5 — Layout optimization (page-break diagrammer)
+        filled = await apply_layout_breaks(filled, job_id)
 
         # 6 — Generate PDF
         pdf_out = await loop.run_in_executor(None, _html_to_pdf_sync, filled)
