@@ -979,37 +979,53 @@ func TestPayInvoice_ShouldCreateTransactionOnLinkedCheckingAccount(t *testing.T)
 		t.Errorf("expected invoice status PAID, got %s", paidInv.Status)
 	}
 
-	// A transaction should be created on the checking account
-	if len(f.txRepo.transactions) != 1 {
-		t.Fatalf("expected 1 transaction created, got %d", len(f.txRepo.transactions))
+	// Two transactions are created: the checking-side expense (money out) and the
+	// card-side credit (debt paid down).
+	if len(f.txRepo.transactions) != 2 {
+		t.Fatalf("expected 2 transactions created (checking expense + card credit), got %d", len(f.txRepo.transactions))
 	}
 
-	paymentTx := f.txRepo.transactions[0]
-
-	// Transaction should be on the checking account, not the credit card
-	if paymentTx.BankAccountID != f.checkingID {
-		t.Errorf("expected transaction on checking account %s, got %s", f.checkingID, paymentTx.BankAccountID)
+	var paymentTx, cardCredit *transaction.Transaction
+	for _, tx := range f.txRepo.transactions {
+		switch tx.BankAccountID {
+		case f.checkingID:
+			paymentTx = tx
+		case f.cardID:
+			cardCredit = tx
+		}
 	}
 
-	// Transaction should be an expense
+	if paymentTx == nil {
+		t.Fatalf("expected an expense transaction on the checking account")
+	}
+	if cardCredit == nil {
+		t.Fatalf("expected a credit transaction on the credit card")
+	}
+
+	// Checking-side leg: EXPENSE, confirmed, matching amount and description
 	if paymentTx.Type != transaction.TypeExpense {
-		t.Errorf("expected EXPENSE transaction, got %s", paymentTx.Type)
+		t.Errorf("expected EXPENSE on checking, got %s", paymentTx.Type)
 	}
-
-	// Transaction amount should match invoice amount
 	if paymentTx.Amount != 500.00 {
-		t.Errorf("expected amount 500.00, got %.2f", paymentTx.Amount)
+		t.Errorf("expected checking amount 500.00, got %.2f", paymentTx.Amount)
 	}
-
-	// Transaction should be CONFIRMED
 	if paymentTx.Status != transaction.StatusConfirmed {
 		t.Errorf("expected CONFIRMED status, got %s", paymentTx.Status)
 	}
-
-	// Description should mention the card name
 	expectedDesc := "Pagamento fatura Cartão Mercado Pago"
 	if paymentTx.Description != expectedDesc {
 		t.Errorf("expected description '%s', got '%s'", expectedDesc, paymentTx.Description)
+	}
+
+	// Card-side leg: INCOME credit, confirmed, matching amount
+	if cardCredit.Type != transaction.TypeIncome {
+		t.Errorf("expected INCOME credit on card, got %s", cardCredit.Type)
+	}
+	if cardCredit.Amount != 500.00 {
+		t.Errorf("expected card credit amount 500.00, got %.2f", cardCredit.Amount)
+	}
+	if cardCredit.Status != transaction.StatusConfirmed {
+		t.Errorf("expected card credit CONFIRMED, got %s", cardCredit.Status)
 	}
 
 	// Checking account balance should decrease
@@ -1020,11 +1036,13 @@ func TestPayInvoice_ShouldCreateTransactionOnLinkedCheckingAccount(t *testing.T)
 	}
 }
 
-func TestPayInvoice_NoLinkedAccount_ShouldOnlyMarkAsPaid(t *testing.T) {
+func TestPayInvoice_NoLinkedAccount_ShouldStillCreditCard(t *testing.T) {
 	// Given: A credit card WITHOUT a linked checking account
 	// When: Paying the invoice
 	// Then: Invoice should be marked as paid
-	//       But no transaction should be created
+	//       No checking-side transaction is created (no linked account)
+	//       But the card-side credit IS still recorded, so the card balance
+	//       remains a true consequence of its transactions.
 
 	f := newTestFixtures()
 
@@ -1060,9 +1078,71 @@ func TestPayInvoice_NoLinkedAccount_ShouldOnlyMarkAsPaid(t *testing.T) {
 		t.Errorf("expected invoice status PAID, got %s", paidInv.Status)
 	}
 
-	// No transaction should be created (no linked account)
-	if len(f.txRepo.transactions) != 0 {
-		t.Errorf("expected no transactions created, got %d", len(f.txRepo.transactions))
+	// Exactly one transaction: the card-side credit (no checking leg without a link)
+	if len(f.txRepo.transactions) != 1 {
+		t.Fatalf("expected 1 transaction (card credit), got %d", len(f.txRepo.transactions))
+	}
+	cardCredit := f.txRepo.transactions[0]
+	if cardCredit.BankAccountID != f.cardID {
+		t.Errorf("expected credit on card %s, got %s", f.cardID, cardCredit.BankAccountID)
+	}
+	if cardCredit.Type != transaction.TypeIncome {
+		t.Errorf("expected INCOME credit on card, got %s", cardCredit.Type)
+	}
+	if cardCredit.Amount != 300.00 {
+		t.Errorf("expected card credit 300.00, got %.2f", cardCredit.Amount)
+	}
+}
+
+func TestPayInvoice_CreditsCardAndRecalculatesCardBalance(t *testing.T) {
+	// Given: A credit card linked to a checking account, an open invoice of R$500,
+	//        and a balance recalculator wired in.
+	// When: Paying the invoice
+	// Then: A credit (INCOME) is recorded on the card for the paid amount,
+	//       and the card balance is recomputed from its transactions.
+
+	f := newTestFixtures()
+	card := f.accountRepo.accounts[f.cardID]
+	card.LinkedAccountID = &f.checkingID
+
+	inv, _ := invoice.New(invoice.CreateParams{
+		BankAccountID: f.cardID,
+		ClosingDay:    f.closingDay,
+		DueDay:        f.dueDay,
+		ReferenceDate: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	})
+	inv.Amount = 500.00
+	f.invoiceRepo.Create(inv)
+
+	recalc := &trackingRecalculator{}
+	useCase := NewPayInvoiceUseCaseV2(f.invoiceRepo, f.accountRepo, f.txRepo, recalc)
+
+	_, err := useCase.Execute(PayInvoiceInput{
+		InvoiceID:  inv.ID,
+		PaidAmount: 500.00,
+		PaidAt:     "2026-01-14",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The card must have received an INCOME credit for the paid amount.
+	var cardCredit *transaction.Transaction
+	for _, tx := range f.txRepo.transactions {
+		if tx.BankAccountID == f.cardID && tx.Type == transaction.TypeIncome {
+			cardCredit = tx
+		}
+	}
+	if cardCredit == nil {
+		t.Fatalf("expected an INCOME credit on the card")
+	}
+	if cardCredit.Amount != 500.00 {
+		t.Errorf("expected card credit 500.00, got %.2f", cardCredit.Amount)
+	}
+
+	// The card balance must be recomputed from transactions (not set arbitrarily).
+	if !recalc.calledWith(f.cardID) {
+		t.Errorf("expected card balance to be recalculated, calls=%v", recalc.calls)
 	}
 }
 

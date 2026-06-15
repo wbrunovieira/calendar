@@ -621,24 +621,32 @@ func parseYearMonth(value string) (time.Time, error) {
 	return t, nil
 }
 
-// PayInvoiceUseCaseV2 marks an invoice as paid and creates a payment transaction
-// on the linked checking account
+// PayInvoiceUseCaseV2 marks an invoice as paid and records the payment as a
+// double-sided movement: an expense on the linked checking account (money out)
+// AND a credit on the credit-card account (debt down). Recording the card side
+// keeps the card balance a pure consequence of its transactions.
 type PayInvoiceUseCaseV2 struct {
 	invoiceRepo     invoice.Repository
 	accountRepo     bankaccount.Repository
 	transactionRepo transactionPkg.Repository
+	recalculator    BalanceRecalculator // optional; recomputes card balance from transactions
 }
 
 func NewPayInvoiceUseCaseV2(
 	invoiceRepo invoice.Repository,
 	accountRepo bankaccount.Repository,
 	transactionRepo transactionPkg.Repository,
+	recalculator ...BalanceRecalculator,
 ) *PayInvoiceUseCaseV2 {
-	return &PayInvoiceUseCaseV2{
+	uc := &PayInvoiceUseCaseV2{
 		invoiceRepo:     invoiceRepo,
 		accountRepo:     accountRepo,
 		transactionRepo: transactionRepo,
 	}
+	if len(recalculator) > 0 {
+		uc.recalculator = recalculator[0]
+	}
+	return uc
 }
 
 func (uc *PayInvoiceUseCaseV2) Execute(input PayInvoiceInput) (*invoice.Invoice, error) {
@@ -697,6 +705,26 @@ func (uc *PayInvoiceUseCaseV2) Execute(input PayInvoiceInput) (*invoice.Invoice,
 		linkedAccount.CurrentBalance -= input.PaidAmount
 		linkedAccount.UpdatedAt = time.Now()
 		_ = uc.accountRepo.Update(linkedAccount)
+	}
+
+	// Record the payment on the credit-card side so the card balance reflects the
+	// debt being paid down. Without this leg the card only ever accumulates
+	// charges and its balance drifts forever negative.
+	cardCredit, err := transactionPkg.New(transactionPkg.CreateParams{
+		ProfileID:     creditCard.ProfileID,
+		BankAccountID: creditCard.ID,
+		Type:          transactionPkg.TypeIncome,
+		Amount:        input.PaidAmount,
+		Currency:      creditCard.Currency,
+		Description:   "Pagamento fatura " + creditCard.Name,
+		OccurredOn:    paidAt,
+	})
+	if err == nil {
+		cardCredit.Status = transactionPkg.StatusConfirmed
+		if createErr := uc.transactionRepo.Create(cardCredit); createErr == nil {
+			// Recompute the card balance from its transactions (pure sum).
+			recalculateAccounts(uc.recalculator, creditCard.ID)
+		}
 	}
 
 	return inv, nil
