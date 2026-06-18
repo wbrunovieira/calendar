@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/brunovieira/calendar-finances/internal/application/usecases"
@@ -18,6 +19,7 @@ type BankAccountHandlers struct {
 	reorderUseCase            *usecases.ReorderBankAccountsUseCase
 	recalculateBalanceUseCase *usecases.RecalculateBalanceUseCase
 	closeMonthUseCase         *usecases.CloseMonthUseCase
+	upcomingMaturitiesUseCase *usecases.ListUpcomingMaturitiesUseCase
 }
 
 func NewBankAccountHandlers(
@@ -29,6 +31,7 @@ func NewBankAccountHandlers(
 	reorderUC *usecases.ReorderBankAccountsUseCase,
 	recalculateBalanceUC *usecases.RecalculateBalanceUseCase,
 	closeMonthUC *usecases.CloseMonthUseCase,
+	upcomingMaturitiesUC *usecases.ListUpcomingMaturitiesUseCase,
 ) *BankAccountHandlers {
 	return &BankAccountHandlers{
 		createUseCase:             createUC,
@@ -39,6 +42,7 @@ func NewBankAccountHandlers(
 		reorderUseCase:            reorderUC,
 		recalculateBalanceUseCase: recalculateBalanceUC,
 		closeMonthUseCase:         closeMonthUC,
+		upcomingMaturitiesUseCase: upcomingMaturitiesUC,
 	}
 }
 
@@ -77,6 +81,34 @@ func (h *BankAccountHandlers) List(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"data":  accounts,
 		"total": len(accounts),
+	})
+}
+
+// UpcomingMaturities handles GET /api/v1/bank-accounts/maturities?profileId=xxx&withinDays=30
+// Returns active investments that have matured or will mature within the window,
+// for home-screen alerts (mirrors planned-transaction alerts).
+func (h *BankAccountHandlers) UpcomingMaturities(w http.ResponseWriter, r *http.Request) {
+	profileID := r.URL.Query().Get("profileId")
+	withinDays := 0
+	if v := r.URL.Query().Get("withinDays"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			withinDays = n
+		}
+	}
+
+	alerts, err := h.upcomingMaturitiesUseCase.Execute(usecases.ListUpcomingMaturitiesInput{
+		ProfileID:  profileID,
+		WithinDays: withinDays,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"data":  alerts,
+		"total": len(alerts),
 	})
 }
 
