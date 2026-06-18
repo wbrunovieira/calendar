@@ -10,6 +10,7 @@ import GlobalSearch from '@/components/finances/GlobalSearch';
 import TodayAlerts from '@/components/finances/TodayAlerts';
 import DasAlert from '@/components/finances/DasAlert';
 import PersonalReimbursementAlert from '@/components/finances/PersonalReimbursementAlert';
+import InvestmentMaturityAlert from '@/components/finances/InvestmentMaturityAlert';
 import { useToast } from '@/components/ui/Toast';
 import type {
   BankAccount,
@@ -480,6 +481,9 @@ export default function FinancesPage() {
         {selectedProfile?.type === 'BUSINESS' && (
           <PersonalReimbursementAlert transactions={transactions} />
         )}
+
+        {/* Investment Maturity Alert — investments maturing within 30 days or already matured */}
+        {selectedProfileId && <InvestmentMaturityAlert profileId={selectedProfileId} />}
 
         {/* Today Alerts */}
         {selectedProfileId && (

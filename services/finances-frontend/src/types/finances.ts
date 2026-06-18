@@ -82,6 +82,17 @@ export interface BankAccount {
   updatedAt: string;
 }
 
+// Home-screen alert for an investment approaching or past its maturity date.
+export interface MaturityAlert {
+  accountId: string;
+  name: string;
+  maturityDate: string;
+  daysToMaturity: number; // negative when already matured
+  isMatured: boolean;
+  currentBalance: number;
+  currency: string;
+}
+
 export type CategoryType = 'INCOME' | 'EXPENSE' | 'TRANSFER';
 export type ClassificationDRE =
   | 'REVENUE'
