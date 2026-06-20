@@ -674,42 +674,44 @@ func (uc *PayInvoiceUseCaseV2) Execute(input PayInvoiceInput) (*invoice.Invoice,
 		return inv, nil // Invoice is paid, but couldn't find card - return success
 	}
 
-	// If the credit card has a linked checking account, create a payment transaction
+	// Model the invoice payment as a single TRANSFER from the funding (linked) account to
+	// the credit card. A transfer is naturally excluded from income/expense by every
+	// consumer, while still debiting the funding account and crediting (paying down) the
+	// card. Recording it as EXPENSE + INCOME polluted the monthly cashflow everywhere.
 	if creditCard.LinkedAccountID != nil && *creditCard.LinkedAccountID != "" {
-		linkedAccount, err := uc.accountRepo.FindByID(*creditCard.LinkedAccountID)
-		if err != nil {
-			return inv, nil // Invoice is paid, but couldn't find linked account - return success
+		if linkedAccount, lerr := uc.accountRepo.FindByID(*creditCard.LinkedAccountID); lerr == nil {
+			cardID := creditCard.ID
+			transferTx, terr := transactionPkg.New(transactionPkg.CreateParams{
+				ProfileID:            linkedAccount.ProfileID,
+				BankAccountID:        linkedAccount.ID,
+				DestinationAccountID: &cardID,
+				Type:                 transactionPkg.TypeTransfer,
+				Amount:               input.PaidAmount,
+				Currency:             linkedAccount.Currency,
+				Description:          "Pagamento fatura " + creditCard.Name,
+				OccurredOn:           paidAt,
+			})
+			if terr == nil {
+				transferTx.Status = transactionPkg.StatusConfirmed
+				if createErr := uc.transactionRepo.Create(transferTx); createErr == nil {
+					// Debit the funding account, credit (pay down) the card.
+					linkedAccount.CurrentBalance -= input.PaidAmount
+					linkedAccount.UpdatedAt = time.Now()
+					_ = uc.accountRepo.Update(linkedAccount)
+					creditCard.CurrentBalance += input.PaidAmount
+					creditCard.UpdatedAt = time.Now()
+					_ = uc.accountRepo.Update(creditCard)
+					// When wired, recompute both balances from transactions (authoritative).
+					recalculateAccounts(uc.recalculator, linkedAccount.ID, creditCard.ID)
+				}
+			}
 		}
-
-		// Create payment transaction on the linked checking account
-		paymentTx, err := transactionPkg.New(transactionPkg.CreateParams{
-			ProfileID:     linkedAccount.ProfileID,
-			BankAccountID: linkedAccount.ID,
-			Type:          transactionPkg.TypeExpense,
-			Amount:        input.PaidAmount,
-			Currency:      linkedAccount.Currency,
-			Description:   "Pagamento fatura " + creditCard.Name,
-			OccurredOn:    paidAt,
-		})
-		if err != nil {
-			return inv, nil // Invoice is paid, but couldn't create transaction - return success
-		}
-
-		paymentTx.Status = transactionPkg.StatusConfirmed
-
-		if err := uc.transactionRepo.Create(paymentTx); err != nil {
-			return inv, nil // Invoice is paid, but couldn't save transaction - return success
-		}
-
-		// Update the linked checking account balance
-		linkedAccount.CurrentBalance -= input.PaidAmount
-		linkedAccount.UpdatedAt = time.Now()
-		_ = uc.accountRepo.Update(linkedAccount)
+		return inv, nil
 	}
 
-	// Record the payment on the credit-card side so the card balance reflects the
-	// debt being paid down. Without this leg the card only ever accumulates
-	// charges and its balance drifts forever negative.
+	// Fallback: a card without a linked funding account. We don't know the payment source,
+	// so we can only credit the card to keep its balance from drifting negative. (No real
+	// card hits this path - all have a linked account.)
 	cardCredit, err := transactionPkg.New(transactionPkg.CreateParams{
 		ProfileID:     creditCard.ProfileID,
 		BankAccountID: creditCard.ID,
@@ -722,7 +724,6 @@ func (uc *PayInvoiceUseCaseV2) Execute(input PayInvoiceInput) (*invoice.Invoice,
 	if err == nil {
 		cardCredit.Status = transactionPkg.StatusConfirmed
 		if createErr := uc.transactionRepo.Create(cardCredit); createErr == nil {
-			// Recompute the card balance from its transactions (pure sum).
 			recalculateAccounts(uc.recalculator, creditCard.ID)
 		}
 	}
