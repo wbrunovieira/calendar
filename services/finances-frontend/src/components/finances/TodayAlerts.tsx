@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { Transaction, RecurringTransaction, Invoice, BankAccount, Category } from '@/types/finances';
 import { formatCurrency } from '@/utils/format';
+import { findPendingRecurrings } from '@/utils/pendingAlerts';
 
 interface TodayAlertsProps {
   transactions: Transaction[];
@@ -93,49 +94,14 @@ export default function TodayAlerts({
     });
   }, [transactions, today]);
 
-  // Recurring transactions due today or overdue
-  // Filter out recurring transactions that have a corresponding confirmed transaction
-  const recurringPending = useMemo(() => {
-    return recurringTransactions.filter((rt) => {
-      if (rt.status !== 'ACTIVE') return false;
-      const nextDate = extractDateStr(rt.nextOccurrence);
-      if (!nextDate || nextDate > today) return false;
-
-      // Check if there's a confirmed or planned transaction that matches this recurring
-      // Match by: same description (case insensitive), same amount
-      // and occurred within a reasonable window (same month or up to 7 days difference)
-      const hasMatchingTransaction = transactions.some((tx) => {
-        if (tx.status !== 'CONFIRMED' && tx.status !== 'PLANNED') return false;
-        if (tx.type !== rt.type) return false;
-        if (Math.abs(tx.amount - rt.amount) > 0.01) return false; // Allow small float difference
-
-        // Check if descriptions match (case insensitive, trimmed)
-        const txDesc = tx.description.toLowerCase().trim();
-        const rtDesc = rt.description.toLowerCase().trim();
-        if (txDesc !== rtDesc) return false;
-
-        // Check if the transaction occurred within a reasonable window
-        const txDate = extractDateStr(tx.occurredOn);
-        const rtNextDate = extractDateStr(rt.nextOccurrence);
-        if (!txDate || !rtNextDate) return false;
-
-        // Same month check or within 7 days
-        const txMonth = txDate.substring(0, 7); // YYYY-MM
-        const rtMonth = rtNextDate.substring(0, 7);
-        if (txMonth === rtMonth) return true;
-
-        // Or within 7 days difference
-        const daysDiff = Math.abs(getDaysOverdue(txDate, rtNextDate));
-        return daysDiff <= 7;
-      });
-
-      return !hasMatchingTransaction;
-    }).sort((a, b) => {
-      const dateA = extractDateStr(a.nextOccurrence);
-      const dateB = extractDateStr(b.nextOccurrence);
-      return dateA.localeCompare(dateB);
-    });
-  }, [recurringTransactions, transactions, today]);
+  // Recurring obligations due today/overdue and not yet satisfied by a matching
+  // transaction. The matching rule (by type + description + account + month, NOT by
+  // amount, so variable-value recurrings work) lives in @/utils/pendingAlerts and is
+  // unit-tested there.
+  const recurringPending = useMemo(
+    () => findPendingRecurrings(recurringTransactions, transactions, today),
+    [recurringTransactions, transactions, today],
+  );
 
   // Invoices due today or overdue (unpaid)
   const invoicesPending = useMemo(() => {
