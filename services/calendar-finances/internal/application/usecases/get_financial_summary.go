@@ -41,7 +41,17 @@ func isNonConsumptionRoot(catByID map[string]*category.Category, rootID, rootNam
 	if c := catByID[rootID]; c != nil && c.Type == category.TypeTransfer {
 		return true
 	}
-	return nonConsumptionCategoryNames[strings.ToLower(rootName)]
+	lower := strings.ToLower(rootName)
+	if strings.HasPrefix(lower, "aporte") { // owner capital contributions, not operational money
+		return true
+	}
+	return nonConsumptionCategoryNames[lower]
+}
+
+// isFinancialIncome flags yield/interest income (rendimentos). It is still income,
+// but is shown apart from operational revenue.
+func isFinancialIncome(rootName string) bool {
+	return strings.Contains(strings.ToLower(rootName), "rendiment")
 }
 
 func toCategoryRow(id, name string, byMonth []float64, children []CategoryTrend, n int) CategoryTrend {
@@ -73,6 +83,7 @@ func rollupCategories(
 	catByID map[string]*category.Category,
 	exchange map[string]bool,
 	periods []string,
+	extraSkip func(rootID, rootName string) bool,
 ) ([]float64, []CategoryTrend) {
 	n := len(periods)
 	idxOf := make(map[string]int, n)
@@ -101,6 +112,9 @@ func rollupCategories(
 		}
 		rootID, rootName := rootCategoryOf(catByID, tx.CategoryID)
 		if isNonConsumptionRoot(catByID, rootID, rootName) {
+			continue
+		}
+		if extraSkip != nil && extraSkip(rootID, rootName) {
 			continue
 		}
 		totalByMonth[i] += tx.Amount
@@ -158,17 +172,19 @@ type GetFinancialSummaryInput struct {
 
 // FinancialSummaryOutput answers "is the company making money, and where".
 type FinancialSummaryOutput struct {
-	Periods           []string        `json:"periods"`
-	RevenueByMonth    []float64       `json:"revenueByMonth"`
-	ExpenseByMonth    []float64       `json:"expenseByMonth"`
-	ResultByMonth     []float64       `json:"resultByMonth"`
-	MarginByMonth     []float64       `json:"marginByMonth"` // percent
-	TotalRevenue      float64         `json:"totalRevenue"`
-	TotalExpense      float64         `json:"totalExpense"`
-	TotalResult       float64         `json:"totalResult"`
-	AvgMargin         float64         `json:"avgMargin"` // percent (totalResult/totalRevenue)
-	ExpenseCategories []CategoryTrend `json:"expenseCategories"`
-	RevenueCategories []CategoryTrend `json:"revenueCategories"`
+	Periods                []string        `json:"periods"`
+	RevenueByMonth         []float64       `json:"revenueByMonth"`
+	FinancialIncomeByMonth []float64       `json:"financialIncomeByMonth"`
+	ExpenseByMonth         []float64       `json:"expenseByMonth"`
+	ResultByMonth          []float64       `json:"resultByMonth"`
+	MarginByMonth          []float64       `json:"marginByMonth"` // percent
+	TotalRevenue           float64         `json:"totalRevenue"`
+	TotalFinancialIncome   float64         `json:"totalFinancialIncome"`
+	TotalExpense           float64         `json:"totalExpense"`
+	TotalResult            float64         `json:"totalResult"`
+	AvgMargin              float64         `json:"avgMargin"` // percent (result / total income)
+	ExpenseCategories      []CategoryTrend `json:"expenseCategories"`
+	RevenueCategories      []CategoryTrend `json:"revenueCategories"`
 }
 
 func analyzeFinancialSummary(
@@ -189,24 +205,31 @@ func analyzeFinancialSummary(
 		}
 	}
 
-	revenueByMonth, revenueCats := rollupCategories(txs, transaction.TypeIncome, catByID, exchange, periods)
-	expenseByMonth, expenseCats := rollupCategories(txs, transaction.TypeExpense, catByID, exchange, periods)
+	// Operational revenue (services) and financial income (rendimentos) are split so
+	// the company result is not flattered by yield; owner capital (aporte) is dropped.
+	revenueByMonth, revenueCats := rollupCategories(txs, transaction.TypeIncome, catByID, exchange, periods,
+		func(_, rootName string) bool { return isFinancialIncome(rootName) })
+	financialIncomeByMonth, _ := rollupCategories(txs, transaction.TypeIncome, catByID, exchange, periods,
+		func(_, rootName string) bool { return !isFinancialIncome(rootName) })
+	expenseByMonth, expenseCats := rollupCategories(txs, transaction.TypeExpense, catByID, exchange, periods, nil)
 
 	resultByMonth := make([]float64, n)
 	marginByMonth := make([]float64, n)
 	for i := range periods {
-		resultByMonth[i] = round2(revenueByMonth[i] - expenseByMonth[i])
-		if revenueByMonth[i] != 0 {
-			marginByMonth[i] = round2(resultByMonth[i] / revenueByMonth[i] * 100)
+		income := revenueByMonth[i] + financialIncomeByMonth[i]
+		resultByMonth[i] = round2(income - expenseByMonth[i])
+		if income != 0 {
+			marginByMonth[i] = round2(resultByMonth[i] / income * 100)
 		}
 	}
 
 	totalRevenue := round2(sumf(revenueByMonth))
+	totalFinancialIncome := round2(sumf(financialIncomeByMonth))
 	totalExpense := round2(sumf(expenseByMonth))
-	totalResult := round2(totalRevenue - totalExpense)
+	totalResult := round2(totalRevenue + totalFinancialIncome - totalExpense)
 	avgMargin := 0.0
-	if totalRevenue != 0 {
-		avgMargin = round2(totalResult / totalRevenue * 100)
+	if totalIncome := totalRevenue + totalFinancialIncome; totalIncome != 0 {
+		avgMargin = round2(totalResult / totalIncome * 100)
 	}
 
 	if expenseCats == nil {
@@ -217,17 +240,19 @@ func analyzeFinancialSummary(
 	}
 
 	return &FinancialSummaryOutput{
-		Periods:           periods,
-		RevenueByMonth:    revenueByMonth,
-		ExpenseByMonth:    expenseByMonth,
-		ResultByMonth:     resultByMonth,
-		MarginByMonth:     marginByMonth,
-		TotalRevenue:      totalRevenue,
-		TotalExpense:      totalExpense,
-		TotalResult:       totalResult,
-		AvgMargin:         avgMargin,
-		ExpenseCategories: expenseCats,
-		RevenueCategories: revenueCats,
+		Periods:                periods,
+		RevenueByMonth:         revenueByMonth,
+		FinancialIncomeByMonth: financialIncomeByMonth,
+		ExpenseByMonth:         expenseByMonth,
+		ResultByMonth:          resultByMonth,
+		MarginByMonth:          marginByMonth,
+		TotalRevenue:           totalRevenue,
+		TotalFinancialIncome:   totalFinancialIncome,
+		TotalExpense:           totalExpense,
+		TotalResult:            totalResult,
+		AvgMargin:              avgMargin,
+		ExpenseCategories:      expenseCats,
+		RevenueCategories:      revenueCats,
 	}
 }
 

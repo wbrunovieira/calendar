@@ -37,10 +37,12 @@ interface ExpenseAnalysis {
 interface FinancialSummary {
   periods: string[];
   revenueByMonth: number[];
+  financialIncomeByMonth: number[];
   expenseByMonth: number[];
   resultByMonth: number[];
   marginByMonth: number[];
   totalRevenue: number;
+  totalFinancialIncome: number;
   totalExpense: number;
   totalResult: number;
   avgMargin: number;
@@ -215,11 +217,18 @@ function BusinessView({ data }: { data: FinancialSummary | null }) {
           </thead>
           <tbody>
             <tr className="border-t border-white/5">
-              <td className="py-2 text-emerald-300">Receita</td>
+              <td className="py-2 text-emerald-300">Receita operacional</td>
               {data.revenueByMonth.map((v, i) => (
                 <td key={i} className="text-right px-2 py-2 text-white/70 tabular-nums">{v ? fmtShort(v) : '·'}</td>
               ))}
               <td className="text-right px-2 py-2 text-white/90 font-medium tabular-nums">{fmtShort(data.totalRevenue)}</td>
+            </tr>
+            <tr>
+              <td className="py-1 text-emerald-300/50 text-xs">+ Receita financeira</td>
+              {data.financialIncomeByMonth.map((v, i) => (
+                <td key={i} className="text-right px-2 py-1 text-white/45 text-xs tabular-nums">{v ? fmtShort(v) : '·'}</td>
+              ))}
+              <td className="text-right px-2 py-1 text-white/55 text-xs tabular-nums">{fmtShort(data.totalFinancialIncome)}</td>
             </tr>
             <tr className="border-t border-white/5">
               <td className="py-2 text-rose-300">Despesa</td>

@@ -74,3 +74,32 @@ func TestAnalyzeFinancialSummary_LossAndZeroRevenue(t *testing.T) {
 		t.Errorf("category slices must be non-nil (JSON [] not null)")
 	}
 }
+
+func TestAnalyzeFinancialSummary_AporteExcludedRendimentoSeparate(t *testing.T) {
+	periods := []string{"2026-05"}
+	categories := []*category.Category{
+		{ID: "serv", Name: "Projetos/Servicos", Type: category.TypeIncome},
+		{ID: "rend", Name: "Rendimentos Caixinha", Type: category.TypeIncome},
+		{ID: "aporte", Name: "Aporte Socio", Type: category.TypeIncome},
+		{ID: "infra", Name: "Infraestrutura", Type: category.TypeExpense},
+	}
+	txs := []*transaction.Transaction{
+		incTx(5000, "serv", "mp", 2026, time.May),   // operational revenue
+		incTx(180, "rend", "mp", 2026, time.May),    // financial income (shown apart)
+		incTx(1200, "aporte", "mp", 2026, time.May), // owner capital -> excluded entirely
+		expTx(1000, "infra", "infra", "mp", 2026, time.May),
+	}
+
+	out := analyzeFinancialSummary(txs, categories, nil, periods)
+
+	if out.RevenueByMonth[0] != 5000 {
+		t.Errorf("operational revenue = %v, want 5000 (rendimento + aporte excluded)", out.RevenueByMonth[0])
+	}
+	if out.FinancialIncomeByMonth[0] != 180 || out.TotalFinancialIncome != 180 {
+		t.Errorf("financial income = %v / %v, want 180", out.FinancialIncomeByMonth[0], out.TotalFinancialIncome)
+	}
+	// result = operational 5000 + financial 180 - expense 1000 = 4180 (aporte 1200 dropped)
+	if out.ResultByMonth[0] != 4180 {
+		t.Errorf("result = %v, want 4180 (aporte excluded)", out.ResultByMonth[0])
+	}
+}
