@@ -117,3 +117,28 @@ func TestAnalyzeExpenses_FutureMonthsHaveNoUpMovers(t *testing.T) {
 		t.Errorf("expected empty (non-nil) topUp, got %v", out.TopUp)
 	}
 }
+
+func TestAnalyzeExpenses_ExcludesNonConsumption(t *testing.T) {
+	// Cost of living counts consumption only: transfers (TRANSFER-typed category),
+	// loans (Empréstimos) and investments (Investimentos) must be excluded.
+	periods := []string{"2026-06"}
+	categories := []*category.Category{
+		{ID: "ali", Name: "Alimentação", Type: category.TypeExpense},
+		{ID: "transf", Name: "Transferências", Type: category.TypeTransfer},
+		{ID: "emp", Name: "Empréstimos", Type: category.TypeExpense},
+		{ID: "inv", Name: "Investimentos", Type: category.TypeExpense},
+	}
+	txs := []*transaction.Transaction{
+		expTx(100, "mercado", "ali", "mp", 2026, time.June),
+		expTx(5000, "Transferência para Nubank", "transf", "mp", 2026, time.June),
+		expTx(3000, "empréstimo Dani", "emp", "mp", 2026, time.June),
+		expTx(2000, "CDB", "inv", "mp", 2026, time.June),
+	}
+	out := analyzeExpenses(txs, categories, nil, nil, periods)
+	if out.TotalByMonth[0] != 100 {
+		t.Errorf("total = %v, want 100 (transfer/loan/investment excluded)", out.TotalByMonth[0])
+	}
+	if len(out.Categories) != 1 || out.Categories[0].Name != "Alimentação" {
+		t.Errorf("categories = %+v, want only Alimentação", out.Categories)
+	}
+}

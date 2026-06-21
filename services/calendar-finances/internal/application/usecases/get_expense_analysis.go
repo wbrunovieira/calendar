@@ -203,6 +203,21 @@ func analyzeExpenses(
 		return cur.ID, cur.Name
 	}
 
+	// Cost of living = consumption only. Money that merely moves (transfers between
+	// own accounts) or is saved/lent (investments, loans) is not a living cost and
+	// is excluded by its top-level category (TRANSFER-typed, or a known name).
+	nonConsumptionNames := map[string]bool{
+		"transferências": true, "transferencias": true,
+		"empréstimos": true, "emprestimos": true,
+		"investimentos": true,
+	}
+	isNonConsumption := func(rootID, rootName string) bool {
+		if c := catByID[rootID]; c != nil && c.Type == category.TypeTransfer {
+			return true
+		}
+		return nonConsumptionNames[strings.ToLower(rootName)]
+	}
+
 	totalByMonth := make([]float64, n)
 	fixedByMonth := make([]float64, n)
 	variableByMonth := make([]float64, n)
@@ -225,6 +240,10 @@ func analyzeExpenses(
 		if !ok {
 			continue
 		}
+		rootID, rootName := rootOf(tx.CategoryID)
+		if isNonConsumption(rootID, rootName) {
+			continue
+		}
 		totalByMonth[i] += tx.Amount
 		if tx.CategoryID != nil && fixedCat[*tx.CategoryID] {
 			fixedByMonth[i] += tx.Amount
@@ -232,7 +251,6 @@ func analyzeExpenses(
 			variableByMonth[i] += tx.Amount
 		}
 
-		rootID, rootName := rootOf(tx.CategoryID)
 		r := roots[rootID]
 		if r == nil {
 			r = &bucket{name: rootName, byMonth: make([]float64, n), children: map[string]*bucket{}}
