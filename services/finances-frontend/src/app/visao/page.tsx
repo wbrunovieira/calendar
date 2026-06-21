@@ -237,9 +237,14 @@ function BusinessView({ data }: { data: FinancialSummary | null }) {
             </tr>
             <tr className="border-t border-white/5">
               <td className="py-2 text-white/50 text-xs">Margem</td>
-              {data.marginByMonth.map((v, i) => (
-                <td key={i} className="text-right px-2 py-2 text-white/40 text-xs tabular-nums">{v ? `${v.toFixed(0)}%` : '·'}</td>
-              ))}
+              {data.marginByMonth.map((v, i) => {
+                const rev = data.revenueByMonth[i];
+                // Margin is meaningless when revenue is negligible (huge % from ~0 base).
+                const label = !rev ? '·' : Math.abs(v) >= 1000 ? '—' : `${v.toFixed(0)}%`;
+                return (
+                  <td key={i} className="text-right px-2 py-2 text-white/40 text-xs tabular-nums">{label}</td>
+                );
+              })}
               <td className="text-right px-2 py-2 text-white/50 text-xs tabular-nums">{data.avgMargin.toFixed(0)}%</td>
             </tr>
           </tbody>
