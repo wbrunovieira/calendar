@@ -314,6 +314,18 @@ func analyzeExpenses(
 	sort.Slice(out.TopDown, func(a, b int) bool { return out.TopDown[a].Delta < out.TopDown[b].Delta })
 	out.TopUp = trim(out.TopUp, 3)
 	out.TopDown = trim(out.TopDown, 3)
+
+	// Never return nil slices: the API contract is arrays, so the client can
+	// safely call .length/.map (a nil slice would serialize to JSON null).
+	if out.Categories == nil {
+		out.Categories = []CategoryTrend{}
+	}
+	if out.TopUp == nil {
+		out.TopUp = []Mover{}
+	}
+	if out.TopDown == nil {
+		out.TopDown = []Mover{}
+	}
 	return out
 }
 

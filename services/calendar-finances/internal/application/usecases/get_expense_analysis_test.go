@@ -100,4 +100,20 @@ func TestAnalyzeExpenses_Empty(t *testing.T) {
 	if out.TotalByMonth[0] != 0 || out.Average != 0 || len(out.Categories) != 0 {
 		t.Errorf("empty analysis not zeroed: %+v", out)
 	}
+	// Slices must be non-nil so the JSON is [] (not null) and the client is safe.
+	if out.Categories == nil || out.TopUp == nil || out.TopDown == nil {
+		t.Errorf("nil slice would serialize to JSON null: categories=%v topUp=%v topDown=%v",
+			out.Categories, out.TopUp, out.TopDown)
+	}
+}
+
+func TestAnalyzeExpenses_FutureMonthsHaveNoUpMovers(t *testing.T) {
+	// A range spilling into empty future months makes the last month zero, so every
+	// category falls vs its average -> topUp ends empty. Must be [] not nil.
+	categories := []*category.Category{{ID: "ali", Name: "Alimentação"}}
+	txs := []*transaction.Transaction{expTx(100, "x", "ali", "mp", 2026, time.May)}
+	out := analyzeExpenses(txs, categories, nil, nil, []string{"2026-05", "2026-12"})
+	if out.TopUp == nil || len(out.TopUp) != 0 {
+		t.Errorf("expected empty (non-nil) topUp, got %v", out.TopUp)
+	}
 }

@@ -191,10 +191,10 @@ export default function VisaoMensalPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-rose-500/5 border border-rose-500/20 rounded-2xl p-4">
                 <p className="text-rose-300 text-sm font-medium mb-2">▲ Maiores altas (vs média)</p>
-                {data.topUp.length === 0 ? (
+                {(data.topUp ?? []).length === 0 ? (
                   <p className="text-white/40 text-sm">—</p>
                 ) : (
-                  data.topUp.map((m, i) => (
+                  (data.topUp ?? []).map((m, i) => (
                     <div key={i} className="flex justify-between text-sm py-0.5">
                       <span className="text-white/70 truncate mr-2">{m.name}</span>
                       <span className="text-rose-400">+{fmt(m.delta)}</span>
@@ -204,10 +204,10 @@ export default function VisaoMensalPage() {
               </div>
               <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-4">
                 <p className="text-emerald-300 text-sm font-medium mb-2">▼ Maiores quedas (vs média)</p>
-                {data.topDown.length === 0 ? (
+                {(data.topDown ?? []).length === 0 ? (
                   <p className="text-white/40 text-sm">—</p>
                 ) : (
-                  data.topDown.map((m, i) => (
+                  (data.topDown ?? []).map((m, i) => (
                     <div key={i} className="flex justify-between text-sm py-0.5">
                       <span className="text-white/70 truncate mr-2">{m.name}</span>
                       <span className="text-emerald-400">{fmt(m.delta)}</span>
@@ -232,7 +232,7 @@ export default function VisaoMensalPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.categories.map((cat) => (
+                  {(data.categories ?? []).map((cat) => (
                     <CategoryRows key={cat.categoryId || cat.name} cat={cat} expanded={expanded} toggle={toggle} />
                   ))}
                 </tbody>
