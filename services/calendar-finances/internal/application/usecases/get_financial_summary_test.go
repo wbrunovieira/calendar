@@ -103,3 +103,32 @@ func TestAnalyzeFinancialSummary_AporteExcludedRendimentoSeparate(t *testing.T) 
 		t.Errorf("result = %v, want 4180 (aporte excluded)", out.ResultByMonth[0])
 	}
 }
+
+func TestAnalyzeFinancialSummary_SubcategoryClassification(t *testing.T) {
+	// Aporte / Rendimentos are sub-categories under "Receitas" -> classification must
+	// walk the chain (leaf to root), not just the root category.
+	periods := []string{"2026-05"}
+	categories := []*category.Category{
+		{ID: "rec", Name: "Receitas", Type: category.TypeIncome},
+		{ID: "serv", Name: "Projetos/Servicos", Type: category.TypeIncome, ParentID: sp("rec")},
+		{ID: "rend", Name: "Rendimentos Caixinha", Type: category.TypeIncome, ParentID: sp("rec")},
+		{ID: "aporte", Name: "Aporte Socio", Type: category.TypeIncome, ParentID: sp("rec")},
+	}
+	txs := []*transaction.Transaction{
+		incTx(5000, "serv", "mp", 2026, time.May),
+		incTx(180, "rend", "mp", 2026, time.May),
+		incTx(1200, "aporte", "mp", 2026, time.May),
+	}
+
+	out := analyzeFinancialSummary(txs, categories, nil, periods)
+
+	if out.RevenueByMonth[0] != 5000 {
+		t.Errorf("operational revenue = %v, want 5000 (sub-cat aporte/rendimento handled)", out.RevenueByMonth[0])
+	}
+	if out.FinancialIncomeByMonth[0] != 180 {
+		t.Errorf("financial income = %v, want 180", out.FinancialIncomeByMonth[0])
+	}
+	if out.ResultByMonth[0] != 5180 {
+		t.Errorf("result = %v, want 5180 (5000 + 180, aporte excluded)", out.ResultByMonth[0])
+	}
+}

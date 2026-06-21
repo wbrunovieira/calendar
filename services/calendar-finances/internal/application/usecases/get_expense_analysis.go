@@ -208,7 +208,7 @@ func analyzeExpenses(
 			continue
 		}
 		rootID, rootName := rootCategoryOf(catByID, tx.CategoryID)
-		if isNonConsumptionRoot(catByID, rootID, rootName) {
+		if isNonConsumptionCategory(catByID, tx.CategoryID) {
 			continue
 		}
 		totalByMonth[i] += tx.Amount

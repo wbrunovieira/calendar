@@ -37,21 +37,44 @@ func rootCategoryOf(catByID map[string]*category.Category, categoryID *string) (
 	return cur.ID, cur.Name
 }
 
-func isNonConsumptionRoot(catByID map[string]*category.Category, rootID, rootName string) bool {
-	if c := catByID[rootID]; c != nil && c.Type == category.TypeTransfer {
-		return true
+// walkCategoryChain visits a category and its ancestors (leaf -> root), returning
+// true as soon as match does. Classification must look at the whole chain because
+// the relevant categories (Aporte, Rendimentos, ...) are often sub-categories.
+func walkCategoryChain(catByID map[string]*category.Category, categoryID *string, match func(*category.Category) bool) bool {
+	if categoryID == nil {
+		return false
 	}
-	lower := strings.ToLower(rootName)
-	if strings.HasPrefix(lower, "aporte") { // owner capital contributions, not operational money
-		return true
+	cur := catByID[*categoryID]
+	for cur != nil {
+		if match(cur) {
+			return true
+		}
+		if cur.ParentID == nil {
+			break
+		}
+		cur = catByID[*cur.ParentID]
 	}
-	return nonConsumptionCategoryNames[lower]
+	return false
 }
 
-// isFinancialIncome flags yield/interest income (rendimentos). It is still income,
-// but is shown apart from operational revenue.
-func isFinancialIncome(rootName string) bool {
-	return strings.Contains(strings.ToLower(rootName), "rendiment")
+// isNonConsumptionCategory: transfers between own accounts, loans, investments and
+// owner capital (aporte) are not operational money - excluded from revenue/expense.
+func isNonConsumptionCategory(catByID map[string]*category.Category, categoryID *string) bool {
+	return walkCategoryChain(catByID, categoryID, func(c *category.Category) bool {
+		if c.Type == category.TypeTransfer {
+			return true
+		}
+		lower := strings.ToLower(c.Name)
+		return strings.HasPrefix(lower, "aporte") || nonConsumptionCategoryNames[lower]
+	})
+}
+
+// isFinancialIncomeCategory flags yield/interest income (rendimentos): still income,
+// but shown apart from operational revenue.
+func isFinancialIncomeCategory(catByID map[string]*category.Category, categoryID *string) bool {
+	return walkCategoryChain(catByID, categoryID, func(c *category.Category) bool {
+		return strings.Contains(strings.ToLower(c.Name), "rendiment")
+	})
 }
 
 func toCategoryRow(id, name string, byMonth []float64, children []CategoryTrend, n int) CategoryTrend {
@@ -83,7 +106,7 @@ func rollupCategories(
 	catByID map[string]*category.Category,
 	exchange map[string]bool,
 	periods []string,
-	extraSkip func(rootID, rootName string) bool,
+	extraSkip func(categoryID *string) bool,
 ) ([]float64, []CategoryTrend) {
 	n := len(periods)
 	idxOf := make(map[string]int, n)
@@ -110,13 +133,13 @@ func rollupCategories(
 		if !ok {
 			continue
 		}
+		if isNonConsumptionCategory(catByID, tx.CategoryID) {
+			continue
+		}
+		if extraSkip != nil && extraSkip(tx.CategoryID) {
+			continue
+		}
 		rootID, rootName := rootCategoryOf(catByID, tx.CategoryID)
-		if isNonConsumptionRoot(catByID, rootID, rootName) {
-			continue
-		}
-		if extraSkip != nil && extraSkip(rootID, rootName) {
-			continue
-		}
 		totalByMonth[i] += tx.Amount
 
 		r := roots[rootID]
@@ -208,9 +231,9 @@ func analyzeFinancialSummary(
 	// Operational revenue (services) and financial income (rendimentos) are split so
 	// the company result is not flattered by yield; owner capital (aporte) is dropped.
 	revenueByMonth, revenueCats := rollupCategories(txs, transaction.TypeIncome, catByID, exchange, periods,
-		func(_, rootName string) bool { return isFinancialIncome(rootName) })
+		func(catID *string) bool { return isFinancialIncomeCategory(catByID, catID) })
 	financialIncomeByMonth, _ := rollupCategories(txs, transaction.TypeIncome, catByID, exchange, periods,
-		func(_, rootName string) bool { return !isFinancialIncome(rootName) })
+		func(catID *string) bool { return !isFinancialIncomeCategory(catByID, catID) })
 	expenseByMonth, expenseCats := rollupCategories(txs, transaction.TypeExpense, catByID, exchange, periods, nil)
 
 	resultByMonth := make([]float64, n)
