@@ -12,8 +12,8 @@ import (
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/binance"
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/brapi"
 	httpHandlers "github.com/brunovieira/calendar-finances/internal/infrastructure/http/handlers"
-	"github.com/brunovieira/calendar-finances/internal/infrastructure/yahoo"
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/persistence"
+	"github.com/brunovieira/calendar-finances/internal/infrastructure/yahoo"
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
 	"github.com/rs/cors"
@@ -159,6 +159,9 @@ func main() {
 	expenseAnalysisUC := usecases.NewGetExpenseAnalysisUseCase(transactionRepo, categoryRepo, recurringRepo, bankAccountRepo)
 	transactionHandler.SetExpenseAnalysisUseCase(expenseAnalysisUC)
 
+	financialSummaryUC := usecases.NewGetFinancialSummaryUseCase(transactionRepo, categoryRepo, bankAccountRepo)
+	transactionHandler.SetFinancialSummaryUseCase(financialSummaryUC)
+
 	budgetRepo := persistence.NewBudgetTargetRepository(db)
 	budgetService := usecases.NewBudgetTargetsService(budgetRepo, transactionRepo, categoryRepo)
 	budgetHandler := httpHandlers.NewBudgetHandlers(budgetService)
@@ -288,6 +291,7 @@ func main() {
 	// Transaction routes
 	apiRouter.HandleFunc("/transactions/daily-balances", transactionHandler.DailyBalances).Methods("GET")
 	apiRouter.HandleFunc("/transactions/expense-analysis", transactionHandler.ExpenseAnalysis).Methods("GET")
+	apiRouter.HandleFunc("/transactions/financial-summary", transactionHandler.FinancialSummary).Methods("GET")
 	apiRouter.HandleFunc("/transactions", transactionHandler.List).Methods("GET")
 	apiRouter.HandleFunc("/transactions", transactionHandler.Create).Methods("POST")
 	apiRouter.HandleFunc("/transactions/{id}", transactionHandler.Get).Methods("GET")

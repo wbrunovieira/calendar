@@ -10,14 +10,15 @@ import (
 )
 
 type TransactionHandlers struct {
-	createUseCase        *usecases.CreateTransactionUseCase
-	listUseCase          *usecases.ListTransactionsUseCase
-	getUseCase           *usecases.GetTransactionUseCase
-	updateUseCase        *usecases.UpdateTransactionUseCase
-	updateStatusUseCase  *usecases.UpdateTransactionStatusUseCase
-	deleteUseCase        *usecases.DeleteTransactionUseCase
-	dailyBalancesUseCase   *usecases.GetDailyBalancesUseCase
-	expenseAnalysisUseCase *usecases.GetExpenseAnalysisUseCase
+	createUseCase           *usecases.CreateTransactionUseCase
+	listUseCase             *usecases.ListTransactionsUseCase
+	getUseCase              *usecases.GetTransactionUseCase
+	updateUseCase           *usecases.UpdateTransactionUseCase
+	updateStatusUseCase     *usecases.UpdateTransactionStatusUseCase
+	deleteUseCase           *usecases.DeleteTransactionUseCase
+	dailyBalancesUseCase    *usecases.GetDailyBalancesUseCase
+	expenseAnalysisUseCase  *usecases.GetExpenseAnalysisUseCase
+	financialSummaryUseCase *usecases.GetFinancialSummaryUseCase
 }
 
 func NewTransactionHandlers(
@@ -44,6 +45,10 @@ func (h *TransactionHandlers) SetDailyBalancesUseCase(uc *usecases.GetDailyBalan
 
 func (h *TransactionHandlers) SetExpenseAnalysisUseCase(uc *usecases.GetExpenseAnalysisUseCase) {
 	h.expenseAnalysisUseCase = uc
+}
+
+func (h *TransactionHandlers) SetFinancialSummaryUseCase(uc *usecases.GetFinancialSummaryUseCase) {
+	h.financialSummaryUseCase = uc
 }
 
 // List handles GET /api/v1/transactions
@@ -246,6 +251,27 @@ func (h *TransactionHandlers) ExpenseAnalysis(w http.ResponseWriter, r *http.Req
 	}
 
 	out, err := h.expenseAnalysisUseCase.Execute(usecases.GetExpenseAnalysisInput{
+		ProfileID: r.URL.Query().Get("profileId"),
+		From:      r.URL.Query().Get("from"),
+		To:        r.URL.Query().Get("to"),
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"data": out})
+}
+
+// FinancialSummary handles GET /api/v1/transactions/financial-summary
+func (h *TransactionHandlers) FinancialSummary(w http.ResponseWriter, r *http.Request) {
+	if h.financialSummaryUseCase == nil {
+		http.Error(w, "financial summary not available", http.StatusNotImplemented)
+		return
+	}
+
+	out, err := h.financialSummaryUseCase.Execute(usecases.GetFinancialSummaryInput{
 		ProfileID: r.URL.Query().Get("profileId"),
 		From:      r.URL.Query().Get("from"),
 		To:        r.URL.Query().Get("to"),
