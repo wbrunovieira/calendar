@@ -156,6 +156,9 @@ func main() {
 	processRecurringUC := usecases.NewProcessRecurringTransactionsUseCase(recurringRepo, createTransactionUC)
 	recurringHandler := httpHandlers.NewRecurringTransactionHandlers(recurringService, processRecurringUC)
 
+	expenseAnalysisUC := usecases.NewGetExpenseAnalysisUseCase(transactionRepo, categoryRepo, recurringRepo, bankAccountRepo)
+	transactionHandler.SetExpenseAnalysisUseCase(expenseAnalysisUC)
+
 	budgetRepo := persistence.NewBudgetTargetRepository(db)
 	budgetService := usecases.NewBudgetTargetsService(budgetRepo, transactionRepo, categoryRepo)
 	budgetHandler := httpHandlers.NewBudgetHandlers(budgetService)
@@ -284,6 +287,7 @@ func main() {
 
 	// Transaction routes
 	apiRouter.HandleFunc("/transactions/daily-balances", transactionHandler.DailyBalances).Methods("GET")
+	apiRouter.HandleFunc("/transactions/expense-analysis", transactionHandler.ExpenseAnalysis).Methods("GET")
 	apiRouter.HandleFunc("/transactions", transactionHandler.List).Methods("GET")
 	apiRouter.HandleFunc("/transactions", transactionHandler.Create).Methods("POST")
 	apiRouter.HandleFunc("/transactions/{id}", transactionHandler.Get).Methods("GET")

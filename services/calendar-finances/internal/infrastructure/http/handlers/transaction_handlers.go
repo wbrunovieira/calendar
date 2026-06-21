@@ -16,7 +16,8 @@ type TransactionHandlers struct {
 	updateUseCase        *usecases.UpdateTransactionUseCase
 	updateStatusUseCase  *usecases.UpdateTransactionStatusUseCase
 	deleteUseCase        *usecases.DeleteTransactionUseCase
-	dailyBalancesUseCase *usecases.GetDailyBalancesUseCase
+	dailyBalancesUseCase   *usecases.GetDailyBalancesUseCase
+	expenseAnalysisUseCase *usecases.GetExpenseAnalysisUseCase
 }
 
 func NewTransactionHandlers(
@@ -39,6 +40,10 @@ func NewTransactionHandlers(
 
 func (h *TransactionHandlers) SetDailyBalancesUseCase(uc *usecases.GetDailyBalancesUseCase) {
 	h.dailyBalancesUseCase = uc
+}
+
+func (h *TransactionHandlers) SetExpenseAnalysisUseCase(uc *usecases.GetExpenseAnalysisUseCase) {
+	h.expenseAnalysisUseCase = uc
 }
 
 // List handles GET /api/v1/transactions
@@ -231,6 +236,27 @@ func (h *TransactionHandlers) DailyBalances(w http.ResponseWriter, r *http.Reque
 		"data":  balances,
 		"total": len(balances),
 	})
+}
+
+// ExpenseAnalysis handles GET /api/v1/transactions/expense-analysis
+func (h *TransactionHandlers) ExpenseAnalysis(w http.ResponseWriter, r *http.Request) {
+	if h.expenseAnalysisUseCase == nil {
+		http.Error(w, "expense analysis not available", http.StatusNotImplemented)
+		return
+	}
+
+	out, err := h.expenseAnalysisUseCase.Execute(usecases.GetExpenseAnalysisInput{
+		ProfileID: r.URL.Query().Get("profileId"),
+		From:      r.URL.Query().Get("from"),
+		To:        r.URL.Query().Get("to"),
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"data": out})
 }
 
 func mapTransactionError(err error) int {
