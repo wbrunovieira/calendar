@@ -132,3 +132,36 @@ func TestAnalyzeFinancialSummary_SubcategoryClassification(t *testing.T) {
 		t.Errorf("result = %v, want 5180 (5000 + 180, aporte excluded)", out.ResultByMonth[0])
 	}
 }
+
+func TestAnalyzeFinancialSummary_DRELines(t *testing.T) {
+	dre := func(s string) *category.ClassificationDRE { v := category.ClassificationDRE(s); return &v }
+	periods := []string{"2026-05"}
+	categories := []*category.Category{
+		{ID: "rec", Name: "Receitas", Type: category.TypeIncome, ClassificationDRE: dre("REVENUE")},
+		{ID: "serv", Name: "Projetos", Type: category.TypeIncome, ParentID: sp("rec")}, // inherits REVENUE
+		{ID: "rend", Name: "Rendimentos", Type: category.TypeIncome, ParentID: sp("rec"), ClassificationDRE: dre("FINANCIAL")},
+		{ID: "tax", Name: "Impostos", Type: category.TypeExpense, ClassificationDRE: dre("TAX")},
+		{ID: "fix", Name: "Pessoal", Type: category.TypeExpense, ClassificationDRE: dre("FIXED_COST")},
+		{ID: "other", Name: "Algo", Type: category.TypeExpense}, // unclassified -> OUTROS
+	}
+	txs := []*transaction.Transaction{
+		incTx(5000, "serv", "mp", 2026, time.May),
+		incTx(180, "rend", "mp", 2026, time.May),
+		expTx(300, "imposto", "tax", "mp", 2026, time.May),
+		expTx(2000, "folha", "fix", "mp", 2026, time.May),
+		expTx(50, "x", "other", "mp", 2026, time.May),
+	}
+
+	out := analyzeFinancialSummary(txs, categories, nil, periods)
+
+	got := map[string]float64{}
+	for _, l := range out.Dre {
+		got[l.Classification] = l.Total
+	}
+	if got["REVENUE"] != 5000 || got["FINANCIAL"] != 180 || got["TAX"] != 300 || got["FIXED_COST"] != 2000 || got["OUTROS"] != 50 {
+		t.Errorf("dre lines = %+v", out.Dre)
+	}
+	if len(out.Dre) == 0 || out.Dre[0].Classification != "REVENUE" {
+		t.Errorf("dre must start with REVENUE: %+v", out.Dre)
+	}
+}

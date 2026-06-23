@@ -77,6 +77,20 @@ func isFinancialIncomeCategory(catByID map[string]*category.Category, categoryID
 	})
 }
 
+// dreClassification resolves a transaction's P&L line by walking the category chain
+// (leaf wins, then ancestors), so sub-categories inherit the parent's classification.
+func dreClassification(catByID map[string]*category.Category, categoryID *string) string {
+	out := ""
+	walkCategoryChain(catByID, categoryID, func(c *category.Category) bool {
+		if c.ClassificationDRE != nil && *c.ClassificationDRE != "" {
+			out = string(*c.ClassificationDRE)
+			return true
+		}
+		return false
+	})
+	return out
+}
+
 func toCategoryRow(id, name string, byMonth []float64, children []CategoryTrend, n int) CategoryTrend {
 	bm := make([]float64, len(byMonth))
 	var total float64
@@ -208,6 +222,96 @@ type FinancialSummaryOutput struct {
 	AvgMargin              float64         `json:"avgMargin"` // percent (result / total income)
 	ExpenseCategories      []CategoryTrend `json:"expenseCategories"`
 	RevenueCategories      []CategoryTrend `json:"revenueCategories"`
+	Dre                    []DRELine       `json:"dre"`
+}
+
+// DRELine is one line of the simplified income statement (P&L) for the period.
+type DRELine struct {
+	Classification string    `json:"classification"`
+	Label          string    `json:"label"`
+	Kind           string    `json:"kind"` // "revenue" | "expense"
+	ByMonth        []float64 `json:"byMonth"`
+	Total          float64   `json:"total"`
+}
+
+var dreLineOrder = []struct{ class, label, kind string }{
+	{"REVENUE", "Receita operacional", "revenue"},
+	{"FINANCIAL", "Receita financeira", "revenue"},
+	{"TAX", "Impostos", "expense"},
+	{"FIXED_COST", "Custos fixos", "expense"},
+	{"VARIABLE_COST", "Custos variáveis", "expense"},
+	{"MARKETING", "Marketing", "expense"},
+	{"PROLABORE", "Pró-labore", "expense"},
+	{"OUTROS", "Outras despesas", "expense"},
+}
+
+// buildDRE groups operational income/expense into P&L lines by category classification.
+// Non-consumption (transfers, loans, investments, owner capital) is excluded.
+func buildDRE(
+	txs []*transaction.Transaction,
+	catByID map[string]*category.Category,
+	exchange map[string]bool,
+	periods []string,
+) []DRELine {
+	n := len(periods)
+	idxOf := make(map[string]int, n)
+	for i, p := range periods {
+		idxOf[p] = i
+	}
+	byClass := map[string][]float64{}
+	add := func(class string, i int, amount float64) {
+		if byClass[class] == nil {
+			byClass[class] = make([]float64, n)
+		}
+		byClass[class][i] += amount
+	}
+
+	for _, tx := range txs {
+		if tx.Status != transaction.StatusConfirmed {
+			continue
+		}
+		if exchange[tx.BankAccountID] || isInvoiceSettlement(tx.Description) {
+			continue
+		}
+		if isNonConsumptionCategory(catByID, tx.CategoryID) {
+			continue
+		}
+		i, ok := idxOf[tx.OccurredOn.Format("2006-01")]
+		if !ok {
+			continue
+		}
+		class := dreClassification(catByID, tx.CategoryID)
+		switch tx.Type {
+		case transaction.TypeIncome:
+			if class == "FINANCIAL" {
+				add("FINANCIAL", i, tx.Amount)
+			} else {
+				add("REVENUE", i, tx.Amount)
+			}
+		case transaction.TypeExpense:
+			switch class {
+			case "TAX", "FIXED_COST", "VARIABLE_COST", "MARKETING", "PROLABORE":
+				add(class, i, tx.Amount)
+			default:
+				add("OUTROS", i, tx.Amount)
+			}
+		}
+	}
+
+	lines := []DRELine{}
+	for _, o := range dreLineOrder {
+		bm := byClass[o.class]
+		if bm == nil {
+			continue
+		}
+		var total float64
+		for i := range bm {
+			bm[i] = round2(bm[i])
+			total += bm[i]
+		}
+		lines = append(lines, DRELine{Classification: o.class, Label: o.label, Kind: o.kind, ByMonth: bm, Total: round2(total)})
+	}
+	return lines
 }
 
 func analyzeFinancialSummary(
@@ -276,6 +380,7 @@ func analyzeFinancialSummary(
 		AvgMargin:              avgMargin,
 		ExpenseCategories:      expenseCats,
 		RevenueCategories:      revenueCats,
+		Dre:                    buildDRE(txs, catByID, exchange, periods),
 	}
 }
 

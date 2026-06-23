@@ -48,6 +48,14 @@ interface FinancialSummary {
   avgMargin: number;
   expenseCategories: CategoryTrend[];
   revenueCategories: CategoryTrend[];
+  dre: DRELine[];
+}
+interface DRELine {
+  classification: string;
+  label: string;
+  kind: 'revenue' | 'expense';
+  byMonth: number[];
+  total: number;
 }
 
 type ViewMode = 3 | 6 | 12;
@@ -203,8 +211,9 @@ function BusinessView({ data }: { data: FinancialSummary | null }) {
         </div>
       </section>
 
-      {/* Receita / Despesa / Resultado / Margem */}
+      {/* DRE — cascata */}
       <section className="bg-white/5 border border-white/10 rounded-2xl p-5 overflow-x-auto">
+        <h2 className="text-white font-semibold mb-3">DRE — demonstração de resultado</h2>
         <table className="w-full text-sm min-w-[560px]">
           <thead>
             <tr className="text-white/50 text-xs">
@@ -216,45 +225,37 @@ function BusinessView({ data }: { data: FinancialSummary | null }) {
             </tr>
           </thead>
           <tbody>
-            <tr className="border-t border-white/5">
-              <td className="py-2 text-emerald-300">Receita operacional</td>
-              {data.revenueByMonth.map((v, i) => (
-                <td key={i} className="text-right px-2 py-2 text-white/70 tabular-nums">{v ? fmtShort(v) : '·'}</td>
-              ))}
-              <td className="text-right px-2 py-2 text-white/90 font-medium tabular-nums">{fmtShort(data.totalRevenue)}</td>
-            </tr>
-            <tr>
-              <td className="py-1 text-emerald-300/50 text-xs">+ Receita financeira</td>
-              {data.financialIncomeByMonth.map((v, i) => (
-                <td key={i} className="text-right px-2 py-1 text-white/45 text-xs tabular-nums">{v ? fmtShort(v) : '·'}</td>
-              ))}
-              <td className="text-right px-2 py-1 text-white/55 text-xs tabular-nums">{fmtShort(data.totalFinancialIncome)}</td>
-            </tr>
-            <tr className="border-t border-white/5">
-              <td className="py-2 text-rose-300">Despesa</td>
-              {data.expenseByMonth.map((v, i) => (
-                <td key={i} className="text-right px-2 py-2 text-white/70 tabular-nums">{v ? fmtShort(v) : '·'}</td>
-              ))}
-              <td className="text-right px-2 py-2 text-white/90 font-medium tabular-nums">{fmtShort(data.totalExpense)}</td>
-            </tr>
-            <tr className="border-t border-white/10">
-              <td className="py-2 text-white font-medium">Resultado</td>
+            {data.dre.map((line) => {
+              const rev = line.kind === 'revenue';
+              return (
+                <tr key={line.classification} className="border-t border-white/5">
+                  <td className={`py-1.5 ${rev ? 'text-emerald-300/80' : 'text-rose-300/80'}`}>
+                    {rev ? '(+)' : '(−)'} {line.label}
+                  </td>
+                  {line.byMonth.map((v, i) => (
+                    <td key={i} className="text-right px-2 py-1.5 text-white/70 tabular-nums">{v ? fmtShort(v) : '·'}</td>
+                  ))}
+                  <td className="text-right px-2 py-1.5 text-white/90 font-medium tabular-nums">{fmtShort(line.total)}</td>
+                </tr>
+              );
+            })}
+            <tr className="border-t border-white/15">
+              <td className="py-2 text-white font-semibold">(=) Resultado</td>
               {data.resultByMonth.map((v, i) => (
                 <td key={i} className={`text-right px-2 py-2 font-medium tabular-nums ${v >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{fmtShort(v)}</td>
               ))}
               <td className={`text-right px-2 py-2 font-bold tabular-nums ${data.totalResult >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{fmtShort(data.totalResult)}</td>
             </tr>
-            <tr className="border-t border-white/5">
-              <td className="py-2 text-white/50 text-xs">Margem</td>
+            <tr>
+              <td className="py-1 text-white/50 text-xs">Margem</td>
               {data.marginByMonth.map((v, i) => {
-                const rev = data.revenueByMonth[i];
-                // Margin is meaningless when revenue is negligible (huge % from ~0 base).
-                const label = !rev ? '·' : Math.abs(v) >= 1000 ? '—' : `${v.toFixed(0)}%`;
+                const inc = data.revenueByMonth[i] + data.financialIncomeByMonth[i];
+                const label = !inc ? '·' : Math.abs(v) >= 1000 ? '—' : `${v.toFixed(0)}%`;
                 return (
-                  <td key={i} className="text-right px-2 py-2 text-white/40 text-xs tabular-nums">{label}</td>
+                  <td key={i} className="text-right px-2 py-1 text-white/40 text-xs tabular-nums">{label}</td>
                 );
               })}
-              <td className="text-right px-2 py-2 text-white/50 text-xs tabular-nums">{data.avgMargin.toFixed(0)}%</td>
+              <td className="text-right px-2 py-1 text-white/50 text-xs tabular-nums">{data.avgMargin.toFixed(0)}%</td>
             </tr>
           </tbody>
         </table>
