@@ -57,6 +57,13 @@ interface DRELine {
   byMonth: number[];
   total: number;
 }
+interface CapitalSummary {
+  totalContributed: number;
+  totalWithdrawn: number;
+  totalLoaned: number;
+  totalReturned: number;
+  outstandingDebt: number;
+}
 
 type ViewMode = 3 | 6 | 12;
 
@@ -90,6 +97,7 @@ export default function VisaoMensalPage() {
   const [viewMode, setViewMode] = useState<ViewMode>(6);
   const [personal, setPersonal] = useState<ExpenseAnalysis | null>(null);
   const [business, setBusiness] = useState<FinancialSummary | null>(null);
+  const [capital, setCapital] = useState<CapitalSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
   const range = useMemo(() => {
@@ -108,11 +116,18 @@ export default function VisaoMensalPage() {
         setLoading(true);
         setPersonal(null);
         setBusiness(null);
+        setCapital(null);
         if (isBusiness) {
-          const res = await api.get<{ data: FinancialSummary }>(
-            `/transactions/financial-summary?profileId=${selectedProfileId}&from=${range.from}&to=${range.to}`,
-          );
+          const [res, cap] = await Promise.all([
+            api.get<{ data: FinancialSummary }>(
+              `/transactions/financial-summary?profileId=${selectedProfileId}&from=${range.from}&to=${range.to}`,
+            ),
+            api
+              .get<{ data: CapitalSummary }>(`/capital-contributions/summary?profileId=${selectedProfileId}`)
+              .catch(() => ({ data: null as CapitalSummary | null })),
+          ]);
           setBusiness(res.data);
+          setCapital(cap.data);
         } else {
           const res = await api.get<{ data: ExpenseAnalysis }>(
             `/transactions/expense-analysis?profileId=${selectedProfileId}&from=${range.from}&to=${range.to}`,
@@ -164,7 +179,7 @@ export default function VisaoMensalPage() {
         {loading ? (
           <p className="text-white/50 py-10 text-center">Carregando…</p>
         ) : isBusiness ? (
-          <BusinessView data={business} />
+          <BusinessView data={business} capital={capital} />
         ) : (
           <CostOfLivingView data={personal} />
         )}
@@ -175,7 +190,7 @@ export default function VisaoMensalPage() {
 
 /* ------------------------- BUSINESS (DRE / Resultado) ------------------------- */
 
-function BusinessView({ data }: { data: FinancialSummary | null }) {
+function BusinessView({ data, capital }: { data: FinancialSummary | null; capital: CapitalSummary | null }) {
   if (!data || data.periods.length === 0)
     return <p className="text-white/50 py-10 text-center">Sem dados no período.</p>;
 
@@ -193,6 +208,12 @@ function BusinessView({ data }: { data: FinancialSummary | null }) {
         <p className={`text-2xl font-bold ${profit ? 'text-emerald-400' : 'text-rose-400'}`}>
           {fmt(data.totalResult)} <span className="text-sm font-normal text-white/50">no período ({profit ? 'lucro' : 'prejuízo'})</span>
         </p>
+        {capital && capital.outstandingDebt > 0 && (
+          <p className="mt-2 text-sm">
+            <span className="text-amber-300 font-medium">Dívida ao sócio: {fmt(capital.outstandingDebt)}</span>
+            <span className="text-white/50"> — a empresa deve isso a você (aportes a devolver)</span>
+          </p>
+        )}
         <div className="flex items-end gap-2 h-36 mt-4">
           {data.resultByMonth.map((v, i) => {
             const positive = v >= 0;
