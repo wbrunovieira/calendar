@@ -70,7 +70,7 @@ services:
     container_name: agents
     logging: *default-logging
     ports:
-      - "3337:3337"
+      - "127.0.0.1:3337:3337"
     environment:
       - PORT=3337
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
@@ -103,7 +103,7 @@ services:
     container_name: calendar-postgres
     logging: *default-logging
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     environment:
       - POSTGRES_USER=calendar
       - POSTGRES_PASSWORD=calendar123
