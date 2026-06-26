@@ -150,3 +150,14 @@ config/authelia/users_database.yml
 # Added by ggshield
 .cache_ggshield
 services/calendar-finances/api
+
+# Python (agents service)
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.venv/
+venv/
