@@ -35,13 +35,14 @@ ssh -n root@45.90.123.190 "curl -s -o /dev/null -w 'api %{http_code}\n' http://1
 - `git pull --ff-only` preserva mods locais do servidor (há edições não-commitadas em `scripts/backup.sh` e `scripts/health-check.sh`).
 
 ## Ansible
-Rodar **da pasta `deploy/ansible/`**, sempre com `-i inventory/production.yml` (não há `ansible.cfg`). Os playbooks usam `raw:` (não precisa python no remoto) e `docker compose` (v2).
+Existe `ansible.cfg` (em `deploy/ansible/`) que já define `inventory = inventory/production.yml`, `remote_user=root`, `host_key_checking=False`, `become=True`. Então **rode da pasta `deploy/ansible/`** e o `-i` é dispensável. Os playbooks usam `raw:` (não precisa python no remoto) e `docker compose` (v2).
 ```bash
 cd deploy/ansible
-ansible-playbook -i inventory/production.yml playbooks/quick-deploy.yml          # git pull + up -d --build (TODOS) + migrate + health + cleanup
-ansible-playbook -i inventory/production.yml playbooks/deploy.yml --ask-vault-pass # setup completo: escreve .env do vault, build, migrate
-ansible-playbook -i inventory/production.yml playbooks/rollback.yml -e "commits=1" # git reset --hard HEAD~N + rebuild + health
+ansible-playbook playbooks/quick-deploy.yml            # git pull + up -d --build (TODOS) + migrate + health + cleanup
+ansible-playbook playbooks/deploy.yml --ask-vault-pass # setup completo: escreve .env do vault, build, migrate
+ansible-playbook playbooks/rollback.yml -e "commits=1" # git reset --hard HEAD~N + rebuild + health
 ```
+> **Status de teste (2026-06):** ✅ `ansible` core 2.21 instalado · conectividade ao servidor OK (`ansible calendar_server -m raw -a "echo"` rc=0) · `--syntax-check` OK nos 3 playbooks. ❌ O **run real** de quick-deploy/deploy/rollback NÃO foi testado (disruptivos — rebuildam tudo / mexem em prod). Os comandos **SSH direto** abaixo, sim, foram usados em produção. Na 1ª vez que rodar um playbook, acompanhe.
 Outros (setup único): `setup-nginx-ssl.yml`, `setup-authelia.yml`, `setup-health-check.yml`, `setup-backup.yml`, `sync-data.yml`.
 - **Vault**: `deploy.yml` injeta segredos de `inventory/group_vars/all/vault.yml` (gitignored, encriptado) → `--ask-vault-pass`. quick-deploy/rollback **não** precisam de vault.
 - `deploy.yml` faz **`git reset --hard origin/main`** → **descarta mods locais do servidor** (backup.sh/health-check.sh seriam perdidos). quick-deploy faz `git pull` (pode conflitar com elas). Por isso o SSH direto com `--ff-only` costuma ser mais seguro hoje.
