@@ -1,0 +1,133 @@
+name: CD
+
+# Deploy contínuo → VPS Contabo via SSH direto, como o usuário NÃO-root `deploy`
+# (chave dedicada; membro do grupo docker, sem sudo).
+#
+# Gates de segurança (espelhado do WB-crm):
+#   1. Só dispara quando o workflow CI termina VERDE na main (nunca em PR).
+#   2. Environment `production` exige APROVAÇÃO MANUAL (required reviewer).
+#   3. Host key do VPS pinada em deploy/ci/known_hosts (sem TOFU/keyscan em runtime).
+#   4. Só rebuilda os serviços cujo código mudou desde o SHA deployado
+#      (deploy/ci/changed-services.sh); SHA desconhecido → rebuilda todos.
+#   5. Migrations: se o diff tocar services/calendar-core/prisma/migrations/,
+#      roda `prisma migrate deploy` logo após subir o calendar-core.
+#
+# O build roda DETACHED no servidor (nohup + poll) — build longo não cai com o SSH.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      services:
+        description: "Serviços a deployar (ex: 'calendar-finances agents'), 'auto' detecta pelo diff, 'all' rebuilda todos"
+        type: string
+        default: auto
+
+permissions:
+  contents: read
+
+# Um deploy por vez; nunca cancela um deploy em andamento.
+concurrency:
+  group: cd-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy → VPS Contabo
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    # workflow_run: só se o CI concluiu com sucesso. workflow_dispatch: sempre permite
+    # (o environment ainda exige aprovação manual).
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    environment:
+      name: production
+      url: https://calendar.wbdigitalsolutions.com
+    env:
+      VPS: ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}
+      SSH_OPTS: -n -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=6 -o LogLevel=ERROR
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # histórico completo p/ diff contra o SHA deployado
+
+      # ssh-agent manual (sem action de terceiro tocando a chave privada)
+      - name: Start ssh-agent with deploy key
+        env:
+          SSH_DEPLOY_KEY: ${{ secrets.SSH_DEPLOY_KEY }}
+        run: |
+          eval "$(ssh-agent -s)"
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> "$GITHUB_ENV"
+          ssh-add - <<< "$SSH_DEPLOY_KEY"
+
+      - name: Pin VPS host key (no TOFU)
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          grep -v '^#' deploy/ci/known_hosts > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Detect changed services + pending migrations
+        id: detect
+        run: |
+          DEPLOYED=$(ssh $SSH_OPTS "$VPS" 'cd /opt/calendar && git rev-parse HEAD' || true)
+          echo "SHA deployado no servidor: ${DEPLOYED:-desconhecido}"
+          bash deploy/ci/changed-services.sh "$DEPLOYED" "${{ inputs.services || 'auto' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Sync código no servidor (git pull --ff-only)
+        run: |
+          ssh $SSH_OPTS "$VPS" 'cd /opt/calendar && git pull --ff-only origin main && git rev-parse HEAD'
+
+      - name: Build (detached no servidor, poll até terminar)
+        if: steps.detect.outputs.services != ''
+        env:
+          SERVICES: ${{ steps.detect.outputs.services }}
+        run: |
+          echo "Serviços: $SERVICES"
+          PID=$(ssh $SSH_OPTS "$VPS" "cd /opt/calendar && nohup docker-compose -f docker-compose.prod.yml build $SERVICES > /tmp/cd-build.log 2>&1 & echo \$!")
+          echo "Build PID no servidor: $PID"
+          for i in $(seq 1 120); do
+            if ! ssh $SSH_OPTS "$VPS" "kill -0 $PID 2>/dev/null"; then
+              break
+            fi
+            sleep 15
+          done
+          if ssh $SSH_OPTS "$VPS" "kill -0 $PID 2>/dev/null"; then
+            echo "::error::Build ainda rodando após 30min"; exit 1
+          fi
+          ssh $SSH_OPTS "$VPS" "tail -5 /tmp/cd-build.log"
+          # docker-compose build retorna via log; erro real aparece como 'ERROR' no fim
+          if ssh $SSH_OPTS "$VPS" "grep -qiE '^ERROR|failed to solve|error during build' /tmp/cd-build.log"; then
+            echo "::error::Build falhou no servidor"; ssh $SSH_OPTS "$VPS" "tail -40 /tmp/cd-build.log"; exit 1
+          fi
+
+      - name: Subir serviços (up -d)
+        if: steps.detect.outputs.services != ''
+        env:
+          SERVICES: ${{ steps.detect.outputs.services }}
+        run: |
+          ssh $SSH_OPTS "$VPS" "cd /opt/calendar && docker-compose -f docker-compose.prod.yml up -d $SERVICES"
+
+      - name: Prisma migrate deploy (calendar-core)
+        if: steps.detect.outputs.migrate == 'true'
+        run: |
+          ssh $SSH_OPTS "$VPS" "cd /opt/calendar && docker-compose -f docker-compose.prod.yml exec -T calendar-core npx prisma migrate deploy"
+
+      - name: Health check
+        run: |
+          sleep 15
+          ssh $SSH_OPTS "$VPS" 'FAIL=0; for u in 3334/ 3335/health 3336/api/v1/health 3337/health 3001/ 3003/ 3004/; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 http://127.0.0.1:$u)
+            echo "porta $u -> $CODE"
+            case "${u%%/*}" in
+              3334) [ "$CODE" = "404" ] || [ "$CODE" = "200" ] || FAIL=1 ;; # core não tem rota / (404 = vivo)
+              *)    [ "$CODE" = "200" ] || [ "$CODE" = "307" ] || FAIL=1 ;;
+            esac
+          done; exit $FAIL'
+
+      - name: Cleanup (prune de imagens antigas)
+        if: always() && steps.detect.outputs.services != ''
+        run: |
+          ssh $SSH_OPTS "$VPS" "docker image prune -f && docker builder prune -f --keep-storage 5GB" || true

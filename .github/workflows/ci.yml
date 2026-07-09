@@ -1,0 +1,174 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Um run por ref; cancela o anterior ao empurrar de novo.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  # ── calendar-core: build (typecheck) + unit (Vitest, sem DB). ──
+  # Lint fica de fora por ora: 600+ erros pré-existentes de ESLint.
+  core:
+    name: calendar-core (build · unit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/calendar-core
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: services/calendar-core/package-lock.json
+      - run: npm ci
+      - name: Prisma generate
+        run: npx prisma generate
+      - name: Build (nest build)
+        run: npm run build
+      - name: Unit tests (Vitest)
+        run: npm test
+
+  # ── calendar-core E2E: Postgres real + prisma migrate deploy + suíte e2e. ──
+  # O setup-e2e.ts espera o DB em localhost:5433/calendar_test_db (calendar/calendar123).
+  core-e2e:
+    name: calendar-core E2E (Postgres)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/calendar-core
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: calendar
+          POSTGRES_PASSWORD: calendar123
+          POSTGRES_DB: calendar_test_db
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://calendar:calendar123@localhost:5433/calendar_test_db
+      TZ: America/Sao_Paulo
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: services/calendar-core/package-lock.json
+      - run: npm ci
+      - name: Prisma generate
+        run: npx prisma generate
+      - name: Migrations (prisma migrate deploy)
+        run: npx prisma migrate deploy
+      - name: E2E tests (Vitest)
+        run: npm run test:e2e
+
+  # ── calendar-finances: Go build + vet + testes (sqlmock, sem DB). ──
+  finances:
+    name: calendar-finances (build · vet · test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/calendar-finances
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/calendar-finances/go.mod
+          cache-dependency-path: services/calendar-finances/go.sum
+      - name: Build
+        run: go build ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Tests
+        run: go test ./...
+
+  # ── calendar-health: Go build + vet + testes. ──
+  health:
+    name: calendar-health (build · vet · test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/calendar-health
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/calendar-health/go.mod
+          cache-dependency-path: services/calendar-health/go.sum
+      - name: Build
+        run: go build ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Tests
+        run: go test ./...
+
+  # ── agents: pytest (LangGraph mockado; sem chaves reais). ──
+  agents:
+    name: agents (pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/agents
+    env:
+      # Dummies só pra importar módulos em CI — NUNCA chaves reais.
+      LANGFUSE_PUBLIC_KEY: ci-dummy
+      LANGFUSE_SECRET_KEY: ci-dummy
+      LANGFUSE_HOST: http://localhost:3100
+      OPENAI_API_KEY: ci-dummy
+      FINANCES_BASE_URL: http://localhost:3335
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/agents/requirements.txt
+      - run: pip install -r requirements.txt
+      - name: Tests (pytest)
+        run: python -m pytest tests/ -q
+
+  # ── Frontends: lint + testes (onde houver) + build, em matriz. ──
+  frontends:
+    name: ${{ matrix.app }} (lint · test · build)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [calendar-frontend, finances-frontend, health-frontend]
+    defaults:
+      run:
+        working-directory: services/${{ matrix.app }}
+    env:
+      # NEXT_PUBLIC_* são inlined no build; dummies bastam pra CI.
+      NEXT_PUBLIC_API_URL: http://localhost:3334
+      NEXT_PUBLIC_CALENDAR_API_URL: http://localhost:3334
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: services/${{ matrix.app }}/package-lock.json
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Tests (Vitest)
+        run: npm run test --if-present
+      - name: Build (next build)
+        run: npm run build
