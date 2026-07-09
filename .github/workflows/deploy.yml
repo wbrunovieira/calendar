@@ -110,6 +110,14 @@ jobs:
         run: |
           ssh $SSH_OPTS "$VPS" "cd /opt/calendar && docker-compose -f docker-compose.prod.yml up -d $SERVICES"
 
+      # Mudança no docker-compose.prod.yml (limites de memória, env, portas):
+      # `up -d` apenas nos serviços RODANDO — o compose recria só os que mudaram
+      # e serviços parados de propósito (ex. Langfuse) não são acordados.
+      - name: Aplicar mudanças de infra do compose (up -d nos rodando)
+        if: steps.detect.outputs.infra == 'true'
+        run: |
+          ssh $SSH_OPTS "$VPS" 'cd /opt/calendar && RUNNING=$(docker-compose -f docker-compose.prod.yml ps --services --status running | tr "\n" " ") && echo "Rodando: $RUNNING" && docker-compose -f docker-compose.prod.yml up -d $RUNNING'
+
       - name: Prisma migrate deploy (calendar-core)
         if: steps.detect.outputs.migrate == 'true'
         run: |
