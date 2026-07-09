@@ -172,6 +172,9 @@ func RunMigrations(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_categories_parent_id ON finance.categories(parent_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_transactions_profile_occurred ON finance.transactions(profile_id, occurred_on)`,
 		`CREATE INDEX IF NOT EXISTS idx_transactions_bank_account ON finance.transactions(bank_account_id)`,
+		// Guard-rail contra duplicatas de syncs (binance-*, dividend-*, mp-*): mesmo que o
+		// dedup na aplicação quebre, o INSERT duplicado falha no banco.
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_transactions_external_id ON finance.transactions(external_id) WHERE external_id IS NOT NULL`,
 		`CREATE INDEX IF NOT EXISTS idx_transaction_splits_tx ON finance.transaction_splits(transaction_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_transaction_tags_tx ON finance.transaction_tags(transaction_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_recurring_transactions_profile ON finance.recurring_transactions(profile_id)`,
