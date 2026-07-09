@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -23,25 +22,12 @@ type QuoteResponse struct {
 }
 
 type QuoteResult struct {
-	Symbol                     string         `json:"symbol"`
-	ShortName                  string         `json:"shortName"`
-	LongName                   string         `json:"longName"`
-	RegularMarketPrice         float64        `json:"regularMarketPrice"`
-	RegularMarketChange        float64        `json:"regularMarketChange"`
-	RegularMarketChangePercent float64        `json:"regularMarketChangePercent"`
-	DividendsData              *DividendsData `json:"dividendsData,omitempty"`
-}
-
-type DividendsData struct {
-	CashDividends []CashDividend `json:"cashDividends"`
-}
-
-type CashDividend struct {
-	AssetIssued   string  `json:"assetIssued"`
-	PaymentDate   string  `json:"paymentDate"`
-	Rate          float64 `json:"rate"`
-	Label         string  `json:"label"`
-	LastDatePrior string  `json:"lastDatePrior"`
+	Symbol                     string  `json:"symbol"`
+	ShortName                  string  `json:"shortName"`
+	LongName                   string  `json:"longName"`
+	RegularMarketPrice         float64 `json:"regularMarketPrice"`
+	RegularMarketChange        float64 `json:"regularMarketChange"`
+	RegularMarketChangePercent float64 `json:"regularMarketChangePercent"`
 }
 
 func NewClient(token string) *Client {
@@ -61,7 +47,7 @@ func (c *Client) GetQuotes(tickers ...string) ([]QuoteResult, error) {
 
 	var results []QuoteResult
 	for _, ticker := range tickers {
-		quote, err := c.fetchQuote(ticker, false)
+		quote, err := c.fetchQuote(ticker)
 		if err != nil {
 			log.Printf("brapi: failed to fetch %s: %v", ticker, err)
 			continue
@@ -72,17 +58,10 @@ func (c *Client) GetQuotes(tickers ...string) ([]QuoteResult, error) {
 	return results, nil
 }
 
-func (c *Client) fetchQuote(ticker string, withDividends bool) ([]QuoteResult, error) {
+func (c *Client) fetchQuote(ticker string) ([]QuoteResult, error) {
 	url := fmt.Sprintf("%s/api/quote/%s", c.baseURL, ticker)
-	params := []string{}
 	if c.token != "" {
-		params = append(params, "token="+c.token)
-	}
-	if withDividends {
-		params = append(params, "dividends=true")
-	}
-	if len(params) > 0 {
-		url += "?" + strings.Join(params, "&")
+		url += "?token=" + c.token
 	}
 
 	resp, err := c.http.Get(url)
@@ -102,18 +81,4 @@ func (c *Client) fetchQuote(ticker string, withDividends bool) ([]QuoteResult, e
 	}
 
 	return result.Results, nil
-}
-
-// GetDividends fetches dividend history for a ticker.
-func (c *Client) GetDividends(ticker string) ([]CashDividend, error) {
-	results, err := c.fetchQuote(ticker, true)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(results) == 0 || results[0].DividendsData == nil {
-		return []CashDividend{}, nil
-	}
-
-	return results[0].DividendsData.CashDividends, nil
 }

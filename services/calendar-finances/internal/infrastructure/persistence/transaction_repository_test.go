@@ -1,6 +1,7 @@
 package persistence
 
 import (
+	"errors"
 	"regexp"
 	"testing"
 	"time"
@@ -87,6 +88,71 @@ func TestTransactionRepositoryCreate(t *testing.T) {
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("expectations not met: %v", err)
+	}
+}
+
+func TestTransactionRepositoryFindByExternalID(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	repo := NewTransactionRepository(db)
+
+	now := fixedTime()
+
+	// Column list must match scanTransaction exactly (24 columns, including
+	// is_personal_reimbursement) — a mismatch silently broke dedup by external_id.
+	txRows := sqlmock.NewRows([]string{
+		"id", "profile_id", "bank_account_id", "destination_account_id", "category_id", "invoice_id",
+		"type", "status", "amount", "currency", "description", "notes", "cost_center", "is_personal_reimbursement",
+		"occurred_on", "due_on", "reminder_on", "recurrence_rule", "installment_number", "installment_total",
+		"external_id", "linked_transaction_id", "created_at", "updated_at",
+	}).AddRow(
+		"tx-123", "profile-1", "account-1", nil, nil, nil,
+		"INCOME", "CONFIRMED", 11.0, "BRL", "Dividendo HGLG11", nil, nil, false,
+		now, nil, nil, nil, nil, nil,
+		"dividend-HGLG11-2026-04-01-1.10", nil, now, now,
+	)
+
+	mock.ExpectQuery(regexp.QuoteMeta("is_personal_reimbursement,")).
+		WithArgs("dividend-HGLG11-2026-04-01-1.10").
+		WillReturnRows(txRows)
+
+	tx, err := repo.FindByExternalID("dividend-HGLG11-2026-04-01-1.10")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tx == nil || tx.ID != "tx-123" {
+		t.Fatalf("expected transaction tx-123, got %+v", tx)
+	}
+	if tx.ExternalID == nil || *tx.ExternalID != "dividend-HGLG11-2026-04-01-1.10" {
+		t.Errorf("unexpected external ID: %v", tx.ExternalID)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("expectations not met: %v", err)
+	}
+}
+
+func TestTransactionRepositoryFindByExternalID_NotFound(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	repo := NewTransactionRepository(db)
+
+	emptyRows := sqlmock.NewRows([]string{"id"})
+	mock.ExpectQuery(regexp.QuoteMeta("WHERE external_id")).
+		WithArgs("missing-id").
+		WillReturnRows(emptyRows)
+
+	_, err = repo.FindByExternalID("missing-id")
+	if !errors.Is(err, transaction.ErrNotFound) {
+		t.Fatalf("expected transaction.ErrNotFound, got %v", err)
 	}
 }
 

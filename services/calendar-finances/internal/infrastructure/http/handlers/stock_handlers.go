@@ -54,8 +54,16 @@ func (h *StockHandlers) SyncDividends(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Default: check dividends from the last 90 days
+	// Default: check dividends from the last 90 days; override with ?since=YYYY-MM-DD (backfill)
 	since := time.Now().AddDate(0, -3, 0)
+	if s := r.URL.Query().Get("since"); s != "" {
+		parsed, err := time.Parse("2006-01-02", s)
+		if err != nil {
+			http.Error(w, "invalid since date, expected YYYY-MM-DD", http.StatusBadRequest)
+			return
+		}
+		since = parsed
+	}
 
 	result, err := h.dividendUC.Execute(profileID, since)
 	if err != nil {

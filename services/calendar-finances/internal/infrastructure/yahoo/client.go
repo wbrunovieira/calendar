@@ -9,10 +9,11 @@ import (
 	"time"
 )
 
-const baseURL = "https://query1.finance.yahoo.com"
+const defaultBaseURL = "https://query1.finance.yahoo.com"
 
 type Client struct {
-	http *http.Client
+	baseURL string
+	http    *http.Client
 }
 
 type chartResponse struct {
@@ -98,15 +99,82 @@ type fiiChartResponse struct {
 
 func NewClient() *Client {
 	return &Client{
-		http: &http.Client{Timeout: 15 * time.Second},
+		baseURL: defaultBaseURL,
+		http:    &http.Client{Timeout: 15 * time.Second},
 	}
+}
+
+// Dividend is a single dividend payment. Date is the ex-dividend date
+// (Yahoo does not expose the payment date), normalized to midnight UTC.
+type Dividend struct {
+	Date   time.Time
+	Amount float64
+}
+
+// GetDividends fetches dividends per quota for a B3 ticker since the given date.
+// The ticker should be provided without the .SA suffix (e.g. "HGLG11").
+// Results are sorted by date ascending.
+func (c *Client) GetDividends(ticker string, from time.Time) ([]Dividend, error) {
+	yahooTicker := ticker
+	if !strings.HasSuffix(strings.ToUpper(yahooTicker), ".SA") {
+		yahooTicker = yahooTicker + ".SA"
+	}
+
+	url := fmt.Sprintf(
+		"%s/v8/finance/chart/%s?period1=%d&period2=%d&interval=1d&events=div",
+		c.baseURL, yahooTicker, from.Unix(), time.Now().Unix(),
+	)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("yahoo request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("yahoo returned status %d for %s", resp.StatusCode, yahooTicker)
+	}
+
+	var result fiiChartResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("yahoo decode failed: %w", err)
+	}
+
+	if result.Chart.Error != nil {
+		return nil, fmt.Errorf("yahoo error: %s", result.Chart.Error.Description)
+	}
+
+	if len(result.Chart.Result) == 0 {
+		return nil, fmt.Errorf("no data for %s", yahooTicker)
+	}
+
+	var dividends []Dividend
+	for _, d := range result.Chart.Result[0].Events.Dividends {
+		t := time.Unix(d.Date, 0).UTC()
+		dividends = append(dividends, Dividend{
+			Date:   time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC),
+			Amount: d.Amount,
+		})
+	}
+
+	sort.Slice(dividends, func(i, j int) bool {
+		return dividends[i].Date.Before(dividends[j].Date)
+	})
+
+	return dividends, nil
 }
 
 // GetReturn calculates the percentage return for a ticker between two dates.
 func (c *Client) GetReturn(ticker string, from, to time.Time) (float64, error) {
 	url := fmt.Sprintf(
 		"%s/v8/finance/chart/%s?period1=%d&period2=%d&interval=1d",
-		baseURL, ticker, from.Unix(), to.Unix(),
+		c.baseURL, ticker, from.Unix(), to.Unix(),
 	)
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -174,7 +242,7 @@ func (c *Client) GetFIIData(ticker string) (*FIIData, error) {
 
 	url := fmt.Sprintf(
 		"%s/v8/finance/chart/%s?period1=%d&period2=%d&interval=1d&events=div",
-		baseURL, yahooTicker, oneYearAgo.Unix(), now.Unix(),
+		c.baseURL, yahooTicker, oneYearAgo.Unix(), now.Unix(),
 	)
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -316,7 +384,7 @@ func (c *Client) GetFIIData(ticker string) (*FIIData, error) {
 func (c *Client) getQuoteSummary(yahooTicker string) (*float64, *float64, error) {
 	url := fmt.Sprintf(
 		"%s/v10/finance/quoteSummary/%s?modules=defaultKeyStatistics",
-		baseURL, yahooTicker,
+		c.baseURL, yahooTicker,
 	)
 
 	req, err := http.NewRequest("GET", url, nil)

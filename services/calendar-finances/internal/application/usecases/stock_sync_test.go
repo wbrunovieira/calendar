@@ -9,10 +9,8 @@ import (
 
 // mockBrapiClient implements the BrapiClient interface for testing
 type mockBrapiClient struct {
-	quotes    []brapi.QuoteResult
-	dividends []brapi.CashDividend
-	quoteErr  error
-	divErr    error
+	quotes   []brapi.QuoteResult
+	quoteErr error
 }
 
 func (m *mockBrapiClient) GetQuotes(tickers ...string) ([]brapi.QuoteResult, error) {
@@ -20,13 +18,6 @@ func (m *mockBrapiClient) GetQuotes(tickers ...string) ([]brapi.QuoteResult, err
 		return nil, m.quoteErr
 	}
 	return m.quotes, nil
-}
-
-func (m *mockBrapiClient) GetDividends(ticker string) ([]brapi.CashDividend, error) {
-	if m.divErr != nil {
-		return nil, m.divErr
-	}
-	return m.dividends, nil
 }
 
 // mockAccountRepo implements bankaccount.Repository for testing

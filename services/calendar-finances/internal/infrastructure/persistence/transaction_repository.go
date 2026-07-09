@@ -371,7 +371,7 @@ func scanTransaction(scanner transactionScanner) (*transaction.Transaction, erro
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, errors.New("transaction not found")
+			return nil, transaction.ErrNotFound
 		}
 		return nil, err
 	}
@@ -514,7 +514,7 @@ func (r *TransactionRepository) Update(txn *transaction.Transaction) (err error)
 		return err
 	}
 	if affected == 0 {
-		return errors.New("transaction not found")
+		return transaction.ErrNotFound
 	}
 
 	// Delete existing tags and re-insert
@@ -588,7 +588,7 @@ func (r *TransactionRepository) UpdateStatus(id string, status transaction.Statu
 		return err
 	}
 	if affected == 0 {
-		return errors.New("transaction not found")
+		return transaction.ErrNotFound
 	}
 
 	return nil
@@ -605,7 +605,7 @@ func (r *TransactionRepository) Delete(id string) error {
 		return err
 	}
 	if affected == 0 {
-		return errors.New("transaction not found")
+		return transaction.ErrNotFound
 	}
 
 	return nil
@@ -842,7 +842,7 @@ func (r *TransactionRepository) SumByInvoiceIDByStatus(invoiceID string, status 
 func (r *TransactionRepository) FindByExternalID(externalID string) (*transaction.Transaction, error) {
 	query := `
 		SELECT id, profile_id, bank_account_id, destination_account_id, category_id, invoice_id,
-			type, status, amount, currency, description, notes, cost_center,
+			type, status, amount, currency, description, notes, cost_center, is_personal_reimbursement,
 			occurred_on, due_on, reminder_on, recurrence_rule, installment_number, installment_total,
 			external_id, linked_transaction_id, created_at, updated_at
 		FROM finance.transactions

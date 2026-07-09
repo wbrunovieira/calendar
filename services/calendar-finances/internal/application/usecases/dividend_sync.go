@@ -1,6 +1,7 @@
 package usecases
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -8,12 +9,18 @@ import (
 
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
+	"github.com/brunovieira/calendar-finances/internal/infrastructure/yahoo"
 )
 
+// DividendProvider abstracts the dividend data source (Yahoo Finance) for testability.
+type DividendProvider interface {
+	GetDividends(ticker string, from time.Time) ([]yahoo.Dividend, error)
+}
+
 type DividendSyncUseCase struct {
-	brapiClient     BrapiClient
-	accountRepo     bankaccount.Repository
-	transactionRepo transaction.Repository
+	dividendProvider DividendProvider
+	accountRepo      bankaccount.Repository
+	transactionRepo  transaction.Repository
 }
 
 type DividendSyncResult struct {
@@ -24,18 +31,19 @@ type DividendSyncResult struct {
 }
 
 func NewDividendSyncUseCase(
-	client BrapiClient,
+	provider DividendProvider,
 	accountRepo bankaccount.Repository,
 	transactionRepo transaction.Repository,
 ) *DividendSyncUseCase {
 	return &DividendSyncUseCase{
-		brapiClient:     client,
-		accountRepo:     accountRepo,
-		transactionRepo: transactionRepo,
+		dividendProvider: provider,
+		accountRepo:      accountRepo,
+		transactionRepo:  transactionRepo,
 	}
 }
 
 // Execute checks for new dividends since the given date and creates income transactions.
+// Dividend dates are ex-dividend dates (Yahoo does not expose payment dates).
 func (uc *DividendSyncUseCase) Execute(profileID string, since time.Time) (*DividendSyncResult, error) {
 	accounts, err := uc.accountRepo.FindByProfileID(profileID)
 	if err != nil {
@@ -72,7 +80,7 @@ func (uc *DividendSyncUseCase) Execute(profileID string, since time.Time) (*Divi
 	result := &DividendSyncResult{}
 
 	for _, ta := range tickerAccounts {
-		dividends, err := uc.brapiClient.GetDividends(ta.ticker)
+		dividends, err := uc.dividendProvider.GetDividends(ta.ticker, since)
 		if err != nil {
 			log.Printf("Failed to fetch dividends for %s: %v", ta.ticker, err)
 			result.Errors++
@@ -80,20 +88,22 @@ func (uc *DividendSyncUseCase) Execute(profileID string, since time.Time) (*Divi
 		}
 
 		for _, div := range dividends {
-			// Parse payment date
-			payDate, err := time.Parse("2006-01-02", div.PaymentDate)
-			if err != nil {
-				continue
-			}
-
 			// Only process dividends after since date
-			if payDate.Before(since) {
+			if div.Date.Before(since) {
 				continue
 			}
 
-			// Check if already recorded
-			externalID := dividendExternalID(ta.ticker, div.PaymentDate, div.Rate)
-			existing, _ := uc.transactionRepo.FindByExternalID(externalID)
+			dateStr := div.Date.Format("2006-01-02")
+
+			// Check if already recorded. On lookup failure, skip creation —
+			// creating blindly would duplicate the dividend.
+			externalID := dividendExternalID(ta.ticker, dateStr, div.Amount)
+			existing, err := uc.transactionRepo.FindByExternalID(externalID)
+			if err != nil && !errors.Is(err, transaction.ErrNotFound) {
+				log.Printf("Failed to check existing dividend %s: %v", externalID, err)
+				result.Errors++
+				continue
+			}
 			if existing != nil {
 				result.Skipped++
 				continue
@@ -101,7 +111,7 @@ func (uc *DividendSyncUseCase) Execute(profileID string, since time.Time) (*Divi
 
 			// Calculate amount: quotas * rate per share
 			quotas := *ta.account.NumberOfQuotas
-			amount := math.Round(quotas*div.Rate*100) / 100
+			amount := math.Round(quotas*div.Amount*100) / 100
 
 			tx := &transaction.Transaction{
 				ProfileID:     profileID,
@@ -110,9 +120,9 @@ func (uc *DividendSyncUseCase) Execute(profileID string, since time.Time) (*Divi
 				Status:        transaction.StatusConfirmed,
 				Amount:        amount,
 				Currency:      "BRL",
-				Description:   fmt.Sprintf("%s %s", div.Label, ta.ticker),
-				Notes:         strPtrHelper(fmt.Sprintf("%.2f/cota × %.0f cotas", div.Rate, quotas)),
-				OccurredOn:    payDate,
+				Description:   fmt.Sprintf("Dividendo %s", ta.ticker),
+				Notes:         strPtrHelper(fmt.Sprintf("%.2f/cota × %.0f cotas (data-ex %s)", div.Amount, quotas, dateStr)),
+				OccurredOn:    div.Date,
 				ExternalID:    &externalID,
 				Tags:          []string{"dividendo", ta.ticker},
 				CreatedAt:     time.Now(),
@@ -133,6 +143,6 @@ func (uc *DividendSyncUseCase) Execute(profileID string, since time.Time) (*Divi
 	return result, nil
 }
 
-func dividendExternalID(ticker, paymentDate string, rate float64) string {
-	return fmt.Sprintf("dividend-%s-%s-%.2f", ticker, paymentDate, rate)
+func dividendExternalID(ticker, date string, rate float64) string {
+	return fmt.Sprintf("dividend-%s-%s-%.2f", ticker, date, rate)
 }

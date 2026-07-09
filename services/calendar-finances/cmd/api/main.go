@@ -198,14 +198,15 @@ func main() {
 		cryptoPurchaseHandler = httpHandlers.NewCryptoPurchaseHandlers(cryptoPurchaseRepo, nil)
 	}
 
-	// Initialize brapi.dev client for B3 stocks/FIIs
+	// Initialize brapi.dev client (B3 prices) and Yahoo Finance (dividends)
 	brapiToken := os.Getenv("BRAPI_TOKEN")
 	brapiClient := brapi.NewClient(brapiToken)
+	yahooClient := yahoo.NewClient()
 	stockSyncUC := usecases.NewStockSyncUseCase(brapiClient, bankAccountRepo)
-	dividendSyncUC := usecases.NewDividendSyncUseCase(brapiClient, bankAccountRepo, transactionRepo)
+	dividendSyncUC := usecases.NewDividendSyncUseCase(yahooClient, bankAccountRepo, transactionRepo)
 	stockHandler := httpHandlers.NewStockHandlers(stockSyncUC)
 	stockHandler.SetDividendUseCase(dividendSyncUC)
-	log.Println("✓ brapi.dev integration enabled (B3 stocks/FIIs)")
+	log.Println("✓ B3 sync enabled (prices: brapi.dev, dividends: Yahoo Finance)")
 
 	// Initialize Capital Contribution use cases and handlers
 	capitalContributionRepo := persistence.NewCapitalContributionRepository(db)
@@ -375,7 +376,6 @@ func main() {
 	apiRouter.HandleFunc("/stocks/sync-dividends", stockHandler.SyncDividends).Methods("POST")
 
 	// Benchmark routes (Yahoo Finance + CDI)
-	yahooClient := yahoo.NewClient()
 	benchmarkHandler := httpHandlers.NewBenchmarkHandler(yahooClient)
 	apiRouter.HandleFunc("/benchmarks/returns", benchmarkHandler.GetReturns()).Methods("GET")
 

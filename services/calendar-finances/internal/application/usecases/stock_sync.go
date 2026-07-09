@@ -12,7 +12,6 @@ import (
 // BrapiClient abstracts the brapi.dev API for testability.
 type BrapiClient interface {
 	GetQuotes(tickers ...string) ([]brapi.QuoteResult, error)
-	GetDividends(ticker string) ([]brapi.CashDividend, error)
 }
 
 type StockSyncUseCase struct {

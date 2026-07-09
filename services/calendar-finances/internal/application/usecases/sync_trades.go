@@ -1,6 +1,7 @@
 package usecases
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -104,9 +105,15 @@ func (uc *SyncTradesUseCase) Execute(profileID string) (*SyncTradesResult, error
 		}
 
 		for _, trade := range trades {
-			// Check if trade already exists by externalId
+			// Check if trade already exists by externalId. On lookup failure,
+			// skip creation — creating blindly would duplicate the trade.
 			externalID := fmt.Sprintf("binance-%d", trade.ID)
-			existing, _ := uc.transactionRepo.FindByExternalID(externalID)
+			existing, err := uc.transactionRepo.FindByExternalID(externalID)
+			if err != nil && !errors.Is(err, transaction.ErrNotFound) {
+				log.Printf("Failed to check existing trade %s: %v", externalID, err)
+				result.Errors++
+				continue
+			}
 			if existing != nil {
 				result.Skipped++
 				continue

@@ -1,6 +1,12 @@
 package transaction
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+// ErrNotFound is returned by repository lookups when no transaction matches.
+var ErrNotFound = errors.New("transaction not found")
 
 // ListFilter encapsulates query options for fetching transactions.
 type ListFilter struct {
