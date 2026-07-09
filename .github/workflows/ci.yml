@@ -23,6 +23,8 @@ jobs:
     defaults:
       run:
         working-directory: services/calendar-core
+    env:
+      TZ: America/Sao_Paulo # testes de streak/habits assumem o fuso do projeto
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -98,13 +100,30 @@ jobs:
       - name: Tests
         run: go test ./...
 
-  # ── calendar-health: Go build + vet + testes. ──
+  # ── calendar-health: Go build + vet + testes (integração; precisa de Postgres —
+  # os handlers testam contra DB real e rodam as próprias migrations). ──
   health:
     name: calendar-health (build · vet · test)
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: services/calendar-health
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: calendar
+          POSTGRES_PASSWORD: calendar123
+          POSTGRES_DB: calendar_db
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://calendar:calendar123@localhost:5433/calendar_db?sslmode=disable
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v5
