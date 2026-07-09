@@ -8,8 +8,9 @@ description: Deploy/redeploy do Calendar em produção (VPS Contabo). Use ao faz
 Produção: VPS **45.90.123.190** (root, `~/.ssh/id_rsa`), app em **`/opt/calendar`**, **`docker-compose.prod.yml`**, branch `main`. Serviços: calendar-core(3334), calendar-finances(3335), calendar-health(3336), agents(3337), calendar-frontend(3001/3000), finances-frontend(3003), health-frontend(3004) + langfuse(3100) + authelia(9092). Todas as portas bind em 127.0.0.1 (Nginx faz o proxy externo).
 
 ## Decisão rápida — qual usar
-- **1 ou 2 serviços mudaram** (caso comum) → **SSH direto, build detached** (abaixo). Mais rápido e **não cai** em build longo.
-- **Deploy completo / primeira vez** → `deploy.yml` (precisa do vault).
+- **✅ Caminho padrão (desde 2026-07):** commit + push na `main` → **CI/CD GitHub Actions** (`.github/workflows/ci.yml` + `deploy.yml`). O CD espera CI verde, exige **aprovação manual do Bruno na página do GitHub** (environment `production` — NUNCA aprovar via API), e deploya via SSH como usuário `deploy` só os serviços com diff (`deploy/ci/changed-services.sh`), com migrate condicional e health check. Acompanhar: `gh run list`/`gh run watch`. Re-deploy manual: workflow_dispatch do CD (input `services`: 'auto'|'all'|lista).
+- **Hotfix manual sem pipeline** (emergência) → **SSH direto, build detached** (abaixo).
+- **Deploy completo / primeira vez** → `deploy.yml` do Ansible (precisa do vault).
 - **Redeploy de tudo** → `quick-deploy.yml` (rebuilda TODOS; cuidado: build longo pode derrubar SSH).
 - **Voltar versão** → `rollback.yml`.
 
