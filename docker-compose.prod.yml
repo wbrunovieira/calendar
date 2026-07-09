@@ -244,7 +244,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 100M
+          memory: 256M
 
   # ── Langfuse v3 ─────────────────────────────────────────────
   # Langfuse desabilitado temporariamente para reduzir consumo de recursos.
