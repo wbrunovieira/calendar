@@ -88,7 +88,7 @@ The `agents` service is a single FastAPI process hosting **8 LangGraph agents** 
 | Deep research | 7-node graph with retry loops (up to 3 rounds) and a supervisor review checkpoint; enriches leads with website validation and region detection |
 | Call analysis | Scores discovery calls against the SPICED framework |
 | Meet analysis | Scores meeting transcripts against a DIAG rubric |
-| Gatekeeper analysis + batch | Classifies gatekeeper conversations (RAPORT), single and batch modes |
+| Gatekeeper analysis + batch | Classifies gatekeeper conversations (RAPORT) — 2 agents: single & batch modes |
 | Transfer analysis | Detects hand-off quality between conversation stages |
 | Proposal | Drafts proposal content from accumulated lead context |
 
