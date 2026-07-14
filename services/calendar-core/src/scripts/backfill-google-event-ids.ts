@@ -13,9 +13,9 @@
  *   Apply:
  *     docker compose exec calendar-core node dist/scripts/backfill-google-event-ids.js --apply
  *
- * Stop the polling cron before applying. While it runs, it keeps importing events into the very
- * rows this script is linking and deleting, and any orphan it re-imports in the meantime becomes a
- * duplicate this script then has to reconcile.
+ * Stop the polling cron before applying — set GOOGLE_SYNC_ENABLED=false and recreate the service.
+ * While the cron runs it keeps importing events into the very rows this script is linking, and any
+ * orphan it re-imports meanwhile becomes a duplicate this script then has to reconcile.
  */
 import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';

@@ -28,6 +28,9 @@ services:
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
       - GOOGLE_FRONTEND_REDIRECT_URI=${GOOGLE_FRONTEND_REDIRECT_URI}
+      # Kill switch for the 5-minute Google Calendar poll. Set to false while running the one-shot
+      # backfill (scripts/backfill-google-event-ids), then back to true.
+      - GOOGLE_SYNC_ENABLED=${GOOGLE_SYNC_ENABLED:-true}
     depends_on:
       postgres:
         condition: service_healthy
