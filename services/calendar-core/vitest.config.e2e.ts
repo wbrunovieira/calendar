@@ -12,6 +12,9 @@ export default defineConfig({
     testTimeout: 30000,
     hookTimeout: 30000,
     setupFiles: ['./test/setup-e2e.ts'],
+    // setup-e2e.ts wipes the schema in beforeAll. Run the files one at a time, or a second worker
+    // truncates the tables the first one is mid-way through using.
+    fileParallelism: false,
   },
   plugins: [
     swc.vite({

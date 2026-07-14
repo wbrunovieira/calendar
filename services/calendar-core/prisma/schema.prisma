@@ -202,6 +202,9 @@ model Event {
   @@index([googleEventId])
   @@index([status])
   @@index([eventType])
+  // Guard-rail against duplicates from the Google Calendar sync.
+  // Postgres treats NULLs as distinct, so locally-created events (googleEventId NULL) never collide.
+  @@unique([calendarId, googleEventId])
   @@map("events")
 }
 

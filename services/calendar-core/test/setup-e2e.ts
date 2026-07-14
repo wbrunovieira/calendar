@@ -5,7 +5,10 @@ let prisma: PrismaClient;
 
 // Setup before all E2E tests
 beforeAll(async () => {
+  // TEST_DATABASE_URL lets the suite run from inside Docker (host `postgres`) as well as from the
+  // host (localhost:5433). It must always point at calendar_test_db — this suite wipes the schema.
   process.env.DATABASE_URL =
+    process.env.TEST_DATABASE_URL ??
     'postgresql://calendar:calendar123@localhost:5433/calendar_test_db';
   process.env.NODE_ENV = 'test';
   process.env.TZ = 'America/Sao_Paulo';

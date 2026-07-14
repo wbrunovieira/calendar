@@ -6,6 +6,13 @@ import { GoogleEventMapper } from '../../domain/services/google-event-mapper';
 import { Event } from '../../../events/domain/entities/event.entity';
 import { calendar_v3 } from 'googleapis';
 
+export interface SyncResult {
+  created: number;
+  updated: number;
+  deleted: number;
+  failed: number;
+}
+
 @Injectable()
 export class PullGoogleChangesUseCase {
   private readonly logger = new Logger(PullGoogleChangesUseCase.name);
@@ -16,17 +23,18 @@ export class PullGoogleChangesUseCase {
     private readonly apiClient: GoogleCalendarApiClient,
   ) {}
 
-  async execute(calendarId: string): Promise<{ created: number; updated: number; deleted: number }> {
+  async execute(calendarId: string): Promise<SyncResult> {
     const calendar = await this.calendarRepository.findById(calendarId);
 
     if (!calendar || !calendar.googleCalendarId || !calendar.email) {
       this.logger.warn(`Calendar ${calendarId} has no Google integration`);
-      return { created: 0, updated: 0, deleted: 0 };
+      return { created: 0, updated: 0, deleted: 0, failed: 0 };
     }
 
     let created = 0;
     let updated = 0;
     let deleted = 0;
+    let failed = 0;
 
     try {
       const { events, nextSyncToken } = await this.apiClient.fetchChanges(
@@ -36,18 +44,31 @@ export class PullGoogleChangesUseCase {
       );
 
       for (const googleEvent of events) {
-        const result = await this.processGoogleEvent(googleEvent, calendar.id);
-        if (result === 'created') created++;
-        else if (result === 'updated') updated++;
-        else if (result === 'deleted') deleted++;
+        // Isolate each event: a single malformed one must not abort the run, because that would
+        // also skip the syncToken write below and force a full re-sync on every subsequent tick.
+        try {
+          const result = await this.processGoogleEvent(googleEvent, calendar.id);
+          if (result === 'created') created++;
+          else if (result === 'updated') updated++;
+          else if (result === 'deleted') deleted++;
+        } catch (err) {
+          failed++;
+          this.logger.error(
+            `Failed to process Google event ${googleEvent.id} on calendar ${calendarId}: ${(err as Error).message}`,
+          );
+        }
       }
 
       if (nextSyncToken) {
         await this.calendarRepository.updateSyncState(calendarId, nextSyncToken, new Date());
+      } else {
+        this.logger.warn(
+          `Google returned no syncToken for calendar ${calendarId}; next sync will be a full re-sync`,
+        );
       }
 
       this.logger.log(
-        `Sync complete for calendar ${calendarId}: +${created} ~${updated} -${deleted}`,
+        `Sync complete for calendar ${calendarId}: +${created} ~${updated} -${deleted} !${failed}`,
       );
     } catch (err) {
       // Handle invalid syncToken (Google returns 410 Gone) — reset and do full sync next time
@@ -59,7 +80,7 @@ export class PullGoogleChangesUseCase {
       }
     }
 
-    return { created, updated, deleted };
+    return { created, updated, deleted, failed };
   }
 
   private async processGoogleEvent(
@@ -69,7 +90,7 @@ export class PullGoogleChangesUseCase {
     if (!googleEvent.id) return 'skipped';
 
     const isCancelled = googleEvent.status === 'cancelled';
-    const existing = await this.eventRepository.findByGoogleEventId(googleEvent.id);
+    const existing = await this.eventRepository.findByGoogleEventId(googleEvent.id, calendarId);
 
     if (isCancelled) {
       if (existing) {
@@ -81,29 +102,17 @@ export class PullGoogleChangesUseCase {
 
     const mapped = GoogleEventMapper.fromGoogleEvent(googleEvent, calendarId);
 
-    if (existing) {
-      await this.eventRepository.update(existing.id, {
-        title: mapped.title,
-        description: mapped.description,
-        startDate: mapped.startDate,
-        endDate: mapped.endDate,
-        startTime: mapped.startTime,
-        endTime: mapped.endTime,
-        recurrenceRule: mapped.recurrenceRule,
-        status: mapped.status,
-      });
-      return 'updated';
-    }
+    // Write by (calendar, Google event) identity. The UNIQUE index arbitrates a concurrent cron
+    // tick and manual sync, so the read above only decides the counter, never correctness.
+    await this.eventRepository.upsertByGoogleEventId(
+      new Event({
+        ...mapped,
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    );
 
-    const newEvent = new Event({
-      ...mapped,
-      id: crypto.randomUUID(),
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-
-    await this.eventRepository.create(newEvent);
-    return 'created';
+    return existing ? 'updated' : 'created';
   }
 }
