@@ -16,7 +16,7 @@ export class GoogleCalendarPollingService {
   async pollAllConnectedCalendars(): Promise<void> {
     // Kill switch. Set GOOGLE_SYNC_ENABLED=false to run the one-shot backfill: a tick landing
     // mid-run would re-import a row the backfill is busy linking, and create a duplicate of it.
-    if (process.env.GOOGLE_SYNC_ENABLED === 'false') {
+    if (process.env.GOOGLE_SYNC_ENABLED?.trim().toLowerCase() === 'false') {
       this.logger.warn('Google Calendar sync is disabled (GOOGLE_SYNC_ENABLED=false), skipping');
       return;
     }

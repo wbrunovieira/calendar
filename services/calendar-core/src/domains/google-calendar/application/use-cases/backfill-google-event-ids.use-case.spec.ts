@@ -200,15 +200,65 @@ describe('BackfillGoogleEventIdsUseCase', () => {
       expect(eventRepository.findUnlinkedMatches).not.toHaveBeenCalled();
     });
 
-    it('records a conflict and carries on when a whole calendar cannot be read from Google', async () => {
-      // An expired refresh token on calendar 2 must not throw away the plan already applied for
-      // calendar 1 — the script would exit without ever printing what it deleted.
-      apiClient.fetchChanges.mockRejectedValue(new Error('invalid_grant'));
+    it('keeps the plan for one calendar when another cannot be read from Google', async () => {
+      // An expired refresh token on the second calendar must not throw away the links and deletes
+      // already planned for the first — the script would then exit without printing what it did.
+      const cal1 = makeCalendar();
+      const cal2 = Calendar.create({
+        id: 'cal-2',
+        userId: 'user-1',
+        name: 'Work',
+        color: '#0077B5',
+        type: 'professional',
+        email: 'work@example.com',
+        googleCalendarId: 'primary',
+      });
+      calendarRepository.findAllGoogleConnected.mockResolvedValue([cal1, cal2]);
+      apiClient.fetchChanges
+        .mockResolvedValueOnce({ events: [makeGoogleEvent()] as never, nextSyncToken: 'tok' })
+        .mockRejectedValueOnce(new Error('invalid_grant'));
+      eventRepository.findUnlinkedMatches.mockResolvedValue([
+        orphan('evt-a', '2026-07-11T13:10:00Z'),
+        orphan('evt-b', '2026-07-12T17:50:00Z'),
+      ]);
 
       const plan = await useCase.execute({ dryRun: false });
 
+      expect(plan.linked).toEqual([expect.objectContaining({ eventId: 'evt-a', calendarId: 'cal-1' })]);
+      expect(plan.deleted).toEqual([expect.objectContaining({ eventId: 'evt-b', calendarId: 'cal-1' })]);
       expect(plan.conflicts).toEqual([
-        expect.objectContaining({ reason: expect.stringContaining('invalid_grant') }),
+        expect.objectContaining({ calendarId: 'cal-2', reason: expect.stringContaining('invalid_grant') }),
+      ]);
+    });
+
+    it('does not record a link the write failed to make', async () => {
+      // The plan is the audit trail. If updateGoogleEventId throws mid-apply, the event must show
+      // up as a conflict only — never in `linked` as well, which would contradict itself.
+      eventRepository.findUnlinkedMatches.mockResolvedValue([
+        orphan('evt-a', '2026-07-11T13:10:00Z'),
+      ]);
+      eventRepository.updateGoogleEventId.mockRejectedValue(new Error('deadlock detected'));
+
+      const plan = await useCase.execute({ dryRun: false });
+
+      expect(plan.linked).toEqual([]);
+      expect(plan.conflicts).toEqual([
+        expect.objectContaining({ reason: expect.stringContaining('deadlock detected') }),
+      ]);
+    });
+
+    it('does not record a delete the write failed to make', async () => {
+      eventRepository.findUnlinkedMatches.mockResolvedValue([
+        orphan('evt-a', '2026-07-11T13:10:00Z'),
+        orphan('evt-b', '2026-07-12T17:50:00Z'),
+      ]);
+      eventRepository.delete.mockRejectedValue(new Error('deadlock detected'));
+
+      const plan = await useCase.execute({ dryRun: false });
+
+      expect(plan.deleted).toEqual([]);
+      expect(plan.conflicts).toEqual([
+        expect.objectContaining({ reason: expect.stringContaining('deadlock detected') }),
       ]);
     });
 

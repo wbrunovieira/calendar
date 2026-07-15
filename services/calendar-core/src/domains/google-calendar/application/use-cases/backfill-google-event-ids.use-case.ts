@@ -216,11 +216,14 @@ export class BackfillGoogleEventIdsUseCase {
 
     const { survivor, losers } = resolution;
 
+    // Record the outcome only after the write lands, so the plan never claims a link that a failed
+    // apply did not actually make. consumed is set up front regardless — a half-applied event must
+    // not be reconsidered later in the same run.
     consumed.add(survivor.id);
-    plan.linked.push({ eventId: survivor.id, ...entry });
     if (!dryRun) {
       await this.eventRepository.updateGoogleEventId(survivor.id, googleEventId);
     }
+    plan.linked.push({ eventId: survivor.id, ...entry });
 
     for (const loser of losers) {
       await this.discard(loser, entry, plan, consumed, dryRun);
@@ -244,9 +247,9 @@ export class BackfillGoogleEventIdsUseCase {
       return;
     }
 
-    plan.deleted.push({ eventId: candidate.id, ...entry });
     if (!dryRun) {
       await this.eventRepository.delete(candidate.id);
     }
+    plan.deleted.push({ eventId: candidate.id, ...entry });
   }
 }

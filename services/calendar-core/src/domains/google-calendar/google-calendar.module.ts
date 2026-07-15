@@ -10,7 +10,6 @@ import { ConnectGoogleCalendarUseCase } from './application/use-cases/connect-go
 import { DisconnectGoogleCalendarUseCase } from './application/use-cases/disconnect-google-calendar.use-case';
 import { SyncEventToGoogleUseCase } from './application/use-cases/sync-event-to-google.use-case';
 import { PullGoogleChangesUseCase } from './application/use-cases/pull-google-changes.use-case';
-import { BackfillGoogleEventIdsUseCase } from './application/use-cases/backfill-google-event-ids.use-case';
 import { GOOGLE_OAUTH_TOKEN_REPOSITORY } from './domain/repositories/google-oauth-token.repository.interface';
 import { EventRepository } from '../events/infrastructure/repositories/event.repository';
 
@@ -30,7 +29,6 @@ import { EventRepository } from '../events/infrastructure/repositories/event.rep
     DisconnectGoogleCalendarUseCase,
     SyncEventToGoogleUseCase,
     PullGoogleChangesUseCase,
-    BackfillGoogleEventIdsUseCase,
   ],
   exports: [GoogleOAuthService, GoogleCalendarApiClient, SyncEventToGoogleUseCase],
 })

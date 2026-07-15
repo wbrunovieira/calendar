@@ -129,50 +129,54 @@ describe('Google event identity (e2e)', () => {
       data: { calendarId: CALENDAR_ID, name: 'Work', color: '#111111' },
     });
 
-    await repository.upsertByGoogleEventId(buildEvent({ googleEventId: 'g-evt-cat' }));
-    await prisma.event.update({
-      where: { calendarId_googleEventId: { calendarId: CALENDAR_ID, googleEventId: 'g-evt-cat' } },
-      data: { categoryId: category.id },
-    });
+    try {
+      await repository.upsertByGoogleEventId(buildEvent({ googleEventId: 'g-evt-cat' }));
+      await prisma.event.update({
+        where: { calendarId_googleEventId: { calendarId: CALENDAR_ID, googleEventId: 'g-evt-cat' } },
+        data: { categoryId: category.id },
+      });
 
-    await repository.upsertByGoogleEventId(
-      buildEvent({ googleEventId: 'g-evt-cat', title: 'Renamed in Google' }),
-    );
+      await repository.upsertByGoogleEventId(
+        buildEvent({ googleEventId: 'g-evt-cat', title: 'Renamed in Google' }),
+      );
 
-    const row = await prisma.event.findUnique({
-      where: { calendarId_googleEventId: { calendarId: CALENDAR_ID, googleEventId: 'g-evt-cat' } },
-    });
+      const row = await prisma.event.findUnique({
+        where: { calendarId_googleEventId: { calendarId: CALENDAR_ID, googleEventId: 'g-evt-cat' } },
+      });
 
-    expect(row?.title).toBe('Renamed in Google');
-    expect(row?.categoryId).toBe(category.id);
-
-    await prisma.event.deleteMany({ where: { googleEventId: 'g-evt-cat' } });
-    await prisma.category.delete({ where: { id: category.id } });
+      expect(row?.title).toBe('Renamed in Google');
+      expect(row?.categoryId).toBe(category.id);
+    } finally {
+      await prisma.event.deleteMany({ where: { googleEventId: 'g-evt-cat' } });
+      await prisma.category.delete({ where: { id: category.id } });
+    }
   });
 
   it('marks a row the user categorised as unsafe to delete', async () => {
     const category = await prisma.category.create({
       data: { calendarId: CALENDAR_ID, name: 'Work', color: '#111111' },
     });
-    const created = await repository.create(
-      buildEvent({ googleEventId: null, title: 'Curated' }),
-    );
-    await prisma.event.update({
-      where: { id: created.id },
-      data: { categoryId: category.id },
-    });
 
-    const [match] = await repository.findUnlinkedMatches(
-      CALENDAR_ID,
-      'Curated',
-      new Date('2026-07-13'),
-      '11:30',
-    );
+    try {
+      const created = await repository.create(
+        buildEvent({ googleEventId: null, title: 'Curated' }),
+      );
+      await prisma.event.update({
+        where: { id: created.id },
+        data: { categoryId: category.id },
+      });
 
-    expect(match.hasUserData).toBe(true);
+      const [match] = await repository.findUnlinkedMatches(
+        CALENDAR_ID,
+        'Curated',
+        new Date('2026-07-13'),
+        '11:30',
+      );
 
-    await prisma.event.deleteMany({ where: { id: created.id } });
-    await prisma.category.delete({ where: { id: category.id } });
+      expect(match.hasUserData).toBe(true);
+    } finally {
+      await prisma.category.delete({ where: { id: category.id } });
+    }
   });
 
   it('never offers a HABIT as a deletion candidate to the backfill', async () => {
