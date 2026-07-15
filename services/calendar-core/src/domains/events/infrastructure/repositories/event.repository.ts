@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Optional } from "@nestjs/common";
 import { PrismaClient } from "@prisma/client";
 import { Event } from "../../domain/entities/event.entity";
 
@@ -14,12 +14,34 @@ export interface ReminderInput {
   method?: string;
 }
 
+export interface UnlinkedMatch {
+  id: string;
+  createdAt: Date;
+  /**
+   * True when the row carries anything the Google sync cannot reconstruct, making it unsafe to
+   * delete. Two kinds of thing qualify:
+   *
+   *  - relations that cascade on delete (completions, weekly goals, recurrence overrides and
+   *    exceptions, derived instances, reminders);
+   *  - scalar curation the sync never writes (category, category type, label).
+   *
+   * The sync only ever writes a dozen columns; everything else on the row was put there by the
+   * user. Which of those the persistence layer cascades is its own knowledge, so the repository
+   * answers the question rather than handing out counts.
+   */
+  hasUserData: boolean;
+}
+
 @Injectable()
 export class EventRepository {
   private prisma: PrismaClient;
+  private readonly ownsPrisma: boolean;
 
-  constructor() {
-    this.prisma = new PrismaClient();
+  // Test seam. @Optional() is required: without it Nest reads PrismaClient from the constructor
+  // metadata, fails to find a provider for it, and the whole app refuses to boot.
+  constructor(@Optional() prisma?: PrismaClient) {
+    this.ownsPrisma = !prisma;
+    this.prisma = prisma ?? new PrismaClient();
   }
 
   async create(event: Event, reminders?: ReminderInput[]): Promise<any> {
@@ -45,6 +67,7 @@ export class EventRepository {
         recurrenceType: event.recurrenceType,
         weeklyTargetCount: event.weeklyTargetCount,
         weeklyPreferredDays: event.weeklyPreferredDays || [],
+        googleEventId: event.googleEventId ?? null,
         isActive: event.isActive,
       },
       include: {
@@ -174,6 +197,7 @@ export class EventRepository {
         recurrenceType: event.recurrenceType,
         weeklyTargetCount: event.weeklyTargetCount,
         weeklyPreferredDays: event.weeklyPreferredDays,
+        googleEventId: event.googleEventId,
         isActive: event.isActive,
         updatedAt: new Date(),
       },
@@ -257,11 +281,131 @@ export class EventRepository {
     });
   }
 
-  async findByGoogleEventId(googleEventId: string): Promise<Event | null> {
-    const event = await this.prisma.event.findFirst({
-      where: { googleEventId },
+  /**
+   * Rows the broken sync may have orphaned: no Google event linked yet, matching one Google event
+   * by its natural key.
+   *
+   * The WHERE clause is the only gate in front of a hard delete, so it is deliberately narrow:
+   * the sync can only ever have produced a top-level, active EVENT. HABITs, TODOs, REMINDERs and
+   * derived recurrence instances are local constructs and must never be candidates, even when
+   * their title and time happen to collide with a Google event.
+   */
+  async findUnlinkedMatches(
+    calendarId: string,
+    title: string,
+    startDate: Date,
+    startTime: string,
+  ): Promise<UnlinkedMatch[]> {
+    const events = await this.prisma.event.findMany({
+      where: {
+        calendarId,
+        googleEventId: null,
+        title,
+        startDate,
+        startTime,
+        eventType: 'EVENT',
+        recurrenceMasterId: null,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        createdAt: true,
+        categoryId: true,
+        categoryTypeId: true,
+        labelId: true,
+        _count: {
+          select: {
+            // Every relation the schema cascades on delete.
+            completions: true,
+            weeklyGoalCompletions: true,
+            overrides: true,
+            overriddenBy: true,
+            exceptions: true,
+            derivedEvents: true,
+            reminders: true,
+          },
+        },
+      },
+    });
+
+    return events.map((event) => {
+      const cascading = Object.values(event._count).reduce((sum, n) => sum + n, 0);
+      const curated =
+        event.categoryId !== null || event.categoryTypeId !== null || event.labelId !== null;
+
+      return {
+        id: event.id,
+        createdAt: event.createdAt,
+        hasUserData: cascading > 0 || curated,
+      };
+    });
+  }
+
+  /**
+   * Active top-level EVENTs carrying no googleEventId. This is a raw denominator, not a defect
+   * count: it lumps together orphans the broken sync lost and events the user simply created by
+   * hand and that Google never knew about. The two cannot be told apart from the row alone.
+   */
+  async countUnlinkedEvents(calendarId: string): Promise<number> {
+    return this.prisma.event.count({
+      where: {
+        calendarId,
+        googleEventId: null,
+        eventType: 'EVENT',
+        recurrenceMasterId: null,
+        isActive: true,
+      },
+    });
+  }
+
+  async findByGoogleEventId(
+    googleEventId: string,
+    calendarId: string,
+  ): Promise<Event | null> {
+    const event = await this.prisma.event.findUnique({
+      where: { calendarId_googleEventId: { calendarId, googleEventId } },
     });
     return event ? new Event(event) : null;
+  }
+
+  /**
+   * Write a Google-sourced event by its (calendar, Google event) identity, so a concurrent cron
+   * tick and manual sync converge on one row instead of two.
+   *
+   * Only the fields Google owns are written. Category, label and reminders are user curation and
+   * are deliberately left untouched — which is also why a row created here is *not* interchangeable
+   * with the user's own copy of the same event.
+   */
+  async upsertByGoogleEventId(event: Event): Promise<void> {
+    const googleEventId = event.googleEventId;
+    if (!googleEventId) {
+      throw new Error('upsertByGoogleEventId requires an event carrying a googleEventId');
+    }
+
+    const writable = {
+      title: event.title,
+      description: event.description,
+      startTime: event.startTime,
+      endTime: event.endTime,
+      startDate: event.startDate,
+      endDate: event.endDate,
+      recurrenceRule: event.recurrenceRule,
+      status: event.status,
+    };
+
+    await this.prisma.event.upsert({
+      where: {
+        calendarId_googleEventId: { calendarId: event.calendarId, googleEventId },
+      },
+      create: {
+        ...writable,
+        calendarId: event.calendarId,
+        googleEventId,
+        eventType: event.eventType || 'EVENT',
+        isActive: event.isActive,
+      },
+      update: writable,
+    });
   }
 
   async updateDisplayOrder(updates: { id: string; displayOrder: number }[]): Promise<void> {
@@ -278,6 +422,9 @@ export class EventRepository {
   }
 
   async onModuleDestroy() {
-    await this.prisma.$disconnect();
+    // Only disconnect a client we created. A borrowed one belongs to whoever passed it in.
+    if (this.ownsPrisma) {
+      await this.prisma.$disconnect();
+    }
   }
 }

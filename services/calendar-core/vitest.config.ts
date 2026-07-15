@@ -19,6 +19,7 @@ export default defineConfig({
         '**/*.dto.ts',
         '**/*.module.ts',
         'src/main.ts',
+        'src/scripts/',
         '**/*.interface.ts',
         '**/index.ts',
         'prisma/',

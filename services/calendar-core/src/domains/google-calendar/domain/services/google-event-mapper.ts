@@ -4,6 +4,25 @@ import { GoogleEventPayload } from '../../infrastructure/services/google-calenda
 
 const TIMEZONE = 'America/Sao_Paulo';
 
+/**
+ * A Google event projected onto our Event shape. Every field here is always produced by
+ * fromGoogleEvent — unlike Partial<Event>, which would make callers guard fields that cannot
+ * actually be missing.
+ */
+export interface MappedGoogleEvent {
+  googleEventId: string;
+  calendarId: string;
+  title: string;
+  description: string | null;
+  startDate: Date;
+  endDate: Date | null;
+  startTime: string;
+  endTime: string | null;
+  recurrenceRule: string | null;
+  status: string;
+  eventType: string;
+}
+
 export class GoogleEventMapper {
   static toGoogleEvent(event: Event): GoogleEventPayload {
     const isAllDay = !event.endTime;
@@ -58,7 +77,7 @@ export class GoogleEventMapper {
   static fromGoogleEvent(
     googleEvent: calendar_v3.Schema$Event,
     calendarId: string,
-  ): Partial<Event> & { googleEventId: string } {
+  ): MappedGoogleEvent {
     const isAllDay = Boolean(googleEvent.start?.date && !googleEvent.start?.dateTime);
 
     const startDateStr = isAllDay
