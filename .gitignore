@@ -161,3 +161,6 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+
+# CD: marcador do SHA efetivamente deployado (estado do servidor, não versionado)
+.deployed-sha
