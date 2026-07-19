@@ -1,6 +1,8 @@
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { ApiTokenGuard } from './common/auth/api-token.guard';
 import { CalendarsModule } from './domains/calendars/calendars.module';
 import { CategoriesModule } from './domains/categories/categories.module';
 import { CategoryTypesModule } from './domains/category-types/category-types.module';
@@ -19,7 +21,7 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
     GoogleCalendarModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, { provide: APP_GUARD, useClass: ApiTokenGuard }],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

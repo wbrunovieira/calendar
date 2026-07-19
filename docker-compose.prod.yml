@@ -31,6 +31,9 @@ services:
       # Kill switch for the 5-minute Google Calendar poll. Set to false while running the one-shot
       # backfill (scripts/backfill-google-event-ids), then back to true.
       - GOOGLE_SYNC_ENABLED=${GOOGLE_SYNC_ENABLED:-true}
+      # Shared API token. Empty → API stays open (safe rollout). Set it to enforce auth on every
+      # route except the health check. The frontends receive the same value as a build arg.
+      - API_TOKEN=${API_TOKEN:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -156,6 +159,7 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_URL: https://calendar-api.wbdigitalsolutions.com
+        NEXT_PUBLIC_API_TOKEN: ${API_TOKEN:-}
     container_name: calendar-frontend
     logging: *default-logging
     ports:
@@ -179,6 +183,8 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_URL: https://calendar-finances.wbdigitalsolutions.com/api/v1
+        NEXT_PUBLIC_CALENDAR_API_URL: https://calendar-api.wbdigitalsolutions.com
+        NEXT_PUBLIC_CALENDAR_API_TOKEN: ${API_TOKEN:-}
     container_name: finances-frontend
     logging: *default-logging
     ports:
@@ -205,6 +211,7 @@ services:
       args:
         NEXT_PUBLIC_API_URL: https://calendar-health.wbdigitalsolutions.com/api/v1
         NEXT_PUBLIC_CALENDAR_API_URL: https://calendar-api.wbdigitalsolutions.com
+        NEXT_PUBLIC_CALENDAR_API_TOKEN: ${API_TOKEN:-}
     container_name: health-frontend
     logging: *default-logging
     ports:
