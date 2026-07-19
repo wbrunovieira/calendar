@@ -5,6 +5,9 @@ import type { Event, Category, CategoryType, HabitStats, FlexibleHabitProgress, 
  */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3334';
+// The backend requires this token once configured. It ships in the browser bundle, so it is a
+// gateway key (keeps anonymous traffic out), not a secret — the frontend itself sits behind Authelia.
+const API_TOKEN = process.env.NEXT_PUBLIC_API_TOKEN;
 
 /**
  * Base fetch wrapper with error handling
@@ -17,6 +20,7 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
       ...options,
       headers: {
         'Content-Type': 'application/json',
+        ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
         ...options?.headers,
       },
     });

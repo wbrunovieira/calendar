@@ -67,7 +67,10 @@ export default function ConfiguracoesPage() {
       // Load calendars from calendar-core
       try {
         const calendarApiUrl = process.env.NEXT_PUBLIC_CALENDAR_API_URL || 'http://localhost:3334';
-        const response = await fetch(`${calendarApiUrl}/calendars`);
+        const calendarApiToken = process.env.NEXT_PUBLIC_CALENDAR_API_TOKEN;
+        const response = await fetch(`${calendarApiUrl}/calendars`, {
+          headers: calendarApiToken ? { Authorization: `Bearer ${calendarApiToken}` } : {},
+        });
         const data = await response.json();
         setCalendars(data.data || []);
       } catch (e) {
