@@ -7,8 +7,10 @@ name: CD
 #   1. Só dispara quando o workflow CI termina VERDE na main (nunca em PR).
 #   2. Environment `production` exige APROVAÇÃO MANUAL (required reviewer).
 #   3. Host key do VPS pinada em deploy/ci/known_hosts (sem TOFU/keyscan em runtime).
-#   4. Só rebuilda os serviços cujo código mudou desde o SHA deployado
-#      (deploy/ci/changed-services.sh); SHA desconhecido → rebuilda todos.
+#   4. Só rebuilda os serviços cujo código mudou desde o último deploy BEM-SUCEDIDO,
+#      lido do marcador /opt/calendar/.deployed-sha (deploy/ci/changed-services.sh).
+#      O marcador é gravado só ao fim de um deploy verde — não é o git HEAD do disco,
+#      que o `git pull` avança sem rebuildar. Marcador ausente → rebuilda todos.
 #   5. Migrations: se o diff tocar services/calendar-core/prisma/migrations/,
 #      roda `prisma migrate deploy` logo após subir o calendar-core.
 #
@@ -72,8 +74,12 @@ jobs:
       - name: Detect changed services + pending migrations
         id: detect
         run: |
-          DEPLOYED=$(ssh $SSH_OPTS "$VPS" 'cd /opt/calendar && git rev-parse HEAD' || true)
-          echo "SHA deployado no servidor: ${DEPLOYED:-desconhecido}"
+          # SHA do último deploy BEM-SUCEDIDO, gravado no marcador ao fim deste job. NÃO usar o
+          # git HEAD do disco: o `git pull` abaixo o avança mesmo quando nada é rebuildado, então
+          # um deploy que só sincronizou código apareceria como "nada mudou". Marcador ausente
+          # (1ª vez) → changed-services.sh rebuilda todos (default seguro).
+          DEPLOYED=$(ssh $SSH_OPTS "$VPS" 'cat /opt/calendar/.deployed-sha 2>/dev/null' || true)
+          echo "SHA do último deploy bem-sucedido (marcador): ${DEPLOYED:-desconhecido}"
           bash deploy/ci/changed-services.sh "$DEPLOYED" "${{ inputs.services || 'auto' }}" >> "$GITHUB_OUTPUT"
 
       - name: Sync código no servidor (git pull --ff-only)
@@ -134,6 +140,12 @@ jobs:
               *)    [ "$CODE" = "200" ] || [ "$CODE" = "307" ] || FAIL=1 ;;
             esac
           done; exit $FAIL'
+
+      # Só chega aqui se build + up + migrate + health passaram (steps sem `if` param no 1º erro).
+      # Grava o SHA efetivamente deployado; é ele que a detecção compara no próximo deploy.
+      - name: Registrar SHA deployado (marcador)
+        run: |
+          ssh $SSH_OPTS "$VPS" 'cd /opt/calendar && git rev-parse HEAD > .deployed-sha && echo "marcador: $(cat .deployed-sha)"'
 
       - name: Cleanup (prune de imagens antigas)
         if: always() && steps.detect.outputs.services != ''
