@@ -4,11 +4,11 @@ import { Reflector } from '@nestjs/core';
 import { ApiTokenGuard } from './api-token.guard';
 import { IS_PUBLIC_KEY } from './public.decorator';
 
-function makeContext(headers: Record<string, string> = {}): ExecutionContext {
+function makeContext(headers: Record<string, string> = {}, url = '/events'): ExecutionContext {
   // Header lookup is case-insensitive in Node/Express; normalize keys to lower-case.
   const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
   return {
-    switchToHttp: () => ({ getRequest: () => ({ headers: lower }) }),
+    switchToHttp: () => ({ getRequest: () => ({ headers: lower, url }) }),
     getHandler: () => () => undefined,
     getClass: () => class {},
   } as unknown as ExecutionContext;
@@ -84,6 +84,14 @@ describe('ApiTokenGuard', () => {
         key === IS_PUBLIC_KEY ? true : false,
       );
       expect(guard.canActivate(makeContext())).toBe(true);
+    });
+
+    it('leaves the Swagger docs open without a token (UI, assets and spec)', () => {
+      // Swagger routes are not Nest controllers, so @Public() can't attach — the guard exempts
+      // them by path so the docs stay readable by link even when the token is enforced.
+      expect(guard.canActivate(makeContext({}, '/docs'))).toBe(true);
+      expect(guard.canActivate(makeContext({}, '/docs-json'))).toBe(true);
+      expect(guard.canActivate(makeContext({}, '/docs/swagger-ui.css'))).toBe(true);
     });
   });
 });

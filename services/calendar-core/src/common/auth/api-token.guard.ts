@@ -25,17 +25,27 @@ export class ApiTokenGuard implements CanActivate {
     ]);
     if (isPublic) return true;
 
+    const req = context.switchToHttp().getRequest();
+
+    // Swagger docs (UI, static assets and the openapi JSON) are served by SwaggerModule, not by a
+    // Nest controller, so @Public() can't be attached — exempt them by path so the docs stay
+    // readable by link even when the token is enforced.
+    const path = (req.url ?? '').split('?')[0];
+    if (path === '/docs' || path.startsWith('/docs/') || path.startsWith('/docs-json')) {
+      return true;
+    }
+
     const expected = process.env.API_TOKEN?.trim();
     if (!expected) return true; // not configured → API stays open
 
-    const provided = this.extractToken(context.switchToHttp().getRequest());
+    const provided = this.extractToken(req);
     if (!provided || !this.safeEqual(provided, expected)) {
       throw new UnauthorizedException('Invalid or missing API token');
     }
     return true;
   }
 
-  private extractToken(req: { headers?: Record<string, unknown> }): string | null {
+  private extractToken(req: { headers?: Record<string, unknown>; url?: string }): string | null {
     const headers = req.headers ?? {};
     const auth = headers['authorization'];
     if (typeof auth === 'string') {

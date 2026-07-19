@@ -10,6 +10,7 @@ import {
   HttpCode,
   HttpStatus,
 } from "@nestjs/common";
+import { ApiTags, ApiBearerAuth, ApiOperation } from "@nestjs/swagger";
 import { EventRepository } from "../repositories/event.repository";
 import { CreateEventUseCase } from "../../application/use-cases/create-event.use-case";
 import { DeleteEventUseCase } from "../../application/use-cases/delete-event.use-case";
@@ -26,6 +27,8 @@ import { UpdateEventDto } from "../dtos/update-event.dto";
 import { ToggleEventExecutionDto } from "../dtos/toggle-event-execution.dto";
 import { RRuleHelper } from "../../domain/utils/rrule-helper";
 
+@ApiTags("events")
+@ApiBearerAuth()
 @Controller("events")
 export class EventsController {
   constructor(
@@ -79,6 +82,7 @@ export class EventsController {
     };
   }
 
+  @ApiOperation({ summary: "List events (all types). Filter with eventType=EVENT|HABIT|TODO|REMINDER and calendarId." })
   @Get()
   @HttpCode(HttpStatus.OK)
   async list(
@@ -100,6 +104,7 @@ export class EventsController {
     return events;
   }
 
+  @ApiOperation({ summary: "List reminders due within a time window." })
   @Get("upcoming-reminders")
   @HttpCode(HttpStatus.OK)
   async getUpcomingReminders(
@@ -109,6 +114,7 @@ export class EventsController {
     return await this.eventRepository.findUpcomingReminders(window);
   }
 
+  @ApiOperation({ summary: "Create an event, habit, todo or reminder (set eventType; defaults to EVENT)." })
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() createEventDto: CreateEventDto) {
@@ -138,6 +144,7 @@ export class EventsController {
     };
   }
 
+  @ApiOperation({ summary: "Update an event by id." })
   @Put(":id")
   @HttpCode(HttpStatus.OK)
   async update(
@@ -170,12 +177,14 @@ export class EventsController {
     };
   }
 
+  @ApiOperation({ summary: "Delete an event by id." })
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async delete(@Param("id") id: string) {
     await this.deleteEventUseCase.execute(id);
   }
 
+  @ApiOperation({ summary: "Delete recurring occurrence(s): scope=this|future|all." })
   @Delete(":id/recurring")
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteRecurring(
@@ -186,6 +195,7 @@ export class EventsController {
     await this.deleteEventUseCase.executeRecurring(id, scope, occurrenceDate);
   }
 
+  @ApiOperation({ summary: "Mark a habit/todo occurrence complete or incomplete." })
   @Post("executions/toggle")
   @HttpCode(HttpStatus.OK)
   async toggleExecution(@Body() dto: ToggleEventExecutionDto) {
@@ -208,6 +218,7 @@ export class EventsController {
     };
   }
 
+  @ApiOperation({ summary: "Reorder events (drag-and-drop) by an ordered list of ids." })
   @Post("reorder")
   @HttpCode(HttpStatus.OK)
   async reorder(@Body() body: { orderedIds: string[] }) {
@@ -215,6 +226,7 @@ export class EventsController {
     return { success: true };
   }
 
+  @ApiOperation({ summary: "Habit statistics (streaks, completion)." })
   @Get("habits/stats")
   @HttpCode(HttpStatus.OK)
   async getHabitsStats(
@@ -227,6 +239,7 @@ export class EventsController {
     });
   }
 
+  @ApiOperation({ summary: "Weekly progress for flexible habits." })
   @Get("habits/weekly-progress")
   @HttpCode(HttpStatus.OK)
   async getWeeklyProgress(
@@ -239,6 +252,7 @@ export class EventsController {
     });
   }
 
+  @ApiOperation({ summary: "Aggregate event statistics over a date range." })
   @Get("stats")
   @HttpCode(HttpStatus.OK)
   async getStats(
@@ -262,6 +276,7 @@ export class EventsController {
     });
   }
 
+  @ApiOperation({ summary: "List completion/execution records for an event." })
   @Get(":id/executions")
   @HttpCode(HttpStatus.OK)
   async getExecutions(@Param("id") eventId: string) {
