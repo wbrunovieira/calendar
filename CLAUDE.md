@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠️ Sempre rastreie o trabalho como issues (skill `track-work`)
+Toda melhoria, correção, feature ou débito técnico DEVE virar issue no projeto
+"WB Calendar" (cmor7uoo4000jpa01zd6gywrq) do WB Project Manager, com status em dia.
+Invoque a skill `track-work` (.claude/skills/track-work/SKILL.md). Doc da API:
+https://projects.wbdigitalsolutions.com/api/docs
+
 ## Project Overview
 
 Multi-container calendar application integrating Google Calendar accounts (professional and personal), Linear task management, financial tracking, and health/fitness tracking with AI-powered agents. Single-user personal project.
