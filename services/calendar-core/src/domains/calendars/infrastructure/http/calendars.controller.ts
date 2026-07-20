@@ -10,6 +10,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { CreateCalendarDto } from '../../application/dto/create-calendar.dto';
 import { UpdateCalendarDto } from '../../application/dto/update-calendar.dto';
 import { ListCalendarsUseCase } from '../../application/use-cases/list-calendars.use-case';
@@ -17,6 +18,8 @@ import { CreateCalendarUseCase } from '../../application/use-cases/create-calend
 import { UpdateCalendarUseCase } from '../../application/use-cases/update-calendar.use-case';
 import { DeleteCalendarUseCase } from '../../application/use-cases/delete-calendar.use-case';
 
+@ApiTags('calendars')
+@ApiBearerAuth()
 @Controller('calendars')
 export class CalendarsController {
   constructor(

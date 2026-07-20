@@ -1,8 +1,27 @@
 import { NestFactory } from '@nestjs/core';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // OpenAPI docs — UI at /docs, spec JSON at /docs-json. Kept public (the ApiTokenGuard exempts
+  // the /docs paths) so agents can read the spec by link; calling the endpoints still needs the token.
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle('WB Calendar API')
+    .setDescription(
+      'Events, habits, todos, reminders and calendars. Events/habits/todos are the same `/events` ' +
+        'resource, distinguished by `eventType`. Most routes require an API token — click Authorize ' +
+        'and paste it as a Bearer token (same value as the backend API_TOKEN env var).',
+    )
+    .setVersion('1.0')
+    .addBearerAuth({
+      type: 'http',
+      scheme: 'bearer',
+      description: 'API token — same value as the calendar-core API_TOKEN env var',
+    })
+    .build();
+  SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, swaggerConfig));
 
   // Habilitar CORS
   app.enableCors({
