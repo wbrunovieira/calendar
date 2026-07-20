@@ -5,6 +5,9 @@ WORKDIR /app
 
 ARG NEXT_PUBLIC_API_URL=http://localhost:3334
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+# API token — inlined into the client bundle at build time. Empty → no auth header sent.
+ARG NEXT_PUBLIC_API_TOKEN=
+ENV NEXT_PUBLIC_API_TOKEN=$NEXT_PUBLIC_API_TOKEN
 
 COPY package*.json ./
 RUN npm ci
