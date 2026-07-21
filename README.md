@@ -114,6 +114,14 @@ The `agents` service is a single FastAPI process hosting **8 LangGraph agents** 
 | postgres | PostgreSQL 15 | 5433 | Shared DB (`public`, `finance`, `health` schemas) |
 | Langfuse v3 | 6 containers | 3100 | LLM observability |
 
+## API Documentation
+
+Interactive OpenAPI/Swagger docs for the calendar-core API:
+
+- **[calendar-api.wbdigitalsolutions.com/docs](https://calendar-api.wbdigitalsolutions.com/docs)** — Swagger UI (raw spec at `/docs-json`)
+
+The API is protected by a bearer token (`Authorization: Bearer <token>`). The docs are public so the schema stays browsable, but calling the endpoints requires the token — click **Authorize** in the UI to try requests.
+
 ## Integrations
 
 | Integration | Used for |
