@@ -1,52 +1,52 @@
 ---
 name: calendar-api
-description: Como usar a API do calendar-core (agenda/eventos, hábitos, todos, lembretes, calendários) via HTTP — base URLs, token de auth, e o Swagger. Use ao ler/criar/editar/apagar eventos-hábitos-todos por API, ou ao mandar pra outro Claude/agente como consumir a API.
+description: How to use the calendar-core API (agenda/events, habits, todos, reminders, calendars) over HTTP — base URLs, auth token, and Swagger. Use when reading/creating/editing/deleting events-habits-todos via the API, or when handing another Claude/agent instructions on how to consume it.
 ---
 
-# calendar-api — usar a API do calendar-core
+# calendar-api — using the calendar-core API
 
-Agenda (EVENT), hábito (HABIT), todo (TODO) e lembrete (REMINDER) são **o mesmo recurso `/events`**, distinguidos pelo campo `eventType`. O `calendarId` no corpo define em qual calendário o evento entra.
+Agenda (EVENT), habit (HABIT), todo (TODO) and reminder (REMINDER) are **the same `/events` resource**, told apart by the `eventType` field. The `calendarId` in the body decides which calendar the event lands in.
 
 ## Base URLs
-- Produção: `https://calendar-api.wbdigitalsolutions.com`
+- Production: `https://calendar-api.wbdigitalsolutions.com`
 - Local (dev): `http://localhost:3334`
 
-## Autenticação
-A API exige um token quando `API_TOKEN` está setado (em produção, está). Header: `Authorization: Bearer <token>` (ou `X-API-Key: <token>`).
-- Token salvo em `~/.calendar-api-token` (chmod 600). NUNCA ecoar; ler via `$(cat ...)`.
-- É o mesmo valor do `API_TOKEN` no `.env` do servidor. Token errado/ausente → **401** (não parseie o corpo, confie no status).
-- Os `/docs` e `/docs-json` são **públicos** (não exigem token).
+## Authentication
+The API requires a token whenever `API_TOKEN` is set (it is, in production). Header: `Authorization: Bearer <token>` (or `X-API-Key: <token>`).
+- Token stored in `~/.calendar-api-token` (chmod 600). NEVER echo it; read it via `$(cat ...)`.
+- Same value as `API_TOKEN` in the server's `.env`. Wrong/missing token → **401** (don't parse the body, trust the status).
+- `/docs` and `/docs-json` are **public** (no token required).
 
-## Documentação viva (Swagger)
-- UI: `https://calendar-api.wbdigitalsolutions.com/docs` — Authorize 🔓 → cola o token → Try it out.
-- Spec OpenAPI (pra agentes lerem): `https://calendar-api.wbdigitalsolutions.com/docs-json` — tem cada rota, corpo (DTO) e resposta. **Leia o spec** em vez de assumir campos.
+## Living documentation (Swagger)
+- UI: `https://calendar-api.wbdigitalsolutions.com/docs` — Authorize 🔓 → paste the token → Try it out.
+- OpenAPI spec (for agents to read): `https://calendar-api.wbdigitalsolutions.com/docs-json` — every route, body (DTO) and response. **Read the spec** instead of assuming fields.
 
-## Rotas principais (base sem prefixo global)
+## Main routes (no global prefix)
 ```bash
 TOK=$(cat ~/.calendar-api-token)
 BASE=https://calendar-api.wbdigitalsolutions.com
 
-# Listar (filtra por tipo): eventType=EVENT|HABIT|TODO|REMINDER
+# List (filter by type): eventType=EVENT|HABIT|TODO|REMINDER
 curl -s -H "Authorization: Bearer $TOK" "$BASE/events?calendarId=<id>&eventType=TODO"
 
-# Calendários (pra pegar o calendarId)
+# Calendars (to get the calendarId)
 curl -s -H "Authorization: Bearer $TOK" "$BASE/calendars"
 
-# Criar (obrigatórios: calendarId, title, startTime "HH:mm"; eventType default EVENT)
+# Create (required: calendarId, title, startTime "HH:mm"; eventType defaults to EVENT)
 curl -s -X POST "$BASE/events" -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
   -d '{"calendarId":"<id>","title":"Academia","startTime":"07:00","eventType":"HABIT","recurrenceRule":"FREQ=WEEKLY;BYDAY=MO,WE,FR"}'
 
-# Editar / apagar
+# Edit / delete
 curl -s -X PUT    "$BASE/events/<id>" -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" -d '{...}'
 curl -s -X DELETE "$BASE/events/<id>" -H "Authorization: Bearer $TOK"
 
-# Concluir hábito/todo numa data
+# Complete a habit/todo on a given date
 curl -s -X POST "$BASE/events/executions/toggle" -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
   -d '{"eventId":"<id>","executionDate":"2026-07-20","completed":true}'
 ```
-Outras: `GET /events/habits/stats`, `GET /events/habits/weekly-progress`, `POST /events/reorder`, `DELETE /events/<id>/recurring?scope=this|future|all`. Detalhes completos no `/docs-json`.
+Others: `GET /events/habits/stats`, `GET /events/habits/weekly-progress`, `POST /events/reorder`, `DELETE /events/<id>/recurring?scope=this|future|all`. Full details in `/docs-json`.
 
 ## Gotchas
-- Sem prefixo global (`/events`, não `/api/events`).
-- Não há validação de dono: `calendarId` no corpo é o único escopo — mande o certo.
-- Ativar/rotacionar o token: setar `API_TOKEN` no `.env` do servidor E rebuildar os frontends (o token é build arg `NEXT_PUBLIC_*`, embutido no bundle). Ver [[wb-project-manager-tracking]] pra rastrear o trabalho.
+- No global prefix (`/events`, not `/api/events`).
+- There is no ownership validation: `calendarId` in the body is the only scoping — send the right one.
+- Enabling/rotating the token: set `API_TOKEN` in the server's `.env` AND rebuild the frontends (the token is a `NEXT_PUBLIC_*` build arg, inlined into the bundle). See [[wb-project-manager-tracking]] to track the work.
