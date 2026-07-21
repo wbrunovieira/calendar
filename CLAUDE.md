@@ -2,11 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## ⚠️ Sempre rastreie o trabalho como issues (skill `track-work`)
-Toda melhoria, correção, feature ou débito técnico DEVE virar issue no projeto
-"WB Calendar" (cmor7uoo4000jpa01zd6gywrq) do WB Project Manager, com status em dia.
-Invoque a skill `track-work` (.claude/skills/track-work/SKILL.md). Doc da API:
+## ⚠️ Always track work as issues (skill `track-work`)
+Every improvement, fix, feature or piece of tech debt MUST become an issue in the
+"WB Calendar" project (cmor7uoo4000jpa01zd6gywrq) of the WB Project Manager, with
+its status kept current. Invoke the `track-work` skill
+(.claude/skills/track-work/SKILL.md). API docs:
 https://projects.wbdigitalsolutions.com/api/docs
+
+## ⚠️ Language
+Everything public on GitHub is written in **English** — code, comments, commit
+messages, PR titles and bodies, and these docs. Conversation with Bruno happens in
+Portuguese, and so do the WB Project Manager issues (that board is private), but
+that must not leak into the repository. Domain labels that exist as data (account
+and category names such as `Caixinha Mercado Pago` or `Aluguel`) stay in Portuguese
+because they are the literal values stored in the database.
 
 ## Project Overview
 
