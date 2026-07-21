@@ -103,6 +103,35 @@ ssh -i ~/.ssh/id_rsa root@45.90.123.190 "curl -s -X POST \
 ```
 Campos: `profileId, bankAccountId, categoryId, type, amount, currency(BRL), description, occurredOn` obrigatórios; `status` (default PLANNED → mande CONFIRMED para já efetivar); opcionais `notes, dueOn, reminderOn, destinationAccountId` (transfer), `installmentNumber/Total` (parcelas).
 
+## Transferências (entre contas)
+**Não há rota dedicada.** Transferência = `POST /transactions` com `type=TRANSFER` + `destinationAccountId`. O comportamento **muda conforme os perfis** (só efetiva saldo quando `status=CONFIRMED`):
+
+**Mesmo perfil** → cria **1 transação** `TRANSFER`. Debita a origem, credita o destino. Se `categoryId` for enviada, tem que ser categoria tipo TRANSFER (ex: Transferências pessoal `9e89e8d6-...`); é opcional.
+```bash
+# resgate da caixinha p/ conta corrente, mesmo perfil
+-d '{"profileId":"<PID>","bankAccountId":"<ORIGEM>","destinationAccountId":"<DESTINO>",
+  "type":"TRANSFER","status":"CONFIRMED","amount":1170,"currency":"BRL",
+  "description":"Dinheiro retirado","occurredOn":"2026-07-05"}'
+```
+⚠️ Se a **origem for cartão de crédito**, o saldo NÃO se move (guard de cartão) — só o destino é creditado.
+
+**Cross-profile** (ex: MP do Bruno Pessoal → Nubank Jurídica da WB) → cria **2 transações ligadas** (`linkedTransactionId`):
+- origem vira **EXPENSE** no perfil de origem (opcional `categoryId`, se enviada deve ser EXPENSE);
+- destino vira **INCOME** no perfil de destino, usando **`destinationCategoryId` (OBRIGATÓRIO**, categoria INCOME do perfil de destino).
+```bash
+# aporte pessoal -> WB: EXPENSE Empréstimos (pessoal) + INCOME Aporte Sócio (WB)
+-d '{"profileId":"259866ac-...","bankAccountId":"6882e83a-...(MP)",
+  "destinationAccountId":"22296070-...(Nubank Jur)",
+  "categoryId":"d359a66d-...(Empréstimos, EXPENSE pessoal)",
+  "destinationCategoryId":"f8ac5b09-8647-4004-adf2-ba63dd5683e8 (Aporte Socio, INCOME WB)",
+  "type":"TRANSFER","status":"CONFIRMED","amount":770,"currency":"BRL",
+  "description":"Aporte WB Digital (via MP)","occurredOn":"2026-07-05"}'
+```
+O POST retorna só a transação de origem (com `linkedTransactionId` apontando pro INCOME do destino).
+
+## Editar uma transação (PUT /transactions/{id})
+`PUT /transactions/{id}` é **REPLACE COMPLETO** — campos omitidos são **zerados/apagados** (inclusive `categoryId`, `notes`). Pra mudar só o valor: pegue o objeto atual (GET) e **reenvie todos os campos setados** (`bankAccountId, categoryId, type, status, amount, currency, description, occurredOn`), mudando só o `amount`. Mantenha `bankAccountId` e `occurredOn` iguais pra não recomputar o vínculo de fatura. O total da fatura é derivado on-read (recalculado da soma das transações), então reflete sozinho no próximo GET.
+
 ## Recorrências
 Modelo: a recorrência usa **RRULE** + datas, não `dayOfMonth`. Campos reais: `recurrenceRule` (ex: `FREQ=MONTHLY;BYMONTHDAY=13`), `startOn`, `nextOccurrence`, `amount`, `status` (ACTIVE/PAUSED/CANCELLED).
 ```bash
@@ -124,6 +153,7 @@ Datas no input são `YYYY-MM-DD`. `nextOccurrence` = quando cai o próximo (ex: 
 - `/transactions` lista limita por `pageSize` (manda alto, ex: 200) e **ignora `from/to`** — use `occurredFrom`/`occurredTo`.
 - **Criar em lote** (ex: vários lançamentos): heredoc `ssh 'bash -s' <<EOF` falhou; use **loop local** com `ssh` por item. **CRÍTICO: `ssh -n`** dentro de `while read` (senão o ssh consome o stdin do heredoc e o loop para no 1º item). Padrão que funciona: `while IFS='|' read -r D A C DESC; do ssh -n ... "curl ... -d '{...\"amount\":$A,\"description\":\"$DESC\"...}'"; done <<ENTRIES` com linhas `data|valor|catId|descrição` (delimitador `|` aceita espaços/acentos na descrição). JSON: `\"` escapado, `-d '...'` single-quote, vars locais expandem.
 - **Cartão de crédito**: lançar despesa = POST normal com `bankAccountId`=cartão; o sistema linka na fatura aberta sozinho. O lançamento "Pagamento fatura ..." que aparece no cartão é o crédito do pagamento (não é despesa).
+- **IOF/câmbio internacional**: o valor gravado no sistema pode ficar 1 centavo abaixo do que o banco cobrou (arredondamento). Ao reconciliar cartão com a fatura, comparar **linha a linha** e corrigir cada IOF pro valor exato da fatura (via `PUT /transactions/{id}`). O "Total a pagar" do Nubank já embute arredondamento próprio (a soma bruta das linhas pode dar 1-2 centavos a mais que o total oficial) — não dá pra casar ao centavo por soma; pague o valor real cobrado.
 - **Python para parsear** a resposta: rode LOCAL (depois do `| python3 -c '...'`), com aspas duplas normais (NÃO escapar); o que vai dentro do `ssh "..."` é só o curl.
 - SSH ruidoso: `-o LogLevel=ERROR` + `2>/dev/null` no curl deixa só o JSON.
 - Rendimentos do MP (conta corrente) são lançados como INCOME diários "rendimento da conta", categoria Rendimentos `ee4c3034-...`. Fim de semana às vezes não tem.
@@ -132,5 +162,5 @@ Datas no input são `YYYY-MM-DD`. `nextOccurrence` = quando cai o próximo (ex: 
 - **Escrita só via API** (recalcula saldo/fatura). SQL direto: só leitura ou rótulo de categoria.
 - **Confirmar a categoria com o usuário** antes de lançar algo novo.
 - **Nunca ajustar lançamento só para "bater" saldo** — investigar lançamento faltante.
-- Pagamento de fatura de cartão: `PUT /invoices/{id}/pay` já cria o débito (não lançar manual).
+- Pagamento de fatura de cartão: **`POST /invoices/{id}/pay`** (é POST, não PUT) já cria o débito (não lançar manual). Body: `{"paidAmount":769.51,"paidAt":"2026-07-05"}` (`paidAt` = `YYYY-MM-DD`). Debita da **conta linkada ao cartão** (`linkedAccountId`), não precisa passar conta. Confira antes: `GET /bank-accounts/{cardId}` → `linkedAccountId`. Ache a fatura em `GET /invoices?bankAccountId=<cardId>` (a a pagar é a CLOSED com `dueDate` do mês). `paidAmount` = valor real cobrado pelo banco.
 - Reconciliação: comparar com o extrato do banco; ao reconciliar, contas do Bruno em BRL ficam no Mercado Pago/Nubank.
