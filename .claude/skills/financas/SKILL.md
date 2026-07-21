@@ -10,6 +10,50 @@ How to create/confirm/query transactions safely. **For writes, ALWAYS the API** 
 Account and category names below are kept in Portuguese on purpose: they are the
 literal labels stored in the database, and translating them would break lookups.
 
+## ⚠️ Where you run — the finances agent lives in a git worktree
+Two Claude agents work this repo in parallel, in separate terminal tabs. A git
+checkout has **one HEAD per working directory**, so if both share a directory,
+`git checkout` by one silently moves the other onto a foreign branch. The terminal
+emulator is irrelevant — separate Warp tabs, iTerm, or tmux all hit the same
+`.git/HEAD`. The fix is a **separate working directory**, via `git worktree`.
+
+| Agent | Working directory | Owns |
+|---|---|---|
+| calendar | `~/projects/calendar` (main checkout) | `calendar-core`, `calendar-frontend`, the local Docker stack |
+| **finances (you)** | **`~/projects/calendar-finances`** (worktree) | `calendar-finances`, `finances-frontend`, production transactions |
+
+Both directories share one `.git` (4.8 MB — the bulk of the 3.2 GB is
+`node_modules`), so branches, remotes and fetches are common; only HEAD is
+independent.
+
+**Rules while working here:**
+- **Run every git command from `~/projects/calendar-finances`.** Never `git checkout`
+  in the main checkout — that is the other agent's HEAD.
+- A branch checked out in one worktree **cannot** be checked out in the other. That
+  is the guard rail doing its job, not a bug.
+- **Do not run `docker-compose up` from the worktree.** `container_name` is pinned in
+  the compose file, so it collides with the shared stack; the local stack belongs to
+  the main checkout. Go tests don't need it (`go test ./...` runs locally against fake
+  repositories), and production work goes over SSH anyway.
+- `.env`, `.env.test` and `services/calendar-finances/.env` are **symlinks** to the
+  main checkout — one file, edited in either place. They are gitignored, so a fresh
+  worktree has to relink them.
+- The agent memory directory is keyed by the working directory path, so
+  `~/.claude/projects/-Users-brunovieira-projects-calendar-finances/memory` is a
+  symlink to the main project's `memory/`. Both agents therefore share memory —
+  see [[agent-split-calendar-vs-finances]] for who owns which file.
+
+**Recreating the worktree from scratch** (e.g. after a machine wipe):
+```bash
+git -C ~/projects/calendar worktree add ~/projects/calendar-finances <branch>
+ln -sfn ~/projects/calendar/.env                            ~/projects/calendar-finances/.env
+ln -sfn ~/projects/calendar/.env.test                       ~/projects/calendar-finances/.env.test
+ln -sfn ~/projects/calendar/services/calendar-finances/.env ~/projects/calendar-finances/services/calendar-finances/.env
+ln -sfn ~/.claude/projects/-Users-brunovieira-projects-calendar/memory \
+        ~/.claude/projects/-Users-brunovieira-projects-calendar-finances/memory
+cd ~/projects/calendar-finances/services/finances-frontend && npm ci
+```
+
 ## ⚠️ GOLDEN RULE — the balance is a result, never a target
 This is a financial system: **the balance must represent STRICTLY the sum/subtraction of the transactions.**
 - **NEVER "patch" the balance** directly (not via the recalc API, not via SQL, not by editing `currentBalance`).
