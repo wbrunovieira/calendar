@@ -42,6 +42,13 @@ export class Event {
 
   // Google Calendar
   googleEventId?: string | null;
+
+  // Meeting details (synced from Google)
+  location?: string | null;
+  meetingUrl?: string | null;
+  attendees?: Array<{ email: string; displayName: string | null; responseStatus: string | null }> | null;
+  organizer?: { email: string; displayName: string | null } | null;
+
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;

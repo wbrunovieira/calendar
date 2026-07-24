@@ -77,6 +77,11 @@ export interface Event {
   recurrenceEndDate?: string;
   isActive: boolean;
   executions?: EventExecution[];
+  // Google Calendar meeting details (synced)
+  location?: string | null;
+  meetingUrl?: string | null;
+  attendees?: Array<{ email: string; displayName?: string | null; responseStatus?: string | null }> | null;
+  organizer?: { email: string; displayName?: string | null } | null;
   // For recurring event occurrences (expanded by backend)
   originalEventId?: string; // The ID of the original recurring event
   occurrenceDate?: string;  // The specific date (YYYY-MM-DD) this occurrence represents

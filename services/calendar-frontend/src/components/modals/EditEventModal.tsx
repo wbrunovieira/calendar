@@ -10,6 +10,7 @@ import FormCheckbox from '../forms/FormCheckbox';
 import RecurrenceFields from '../forms/RecurrenceFields';
 import EventRemindersField from '../forms/EventRemindersField';
 import RecurringEventActionModal from '../modals/RecurringEventActionModal';
+import EventMeetingDetails from './EventMeetingDetails';
 
 interface EditEventModalProps {
   isOpen: boolean;
@@ -101,6 +102,8 @@ export default function EditEventModal({
           onStartTimeChange={handleStartTimeChange}
           onEndTimeChange={value => setFormData({ ...formData, endTime: value })}
         />
+
+        <EventMeetingDetails event={event} />
 
         {/* Alertas */}
         <EventRemindersField

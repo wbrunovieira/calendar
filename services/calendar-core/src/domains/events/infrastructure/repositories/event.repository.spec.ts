@@ -123,6 +123,35 @@ describe('EventRepository', () => {
 
       expect(prisma.event.upsert).not.toHaveBeenCalled();
     });
+
+    it('persists the meeting details (location, Meet link, attendees, organizer)', async () => {
+      prisma.event.upsert.mockResolvedValue(buildEvent() as never);
+      const attendees = [
+        { email: 'a@x.com', displayName: 'A', responseStatus: 'accepted' },
+      ];
+      const organizer = { email: 'org@x.com', displayName: 'Org' };
+
+      await repository.upsertByGoogleEventId(
+        buildEvent({
+          googleEventId: 'google-meet-1',
+          location: 'Rio',
+          meetingUrl: 'https://meet.google.com/abc-defg-hij',
+          attendees,
+          organizer,
+        }),
+      );
+
+      const arg = prisma.event.upsert.mock.calls[0][0] as unknown as {
+        create: Record<string, unknown>;
+        update: Record<string, unknown>;
+      };
+      for (const data of [arg.create, arg.update]) {
+        expect(data.location).toBe('Rio');
+        expect(data.meetingUrl).toBe('https://meet.google.com/abc-defg-hij');
+        expect(data.attendees).toEqual(attendees);
+        expect(data.organizer).toEqual(organizer);
+      }
+    });
   });
 
   describe('findByGoogleEventId', () => {

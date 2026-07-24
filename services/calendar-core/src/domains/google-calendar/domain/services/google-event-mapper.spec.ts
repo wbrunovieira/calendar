@@ -170,5 +170,71 @@ describe('GoogleEventMapper', () => {
 
       expect(result.title).toBe('(sem título)');
     });
+
+    describe('meeting details', () => {
+      it('maps location, the Google Meet link (hangoutLink), attendees and organizer', () => {
+        const googleEvent = {
+          id: 'g-meet-1',
+          summary: 'Technical Interview',
+          start: { dateTime: '2026-07-24T11:30:00-03:00' },
+          end: { dateTime: '2026-07-24T12:30:00-03:00' },
+          status: 'confirmed',
+          location: 'Rio de Janeiro',
+          hangoutLink: 'https://meet.google.com/vrt-wviz-kwr',
+          organizer: { email: 'natalia@zubale.com', displayName: 'Natalia Buitrago' },
+          attendees: [
+            { email: 'natalia@zubale.com', displayName: 'Natalia Buitrago', responseStatus: 'accepted', organizer: true },
+            { email: 'bruno@wbdigitalsolutions.com', displayName: 'Bruno Vieira', responseStatus: 'needsAction', self: true },
+          ],
+        };
+
+        const result = GoogleEventMapper.fromGoogleEvent(googleEvent, 'cal-1');
+
+        expect(result.location).toBe('Rio de Janeiro');
+        expect(result.meetingUrl).toBe('https://meet.google.com/vrt-wviz-kwr');
+        expect(result.organizer).toEqual({ email: 'natalia@zubale.com', displayName: 'Natalia Buitrago' });
+        expect(result.attendees).toEqual([
+          { email: 'natalia@zubale.com', displayName: 'Natalia Buitrago', responseStatus: 'accepted' },
+          { email: 'bruno@wbdigitalsolutions.com', displayName: 'Bruno Vieira', responseStatus: 'needsAction' },
+        ]);
+      });
+
+      it('falls back to conferenceData video entry point when hangoutLink is absent', () => {
+        const googleEvent = {
+          id: 'g-meet-2',
+          summary: 'Call',
+          start: { dateTime: '2026-07-24T11:30:00-03:00' },
+          end: { dateTime: '2026-07-24T12:30:00-03:00' },
+          status: 'confirmed',
+          conferenceData: {
+            entryPoints: [
+              { entryPointType: 'phone', uri: 'tel:+5521350017 98', label: '+55 21 3500-1798' },
+              { entryPointType: 'video', uri: 'https://meet.google.com/abc-defg-hij' },
+            ],
+          },
+        };
+
+        const result = GoogleEventMapper.fromGoogleEvent(googleEvent, 'cal-1');
+
+        expect(result.meetingUrl).toBe('https://meet.google.com/abc-defg-hij');
+      });
+
+      it('leaves meeting fields null when the event has none', () => {
+        const googleEvent = {
+          id: 'g-plain-1',
+          summary: 'Solo task',
+          start: { dateTime: '2026-07-24T11:30:00-03:00' },
+          end: { dateTime: '2026-07-24T12:30:00-03:00' },
+          status: 'confirmed',
+        };
+
+        const result = GoogleEventMapper.fromGoogleEvent(googleEvent, 'cal-1');
+
+        expect(result.location).toBeNull();
+        expect(result.meetingUrl).toBeNull();
+        expect(result.attendees).toBeNull();
+        expect(result.organizer).toBeNull();
+      });
+    });
   });
 });

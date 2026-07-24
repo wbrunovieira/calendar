@@ -1,5 +1,5 @@
 import { Injectable, Optional } from "@nestjs/common";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 import { Event } from "../../domain/entities/event.entity";
 
 export interface FindAllFilters {
@@ -68,6 +68,10 @@ export class EventRepository {
         weeklyTargetCount: event.weeklyTargetCount,
         weeklyPreferredDays: event.weeklyPreferredDays || [],
         googleEventId: event.googleEventId ?? null,
+        location: event.location ?? null,
+        meetingUrl: event.meetingUrl ?? null,
+        attendees: (event.attendees ?? Prisma.DbNull) as Prisma.InputJsonValue | typeof Prisma.DbNull,
+        organizer: (event.organizer ?? Prisma.DbNull) as Prisma.InputJsonValue | typeof Prisma.DbNull,
         isActive: event.isActive,
       },
       include: {
@@ -198,6 +202,16 @@ export class EventRepository {
         weeklyTargetCount: event.weeklyTargetCount,
         weeklyPreferredDays: event.weeklyPreferredDays,
         googleEventId: event.googleEventId,
+        location: event.location,
+        meetingUrl: event.meetingUrl,
+        attendees:
+          event.attendees === undefined
+            ? undefined
+            : ((event.attendees ?? Prisma.DbNull) as Prisma.InputJsonValue | typeof Prisma.DbNull),
+        organizer:
+          event.organizer === undefined
+            ? undefined
+            : ((event.organizer ?? Prisma.DbNull) as Prisma.InputJsonValue | typeof Prisma.DbNull),
         isActive: event.isActive,
         updatedAt: new Date(),
       },
@@ -391,6 +405,10 @@ export class EventRepository {
       endDate: event.endDate,
       recurrenceRule: event.recurrenceRule,
       status: event.status,
+      location: event.location ?? null,
+      meetingUrl: event.meetingUrl ?? null,
+      attendees: (event.attendees ?? Prisma.DbNull) as Prisma.InputJsonValue | typeof Prisma.DbNull,
+      organizer: (event.organizer ?? Prisma.DbNull) as Prisma.InputJsonValue | typeof Prisma.DbNull,
     };
 
     await this.prisma.event.upsert({
