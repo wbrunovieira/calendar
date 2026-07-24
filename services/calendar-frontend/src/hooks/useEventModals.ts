@@ -20,6 +20,10 @@ export function useEventModals({ onEventChange }: UseEventModalsProps) {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [eventToEdit, setEventToEdit] = useState<Event | null>(null);
 
+  // Read-only detail view opened by clicking an event; editing is a button inside it.
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [eventToView, setEventToView] = useState<Event | null>(null);
+
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [eventToDelete, setEventToDelete] = useState<Event | null>(null);
 
@@ -35,10 +39,27 @@ export function useEventModals({ onEventChange }: UseEventModalsProps) {
     onEventChange();
   };
 
+  // Clicking an event (its body or the pencil) opens the read-only detail view.
   const handleEditClick = (event: Event, e: React.MouseEvent) => {
     e.stopPropagation();
-    setEventToEdit(event);
+    setEventToView(event);
+    setIsDetailModalOpen(true);
+  };
+
+  const closeDetailModal = () => setIsDetailModalOpen(false);
+
+  // "Edit" button inside the detail view: hand off to the edit form.
+  const handleEditFromDetail = () => {
+    if (!eventToView) return;
+    setIsDetailModalOpen(false);
+    setEventToEdit(eventToView);
     setIsEditModalOpen(true);
+  };
+
+  const handleDeleteFromDetail = (e: React.MouseEvent) => {
+    if (!eventToView) return;
+    setIsDetailModalOpen(false);
+    handleDeleteClick(eventToView, e);
   };
 
   const handleDeleteClick = (event: Event, e: React.MouseEvent) => {
@@ -142,6 +163,13 @@ export function useEventModals({ onEventChange }: UseEventModalsProps) {
     closeCreateModal,
     handleTimeSlotClick,
     handleEventCreated,
+
+    // Detail (read-only) modal
+    isDetailModalOpen,
+    eventToView,
+    closeDetailModal,
+    handleEditFromDetail,
+    handleDeleteFromDetail,
 
     // Edit modal
     isEditModalOpen,
