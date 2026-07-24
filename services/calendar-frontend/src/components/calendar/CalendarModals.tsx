@@ -121,7 +121,7 @@ export default function CalendarModals({
         isOpen={showDeleteRecurringModal}
         onClose={onRecurringDeleteClose}
         onSelect={onRecurringDeleteSelect}
-        eventTitle={eventToEdit?.title || ''}
+        eventTitle={eventToDelete?.title || ''}
       />
     </>
   );
