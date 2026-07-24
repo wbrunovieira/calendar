@@ -75,6 +75,11 @@ export default function Calendar() {
         modalInitialDate={modals.modalInitialDate}
         modalInitialTime={modals.modalInitialTime}
         preservedFormData={modals.preservedFormData || undefined}
+        isDetailModalOpen={modals.isDetailModalOpen}
+        eventToView={modals.eventToView}
+        onCloseDetailModal={modals.closeDetailModal}
+        onEditFromDetail={modals.handleEditFromDetail}
+        onDeleteFromDetail={modals.handleDeleteFromDetail}
         isEditModalOpen={modals.isEditModalOpen}
         onCloseEditModal={modals.closeEditModal}
         onEventUpdated={modals.handleEventUpdated}

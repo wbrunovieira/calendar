@@ -155,6 +155,7 @@ export default function TimeSlotEventCard({
       draggable
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
+      onClick={onEditClick}
       className={`absolute rounded-lg text-white flex flex-col group ${
         isCompleted
           ? 'ring-2 ring-green-500 shadow-lg shadow-green-500/50'
@@ -753,7 +754,7 @@ export default function TimeSlotEventCard({
         {/* Action buttons - horizontal for events < 1 hour, vertical for 1 hour+ */}
         <div className={`${eventHeight < PIXELS_PER_HOUR ? 'flex-row gap-0.5 pr-0.5 pt-0.5' : 'flex-col gap-1 pr-1 pt-1'} flex`}>
           <button
-            onClick={onToggleExecution}
+            onClick={(e) => { e.stopPropagation(); onToggleExecution(e); }}
             className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-green-600 rounded"
             title={isCompleted ? "Marcar como não realizado" : "Marcar como realizado"}
           >
