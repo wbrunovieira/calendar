@@ -9,6 +9,17 @@ const TIMEZONE = 'America/Sao_Paulo';
  * fromGoogleEvent — unlike Partial<Event>, which would make callers guard fields that cannot
  * actually be missing.
  */
+export interface EventAttendee {
+  email: string;
+  displayName: string | null;
+  responseStatus: string | null;
+}
+
+export interface EventOrganizer {
+  email: string;
+  displayName: string | null;
+}
+
 export interface MappedGoogleEvent {
   googleEventId: string;
   calendarId: string;
@@ -21,6 +32,10 @@ export interface MappedGoogleEvent {
   recurrenceRule: string | null;
   status: string;
   eventType: string;
+  location: string | null;
+  meetingUrl: string | null;
+  attendees: EventAttendee[] | null;
+  organizer: EventOrganizer | null;
 }
 
 export class GoogleEventMapper {
@@ -112,6 +127,34 @@ export class GoogleEventMapper {
       recurrenceRule: rrule ?? null,
       status,
       eventType: 'EVENT',
+      location: googleEvent.location ?? null,
+      meetingUrl: this.extractMeetingUrl(googleEvent),
+      attendees: this.extractAttendees(googleEvent),
+      organizer: googleEvent.organizer?.email
+        ? { email: googleEvent.organizer.email, displayName: googleEvent.organizer.displayName ?? null }
+        : null,
     };
+  }
+
+  /** The video call link — Google's `hangoutLink`, or the video entry point of `conferenceData`. */
+  private static extractMeetingUrl(googleEvent: calendar_v3.Schema$Event): string | null {
+    if (googleEvent.hangoutLink) return googleEvent.hangoutLink;
+    const video = googleEvent.conferenceData?.entryPoints?.find(
+      (e) => e.entryPointType === 'video' && e.uri,
+    );
+    return video?.uri ?? null;
+  }
+
+  private static extractAttendees(
+    googleEvent: calendar_v3.Schema$Event,
+  ): EventAttendee[] | null {
+    if (!googleEvent.attendees?.length) return null;
+    return googleEvent.attendees
+      .filter((a) => a.email)
+      .map((a) => ({
+        email: a.email!,
+        displayName: a.displayName ?? null,
+        responseStatus: a.responseStatus ?? null,
+      }));
   }
 }

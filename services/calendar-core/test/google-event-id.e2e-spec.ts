@@ -122,6 +122,56 @@ describe('Google event identity (e2e)', () => {
     expect(rows[0].title).toBe('Renamed in Google');
   });
 
+  it('round-trips the meeting details (JSONB attendees/organizer) through Postgres', async () => {
+    const attendees = [
+      { email: 'natalia@zubale.com', displayName: 'Natalia', responseStatus: 'accepted' },
+      { email: 'bruno@wbdigitalsolutions.com', displayName: 'Bruno', responseStatus: 'needsAction' },
+    ];
+    const organizer = { email: 'natalia@zubale.com', displayName: 'Natalia' };
+
+    await repository.upsertByGoogleEventId(
+      buildEvent({
+        googleEventId: 'g-evt-meet',
+        title: 'Technical Interview',
+        location: 'Rio de Janeiro',
+        meetingUrl: 'https://meet.google.com/vrt-wviz-kwr',
+        attendees,
+        organizer,
+      }),
+    );
+
+    const row = await prisma.event.findUnique({
+      where: { calendarId_googleEventId: { calendarId: CALENDAR_ID, googleEventId: 'g-evt-meet' } },
+    });
+
+    expect(row?.location).toBe('Rio de Janeiro');
+    expect(row?.meetingUrl).toBe('https://meet.google.com/vrt-wviz-kwr');
+    expect(row?.attendees).toEqual(attendees);
+    expect(row?.organizer).toEqual(organizer);
+  });
+
+  it('stores null meeting details as SQL NULL, not the JSON string "null"', async () => {
+    await repository.upsertByGoogleEventId(
+      buildEvent({ googleEventId: 'g-evt-nomeet', attendees: null, organizer: null }),
+    );
+
+    const row = await prisma.event.findUnique({
+      where: { calendarId_googleEventId: { calendarId: CALENDAR_ID, googleEventId: 'g-evt-nomeet' } },
+    });
+
+    expect(row?.meetingUrl).toBeNull();
+
+    // Prisma reads both SQL NULL and JSON `null` as JS null, so the checks above can't tell them
+    // apart. `IS NULL` only matches SQL NULL — this proves upsert wrote Prisma.DbNull, not JsonNull.
+    const [raw] = await prisma.$queryRaw<Array<{ attendees_null: boolean; organizer_null: boolean }>>`
+      SELECT attendees IS NULL AS attendees_null, organizer IS NULL AS organizer_null
+      FROM events
+      WHERE calendar_id = ${CALENDAR_ID} AND google_event_id = 'g-evt-nomeet'
+    `;
+    expect(raw.attendees_null).toBe(true);
+    expect(raw.organizer_null).toBe(true);
+  });
+
   it('does not wipe the user categorisation when Google re-delivers the event', async () => {
     // upsert's `update` payload deliberately omits categoryId/labelId. If a future refactor spread
     // the create payload into update, every sync tick would silently strip the user's curation.
