@@ -159,9 +159,17 @@ describe('Google event identity (e2e)', () => {
       where: { calendarId_googleEventId: { calendarId: CALENDAR_ID, googleEventId: 'g-evt-nomeet' } },
     });
 
-    expect(row?.attendees).toBeNull();
-    expect(row?.organizer).toBeNull();
     expect(row?.meetingUrl).toBeNull();
+
+    // Prisma reads both SQL NULL and JSON `null` as JS null, so the checks above can't tell them
+    // apart. `IS NULL` only matches SQL NULL — this proves upsert wrote Prisma.DbNull, not JsonNull.
+    const [raw] = await prisma.$queryRaw<Array<{ attendees_null: boolean; organizer_null: boolean }>>`
+      SELECT attendees IS NULL AS attendees_null, organizer IS NULL AS organizer_null
+      FROM events
+      WHERE calendar_id = ${CALENDAR_ID} AND google_event_id = 'g-evt-nomeet'
+    `;
+    expect(raw.attendees_null).toBe(true);
+    expect(raw.organizer_null).toBe(true);
   });
 
   it('does not wipe the user categorisation when Google re-delivers the event', async () => {
