@@ -85,8 +85,10 @@ jobs:
           TARGET="$(git rev-parse HEAD)"
           MAIN_TIP="$(git ls-remote origin refs/heads/main | cut -f1)"
           echo "target=$TARGET" >> "$GITHUB_OUTPUT"
-          echo "Alvo: $TARGET | tip de origin/main: $MAIN_TIP | evento: ${{ github.event_name }}"
-          if [ "${{ github.event_name }}" = "workflow_run" ] && [ "$TARGET" != "$MAIN_TIP" ]; then
+          echo "Alvo: $TARGET | tip de origin/main: ${MAIN_TIP:-<não resolveu>} | evento: ${{ github.event_name }}"
+          # Só marca obsoleto se o tip resolveu de fato (ls-remote pode falhar por rede). Não conseguir
+          # resolver → NÃO pular (deployar o alvo é mais seguro que pular silenciosamente).
+          if [ "${{ github.event_name }}" = "workflow_run" ] && [ -n "$MAIN_TIP" ] && [ "$TARGET" != "$MAIN_TIP" ]; then
             echo "::warning::Run obsoleto — alvo $TARGET não é mais o tip de main ($MAIN_TIP). Pulando; um run mais novo faz o deploy."
             echo "stale=true" >> "$GITHUB_OUTPUT"
           else
@@ -96,13 +98,25 @@ jobs:
       - name: Detect changed services + pending migrations
         id: detect
         if: steps.target.outputs.stale != 'true'
+        env:
+          # Via env (não `${{ }}` direto no script) pra não permitir injeção de shell pelo input.
+          SERVICES_INPUT: ${{ inputs.services || 'auto' }}
         run: |
+          # Valida o override manual contra uma allowlist antes de repassar.
+          ALLOWED="calendar-core calendar-finances calendar-health agents calendar-frontend finances-frontend health-frontend"
+          if [ "$SERVICES_INPUT" != "auto" ] && [ "$SERVICES_INPUT" != "all" ]; then
+            for s in $SERVICES_INPUT; do
+              case " $ALLOWED " in
+                *" $s "*) ;;
+                *) echo "::error::Serviço inválido no input 'services': '$s'"; exit 1 ;;
+              esac
+            done
+          fi
           # SHA do último deploy BEM-SUCEDIDO, do marcador. O diff é marcador..HEAD, e HEAD está
-          # fixado no SHA alvo (checkout ref acima). Marcador ausente (1ª vez) → changed-services.sh
-          # rebuilda todos (default seguro).
+          # fixado no SHA alvo (checkout ref acima). Marcador ausente (1ª vez) → rebuilda todos.
           DEPLOYED=$(ssh $SSH_OPTS "$VPS" 'cat /opt/calendar/.deployed-sha 2>/dev/null' || true)
           echo "SHA do último deploy bem-sucedido (marcador): ${DEPLOYED:-desconhecido}"
-          bash deploy/ci/changed-services.sh "$DEPLOYED" "${{ inputs.services || 'auto' }}" >> "$GITHUB_OUTPUT"
+          bash deploy/ci/changed-services.sh "$DEPLOYED" "$SERVICES_INPUT" >> "$GITHUB_OUTPUT"
 
       - name: Sync código no servidor (checkout do SHA alvo)
         if: steps.target.outputs.stale != 'true'
