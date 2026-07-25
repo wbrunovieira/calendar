@@ -9,8 +9,9 @@ name: CD
 #   3. Host key do VPS pinada em deploy/ci/known_hosts (sem TOFU/keyscan em runtime).
 #   4. Só rebuilda os serviços cujo código mudou desde o último deploy BEM-SUCEDIDO,
 #      lido do marcador /opt/calendar/.deployed-sha (deploy/ci/changed-services.sh).
-#      O marcador é gravado só ao fim de um deploy verde — não é o git HEAD do disco,
-#      que o `git pull` avança sem rebuildar. Marcador ausente → rebuilda todos.
+#      O deploy opera no SHA ALVO (o head do CI que disparou) ponta a ponta: o servidor faz
+#      checkout desse SHA e o marcador grava esse SHA. Runs obsoletos (main já avançou) são
+#      pulados — isso evita a corrupção do marcador (#521). Marcador ausente → rebuilda todos.
 #   5. Migrations: se o diff tocar services/calendar-core/prisma/migrations/,
 #      roda `prisma migrate deploy` logo após subir o calendar-core.
 #
@@ -53,6 +54,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          # Fixa o checkout no SHA que disparou o run (head do CI), não no tip atual da main —
+          # senão o diff/marcador fica inconsistente quando a main avança durante o gate de aprovação.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0 # histórico completo p/ diff contra o SHA deployado
 
       # ssh-agent manual (sem action de terceiro tocando a chave privada)
@@ -71,20 +75,57 @@ jobs:
           grep -v '^#' deploy/ci/known_hosts > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      # Alvo do deploy = o SHA que disparou este run. Se a main já avançou além dele (run que ficou
+      # parado no gate de aprovação e foi aprovado tarde), este run é OBSOLETO: pula tudo, porque um
+      # run mais novo vai deployar o tip. Isso evita que um run velho puxe a main pra frente e grave
+      # o marcador num SHA que ele não buildou (bug do marcador, issue #521).
+      - name: Alvo do deploy + pular runs obsoletos
+        id: target
+        run: |
+          TARGET="$(git rev-parse HEAD)"
+          MAIN_TIP="$(git ls-remote origin refs/heads/main | cut -f1)"
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "Alvo: $TARGET | tip de origin/main: ${MAIN_TIP:-<não resolveu>} | evento: ${{ github.event_name }}"
+          # Só marca obsoleto se o tip resolveu de fato (ls-remote pode falhar por rede). Não conseguir
+          # resolver → NÃO pular (deployar o alvo é mais seguro que pular silenciosamente).
+          if [ "${{ github.event_name }}" = "workflow_run" ] && [ -n "$MAIN_TIP" ] && [ "$TARGET" != "$MAIN_TIP" ]; then
+            echo "::warning::Run obsoleto — alvo $TARGET não é mais o tip de main ($MAIN_TIP). Pulando; um run mais novo faz o deploy."
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Detect changed services + pending migrations
         id: detect
+        if: steps.target.outputs.stale != 'true'
+        env:
+          # Via env (não `${{ }}` direto no script) pra não permitir injeção de shell pelo input.
+          SERVICES_INPUT: ${{ inputs.services || 'auto' }}
         run: |
-          # SHA do último deploy BEM-SUCEDIDO, gravado no marcador ao fim deste job. NÃO usar o
-          # git HEAD do disco: o `git pull` abaixo o avança mesmo quando nada é rebuildado, então
-          # um deploy que só sincronizou código apareceria como "nada mudou". Marcador ausente
-          # (1ª vez) → changed-services.sh rebuilda todos (default seguro).
+          # Valida o override manual contra uma allowlist antes de repassar.
+          ALLOWED="calendar-core calendar-finances calendar-health agents calendar-frontend finances-frontend health-frontend"
+          if [ "$SERVICES_INPUT" != "auto" ] && [ "$SERVICES_INPUT" != "all" ]; then
+            for s in $SERVICES_INPUT; do
+              case " $ALLOWED " in
+                *" $s "*) ;;
+                *) echo "::error::Serviço inválido no input 'services': '$s'"; exit 1 ;;
+              esac
+            done
+          fi
+          # SHA do último deploy BEM-SUCEDIDO, do marcador. O diff é marcador..HEAD, e HEAD está
+          # fixado no SHA alvo (checkout ref acima). Marcador ausente (1ª vez) → rebuilda todos.
           DEPLOYED=$(ssh $SSH_OPTS "$VPS" 'cat /opt/calendar/.deployed-sha 2>/dev/null' || true)
           echo "SHA do último deploy bem-sucedido (marcador): ${DEPLOYED:-desconhecido}"
-          bash deploy/ci/changed-services.sh "$DEPLOYED" "${{ inputs.services || 'auto' }}" >> "$GITHUB_OUTPUT"
+          bash deploy/ci/changed-services.sh "$DEPLOYED" "$SERVICES_INPUT" >> "$GITHUB_OUTPUT"
 
-      - name: Sync código no servidor (git pull --ff-only)
+      - name: Sync código no servidor (checkout do SHA alvo)
+        if: steps.target.outputs.stale != 'true'
+        env:
+          TARGET: ${{ steps.target.outputs.target }}
         run: |
-          ssh $SSH_OPTS "$VPS" 'cd /opt/calendar && git pull --ff-only origin main && git rev-parse HEAD'
+          # Checkout do SHA exato (não `git pull origin main`), pra deployar precisamente o alvo e
+          # não o tip da main, que pode ter avançado. `.env`/`.deployed-sha` são gitignored → seguros.
+          ssh $SSH_OPTS "$VPS" "cd /opt/calendar && git fetch --quiet origin && git checkout --force $TARGET && git rev-parse HEAD"
 
       - name: Build (detached no servidor, poll até terminar)
         if: steps.detect.outputs.services != ''
@@ -130,6 +171,7 @@ jobs:
           ssh $SSH_OPTS "$VPS" "cd /opt/calendar && docker-compose -f docker-compose.prod.yml exec -T calendar-core npx prisma migrate deploy"
 
       - name: Health check
+        if: steps.target.outputs.stale != 'true'
         run: |
           sleep 15
           ssh $SSH_OPTS "$VPS" 'FAIL=0; for u in 3334/ 3335/health 3336/api/v1/health 3337/health 3001/ 3003/ 3004/; do
@@ -142,10 +184,14 @@ jobs:
           done; exit $FAIL'
 
       # Só chega aqui se build + up + migrate + health passaram (steps sem `if` param no 1º erro).
-      # Grava o SHA efetivamente deployado; é ele que a detecção compara no próximo deploy.
+      # Grava o SHA ALVO deployado (não o HEAD do servidor) — é ele que a detecção compara no
+      # próximo deploy. Gravar o alvo, e não o tip da main, é o que corrige o bug do marcador (#521).
       - name: Registrar SHA deployado (marcador)
+        if: steps.target.outputs.stale != 'true'
+        env:
+          TARGET: ${{ steps.target.outputs.target }}
         run: |
-          ssh $SSH_OPTS "$VPS" 'cd /opt/calendar && git rev-parse HEAD > .deployed-sha && echo "marcador: $(cat .deployed-sha)"'
+          ssh $SSH_OPTS "$VPS" "cd /opt/calendar && printf '%s\n' '$TARGET' > .deployed-sha && echo \"marcador: \$(cat .deployed-sha)\""
 
       - name: Cleanup (prune de imagens antigas)
         if: always() && steps.detect.outputs.services != ''
