@@ -20,6 +20,7 @@ type BankAccountHandlers struct {
 	recalculateBalanceUseCase *usecases.RecalculateBalanceUseCase
 	closeMonthUseCase         *usecases.CloseMonthUseCase
 	upcomingMaturitiesUseCase *usecases.ListUpcomingMaturitiesUseCase
+	sellPositionUseCase       *usecases.SellPositionUseCase
 }
 
 func NewBankAccountHandlers(
@@ -32,6 +33,7 @@ func NewBankAccountHandlers(
 	recalculateBalanceUC *usecases.RecalculateBalanceUseCase,
 	closeMonthUC *usecases.CloseMonthUseCase,
 	upcomingMaturitiesUC *usecases.ListUpcomingMaturitiesUseCase,
+	sellPositionUC *usecases.SellPositionUseCase,
 ) *BankAccountHandlers {
 	return &BankAccountHandlers{
 		createUseCase:             createUC,
@@ -43,6 +45,7 @@ func NewBankAccountHandlers(
 		recalculateBalanceUseCase: recalculateBalanceUC,
 		closeMonthUseCase:         closeMonthUC,
 		upcomingMaturitiesUseCase: upcomingMaturitiesUC,
+		sellPositionUseCase:       sellPositionUC,
 	}
 }
 
@@ -230,6 +233,35 @@ func (h *BankAccountHandlers) CloseMonth(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"data": result})
+}
+
+// Sell handles POST /api/v1/bank-accounts/{id}/sell
+// Records the sale of shares/quotas from an investment position: the position's
+// shares go down and the linked cash account is credited with the proceeds.
+func (h *BankAccountHandlers) Sell(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	var input usecases.SellPositionInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	result, err := h.sellPositionUseCase.Execute(id, input)
+	if err != nil {
+		if err == usecases.ErrBankAccountNotFound {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"data": result,
+	})
 }
 
 // Reorder handles PUT /api/v1/bank-accounts/reorder

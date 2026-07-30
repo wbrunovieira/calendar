@@ -85,6 +85,7 @@ func main() {
 	closeMonthUC := usecases.NewCloseMonthUseCase(bankAccountRepo, transactionRepo, checkpointRepo)
 	recalculateBalanceUC := usecases.NewRecalculateBalanceUseCase(bankAccountRepo, transactionRepo, checkpointRepo)
 	upcomingMaturitiesUC := usecases.NewListUpcomingMaturitiesUseCase(bankAccountRepo)
+	sellPositionUC := usecases.NewSellPositionUseCase(bankAccountRepo, transactionRepo)
 	bankAccountHandler := httpHandlers.NewBankAccountHandlers(
 		createBankAccountUC,
 		listBankAccountsUC,
@@ -95,6 +96,7 @@ func main() {
 		recalculateBalanceUC,
 		closeMonthUC,
 		upcomingMaturitiesUC,
+		sellPositionUC,
 	)
 
 	// Initialize Category use cases and handlers
@@ -278,6 +280,7 @@ func main() {
 	apiRouter.HandleFunc("/bank-accounts/{id}", bankAccountHandler.Update).Methods("PUT")
 	apiRouter.HandleFunc("/bank-accounts/{id}", bankAccountHandler.Delete).Methods("DELETE")
 	apiRouter.HandleFunc("/bank-accounts/{id}/recalculate-balance", bankAccountHandler.RecalculateBalance).Methods("POST")
+	apiRouter.HandleFunc("/bank-accounts/{id}/sell", bankAccountHandler.Sell).Methods("POST")
 	apiRouter.HandleFunc("/bank-accounts/close-month", bankAccountHandler.CloseMonth).Methods("POST")
 
 	// Accounts routes (placeholder)
