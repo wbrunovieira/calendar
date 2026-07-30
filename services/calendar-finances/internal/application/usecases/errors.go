@@ -27,4 +27,7 @@ var (
 	ErrCostCenterNotFound           = errors.New("cost center not found")
 	ErrMarketingCampaignNotFound    = errors.New("marketing campaign not found")
 	ErrInvalidCurrency              = errors.New("invalid currency: must be BRL, USD, or EUR")
+	ErrPositionHasNoQuotas          = errors.New("account has no quotas to sell")
+	ErrCannotSellMoreThanHeld       = errors.New("cannot sell more quotas than held")
+	ErrAccountNotLinked             = errors.New("investment account is not linked to a cash account")
 )

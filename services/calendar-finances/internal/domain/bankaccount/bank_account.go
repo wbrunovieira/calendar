@@ -444,3 +444,51 @@ func (ba *BankAccount) UpdateQuotaPrice(newPrice float64) error {
 
 	return nil
 }
+
+// quotaEpsilon absorbs floating-point noise when comparing share counts, so a
+// full sell (quantity == held) closes the position instead of leaving a
+// sub-cent residue.
+const quotaEpsilon = 1e-9
+
+// SellQuotas reduces the position by `quantity` shares sold at `unitPrice`,
+// returning the gross proceeds (quantity * unitPrice). The remaining shares are
+// re-marked at the current quota price. Selling the whole position closes it:
+// the share count drops to zero and the balance becomes zero.
+//
+// NOTE: on a full sell the share count is set to 0 (not nil) on purpose — the
+// price-sync job dereferences NumberOfQuotas for any account whose name is a
+// ticker, so a nil here would panic it. Zero shares makes HasQuotas() false and
+// keeps the synced balance at 0.
+func (ba *BankAccount) SellQuotas(quantity, unitPrice float64) (float64, error) {
+	if !ba.HasQuotas() {
+		return 0, errors.New("account does not have quotas set")
+	}
+	if quantity <= 0 {
+		return 0, errors.New("quantity must be greater than zero")
+	}
+	if unitPrice < 0 {
+		return 0, errors.New("unit price cannot be negative")
+	}
+	if quantity > *ba.NumberOfQuotas+quotaEpsilon {
+		return 0, errors.New("cannot sell more quotas than held")
+	}
+
+	proceeds := quantity * unitPrice
+	remaining := *ba.NumberOfQuotas - quantity
+
+	if remaining <= quotaEpsilon {
+		zero := 0.0
+		ba.NumberOfQuotas = &zero
+		ba.CurrentBalance = 0
+	} else {
+		markPrice := unitPrice
+		if ba.QuotaPrice != nil {
+			markPrice = *ba.QuotaPrice
+		}
+		ba.NumberOfQuotas = &remaining
+		ba.CurrentBalance = remaining * markPrice
+	}
+	ba.UpdatedAt = time.Now()
+
+	return proceeds, nil
+}
