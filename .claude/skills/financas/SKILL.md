@@ -179,6 +179,26 @@ The POST returns only the source transaction (with `linkedTransactionId` pointin
 ## Editing a transaction (PUT /transactions/{id})
 `PUT /transactions/{id}` is a **FULL REPLACE** — omitted fields are **zeroed/wiped** (including `categoryId` and `notes`). To change only the amount: GET the current object and **resend every field that is set** (`bankAccountId, categoryId, type, status, amount, currency, description, occurredOn`), changing only `amount`. Keep `bankAccountId` and `occurredOn` unchanged so the invoice link is not recomputed. The invoice total is derived on read (recalculated from the sum of its transactions), so it reflects the change on the next GET by itself.
 
+## Selling a quota position — FII / stocks (POST /bank-accounts/{id}/sell)
+A quota-based position (FII, stock, fund — an INVESTMENT account with `numberOfQuotas`) is sold through a **dedicated route**, not a manual transaction. `{id}` is the **position account** (e.g. SNAG11), NOT the broker cash account.
+```bash
+# sell all 120 SNAG11 quotas at R$9.84 (2026-07-30)
+ssh -i ~/.ssh/id_rsa root@45.90.123.190 "curl -s -X POST \
+  http://127.0.0.1:3335/api/v1/bank-accounts/<POSITION_ID>/sell \
+  -H 'Content-Type: application/json' \
+  -d '{\"quantity\":120,\"unitPrice\":9.84,\"occurredOn\":\"2026-07-30\"}'"
+```
+What it does, in one call:
+- reduces the position's `numberOfQuotas` (a **full sell zeroes it** and closes the position); the remainder is re-marked at the current quota price;
+- **credits the linked cash account** (`LinkedAccountID` — the broker cash, e.g. Clear) with `proceeds = quantity × unitPrice`, as a **CONFIRMED TRANSFER** transaction (position → cash), described `Venda <TICKER> - <N> cotas @ R$<preco>`. So it stays out of income/expense reports.
+- returns `{ data: { account, transaction } }`.
+
+Errors: unknown account → **404**; oversell / no quotas / not linked / bad input → **400**.
+
+**The money stops at the broker cash account.** Getting it to a bank is a **separate** same-profile `TRANSFER` (e.g. Clear → Mercado Pago), which you register/confirm yourself — the sell route does not touch the bank.
+
+⚠️ **Tax is NOT computed** — the model stores no average cost, so this route can't figure realized profit/DARF. FII/FIAGRO capital gains are **20% via DARF (código 6015)**, no R$20k exemption; compute it by hand from the broker's average price and the sale price.
+
 ## Recurrences
 Model: a recurrence uses an **RRULE** + dates, not `dayOfMonth`. Actual fields: `recurrenceRule` (e.g. `FREQ=MONTHLY;BYMONTHDAY=13`), `startOn`, `nextOccurrence`, `amount`, `status` (ACTIVE/PAUSED/CANCELLED).
 ```bash
