@@ -442,3 +442,12 @@ func TestListTransactions_FilterByInvoiceID_ShouldReturnOnlyMatchingInvoice(t *t
 		t.Errorf("expected tx-a, got %s", result.Items[0].ID)
 	}
 }
+
+func (r *FakeTransactionRepository) DeleteMany(ids []string) error {
+	for _, id := range ids {
+		if err := r.Delete(id); err != nil {
+			return err
+		}
+	}
+	return nil
+}

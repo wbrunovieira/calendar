@@ -190,4 +190,3 @@ func scanProfile(s profileScanner) (*profile.Profile, error) {
 
 	return p, nil
 }
-

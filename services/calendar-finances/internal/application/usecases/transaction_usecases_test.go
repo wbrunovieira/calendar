@@ -53,7 +53,7 @@ func (f *fakeAccountRepo) Update(acc *bankaccount.BankAccount) error {
 	}
 	return nil
 }
-func (f *fakeAccountRepo) Delete(string) error                                    { return nil }
+func (f *fakeAccountRepo) Delete(string) error                                        { return nil }
 func (f *fakeAccountRepo) UpdateDisplayOrders([]bankaccount.DisplayOrderUpdate) error { return nil }
 func (f *fakeAccountRepo) FindByID(id string) (*bankaccount.BankAccount, error) {
 	if acc, ok := f.accounts[id]; ok {
@@ -168,11 +168,25 @@ func (f *fakeTransactionRepo) SumByCategories(profileID string, categoryIDs []st
 	return result, nil
 }
 
+
+// invoiceSigned mirrors the SQL the repository runs: an invoice total is charges
+// minus credits, so an INCOME linked to an invoice reduces it. Keeping the fakes
+// on the same rule stops a unit test from agreeing with a bug the database
+// would reject.
+func invoiceSigned(tx *transaction.Transaction) float64 {
+	if tx.Type == transaction.TypeIncome {
+		return -tx.Amount
+	}
+	return tx.Amount
+}
+
+// The repository skips CANCELLED rows; so must this, or a unit test can pass on
+// a total the database would never return.
 func (f *fakeTransactionRepo) SumByInvoiceID(invoiceID string) (float64, error) {
 	var total float64
 	for _, tx := range f.created {
-		if tx.InvoiceID != nil && *tx.InvoiceID == invoiceID {
-			total += tx.Amount
+		if tx.InvoiceID != nil && *tx.InvoiceID == invoiceID && tx.Status != transaction.StatusCancelled {
+			total += invoiceSigned(tx)
 		}
 	}
 	return total, nil
@@ -182,7 +196,7 @@ func (f *fakeTransactionRepo) SumByInvoiceIDByStatus(invoiceID string, status tr
 	var total float64
 	for _, tx := range f.created {
 		if tx.InvoiceID != nil && *tx.InvoiceID == invoiceID && tx.Status == status {
-			total += tx.Amount
+			total += invoiceSigned(tx)
 		}
 	}
 	return total, nil
@@ -3703,7 +3717,7 @@ func TestUpdateTransaction_TransferDestinationChange_AdjustsBothDests(t *testing
 		Type:                 transaction.TypeTransfer,
 		Status:               transaction.StatusConfirmed,
 		Amount:               200,
-		Currency:              "BRL",
+		Currency:             "BRL",
 		Description:          "Transferencia",
 		OccurredOn:           now,
 		CreatedAt:            now,
@@ -3765,24 +3779,24 @@ func TestUpdateTransaction_CreditCardAccountChange_ReassignsInvoice(t *testing.T
 
 	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
 		ccAccountA: {
-			ID:          ccAccountA,
-			ProfileID:   profileID,
-			Name:        "Cartão Nubank",
-			Type:        bankaccount.AccountTypeCreditCard,
-			Currency:    "BRL",
-			IsActive:    true,
-			ClosingDay:  &closingDay,
-			DueDay:      &dueDay,
+			ID:         ccAccountA,
+			ProfileID:  profileID,
+			Name:       "Cartão Nubank",
+			Type:       bankaccount.AccountTypeCreditCard,
+			Currency:   "BRL",
+			IsActive:   true,
+			ClosingDay: &closingDay,
+			DueDay:     &dueDay,
 		},
 		ccAccountB: {
-			ID:          ccAccountB,
-			ProfileID:   profileID,
-			Name:        "Cartão Mercado Pago",
-			Type:        bankaccount.AccountTypeCreditCard,
-			Currency:    "BRL",
-			IsActive:    true,
-			ClosingDay:  &closingDay,
-			DueDay:      &dueDay,
+			ID:         ccAccountB,
+			ProfileID:  profileID,
+			Name:       "Cartão Mercado Pago",
+			Type:       bankaccount.AccountTypeCreditCard,
+			Currency:   "BRL",
+			IsActive:   true,
+			ClosingDay: &closingDay,
+			DueDay:     &dueDay,
 		},
 	}}
 
@@ -4240,14 +4254,14 @@ func TestCreateTransaction_Installments_ShouldCreateMultipleTransactions(t *test
 	installmentTotal := 2
 
 	input := CreateTransactionInput{
-		ProfileID:      profileID,
-		BankAccountID:  creditCardID,
-		Type:           "EXPENSE",
-		Status:         &confirmedStatus,
-		Amount:         31.46,
-		Currency:       "BRL",
-		Description:    "Kvn Imersao 2026 Dolar",
-		OccurredOn:     "2026-02-28",
+		ProfileID:        profileID,
+		BankAccountID:    creditCardID,
+		Type:             "EXPENSE",
+		Status:           &confirmedStatus,
+		Amount:           31.46,
+		Currency:         "BRL",
+		Description:      "Kvn Imersao 2026 Dolar",
+		OccurredOn:       "2026-02-28",
 		InstallmentTotal: &installmentTotal,
 	}
 
@@ -4546,4 +4560,13 @@ func TestCreateTransaction_ManualInstallment_ShouldNotAutoCreate(t *testing.T) {
 	if txn.InvoiceID == nil {
 		t.Fatalf("expected invoiceID to be set for credit card transaction")
 	}
+}
+
+func (f *fakeTransactionRepo) DeleteMany(ids []string) error {
+	for _, id := range ids {
+		if err := f.Delete(id); err != nil {
+			return err
+		}
+	}
+	return nil
 }

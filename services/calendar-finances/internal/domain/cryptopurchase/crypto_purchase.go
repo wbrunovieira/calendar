@@ -25,24 +25,24 @@ type CryptoPurchase struct {
 
 type PurchaseWithGains struct {
 	CryptoPurchase
-	CurrentPriceUSD      float64 `json:"currentPriceUsd"`
-	CurrentExchangeRate  float64 `json:"currentExchangeRate"`
-	CurrentValueUSD      float64 `json:"currentValueUsd"`
-	CurrentValueBRL      float64 `json:"currentValueBrl"`
-	GainCryptoUSD        float64 `json:"gainCryptoUsd"`        // gain from crypto price change in USD
-	GainCryptoPercent    float64 `json:"gainCryptoPercent"`
-	GainExchangeBRL      float64 `json:"gainExchangeBrl"`      // gain from USD/BRL change
-	GainExchangePercent  float64 `json:"gainExchangePercent"`
-	GainTotalBRL         float64 `json:"gainTotalBrl"`         // total gain in BRL
-	GainTotalPercent     float64 `json:"gainTotalPercent"`
+	CurrentPriceUSD     float64 `json:"currentPriceUsd"`
+	CurrentExchangeRate float64 `json:"currentExchangeRate"`
+	CurrentValueUSD     float64 `json:"currentValueUsd"`
+	CurrentValueBRL     float64 `json:"currentValueBrl"`
+	GainCryptoUSD       float64 `json:"gainCryptoUsd"` // gain from crypto price change in USD
+	GainCryptoPercent   float64 `json:"gainCryptoPercent"`
+	GainExchangeBRL     float64 `json:"gainExchangeBrl"` // gain from USD/BRL change
+	GainExchangePercent float64 `json:"gainExchangePercent"`
+	GainTotalBRL        float64 `json:"gainTotalBrl"` // total gain in BRL
+	GainTotalPercent    float64 `json:"gainTotalPercent"`
 }
 
 var (
-	ErrInvalidAsset    = errors.New("asset is required")
-	ErrInvalidQuantity = errors.New("quantity must be positive")
-	ErrInvalidPrice    = errors.New("price must be positive")
-	ErrInvalidRate          = errors.New("exchange rate must be positive")
-	ErrSoldExceedsQuantity  = errors.New("sold quantity would exceed purchased quantity")
+	ErrInvalidAsset        = errors.New("asset is required")
+	ErrInvalidQuantity     = errors.New("quantity must be positive")
+	ErrInvalidPrice        = errors.New("price must be positive")
+	ErrInvalidRate         = errors.New("exchange rate must be positive")
+	ErrSoldExceedsQuantity = errors.New("sold quantity would exceed purchased quantity")
 )
 
 func NewCryptoPurchase(

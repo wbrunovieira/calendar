@@ -7,11 +7,11 @@ import (
 
 func TestNewCompanyAsset_Valid(t *testing.T) {
 	a, err := NewCompanyAsset(CreateParams{
-		ProfileID:      "profile-1",
-		Name:           "MacBook Pro M3",
-		Category:       AssetCategoryHardware,
-		PurchaseDate:   time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-		PurchaseAmount: 15000,
+		ProfileID:        "profile-1",
+		Name:             "MacBook Pro M3",
+		Category:         AssetCategoryHardware,
+		PurchaseDate:     time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		PurchaseAmount:   15000,
 		DepreciationRate: 20, // 20% per year
 	})
 	if err != nil {

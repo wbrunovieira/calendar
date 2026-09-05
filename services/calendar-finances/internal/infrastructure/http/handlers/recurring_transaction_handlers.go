@@ -11,6 +11,33 @@ import (
 type RecurringTransactionHandlers struct {
 	service   *usecases.RecurringTransactionsService
 	processUC *usecases.ProcessRecurringTransactionsUseCase
+	pendingUC *usecases.ListPendingRecurringsUseCase
+}
+
+// SetPendingUseCase wires the pending-obligations query after construction, following
+// how the other cross-cutting queries are attached in main.go.
+func (h *RecurringTransactionHandlers) SetPendingUseCase(uc *usecases.ListPendingRecurringsUseCase) {
+	h.pendingUC = uc
+}
+
+// Pending handles GET /api/v1/recurring-transactions/pending
+func (h *RecurringTransactionHandlers) Pending(w http.ResponseWriter, r *http.Request) {
+	if h.pendingUC == nil {
+		http.Error(w, "pending recurrings not available", http.StatusNotImplemented)
+		return
+	}
+
+	out, err := h.pendingUC.Execute(usecases.ListPendingRecurringsInput{
+		ProfileID: r.URL.Query().Get("profileId"),
+		Reference: r.URL.Query().Get("reference"),
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"data": out})
 }
 
 func NewRecurringTransactionHandlers(

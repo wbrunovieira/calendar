@@ -30,58 +30,58 @@ const (
 
 // Transaction encapsulates the financial movement registered in the system.
 type Transaction struct {
-	ID                   string     `json:"id"`
-	ProfileID            string     `json:"profileId"`
-	BankAccountID        string     `json:"bankAccountId"`
-	DestinationAccountID *string    `json:"destinationAccountId,omitempty"`
-	CategoryID           *string    `json:"categoryId,omitempty"`
-	InvoiceID            *string    `json:"invoiceId,omitempty"` // Credit card invoice this transaction belongs to
-	Type                 Type       `json:"type"`
-	Status               Status     `json:"status"`
-	Amount               float64    `json:"amount"`
-	Currency             string     `json:"currency"`
-	Description          string     `json:"description"`
-	Notes                    *string    `json:"notes,omitempty"`
-	CostCenter               *string    `json:"costCenter,omitempty"`
-	IsPersonalReimbursement  bool       `json:"isPersonalReimbursement"`
-	OccurredOn               time.Time  `json:"occurredOn"`
-	DueOn                *time.Time `json:"dueOn,omitempty"`
-	ReminderOn           *time.Time `json:"reminderOn,omitempty"` // Optional reminder date for alerts (10, 5, 1, 0 days before)
-	RecurrenceRule       *string    `json:"recurrenceRule,omitempty"`
-	InstallmentNumber    *int       `json:"installmentNumber,omitempty"`
-	InstallmentTotal     *int       `json:"installmentTotal,omitempty"`
-	ExternalID           *string    `json:"externalId,omitempty"`
-	LinkedTransactionID  *string    `json:"linkedTransactionId,omitempty"` // Points to paired transaction (cross-profile transfers)
-	Tags                 []string   `json:"tags,omitempty"`
-	Splits               []*Split   `json:"splits,omitempty"`
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	ID                      string     `json:"id"`
+	ProfileID               string     `json:"profileId"`
+	BankAccountID           string     `json:"bankAccountId"`
+	DestinationAccountID    *string    `json:"destinationAccountId,omitempty"`
+	CategoryID              *string    `json:"categoryId,omitempty"`
+	InvoiceID               *string    `json:"invoiceId,omitempty"` // Credit card invoice this transaction belongs to
+	Type                    Type       `json:"type"`
+	Status                  Status     `json:"status"`
+	Amount                  float64    `json:"amount"`
+	Currency                string     `json:"currency"`
+	Description             string     `json:"description"`
+	Notes                   *string    `json:"notes,omitempty"`
+	CostCenter              *string    `json:"costCenter,omitempty"`
+	IsPersonalReimbursement bool       `json:"isPersonalReimbursement"`
+	OccurredOn              time.Time  `json:"occurredOn"`
+	DueOn                   *time.Time `json:"dueOn,omitempty"`
+	ReminderOn              *time.Time `json:"reminderOn,omitempty"` // Optional reminder date for alerts (10, 5, 1, 0 days before)
+	RecurrenceRule          *string    `json:"recurrenceRule,omitempty"`
+	InstallmentNumber       *int       `json:"installmentNumber,omitempty"`
+	InstallmentTotal        *int       `json:"installmentTotal,omitempty"`
+	ExternalID              *string    `json:"externalId,omitempty"`
+	LinkedTransactionID     *string    `json:"linkedTransactionId,omitempty"` // Points to paired transaction (cross-profile transfers)
+	Tags                    []string   `json:"tags,omitempty"`
+	Splits                  []*Split   `json:"splits,omitempty"`
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
 }
 
 // CreateParams represents the attributes required to instantiate a transaction.
 type CreateParams struct {
-	ProfileID            string
-	BankAccountID        string
-	DestinationAccountID *string
-	CategoryID           *string
-	InvoiceID            *string // Credit card invoice this transaction belongs to
-	Type                 Type
-	Amount               float64
-	Currency             string
-	Description          string
+	ProfileID               string
+	BankAccountID           string
+	DestinationAccountID    *string
+	CategoryID              *string
+	InvoiceID               *string // Credit card invoice this transaction belongs to
+	Type                    Type
+	Amount                  float64
+	Currency                string
+	Description             string
 	Notes                   *string
 	CostCenter              *string
 	IsPersonalReimbursement bool
 	OccurredOn              time.Time
 	DueOn                   *time.Time
-	ReminderOn           *time.Time // Optional reminder date for alerts
-	RecurrenceRule       *string
-	InstallmentNumber    *int
-	InstallmentTotal     *int
-	ExternalID           *string
-	LinkedTransactionID  *string
-	Tags                 []string
-	Splits               []*Split
+	ReminderOn              *time.Time // Optional reminder date for alerts
+	RecurrenceRule          *string
+	InstallmentNumber       *int
+	InstallmentTotal        *int
+	ExternalID              *string
+	LinkedTransactionID     *string
+	Tags                    []string
+	Splits                  []*Split
 }
 
 // New validates and constructs a Transaction ready to be persisted.
@@ -121,32 +121,32 @@ func New(params CreateParams) (*Transaction, error) {
 
 	now := time.Now()
 	transaction := &Transaction{
-		ID:                   uuid.New().String(),
-		ProfileID:            strings.TrimSpace(params.ProfileID),
-		BankAccountID:        strings.TrimSpace(params.BankAccountID),
-		DestinationAccountID: cloneString(params.DestinationAccountID),
-		CategoryID:           cloneString(params.CategoryID),
-		InvoiceID:            cloneString(params.InvoiceID),
-		Type:                 params.Type,
-		Status:               StatusPlanned,
-		Amount:               round2(params.Amount),
-		Currency:             currency,
-		Description:          description,
+		ID:                      uuid.New().String(),
+		ProfileID:               strings.TrimSpace(params.ProfileID),
+		BankAccountID:           strings.TrimSpace(params.BankAccountID),
+		DestinationAccountID:    cloneString(params.DestinationAccountID),
+		CategoryID:              cloneString(params.CategoryID),
+		InvoiceID:               cloneString(params.InvoiceID),
+		Type:                    params.Type,
+		Status:                  StatusPlanned,
+		Amount:                  round2(params.Amount),
+		Currency:                currency,
+		Description:             description,
 		Notes:                   cloneString(params.Notes),
 		CostCenter:              cloneString(params.CostCenter),
 		IsPersonalReimbursement: params.IsPersonalReimbursement,
 		OccurredOn:              params.OccurredOn,
-		DueOn:                cloneTime(params.DueOn),
-		ReminderOn:           cloneTime(params.ReminderOn),
-		RecurrenceRule:       cloneString(params.RecurrenceRule),
-		InstallmentNumber:    cloneInt(params.InstallmentNumber),
-		InstallmentTotal:     cloneInt(params.InstallmentTotal),
-		ExternalID:           cloneString(params.ExternalID),
-		LinkedTransactionID:  cloneString(params.LinkedTransactionID),
-		Tags:                 sanitizeTags(params.Tags),
-		Splits:               []*Split{},
-		CreatedAt:            now,
-		UpdatedAt:            now,
+		DueOn:                   cloneTime(params.DueOn),
+		ReminderOn:              cloneTime(params.ReminderOn),
+		RecurrenceRule:          cloneString(params.RecurrenceRule),
+		InstallmentNumber:       cloneInt(params.InstallmentNumber),
+		InstallmentTotal:        cloneInt(params.InstallmentTotal),
+		ExternalID:              cloneString(params.ExternalID),
+		LinkedTransactionID:     cloneString(params.LinkedTransactionID),
+		Tags:                    sanitizeTags(params.Tags),
+		Splits:                  []*Split{},
+		CreatedAt:               now,
+		UpdatedAt:               now,
 	}
 
 	if err := transaction.setSplits(params.Splits); err != nil {

@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import { BankAccount, Invoice } from '@/types/finances';
 import { formatCurrency, formatDate } from '@/utils/format';
+import { getCardUsage } from '@/utils/creditCard';
 
 interface InvoiceUpdateData {
   closingDate?: string;
@@ -86,8 +87,9 @@ export default function CreditCardInfo({
   const currentAmount = currentInvoice?.amount || 0;
   const confirmedAmount = currentInvoice?.confirmedAmount || 0;
   const plannedAmount = currentInvoice?.plannedAmount || 0;
-  const available = limit - currentAmount;
-  const usagePercent = limit > 0 ? (currentAmount / limit) * 100 : 0;
+  // Availability comes from every unpaid invoice, not just the open one — that is
+  // what the bank blocks against the limit.
+  const { available, usagePercent } = getCardUsage(account, invoices);
 
   // Get all unpaid invoices (OPEN or CLOSED with amount > 0)
   const unpaidInvoices = useMemo(() => {
