@@ -171,7 +171,9 @@ func TestRecalculateBalance_PlannedTransfer_DoesNotAffectBalance(t *testing.T) {
 }
 
 // Given: caixinha with R$0 initial, received R$26000 deposit, earned R$307.82,
-//        spent R$4000 (expense), sent R$600+R$1000+R$550+R$3000 (transfers out)
+//
+//	spent R$4000 (expense), sent R$600+R$1000+R$550+R$3000 (transfers out)
+//
 // When: recalculate balance
 // Then: new balance = 0 + 26000 + 307.82 - 4000 - 5150 = 17157.82
 func TestRecalculateBalance_MixedTransactions_CaixinhaScenario(t *testing.T) {
@@ -184,13 +186,13 @@ func TestRecalculateBalance_MixedTransactions_CaixinhaScenario(t *testing.T) {
 
 	txRepo := &fakeTransactionRepo{
 		created: []*transaction.Transaction{
-			confirmedTransfer(depositSourceID, caixinhaID, 26000),  // incoming
-			confirmedIncome(caixinhaID, 307.82),                    // rendimento
-			confirmedExpense(caixinhaID, 4000),                     // resgate via despesa
-			confirmedTransfer(caixinhaID, "dest1", 600),            // outgoing
-			confirmedTransfer(caixinhaID, "dest2", 1000),           // outgoing
-			confirmedTransfer(caixinhaID, "dest3", 550),            // outgoing
-			confirmedTransfer(caixinhaID, "dest4", 3000),           // outgoing (hoje)
+			confirmedTransfer(depositSourceID, caixinhaID, 26000), // incoming
+			confirmedIncome(caixinhaID, 307.82),                   // rendimento
+			confirmedExpense(caixinhaID, 4000),                    // resgate via despesa
+			confirmedTransfer(caixinhaID, "dest1", 600),           // outgoing
+			confirmedTransfer(caixinhaID, "dest2", 1000),          // outgoing
+			confirmedTransfer(caixinhaID, "dest3", 550),           // outgoing
+			confirmedTransfer(caixinhaID, "dest4", 3000),          // outgoing (hoje)
 		},
 	}
 
@@ -242,7 +244,9 @@ func TestRecalculateBalance_ReportsOldAndNewBalance(t *testing.T) {
 }
 
 // Given: account with initial=0, one retroactive income of R$100 added AFTER a checkpoint was created
-//        (checkpoint has closing_balance=1000 but doesn't know about the retroactive income)
+//
+//	(checkpoint has closing_balance=1000 but doesn't know about the retroactive income)
+//
 // When: recalculate
 // Then: new balance = 100 (initialBalance + all confirmed txns), NOT 1000 (stale checkpoint)
 func TestRecalculateBalance_StaleCheckpoint_MustBeIgnoredAndUseDirectCalculation(t *testing.T) {

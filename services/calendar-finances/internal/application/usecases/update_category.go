@@ -7,11 +7,11 @@ import (
 )
 
 type UpdateCategoryInput struct {
-	Name              string                     `json:"name"`
-	Type              string                     `json:"type"`
-	Color             *string                    `json:"color,omitempty"`
-	Icon              *string                    `json:"icon,omitempty"`
-	ParentID          *string                    `json:"parentId,omitempty"`
+	Name              string                      `json:"name"`
+	Type              string                      `json:"type"`
+	Color             *string                     `json:"color,omitempty"`
+	Icon              *string                     `json:"icon,omitempty"`
+	ParentID          *string                     `json:"parentId,omitempty"`
 	ClassificationDRE *category.ClassificationDRE `json:"classificationDRE,omitempty"`
 }
 

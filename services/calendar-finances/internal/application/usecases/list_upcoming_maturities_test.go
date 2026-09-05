@@ -14,14 +14,14 @@ type fakeMaturityRepo struct {
 	err      error
 }
 
-func (f *fakeMaturityRepo) Create(*bankaccount.BankAccount) error          { return nil }
+func (f *fakeMaturityRepo) Create(*bankaccount.BankAccount) error             { return nil }
 func (f *fakeMaturityRepo) FindByID(string) (*bankaccount.BankAccount, error) { return nil, nil }
 func (f *fakeMaturityRepo) FindByProfileID(string) ([]*bankaccount.BankAccount, error) {
 	return f.accounts, f.err
 }
-func (f *fakeMaturityRepo) FindAll() ([]*bankaccount.BankAccount, error) { return f.accounts, f.err }
-func (f *fakeMaturityRepo) Update(*bankaccount.BankAccount) error        { return nil }
-func (f *fakeMaturityRepo) Delete(string) error                         { return nil }
+func (f *fakeMaturityRepo) FindAll() ([]*bankaccount.BankAccount, error)               { return f.accounts, f.err }
+func (f *fakeMaturityRepo) Update(*bankaccount.BankAccount) error                      { return nil }
+func (f *fakeMaturityRepo) Delete(string) error                                        { return nil }
 func (f *fakeMaturityRepo) UpdateDisplayOrders([]bankaccount.DisplayOrderUpdate) error { return nil }
 
 func ptrTime(t time.Time) *time.Time { return &t }

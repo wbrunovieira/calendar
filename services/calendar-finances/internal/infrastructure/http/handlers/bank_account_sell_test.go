@@ -132,3 +132,12 @@ func TestSellRoute_Oversell_Returns400(t *testing.T) {
 		t.Fatalf("status = %d, want 400", w.Code)
 	}
 }
+
+func (r *FakeTransactionRepository) DeleteMany(ids []string) error {
+	for _, id := range ids {
+		if err := r.Delete(id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
