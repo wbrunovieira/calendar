@@ -98,6 +98,9 @@ func main() {
 		upcomingMaturitiesUC,
 		sellPositionUC,
 	)
+	bankAccountHandler.SetCreditUsageUseCase(
+		usecases.NewGetCreditUsageUseCase(bankAccountRepo, invoiceRepo, transactionRepo),
+	)
 
 	// Initialize Category use cases and handlers
 	createCategoryUC := usecases.NewCreateCategoryUseCase(profileRepo, categoryRepo)
@@ -139,6 +142,8 @@ func main() {
 	// credits the card side, and recomputes the card balance from its transactions
 	payInvoiceUC := usecases.NewPayInvoiceUseCaseV2(invoiceRepo, bankAccountRepo, transactionRepo, recalculateBalanceUC)
 	recalculateInvoiceUC := usecases.NewRecalculateInvoiceAmountUseCase(invoiceRepo, transactionRepo)
+	// Deleting a charge changes the bill it belonged to.
+	deleteTransactionUC.SetInvoiceRecalculator(recalculateInvoiceUC)
 	updateInvoiceUC := usecases.NewUpdateInvoiceUseCase(invoiceRepo)
 	invoiceHandler := httpHandlers.NewInvoiceHandlers(
 		createInvoiceUC,
@@ -157,12 +162,16 @@ func main() {
 	recurringService := usecases.NewRecurringTransactionsService(recurringRepo)
 	processRecurringUC := usecases.NewProcessRecurringTransactionsUseCase(recurringRepo, createTransactionUC)
 	recurringHandler := httpHandlers.NewRecurringTransactionHandlers(recurringService, processRecurringUC)
+	recurringHandler.SetPendingUseCase(usecases.NewListPendingRecurringsUseCase(recurringRepo, transactionRepo))
 
 	expenseAnalysisUC := usecases.NewGetExpenseAnalysisUseCase(transactionRepo, categoryRepo, recurringRepo, bankAccountRepo)
 	transactionHandler.SetExpenseAnalysisUseCase(expenseAnalysisUC)
 
 	financialSummaryUC := usecases.NewGetFinancialSummaryUseCase(transactionRepo, categoryRepo, bankAccountRepo)
 	transactionHandler.SetFinancialSummaryUseCase(financialSummaryUC)
+
+	cashflowSummaryUC := usecases.NewGetCashflowSummaryUseCase(transactionRepo, bankAccountRepo, categoryRepo)
+	transactionHandler.SetCashflowSummaryUseCase(cashflowSummaryUC)
 
 	budgetRepo := persistence.NewBudgetTargetRepository(db)
 	budgetService := usecases.NewBudgetTargetsService(budgetRepo, transactionRepo, categoryRepo)
@@ -279,6 +288,7 @@ func main() {
 	apiRouter.HandleFunc("/bank-accounts/{id}", bankAccountHandler.Get).Methods("GET")
 	apiRouter.HandleFunc("/bank-accounts/{id}", bankAccountHandler.Update).Methods("PUT")
 	apiRouter.HandleFunc("/bank-accounts/{id}", bankAccountHandler.Delete).Methods("DELETE")
+	apiRouter.HandleFunc("/bank-accounts/{id}/credit-usage", bankAccountHandler.CreditUsage).Methods("GET")
 	apiRouter.HandleFunc("/bank-accounts/{id}/recalculate-balance", bankAccountHandler.RecalculateBalance).Methods("POST")
 	apiRouter.HandleFunc("/bank-accounts/{id}/sell", bankAccountHandler.Sell).Methods("POST")
 	apiRouter.HandleFunc("/bank-accounts/close-month", bankAccountHandler.CloseMonth).Methods("POST")
@@ -294,6 +304,7 @@ func main() {
 
 	// Transaction routes
 	apiRouter.HandleFunc("/transactions/daily-balances", transactionHandler.DailyBalances).Methods("GET")
+	apiRouter.HandleFunc("/transactions/cashflow-summary", transactionHandler.CashflowSummary).Methods("GET")
 	apiRouter.HandleFunc("/transactions/expense-analysis", transactionHandler.ExpenseAnalysis).Methods("GET")
 	apiRouter.HandleFunc("/transactions/financial-summary", transactionHandler.FinancialSummary).Methods("GET")
 	apiRouter.HandleFunc("/transactions", transactionHandler.List).Methods("GET")
@@ -303,6 +314,7 @@ func main() {
 	apiRouter.HandleFunc("/transactions/{id}/status", transactionHandler.UpdateStatus).Methods("PUT")
 	apiRouter.HandleFunc("/recurring-transactions", recurringHandler.List).Methods("GET")
 	apiRouter.HandleFunc("/recurring-transactions", recurringHandler.Create).Methods("POST")
+	apiRouter.HandleFunc("/recurring-transactions/pending", recurringHandler.Pending).Methods("GET")
 	apiRouter.HandleFunc("/recurring-transactions/process", recurringHandler.Process).Methods("POST")
 	apiRouter.HandleFunc("/recurring-transactions/{id}", recurringHandler.Update).Methods("PUT")
 	apiRouter.HandleFunc("/recurring-transactions/{id}/status", recurringHandler.UpdateStatus).Methods("PATCH")

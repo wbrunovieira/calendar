@@ -93,13 +93,13 @@ func buildTransactionInput(rec *recurringtransaction.RecurringTransaction) Creat
 	}
 
 	return CreateTransactionInput{
-		ProfileID:     rec.ProfileID,
-		BankAccountID: bankAccountID,
-		CategoryID:    rec.CategoryID,
-		Type:          rec.Type,
-		Status:        &status,
-		Amount:        rec.Amount,
-		Currency:      rec.Currency,
+		ProfileID:      rec.ProfileID,
+		BankAccountID:  bankAccountID,
+		CategoryID:     rec.CategoryID,
+		Type:           rec.Type,
+		Status:         &status,
+		Amount:         rec.Amount,
+		Currency:       rec.Currency,
 		Description:    rec.Description,
 		OccurredOn:     occurredOn,
 		RecurrenceRule: &rec.RecurrenceRule,

@@ -14,8 +14,8 @@ type CryptoSyncUseCase struct {
 }
 
 type CryptoSyncResult struct {
-	Prices         []binance.CryptoPrice  `json:"prices"`
-	UsdBrl         float64                `json:"usdBrl"`
+	Prices          []binance.CryptoPrice `json:"prices"`
+	UsdBrl          float64               `json:"usdBrl"`
 	UpdatedAccounts []CryptoAccountUpdate `json:"updatedAccounts"`
 }
 

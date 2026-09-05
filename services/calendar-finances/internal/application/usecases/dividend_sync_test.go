@@ -55,7 +55,7 @@ func (m *mockTransactionRepo) GetByID(id string) (*transaction.Transaction, erro
 func (m *mockTransactionRepo) List(filter transaction.ListFilter) ([]*transaction.Transaction, error) {
 	return nil, nil
 }
-func (m *mockTransactionRepo) Update(tx *transaction.Transaction) error             { return nil }
+func (m *mockTransactionRepo) Update(tx *transaction.Transaction) error { return nil }
 func (m *mockTransactionRepo) UpdateStatus(id string, status transaction.Status, occurredOn time.Time, notes *string) error {
 	return nil
 }
@@ -63,7 +63,7 @@ func (m *mockTransactionRepo) Delete(id string) error { return nil }
 func (m *mockTransactionRepo) SumByCategories(profileID string, categoryIDs []string, from, to time.Time) (map[string]float64, error) {
 	return nil, nil
 }
-func (m *mockTransactionRepo) SumByInvoiceID(invoiceID string) (float64, error)                       { return 0, nil }
+func (m *mockTransactionRepo) SumByInvoiceID(invoiceID string) (float64, error) { return 0, nil }
 func (m *mockTransactionRepo) SumByInvoiceIDByStatus(invoiceID string, status transaction.Status) (float64, error) {
 	return 0, nil
 }
@@ -273,4 +273,13 @@ func TestDividendExternalID(t *testing.T) {
 	if id != expected {
 		t.Errorf("expected %q, got %q", expected, id)
 	}
+}
+
+func (m *mockTransactionRepo) DeleteMany(ids []string) error {
+	for _, id := range ids {
+		if err := m.Delete(id); err != nil {
+			return err
+		}
+	}
+	return nil
 }

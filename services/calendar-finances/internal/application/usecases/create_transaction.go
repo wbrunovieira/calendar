@@ -307,7 +307,7 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 			if err := uc.accountRepo.Update(destinationAccount); err != nil {
 				return nil, err
 			}
-			recalculateAccounts(uc.balanceRecalculator, account.ID, destinationAccount.ID)
+			_ = recalculateAccounts(uc.balanceRecalculator, account.ID, destinationAccount.ID)
 		}
 
 		return txn, nil
@@ -333,9 +333,9 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 			if err := uc.accountRepo.Update(destinationAccount); err != nil {
 				return nil, err
 			}
-			recalculateAccounts(uc.balanceRecalculator, account.ID, *destinationAccountID)
+			_ = recalculateAccounts(uc.balanceRecalculator, account.ID, *destinationAccountID)
 		} else {
-			recalculateAccounts(uc.balanceRecalculator, account.ID)
+			_ = recalculateAccounts(uc.balanceRecalculator, account.ID)
 		}
 	}
 
