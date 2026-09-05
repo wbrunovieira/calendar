@@ -61,6 +61,7 @@ This is a financial system: **the balance must represent STRICTLY the sum/subtra
 - **Hunt the fix down in the transactions, TOGETHER with the user** — work out which entry is missing/wrong, show the difference, and only post/correct the transaction after confirming with them.
 - E.g.: system 931.78 vs bank 933.74 → difference +1.96 = unposted interest → post the interest (INCOME), don't touch the balance.
 - The balance recalc (`/bank-accounts/{id}/recalculate-balance`) only **recomputes from the transactions** — use it to fix a derived balance, never to force a value.
+- **It refuses accounts priced by quotas** (stocks, FIIs, crypto): their balance is `quotas × quote`, owned by the price sync, and recomputing it from transactions would wipe the position's market value. The response says so — `"skipped": true` with a `reason`. An unchanged balance there is **not** a confirmation that the balance is right; check `skipped` before concluding anything during a reconciliation.
 
 ## Access / auth
 - **Internal API, no token**, on the VPS. Reach it over SSH:

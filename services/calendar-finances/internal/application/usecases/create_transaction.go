@@ -20,28 +20,28 @@ type CreateTransactionSplitInput struct {
 }
 
 type CreateTransactionInput struct {
-	ProfileID             string                        `json:"profileId"`
-	BankAccountID         string                        `json:"bankAccountId"`
-	DestinationAccountID  *string                       `json:"destinationAccountId,omitempty"`
-	CategoryID            *string                       `json:"categoryId,omitempty"`
-	DestinationCategoryID *string                       `json:"destinationCategoryId,omitempty"` // Category for the INCOME side of cross-profile transfers
-	Type                  string                        `json:"type"`
-	Status               *string                       `json:"status,omitempty"`
-	Amount               float64                       `json:"amount"`
-	Currency             string                        `json:"currency"`
-	Description          string                        `json:"description"`
-	Notes                    *string                       `json:"notes,omitempty"`
-	CostCenter               *string                       `json:"costCenter,omitempty"`
-	IsPersonalReimbursement  bool                          `json:"isPersonalReimbursement"`
-	OccurredOn               string                        `json:"occurredOn"`
-	DueOn                *string                       `json:"dueOn,omitempty"`
-	ReminderOn           *string                       `json:"reminderOn,omitempty"` // Optional reminder date for alerts (10, 5, 1, 0 days before)
-	RecurrenceRule       *string                       `json:"recurrenceRule,omitempty"`
-	InstallmentNumber    *int                          `json:"installmentNumber,omitempty"`
-	InstallmentTotal     *int                          `json:"installmentTotal,omitempty"`
-	ExternalID           *string                       `json:"externalId,omitempty"`
-	Tags                 []string                      `json:"tags,omitempty"`
-	Splits               []CreateTransactionSplitInput `json:"splits,omitempty"`
+	ProfileID               string                        `json:"profileId"`
+	BankAccountID           string                        `json:"bankAccountId"`
+	DestinationAccountID    *string                       `json:"destinationAccountId,omitempty"`
+	CategoryID              *string                       `json:"categoryId,omitempty"`
+	DestinationCategoryID   *string                       `json:"destinationCategoryId,omitempty"` // Category for the INCOME side of cross-profile transfers
+	Type                    string                        `json:"type"`
+	Status                  *string                       `json:"status,omitempty"`
+	Amount                  float64                       `json:"amount"`
+	Currency                string                        `json:"currency"`
+	Description             string                        `json:"description"`
+	Notes                   *string                       `json:"notes,omitempty"`
+	CostCenter              *string                       `json:"costCenter,omitempty"`
+	IsPersonalReimbursement bool                          `json:"isPersonalReimbursement"`
+	OccurredOn              string                        `json:"occurredOn"`
+	DueOn                   *string                       `json:"dueOn,omitempty"`
+	ReminderOn              *string                       `json:"reminderOn,omitempty"` // Optional reminder date for alerts (10, 5, 1, 0 days before)
+	RecurrenceRule          *string                       `json:"recurrenceRule,omitempty"`
+	InstallmentNumber       *int                          `json:"installmentNumber,omitempty"`
+	InstallmentTotal        *int                          `json:"installmentTotal,omitempty"`
+	ExternalID              *string                       `json:"externalId,omitempty"`
+	Tags                    []string                      `json:"tags,omitempty"`
+	Splits                  []CreateTransactionSplitInput `json:"splits,omitempty"`
 }
 
 type CreateTransactionUseCase struct {
@@ -307,7 +307,7 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 			if err := uc.accountRepo.Update(destinationAccount); err != nil {
 				return nil, err
 			}
-			recalculateAccounts(uc.balanceRecalculator, account.ID, destinationAccount.ID)
+			_ = recalculateAccounts(uc.balanceRecalculator, account.ID, destinationAccount.ID)
 		}
 
 		return txn, nil
@@ -333,9 +333,9 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 			if err := uc.accountRepo.Update(destinationAccount); err != nil {
 				return nil, err
 			}
-			recalculateAccounts(uc.balanceRecalculator, account.ID, *destinationAccountID)
+			_ = recalculateAccounts(uc.balanceRecalculator, account.ID, *destinationAccountID)
 		} else {
-			recalculateAccounts(uc.balanceRecalculator, account.ID)
+			_ = recalculateAccounts(uc.balanceRecalculator, account.ID)
 		}
 	}
 
@@ -549,7 +549,7 @@ func (uc *CreateTransactionUseCase) createInstallments(
 			InstallmentTotal:        &installmentTotal,
 			ExternalID:              input.ExternalID,
 			Tags:                    input.Tags,
-			Splits:                  splits,
+			Splits:                  splitsForInstallment(splits, amount, input.Amount),
 		}
 
 		txn, err := transaction.New(createParams)
@@ -567,5 +567,106 @@ func (uc *CreateTransactionUseCase) createInstallments(
 		}
 	}
 
+	// The rows are written; the balance still has to follow them. A credit card
+	// is settled when its invoice is paid, not when the card is used, so it
+	// stays out of this.
+	if txnStatus == transaction.StatusConfirmed && account.Type != bankaccount.AccountTypeCreditCard {
+		recalculateAccounts(uc.balanceRecalculator, account.ID)
+	}
+
 	return firstTxn, nil
+}
+
+// splitsForInstallment divides a purchase's category breakdown across one
+// installment.
+//
+// Every installment gets freshly built splits: passing the caller's slice
+// straight through made all N installments share the same *Split values, so
+// they shared one primary key and each carried the whole purchase's amounts —
+// which on its own exceeds the installment and is rejected.
+//
+// Amounts are allocated in whole cents by largest remainder, the method used to
+// hand out seats: floor everything, then give the leftover cents to whoever was
+// rounded down hardest. That guarantees the parts add up to the whole exactly,
+// which matters because the domain rejects a breakdown that exceeds its
+// transaction. Adjusting one split at the end, as a naive fix would, leaves the
+// sum a cent or two off whenever the correction cannot fit.
+//
+// A split too small to earn a cent of this installment is dropped rather than
+// rounded up: inventing a centavo would make the breakdown exceed the
+// installment, which is the failure this function exists to prevent.
+func splitsForInstallment(splits []*transaction.Split, installmentAmount, totalAmount float64) []*transaction.Split {
+	if len(splits) == 0 || totalAmount <= 0 || installmentAmount <= 0 {
+		return nil
+	}
+
+	// Splits may legitimately cover only part of a purchase, and the domain
+	// tolerates them exceeding it by a centavo. Capping at the purchase keeps
+	// that tolerance from being scaled up into a rejection.
+	var covered float64
+	for _, split := range splits {
+		covered += split.Amount
+	}
+	if covered > totalAmount {
+		covered = totalAmount
+	}
+
+	share := installmentAmount / totalAmount
+	// With covered capped at the purchase, this can never exceed the
+	// installment, and the floors below can never overshoot it.
+	targetCents := int64(math.Round(round2(covered*share) * 100))
+	if targetCents <= 0 {
+		return nil
+	}
+
+	cents := make([]int64, len(splits))
+	remainders := make([]float64, len(splits))
+	var allocated int64
+	for i, split := range splits {
+		exact := split.Amount * share * 100
+		cents[i] = int64(math.Floor(exact))
+		remainders[i] = exact - float64(cents[i])
+		allocated += cents[i]
+	}
+
+	// Hand out the cents lost to flooring, largest remainder first. Ties and
+	// exhausted remainders fall back to index order, which keeps the result
+	// deterministic across installments.
+	for allocated < targetCents {
+		best := -1
+		for i := range splits {
+			if best == -1 || remainders[i] > remainders[best] {
+				best = i
+			}
+		}
+		cents[best]++
+		remainders[best] = -1
+		allocated++
+	}
+
+	out := make([]*transaction.Split, 0, len(splits))
+	for i, split := range splits {
+		if cents[i] <= 0 {
+			continue
+		}
+
+		categoryID := split.CategoryID
+		if categoryID != nil {
+			value := *categoryID
+			categoryID = &value
+		}
+		memo := split.Memo
+		if memo != nil {
+			value := *memo
+			memo = &value
+		}
+
+		out = append(out, &transaction.Split{
+			CategoryID: categoryID,
+			Amount:     float64(cents[i]) / 100,
+			Memo:       memo,
+		})
+	}
+
+	return out
 }

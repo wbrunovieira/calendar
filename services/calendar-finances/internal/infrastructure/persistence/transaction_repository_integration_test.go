@@ -1,3 +1,4 @@
+//go:build integration
 // +build integration
 
 package persistence
@@ -7,6 +8,9 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/brunovieira/calendar-finances/internal/database"
+	"github.com/google/uuid"
 
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
 	_ "github.com/lib/pq"
@@ -22,11 +26,42 @@ func getTestDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("Failed to connect to test database: %v", err)
 	}
+	if err := db.Ping(); err != nil {
+		if os.Getenv("CI") != "" {
+			t.Fatalf("integration DB unavailable in CI: %v", err)
+		}
+		t.Skipf("integration DB unavailable (%v); skipping", err)
+	}
+	// A developer's database already has the schema; CI's is empty.
+	if err := database.RunMigrations(db); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
 
 	return db
 }
 
+// seedProfileAndAccount creates the rows the transactions below point at. Every
+// id column in this schema is a uuid and every foreign key is enforced, so a
+// test cannot invent "account-1" and expect an insert to land.
+func seedProfileAndAccount(t *testing.T, db *sql.DB, profileID, accountID string) {
+	t.Helper()
+	if _, err := db.Exec(`
+		INSERT INTO finance.profiles (id, calendar_id, name, type)
+		VALUES ($1, $2, 'Integration', 'PERSONAL')
+		ON CONFLICT (id) DO NOTHING`, profileID, "integration-"+profileID); err != nil {
+		t.Fatalf("seed profile: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO finance.bank_accounts (id, profile_id, name, type)
+		VALUES ($1, $2, 'Conta Integration', 'CHECKING')
+		ON CONFLICT (id) DO NOTHING`, accountID, profileID); err != nil {
+		t.Fatalf("seed account: %v", err)
+	}
+}
+
 func cleanupTestData(db *sql.DB, profileID string) {
+	db.Exec("DELETE FROM finance.bank_accounts WHERE profile_id = $1", profileID)
+	db.Exec("DELETE FROM finance.profiles WHERE id = $1", profileID)
 	db.Exec("DELETE FROM finance.transaction_tags WHERE transaction_id IN (SELECT id FROM finance.transactions WHERE profile_id = $1)", profileID)
 	db.Exec("DELETE FROM finance.transaction_splits WHERE transaction_id IN (SELECT id FROM finance.transactions WHERE profile_id = $1)", profileID)
 	db.Exec("DELETE FROM finance.transactions WHERE profile_id = $1", profileID)
@@ -37,17 +72,19 @@ func TestTransactionRepository_List_FilterByDateRange_Integration(t *testing.T) 
 	defer db.Close()
 
 	repo := NewTransactionRepository(db)
-	profileID := "test-profile-date-filter"
+	profileID := uuid.NewString()
+	accountID := uuid.NewString()
 
 	// Cleanup before and after test
 	cleanupTestData(db, profileID)
 	defer cleanupTestData(db, profileID)
+	seedProfileAndAccount(t, db, profileID, accountID)
 
 	// Create transactions in different months
 	janTx := &transaction.Transaction{
-		ID:            "tx-jan-integration",
+		ID:            uuid.NewString(),
 		ProfileID:     profileID,
-		BankAccountID: "account-1",
+		BankAccountID: accountID,
 		Type:          transaction.TypeExpense,
 		Status:        transaction.StatusConfirmed,
 		Amount:        100,
@@ -57,9 +94,9 @@ func TestTransactionRepository_List_FilterByDateRange_Integration(t *testing.T) 
 	}
 
 	febTx1 := &transaction.Transaction{
-		ID:            "tx-feb-1-integration",
+		ID:            uuid.NewString(),
 		ProfileID:     profileID,
-		BankAccountID: "account-1",
+		BankAccountID: accountID,
 		Type:          transaction.TypeExpense,
 		Status:        transaction.StatusConfirmed,
 		Amount:        200,
@@ -69,9 +106,9 @@ func TestTransactionRepository_List_FilterByDateRange_Integration(t *testing.T) 
 	}
 
 	febTx2 := &transaction.Transaction{
-		ID:            "tx-feb-2-integration",
+		ID:            uuid.NewString(),
 		ProfileID:     profileID,
-		BankAccountID: "account-1",
+		BankAccountID: accountID,
 		Type:          transaction.TypeExpense,
 		Status:        transaction.StatusConfirmed,
 		Amount:        300,
@@ -81,9 +118,9 @@ func TestTransactionRepository_List_FilterByDateRange_Integration(t *testing.T) 
 	}
 
 	marTx := &transaction.Transaction{
-		ID:            "tx-mar-integration",
+		ID:            uuid.NewString(),
 		ProfileID:     profileID,
-		BankAccountID: "account-1",
+		BankAccountID: accountID,
 		Type:          transaction.TypeExpense,
 		Status:        transaction.StatusConfirmed,
 		Amount:        400,

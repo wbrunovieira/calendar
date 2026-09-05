@@ -46,7 +46,6 @@ func expenseOnCard(profileID, id, cardID string, occurredOn time.Time) *transact
 	}
 }
 
-
 type noopBalanceRecalculator struct{}
 
 func (n *noopBalanceRecalculator) Execute(accountID string) (*RecalculateBalanceResult, error) {

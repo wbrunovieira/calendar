@@ -1750,3 +1750,12 @@ func TestGetInvoice_NetsARefundInsteadOfAddingIt(t *testing.T) {
 		t.Errorf("invoice amount = %.2f, want 70.00 (100 charged, 30 refunded)", result.Amount)
 	}
 }
+
+func (f *fakeTransactionRepoWithInvoice) DeleteMany(ids []string) error {
+	for _, id := range ids {
+		if err := f.Delete(id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
