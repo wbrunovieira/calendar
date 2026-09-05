@@ -165,7 +165,7 @@ func (f *fakeTransactionRepoWithInvoice) SumByInvoiceID(invoiceID string) (float
 	var total float64
 	for _, tx := range f.transactions {
 		if tx.InvoiceID != nil && *tx.InvoiceID == invoiceID && tx.Status != transaction.StatusCancelled {
-			total += tx.Amount
+			total += invoiceSigned(tx)
 		}
 	}
 	return total, nil
@@ -175,7 +175,7 @@ func (f *fakeTransactionRepoWithInvoice) SumByInvoiceIDByStatus(invoiceID string
 	var total float64
 	for _, tx := range f.transactions {
 		if tx.InvoiceID != nil && *tx.InvoiceID == invoiceID && tx.Status == status {
-			total += tx.Amount
+			total += invoiceSigned(tx)
 		}
 	}
 	return total, nil
@@ -1690,6 +1690,64 @@ func TestGetOrCreateInvoice_HighClosingDay_ShouldCreateNextInvoiceWhenCurrentExi
 	}
 	if *tx2.InvoiceID != *tx.InvoiceID {
 		t.Errorf("expected same invoice ID for second transaction, got different: %s vs %s", *tx2.InvoiceID, *tx.InvoiceID)
+	}
+}
+
+// A refund is credited back onto the card carrying the same invoice_id as the
+// purchase it reverses. Reading the invoice must net it out, not add it: the
+// correction cannot make the bill bigger. Editing a card purchase and flipping
+// only its type from EXPENSE to INCOME keeps the invoice link, so this state is
+// reachable through the API and not a hypothetical.
+func TestGetInvoice_NetsARefundInsteadOfAddingIt(t *testing.T) {
+	f := newTestFixtures()
+	createTxUC := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil)
+
+	confirmed := "CONFIRMED"
+	purchase, err := createTxUC.Execute(CreateTransactionInput{
+		ProfileID:     f.profileID,
+		BankAccountID: f.cardID,
+		CategoryID:    &f.categoryID,
+		Type:          "EXPENSE",
+		Status:        &confirmed,
+		Amount:        100.00,
+		Currency:      "BRL",
+		Description:   "Compra",
+		OccurredOn:    "2026-01-05",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The refund is written straight to the repository: creating an INCOME on a
+	// card through the use case is a different argument, and what matters here
+	// is how the invoice reads a credit that is already linked to it. Editing a
+	// card purchase and flipping only its type produces exactly this row.
+	refund, err := transaction.New(transaction.CreateParams{
+		ProfileID:     f.profileID,
+		BankAccountID: f.cardID,
+		CategoryID:    &f.categoryID,
+		InvoiceID:     purchase.InvoiceID,
+		Type:          transaction.TypeIncome,
+		Amount:        30.00,
+		Currency:      "BRL",
+		Description:   "Estorno parcial",
+		OccurredOn:    time.Date(2026, 1, 6, 0, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("building the refund: %v", err)
+	}
+	refund.Status = transaction.StatusConfirmed
+	if err := f.txRepo.Create(refund); err != nil {
+		t.Fatalf("storing the refund: %v", err)
+	}
+
+	result, err := NewGetInvoiceUseCase(f.invoiceRepo, f.txRepo).Execute(*purchase.InvoiceID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Amount != 70.00 {
+		t.Errorf("invoice amount = %.2f, want 70.00 (100 charged, 30 refunded)", result.Amount)
 	}
 }
 

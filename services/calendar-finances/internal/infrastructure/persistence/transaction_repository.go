@@ -828,13 +828,17 @@ func round2(value float64) float64 {
 }
 
 // SumByInvoiceID returns the sum of all transaction amounts for a given invoice
+// An invoice total is charges minus credits. A refund is credited back onto the
+// card and carries the same invoice_id as the purchase it reverses, so summing
+// every row's amount made a refund raise the bill it was cancelling out.
+// EXPENSE and TRANSFER charge the card; INCOME credits it.
 func (r *TransactionRepository) SumByInvoiceID(invoiceID string) (float64, error) {
 	if strings.TrimSpace(invoiceID) == "" {
 		return 0, errors.New("invoiceID is required")
 	}
 
 	query := `
-		SELECT COALESCE(SUM(amount), 0)
+		SELECT COALESCE(SUM(CASE WHEN type = 'INCOME' THEN -amount ELSE amount END), 0)
 		FROM finance.transactions
 		WHERE invoice_id = $1 AND status != 'CANCELLED'
 	`
@@ -855,7 +859,7 @@ func (r *TransactionRepository) SumByInvoiceIDByStatus(invoiceID string, status 
 	}
 
 	query := `
-		SELECT COALESCE(SUM(amount), 0)
+		SELECT COALESCE(SUM(CASE WHEN type = 'INCOME' THEN -amount ELSE amount END), 0)
 		FROM finance.transactions
 		WHERE invoice_id = $1 AND status = $2
 	`
