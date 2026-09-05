@@ -1,6 +1,8 @@
 package transaction
 
 import (
+	"strings"
+
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
 	"github.com/brunovieira/calendar-finances/internal/domain/category"
 )
@@ -50,7 +52,25 @@ func (t *Transaction) IsYieldIn(cat *category.Category, categories map[string]*c
 	if t.Type != TypeIncome {
 		return false
 	}
-	return dreBucketOf(cat, categories) == category.DREFinancial
+
+	switch bucket := dreBucketOf(cat, categories); {
+	case bucket == category.DREFinancial:
+		return true
+	case bucket != "":
+		// A classified branch is the accounting answer, whatever the wording says.
+		return false
+	}
+
+	// Nothing in the tree says anything. Almost nothing is classified yet — including
+	// the personal "Rendimentos" that receives the daily account interest and every
+	// dividend — so trusting the classification alone would silently report zero yield
+	// for a whole profile. The wording decides until the categories are filled in, and
+	// classifying one is what turns this off for it.
+	return looksLikeYield(t.Description)
+}
+
+func looksLikeYield(description string) bool {
+	return strings.Contains(strings.ToLower(description), "rendiment")
 }
 
 // dreBucketOf walks up to the nearest ancestor carrying a classification.

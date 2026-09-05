@@ -10,9 +10,11 @@ import (
 )
 
 // lookbackDays bounds how far back to read transactions when deciding whether an
-// obligation was already settled — enough to cover the previous occurrence and the
-// tolerance window around it, without scanning the whole history.
-const lookbackDays = 45
+// obligation was already settled. It has to clear the widest tolerance window any
+// recurrence can have — a yearly bill accepts a payment up to 180 days out — or a
+// payment sitting just outside the query is never seen and the bill is reported
+// pending forever.
+const lookbackDays = 200
 
 type ListPendingRecurringsInput struct {
 	ProfileID string

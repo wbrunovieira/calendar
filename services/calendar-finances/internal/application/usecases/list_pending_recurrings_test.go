@@ -177,3 +177,32 @@ func TestListPendingRecurrings_IgnoresAFutureScheduledEntry(t *testing.T) {
 		t.Fatalf("expected nothing pending before the date arrives, got %+v", out)
 	}
 }
+
+// A yearly bill tolerates a payment up to 180 days from its date. Reading only 45
+// days of history could never find one, so it stayed pending forever.
+func TestListPendingRecurrings_SeesAPaymentInsideAYearlyWindow(t *testing.T) {
+	yearly := recurringOn("Seguro anual", 5, recurringtransaction.StatusActive)
+	yearly.RecurrenceRule = "FREQ=YEARLY;BYMONTHDAY=5"
+	yearly.NextOccurrence = time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
+
+	paid := []*transaction.Transaction{{
+		Type:        transaction.TypeExpense,
+		Amount:      1200,
+		Description: "Seguro anual",
+		OccurredOn:  time.Date(2026, 7, 8, 0, 0, 0, 0, time.UTC), // 59 days early
+		Status:      transaction.StatusConfirmed,
+	}}
+
+	uc := NewListPendingRecurringsUseCase(
+		&pendingRecurringRepo{list: []*recurringtransaction.RecurringTransaction{yearly}},
+		&cashflowTxRepo{txs: paid},
+	)
+
+	out, err := uc.Execute(ListPendingRecurringsInput{ProfileID: "p1", Reference: "2026-09-10"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected the early payment to settle the yearly bill, got %+v", out)
+	}
+}

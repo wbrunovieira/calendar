@@ -101,14 +101,38 @@ func TestIsYield_ExpenseIsNeverYield(t *testing.T) {
 	}
 }
 
-func TestIsYield_UnclassifiedCategoryIsNotYield(t *testing.T) {
+// Almost nothing is classified yet: 97 of 107 categories in this database carry no
+// DRE bucket, including the personal "Rendimentos" that receives the daily account
+// interest and every dividend. Reading the classification alone would report zero
+// yield for the whole personal profile — so where the tree says nothing, the wording
+// still decides, exactly as it did before.
+func TestIsYield_FallsBackToTheWordingWhileCategoriesAreUnclassified(t *testing.T) {
 	tx := &Transaction{Type: TypeIncome, Description: "Rendimento da conta"}
 
-	if tx.IsYieldIn(nil, nil) {
-		t.Fatal("without a classification the safe answer is: not yield")
+	if !tx.IsYieldIn(&category.Category{Name: "Rendimentos"}, nil) {
+		t.Fatal("an unclassified category must not silently drop the yield")
 	}
+	if !tx.IsYieldIn(nil, nil) {
+		t.Fatal("income with no category at all is judged the same way")
+	}
+}
+
+// The fallback only applies where the tree is silent. A classified branch always
+// wins, so classifying a category is what turns the wording off.
+func TestIsYield_AClassifiedBranchOverridesTheWording(t *testing.T) {
+	revenue := category.DRERevenue
+	tx := &Transaction{Type: TypeIncome, Description: "Rendimento do projeto X"}
+
+	if tx.IsYieldIn(&category.Category{ClassificationDRE: &revenue}, nil) {
+		t.Fatal("a REVENUE category is earned income whatever the description says")
+	}
+}
+
+func TestIsYield_OrdinaryIncomeIsNotYield(t *testing.T) {
+	tx := &Transaction{Type: TypeIncome, Description: "Pix recebido GOWD"}
+
 	if tx.IsYieldIn(&category.Category{}, nil) {
-		t.Fatal("an unclassified category must not be guessed from the description")
+		t.Fatal("income that says nothing about yield is not yield")
 	}
 }
 
@@ -182,5 +206,17 @@ func TestIsYield_SurvivesACycleInTheCategoryTree(t *testing.T) {
 
 	if tx.IsYieldIn(a, map[string]*category.Category{"a": a, "b": b}) {
 		t.Fatal("a cycle must resolve to not-yield rather than loop forever")
+	}
+}
+
+// Every card purchase carries an invoice link, so the clause that recognises a paid
+// bill has to exclude charges sitting ON the card — otherwise all card spending
+// silently becomes an internal settlement and disappears from the month.
+func TestIsSettlement_ACardPurchaseWithAnInvoiceIsStillSpending(t *testing.T) {
+	invoiceID := "inv-1"
+	tx := &Transaction{Type: TypeExpense, InvoiceID: &invoiceID}
+
+	if tx.IsSettlement(acc(bankaccount.AccountTypeCreditCard), nil) {
+		t.Fatal("a purchase on the card is real spending, not the payment of the bill")
 	}
 }
