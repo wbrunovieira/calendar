@@ -168,11 +168,25 @@ func (f *fakeTransactionRepo) SumByCategories(profileID string, categoryIDs []st
 	return result, nil
 }
 
+
+// invoiceSigned mirrors the SQL the repository runs: an invoice total is charges
+// minus credits, so an INCOME linked to an invoice reduces it. Keeping the fakes
+// on the same rule stops a unit test from agreeing with a bug the database
+// would reject.
+func invoiceSigned(tx *transaction.Transaction) float64 {
+	if tx.Type == transaction.TypeIncome {
+		return -tx.Amount
+	}
+	return tx.Amount
+}
+
+// The repository skips CANCELLED rows; so must this, or a unit test can pass on
+// a total the database would never return.
 func (f *fakeTransactionRepo) SumByInvoiceID(invoiceID string) (float64, error) {
 	var total float64
 	for _, tx := range f.created {
-		if tx.InvoiceID != nil && *tx.InvoiceID == invoiceID {
-			total += tx.Amount
+		if tx.InvoiceID != nil && *tx.InvoiceID == invoiceID && tx.Status != transaction.StatusCancelled {
+			total += invoiceSigned(tx)
 		}
 	}
 	return total, nil
@@ -182,7 +196,7 @@ func (f *fakeTransactionRepo) SumByInvoiceIDByStatus(invoiceID string, status tr
 	var total float64
 	for _, tx := range f.created {
 		if tx.InvoiceID != nil && *tx.InvoiceID == invoiceID && tx.Status == status {
-			total += tx.Amount
+			total += invoiceSigned(tx)
 		}
 	}
 	return total, nil
