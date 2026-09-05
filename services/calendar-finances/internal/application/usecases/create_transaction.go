@@ -585,29 +585,68 @@ func (uc *CreateTransactionUseCase) createInstallments(
 // they shared one primary key and each carried the whole purchase's amounts —
 // which on its own exceeds the installment and is rejected.
 //
-// Amounts are scaled to the installment's share of the purchase, so the
-// breakdown adds up to the installment rather than to the purchase. Splits that
-// cover only part of a purchase keep covering the same part of it.
+// Amounts are allocated in whole cents by largest remainder, the method used to
+// hand out seats: floor everything, then give the leftover cents to whoever was
+// rounded down hardest. That guarantees the parts add up to the whole exactly,
+// which matters because the domain rejects a breakdown that exceeds its
+// transaction. Adjusting one split at the end, as a naive fix would, leaves the
+// sum a cent or two off whenever the correction cannot fit.
+//
+// A split too small to earn a cent of this installment is dropped rather than
+// rounded up: inventing a centavo would make the breakdown exceed the
+// installment, which is the failure this function exists to prevent.
 func splitsForInstallment(splits []*transaction.Split, installmentAmount, totalAmount float64) []*transaction.Split {
-	if len(splits) == 0 || totalAmount <= 0 {
+	if len(splits) == 0 || totalAmount <= 0 || installmentAmount <= 0 {
 		return nil
 	}
 
-	share := installmentAmount / totalAmount
-
+	// Splits may legitimately cover only part of a purchase, and the domain
+	// tolerates them exceeding it by a centavo. Capping at the purchase keeps
+	// that tolerance from being scaled up into a rejection.
 	var covered float64
 	for _, split := range splits {
 		covered += split.Amount
 	}
-	target := round2(covered * share)
+	if covered > totalAmount {
+		covered = totalAmount
+	}
+
+	share := installmentAmount / totalAmount
+	// With covered capped at the purchase, this can never exceed the
+	// installment, and the floors below can never overshoot it.
+	targetCents := int64(math.Round(round2(covered*share) * 100))
+	if targetCents <= 0 {
+		return nil
+	}
+
+	cents := make([]int64, len(splits))
+	remainders := make([]float64, len(splits))
+	var allocated int64
+	for i, split := range splits {
+		exact := split.Amount * share * 100
+		cents[i] = int64(math.Floor(exact))
+		remainders[i] = exact - float64(cents[i])
+		allocated += cents[i]
+	}
+
+	// Hand out the cents lost to flooring, largest remainder first. Ties and
+	// exhausted remainders fall back to index order, which keeps the result
+	// deterministic across installments.
+	for allocated < targetCents {
+		best := -1
+		for i := range splits {
+			if best == -1 || remainders[i] > remainders[best] {
+				best = i
+			}
+		}
+		cents[best]++
+		remainders[best] = -1
+		allocated++
+	}
 
 	out := make([]*transaction.Split, 0, len(splits))
-	var allocated float64
-	largest := -1
-
-	for _, split := range splits {
-		amount := round2(split.Amount * share)
-		if amount <= 0 {
+	for i, split := range splits {
+		if cents[i] <= 0 {
 			continue
 		}
 
@@ -624,25 +663,9 @@ func splitsForInstallment(splits []*transaction.Split, installmentAmount, totalA
 
 		out = append(out, &transaction.Split{
 			CategoryID: categoryID,
-			Amount:     amount,
+			Amount:     float64(cents[i]) / 100,
 			Memo:       memo,
 		})
-		allocated += amount
-
-		if largest == -1 || amount > out[largest].Amount {
-			largest = len(out) - 1
-		}
-	}
-
-	// Rounding each split on its own can land a cent or two off the share the
-	// installment actually covers. Put the difference on the largest split so
-	// the breakdown adds up instead of drifting.
-	if largest >= 0 {
-		if diff := round2(target - allocated); diff != 0 {
-			if adjusted := round2(out[largest].Amount + diff); adjusted > 0 {
-				out[largest].Amount = adjusted
-			}
-		}
 	}
 
 	return out
