@@ -63,6 +63,11 @@ func registeredRoutes(t *testing.T, router *mux.Router) map[string]bool {
 // absent from every test, and a later refactor could drop one with nothing
 // noticing. Comparing the whole set in both directions is what makes the
 // extraction verifiable rather than trusted.
+//
+// The list was checked against origin/main's cmd/api/main.go, not merely
+// generated from the code it tests: main.go registered 89 routes with methods,
+// and this is those 89 plus /api/v1/health/invariants. Adding a route here
+// should be a deliberate line, never a paste of the failure message.
 var wantRoutes = []string{
 	"DELETE /api/v1/bank-accounts/{id}",
 	"DELETE /api/v1/budgets/{id}",

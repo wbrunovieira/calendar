@@ -16,19 +16,19 @@ const (
 	// live in the same column.
 	noteMarketValue = "stored balance tracks market quotes, not transactions"
 
-	// A card at exactly zero has never been written by any path: every write
-	// path guards cards out of the balance, and only PayInvoiceUseCaseV2 ever
-	// sets one. A card holding a non-zero balance IS maintained, so its drift
-	// is a real defect and is reported without this excuse.
-	noteCreditCardUnmaintained = "credit card balance was never written by any path"
+	// A credit card's balance is a frozen snapshot of the last invoice payment.
+	// create_transaction, update_transaction and delete_transaction all skip
+	// cards entirely — balance update and recalculation both — and only
+	// PayInvoiceUseCaseV2 (and the manual recalculate route) ever writes one. So
+	// every purchase made since the last payment shows up here as drift, with no
+	// missing transaction behind it. Chasing that number would be chasing the
+	// design, not a bug. Phase 1 makes the balance derived and deletes this note.
+	noteCreditCardSnapshot = "credit card balance is a snapshot of the last invoice payment"
 
-	// credit_card_invoices.amount has no owner: no write path maintains it, the
-	// read paths recompute it in memory without persisting, and the one route
-	// that does persist it refuses PAID invoices. Every stored value is stale by
-	// construction, so this can never be brought to zero and must not gate the
-	// check. Note also that the computed side counts every non-CANCELLED row,
-	// including PLANNED, while the account check counts CONFIRMED only.
-	noteInvoiceDerived = "invoice totals are recomputed on read and never persisted"
+	// A PAID invoice's total cannot be brought back in line: POST
+	// /invoices/{id}/recalculate refuses PAID. An OPEN or CLOSED one can, by
+	// that same route, so it is a real finding and is reported without a note.
+	notePaidInvoiceFrozen = "a paid invoice total can no longer be recalculated"
 )
 
 // AccountInvariant is one account whose stored balance differs from the balance
@@ -60,8 +60,9 @@ type InvoiceInvariant struct {
 // CheckInvariantsResult is a read-only report. Nothing here writes: a drift is a
 // transaction to hunt down, never a number to overwrite.
 //
-// OK is false only for differences that someone can actually act on. A signal
-// that cannot be brought to zero stops being read.
+// OK is false only for differences someone can actually act on: a signal that
+// cannot be brought to zero stops being read within a week. Everything else is
+// still reported, with a note saying why no action is available.
 type CheckInvariantsResult struct {
 	CheckedAccounts int                `json:"checkedAccounts"`
 	CheckedInvoices int                `json:"checkedInvoices"`
@@ -178,6 +179,16 @@ func (uc *CheckInvariantsUseCase) checkInvoiceTotals(
 			continue
 		}
 
+		// An OPEN or CLOSED invoice can be brought back in line with one call to
+		// POST /invoices/{id}/recalculate, which persists exactly this sum. That
+		// makes its drift actionable, and a stored total that is double the sum
+		// of its transactions is the signature of a duplicated or lost charge.
+		// Only PAID is frozen, because that route refuses it.
+		note := ""
+		if inv.Status == invoice.StatusPaid {
+			note = notePaidInvoiceFrozen
+		}
+
 		result.InvoiceDrifts = append(result.InvoiceDrifts, InvoiceInvariant{
 			InvoiceID:      inv.ID,
 			BankAccountID:  inv.BankAccountID,
@@ -186,8 +197,11 @@ func (uc *CheckInvariantsUseCase) checkInvoiceTotals(
 			StoredAmount:   round2(inv.Amount),
 			ComputedAmount: computed,
 			Drift:          drift,
-			Note:           noteInvoiceDerived,
+			Note:           note,
 		})
+		if note == "" {
+			result.OK = false
+		}
 	}
 
 	return nil
@@ -204,13 +218,11 @@ func expectedDifferenceNote(account *bankaccount.BankAccount) string {
 		return noteMarketValue
 
 	case bankaccount.AccountTypeCreditCard:
-		// Only a card nothing has ever written gets the excuse. Once
-		// PayInvoiceUseCaseV2 has touched one, its balance is maintained by the
-		// same invariant as any other account, and a difference is a real bug.
-		if account.CurrentBalance == 0 {
-			return noteCreditCardUnmaintained
-		}
-		return ""
+		// Every card, whatever its balance. A card at zero was never paid; a
+		// card holding a figure was written by the last invoice payment and has
+		// been going stale by design ever since. Neither difference is a
+		// transaction anyone can go and find.
+		return noteCreditCardSnapshot
 
 	default:
 		return ""

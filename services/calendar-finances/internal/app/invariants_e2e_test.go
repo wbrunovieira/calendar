@@ -14,6 +14,7 @@ import (
 	"github.com/brunovieira/calendar-finances/internal/app"
 	"github.com/brunovieira/calendar-finances/internal/application/usecases"
 	"github.com/brunovieira/calendar-finances/internal/database"
+	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
 	_ "github.com/lib/pq"
 )
 
@@ -35,6 +36,11 @@ func invariantsDB(t *testing.T) *sql.DB {
 	if err := db.Ping(); err != nil {
 		// Skipping locally is a convenience. Skipping in CI would turn this
 		// whole file into a green tick that ran nothing.
+		//
+		// This only bites once the finances CI job gains a Postgres service and
+		// runs -tags=integration, which lands in #20. Until then nothing sets
+		// CI for this suite and the guard is inert by circumstance, not by
+		// design — which is why it is written now rather than later.
 		if os.Getenv("CI") != "" {
 			t.Fatalf("integration DB unavailable in CI: %v", err)
 		}
@@ -276,23 +282,25 @@ func TestInvariantsRoute_ReportsAStaleInvoiceTotalWithoutFailingTheCheck(t *test
 		t.Errorf("stored/computed = %v/%v, want 0/923.04", found.StoredAmount, found.ComputedAmount)
 	}
 	if found.Note == "" {
-		t.Error("a stale invoice total must explain that the column has no writer")
+		t.Error("a paid invoice must explain that it can no longer be recalculated")
 	}
 
-	// The test database is shared, so another suite's rows can legitimately
-	// make the overall report red. What must hold is narrower and stronger: an
-	// invoice may never be the reason. Every invoice difference carries a note,
-	// so invoices can never gate the check.
+	// The test database is shared, so another suite's rows can legitimately make
+	// the overall report red — an OPEN or CLOSED invoice out of line is a real
+	// finding now. What must hold is narrower: a PAID invoice can never be the
+	// reason, because POST /invoices/{id}/recalculate refuses it and there is
+	// nothing anyone could do about the alarm.
 	for _, drift := range report.InvoiceDrifts {
-		if drift.Note == "" {
-			t.Errorf("an invoice difference without a note would fail a check nobody can clear: %+v", drift)
+		if drift.Status == string(invoice.StatusPaid) && drift.Note == "" {
+			t.Errorf("a paid invoice without a note would fail a check nobody can clear: %+v", drift)
 		}
 	}
 
-	// The card itself was never written either, so it must not fail the check.
+	// A card's balance is a snapshot of the last invoice payment, so it must
+	// never fail the check while that is how the model works.
 	for _, drift := range report.AccountDrifts {
 		if drift.AccountID == cardID && drift.Note == "" {
-			t.Errorf("a card at zero balance must carry a note: %+v", drift)
+			t.Errorf("a credit card must carry a note whatever its balance: %+v", drift)
 		}
 	}
 }
