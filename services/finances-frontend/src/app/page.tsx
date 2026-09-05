@@ -531,7 +531,7 @@ export default function FinancesPage() {
               </div>
             ) : selectedProfile && (
               <>
-<CashflowSummary transactions={transactions} accounts={filteredAccounts} currentInvoices={currentInvoices} />
+<CashflowSummary transactions={transactions} accounts={filteredAccounts} currentInvoices={currentInvoices} invoicesByAccount={invoicesByAccount} />
 
                 <div className="space-y-6">
                     <QuickExpense

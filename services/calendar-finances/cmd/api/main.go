@@ -98,6 +98,9 @@ func main() {
 		upcomingMaturitiesUC,
 		sellPositionUC,
 	)
+	bankAccountHandler.SetCreditUsageUseCase(
+		usecases.NewGetCreditUsageUseCase(bankAccountRepo, invoiceRepo, transactionRepo),
+	)
 
 	// Initialize Category use cases and handlers
 	createCategoryUC := usecases.NewCreateCategoryUseCase(profileRepo, categoryRepo)
@@ -281,6 +284,7 @@ func main() {
 	apiRouter.HandleFunc("/bank-accounts/{id}", bankAccountHandler.Get).Methods("GET")
 	apiRouter.HandleFunc("/bank-accounts/{id}", bankAccountHandler.Update).Methods("PUT")
 	apiRouter.HandleFunc("/bank-accounts/{id}", bankAccountHandler.Delete).Methods("DELETE")
+	apiRouter.HandleFunc("/bank-accounts/{id}/credit-usage", bankAccountHandler.CreditUsage).Methods("GET")
 	apiRouter.HandleFunc("/bank-accounts/{id}/recalculate-balance", bankAccountHandler.RecalculateBalance).Methods("POST")
 	apiRouter.HandleFunc("/bank-accounts/{id}/sell", bankAccountHandler.Sell).Methods("POST")
 	apiRouter.HandleFunc("/bank-accounts/close-month", bankAccountHandler.CloseMonth).Methods("POST")
