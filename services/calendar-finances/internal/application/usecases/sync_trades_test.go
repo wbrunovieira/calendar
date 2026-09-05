@@ -4,9 +4,9 @@ import "testing"
 
 func TestParseStrategyFromClientOrderID(t *testing.T) {
 	tests := []struct {
-		name           string
-		clientOrderID  string
-		wantStrategy   string
+		name          string
+		clientOrderID string
+		wantStrategy  string
 	}{
 		{
 			name:          "bot with pair and timestamp",

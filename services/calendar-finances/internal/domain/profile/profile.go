@@ -31,9 +31,9 @@ const (
 type TaxRegime string
 
 const (
-	TaxRegimeSimples         TaxRegime = "SIMPLES"
-	TaxRegimeLucroPresumido  TaxRegime = "LUCRO_PRESUMIDO"
-	TaxRegimeLucroReal       TaxRegime = "LUCRO_REAL"
+	TaxRegimeSimples        TaxRegime = "SIMPLES"
+	TaxRegimeLucroPresumido TaxRegime = "LUCRO_PRESUMIDO"
+	TaxRegimeLucroReal      TaxRegime = "LUCRO_REAL"
 )
 
 // Profile represents a financial profile entity

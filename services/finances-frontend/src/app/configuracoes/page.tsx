@@ -382,18 +382,14 @@ export default function ConfiguracoesPage() {
                       </div>
                       {account.type === 'CREDIT_CARD' && account.creditLimit && (
                         <div className="mt-3 pt-3 border-t border-white/10">
-                          <div className="flex justify-between text-xs text-white/50 mb-1">
-                            <span>Limite usado</span>
-                            <span>
-                              {Math.round((account.currentBalance / account.creditLimit) * 100)}%
-                            </span>
-                          </div>
-                          <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-rose-500 transition-all"
-                              style={{ width: `${Math.min(100, (account.currentBalance / account.creditLimit) * 100)}%` }}
-                            />
-                          </div>
+                          {/* The usage bar that stood here divided currentBalance by the
+                              limit. A card carries its debt as a NEGATIVE balance, so it
+                              rendered "-95% limite usado" and an empty bar on a card that
+                              was nearly maxed. The honest figure needs the unpaid
+                              invoices, which this screen does not load — the card panel
+                              shows it, and GET /bank-accounts/{id}/credit-usage answers
+                              it for anything else. Showing nothing beats showing a
+                              number that is wrong in the reassuring direction. */}
                           <p className="text-white/40 text-xs mt-1">
                             Limite: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: account.currency }).format(account.creditLimit)}
                           </p>
