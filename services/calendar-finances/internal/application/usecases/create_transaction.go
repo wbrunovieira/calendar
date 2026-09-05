@@ -201,10 +201,23 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		input.InstallmentNumber = &one
 	}
 
-	// Handle credit card invoice assignment for expense transactions
+	// Determine the effective type for the source transaction. A cross-profile
+	// transfer leaves the source as a plain expense: the money is gone from this
+	// profile, and the other profile records the matching income.
+	effectiveType := typeValue
+	if isCrossProfile {
+		effectiveType = transaction.TypeExpense
+	}
+
+	// Handle credit card invoice assignment for expense transactions.
+	//
+	// This has to test the EFFECTIVE type, not the requested one. A cross-profile
+	// transfer paid with a card is stored as an expense on that card — it is owed to
+	// the issuer like any purchase — so testing the requested type left those charges
+	// outside every invoice, present on the card and missing from its bill.
 	var invoiceID *string
 	var inv *invoice.Invoice
-	if account.Type == bankaccount.AccountTypeCreditCard && typeValue == transaction.TypeExpense {
+	if account.Type == bankaccount.AccountTypeCreditCard && effectiveType == transaction.TypeExpense {
 		if account.ClosingDay != nil && account.DueDay != nil {
 			inv, err = uc.getOrCreateInvoiceForDate(account, occurredOn)
 			if err != nil {
@@ -214,12 +227,6 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 				invoiceID = &inv.ID
 			}
 		}
-	}
-
-	// Determine the effective type for the source transaction
-	effectiveType := typeValue
-	if isCrossProfile {
-		effectiveType = transaction.TypeExpense // Cross-profile: source becomes EXPENSE
 	}
 
 	createParams := transaction.CreateParams{
@@ -293,21 +300,41 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 			return nil, err
 		}
 
-		// Update balances for CONFIRMED cross-profile transfers
+		// Update balances for CONFIRMED cross-profile transfers.
+		//
+		// A card is settled when its invoice is paid, not when it is used, so
+		// neither side moves a card's balance. This guard exists in every other
+		// write path and was missing only here, which meant paying a company
+		// bill with the personal card debited the card's balance as well.
+		//
+		// It belongs in the same change as the invoice link above: without that
+		// link, skipping the balance would make the expense vanish from the
+		// system entirely — off the balance and off every invoice. Together,
+		// the charge lands on the invoice and nowhere else.
 		if txnStatus == transaction.StatusConfirmed {
-			// Debit source
-			account.CurrentBalance -= input.Amount
-			account.UpdatedAt = time.Now()
-			if err := uc.accountRepo.Update(account); err != nil {
-				return nil, err
+			var settled []string
+
+			if !account.IsCreditCard() {
+				account.CurrentBalance -= input.Amount
+				account.UpdatedAt = time.Now()
+				if err := uc.accountRepo.Update(account); err != nil {
+					return nil, err
+				}
+				settled = append(settled, account.ID)
 			}
-			// Credit destination
-			destinationAccount.CurrentBalance += input.Amount
-			destinationAccount.UpdatedAt = time.Now()
-			if err := uc.accountRepo.Update(destinationAccount); err != nil {
-				return nil, err
+
+			if !destinationAccount.IsCreditCard() {
+				destinationAccount.CurrentBalance += input.Amount
+				destinationAccount.UpdatedAt = time.Now()
+				if err := uc.accountRepo.Update(destinationAccount); err != nil {
+					return nil, err
+				}
+				settled = append(settled, destinationAccount.ID)
 			}
-			_ = recalculateAccounts(uc.balanceRecalculator, account.ID, destinationAccount.ID)
+
+			// Only the accounts actually settled: a card must not slip back in
+			// through the recalculation either.
+			_ = recalculateAccounts(uc.balanceRecalculator, settled...)
 		}
 
 		return txn, nil
