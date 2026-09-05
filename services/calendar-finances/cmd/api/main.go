@@ -157,6 +157,7 @@ func main() {
 	recurringService := usecases.NewRecurringTransactionsService(recurringRepo)
 	processRecurringUC := usecases.NewProcessRecurringTransactionsUseCase(recurringRepo, createTransactionUC)
 	recurringHandler := httpHandlers.NewRecurringTransactionHandlers(recurringService, processRecurringUC)
+	recurringHandler.SetPendingUseCase(usecases.NewListPendingRecurringsUseCase(recurringRepo, transactionRepo))
 
 	expenseAnalysisUC := usecases.NewGetExpenseAnalysisUseCase(transactionRepo, categoryRepo, recurringRepo, bankAccountRepo)
 	transactionHandler.SetExpenseAnalysisUseCase(expenseAnalysisUC)
@@ -307,6 +308,7 @@ func main() {
 	apiRouter.HandleFunc("/transactions/{id}/status", transactionHandler.UpdateStatus).Methods("PUT")
 	apiRouter.HandleFunc("/recurring-transactions", recurringHandler.List).Methods("GET")
 	apiRouter.HandleFunc("/recurring-transactions", recurringHandler.Create).Methods("POST")
+	apiRouter.HandleFunc("/recurring-transactions/pending", recurringHandler.Pending).Methods("GET")
 	apiRouter.HandleFunc("/recurring-transactions/process", recurringHandler.Process).Methods("POST")
 	apiRouter.HandleFunc("/recurring-transactions/{id}", recurringHandler.Update).Methods("PUT")
 	apiRouter.HandleFunc("/recurring-transactions/{id}/status", recurringHandler.UpdateStatus).Methods("PATCH")
