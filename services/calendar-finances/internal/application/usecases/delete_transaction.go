@@ -83,12 +83,17 @@ func (uc *DeleteTransactionUseCase) Execute(id string) error {
 // affectedAccounts lists every account whose balance depended on the rows being
 // removed. Only confirmed transactions ever moved money.
 //
-// Credit cards are left out on purpose. Creating a card transaction does not move the
-// card's balance — every write path skips them, and the balance is a consequence of
-// paying the invoice — so recomputing one here would make the card jump by the sum of
-// every purchase since the last bill, purely because something unrelated was deleted.
-// Making a card's balance track its transactions is a worthwhile change, but it is a
-// different one and belongs in its own PR.
+// Credit cards are left out on purpose, on BOTH sides of a transfer. Creating a card
+// transaction does not move the card's balance — every write path skips them, and the
+// balance is a consequence of paying the invoice — so recomputing one here would make
+// the card jump by the sum of every purchase since the last bill, purely because
+// something unrelated was deleted.
+//
+// Excluding it on one side only made the result depend on the order the deletions
+// happened in: removing a purchase and then a payment left the card at -100, and doing
+// the same two in the other order left it at -200. Whether a card's balance should
+// track its transactions at all is a separate decision (#1277 on the board); until
+// then, deleting does not move it.
 func (uc *DeleteTransactionUseCase) affectedAccounts(txns ...*transaction.Transaction) []string {
 	ids := make([]string, 0, len(txns)*2)
 	for _, t := range txns {
@@ -98,7 +103,7 @@ func (uc *DeleteTransactionUseCase) affectedAccounts(txns ...*transaction.Transa
 		if !uc.isCreditCard(t.BankAccountID) {
 			ids = append(ids, t.BankAccountID)
 		}
-		if t.DestinationAccountID != nil {
+		if t.DestinationAccountID != nil && !uc.isCreditCard(*t.DestinationAccountID) {
 			ids = append(ids, *t.DestinationAccountID)
 		}
 	}
@@ -118,8 +123,7 @@ func (uc *DeleteTransactionUseCase) reverseByHand(txns ...*transaction.Transacti
 
 		// Creating a transaction on a credit card does not move the card's balance —
 		// a card's position is derived from its invoices — so undoing one must not
-		// move it either. The recalculator path above has no such asymmetry: it
-		// recomputes every account from the ledger.
+		// move it either. Same rule as the recalculator path above.
 		if account, err := uc.accountRepo.FindByID(txn.BankAccountID); err == nil && !account.IsCreditCard() {
 			uc.reverseBalance(account, txn.Type, txn.Amount)
 			account.UpdatedAt = time.Now()

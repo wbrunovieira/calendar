@@ -109,7 +109,7 @@ func TestDeleteTransaction_PlannedTransferLeavesBalancesAlone(t *testing.T) {
 
 // Money moved into a credit card reduces its debt; deleting that payment must put the
 // debt back, on both sides.
-func TestDeleteTransaction_TransferIntoACardRestoresTheDebt(t *testing.T) {
+func TestDeleteTransaction_TransferIntoACardLeavesTheCardAlone(t *testing.T) {
 	checking := &bankaccount.BankAccount{
 		ID: "checking", ProfileID: "p1", Type: bankaccount.AccountTypeChecking,
 		InitialBalance: 1000, CurrentBalance: 600,
@@ -143,12 +143,14 @@ func TestDeleteTransaction_TransferIntoACardRestoresTheDebt(t *testing.T) {
 	if got := accountRepo.accounts["checking"].CurrentBalance; got != 1000 {
 		t.Errorf("expected the funding account restored to 1000, got %.2f", got)
 	}
-	// Paying an invoice is the one event that moves a card's balance, so undoing the
-	// payment must move it back: the R$400 purchase is owed again. This is the mirror
-	// of TestDeleteTransaction_CardPurchaseLeavesTheCardBalanceAlone, where the card
-	// is the SOURCE and nothing should move.
-	if got := accountRepo.accounts["card"].CurrentBalance; got != -400 {
-		t.Errorf("expected the card debt back at -400, got %.2f", got)
+	// A card's balance is left alone whichever side of the transfer it sits on.
+	// Recomputing it only when it is the destination made the same pair of deletions
+	// land on different balances depending on the order they were done in: delete the
+	// purchase then the payment and the card reads -100; do it the other way and it
+	// reads -200. Whether a card's balance should track its transactions at all is a
+	// separate decision (#1277 on the board); until then, deleting does not move it.
+	if got := accountRepo.accounts["card"].CurrentBalance; got != 0 {
+		t.Errorf("expected the card balance untouched at 0, got %.2f", got)
 	}
 }
 
@@ -474,5 +476,47 @@ func TestDeleteTransaction_NoInvoiceNoRecalculation(t *testing.T) {
 	}
 	if len(spy.called) != 0 {
 		t.Fatalf("expected no invoice recomputation, got %v", spy.called)
+	}
+}
+
+// The order two deletions are done in must not change where the balances end up.
+func TestDeleteTransaction_CardBalanceDoesNotDependOnDeletionOrder(t *testing.T) {
+	balanceAfter := func(deleteFirst, deleteSecond string) float64 {
+		card := &bankaccount.BankAccount{
+			ID: "card", ProfileID: "p1", Type: bankaccount.AccountTypeCreditCard,
+			InitialBalance: 0, CurrentBalance: 0,
+		}
+		checking := &bankaccount.BankAccount{
+			ID: "checking", ProfileID: "p1", Type: bankaccount.AccountTypeChecking,
+			InitialBalance: 1000, CurrentBalance: 1000,
+		}
+		accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+			"card": card, "checking": checking,
+		}}
+		cardID := "card"
+		txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{
+			{ID: "purchase", ProfileID: "p1", BankAccountID: "card", Type: transaction.TypeExpense,
+				Status: transaction.StatusConfirmed, Amount: 100, Currency: "BRL",
+				Description: "Compra", OccurredOn: time.Now()},
+			{ID: "payment", ProfileID: "p1", BankAccountID: "checking", DestinationAccountID: &cardID,
+				Type: transaction.TypeTransfer, Status: transaction.StatusConfirmed, Amount: 200,
+				Currency: "BRL", Description: "Pagamento fatura", OccurredOn: time.Now()},
+		}}
+		uc := NewDeleteTransactionUseCase(txRepo, accountRepo, NewRecalculateBalanceUseCase(accountRepo, txRepo, nil))
+
+		if err := uc.Execute(deleteFirst); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if err := uc.Execute(deleteSecond); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		return card.CurrentBalance
+	}
+
+	purchaseFirst := balanceAfter("purchase", "payment")
+	paymentFirst := balanceAfter("payment", "purchase")
+
+	if purchaseFirst != paymentFirst {
+		t.Fatalf("the same two deletions must leave the same balance: %.2f vs %.2f", purchaseFirst, paymentFirst)
 	}
 }
