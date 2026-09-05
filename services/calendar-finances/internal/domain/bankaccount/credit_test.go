@@ -2,86 +2,74 @@ package bankaccount
 
 import "testing"
 
-func creditCard(limit, balance float64) *BankAccount {
-	return &BankAccount{
-		Type:           AccountTypeCreditCard,
-		CurrentBalance: balance,
-		CreditLimit:    &limit,
+func creditCard(limit float64) *BankAccount {
+	return &BankAccount{Type: AccountTypeCreditCard, CreditLimit: &limit}
+}
+
+// What a card commits against its limit is everything still owed on it. The caller
+// supplies that figure: it comes from the unpaid invoices, not from the account's
+// balance, which this system only moves when an invoice is paid.
+func TestCreditUsageFor_TheRealCase(t *testing.T) {
+	usage := creditCard(400).CreditUsageFor(380.23)
+
+	if !almost(usage.Outstanding, 380.23) {
+		t.Errorf("expected outstanding 380.23, got %v", usage.Outstanding)
+	}
+	if !almost(usage.Available, 19.77) {
+		t.Errorf("expected available 19.77, got %v", usage.Available)
+	}
+	if usage.UsagePercent < 95 || usage.UsagePercent > 95.1 {
+		t.Errorf("expected usage ~95%%, got %v", usage.UsagePercent)
 	}
 }
 
-// The real case that exposed this: a R$400 card owing R$380,23, R$301,74 of it in an
-// installment plan. Availability must come from everything still owed, not from the
-// open invoice — that is what the bank blocks against the limit.
-func TestAvailableCredit_UsesTheWholeOutstandingDebt(t *testing.T) {
-	card := creditCard(400, -380.23)
+func TestCreditUsageFor_NoDebtIsFullyAvailable(t *testing.T) {
+	usage := creditCard(400).CreditUsageFor(0)
 
-	if got := card.Outstanding(); !almost(got, 380.23) {
-		t.Fatalf("expected outstanding 380.23, got %v", got)
-	}
-	if got := card.AvailableCredit(); !almost(got, 19.77) {
-		t.Fatalf("expected available 19.77, got %v", got)
-	}
-	if got := card.CreditUsagePercent(); got < 95 || got > 95.1 {
-		t.Fatalf("expected usage ~95%%, got %v", got)
+	if !almost(usage.Available, 400) || usage.UsagePercent != 0 {
+		t.Fatalf("expected the whole limit available, got %+v", usage)
 	}
 }
 
-func TestAvailableCredit_CardWithNoDebtIsFullyAvailable(t *testing.T) {
-	card := creditCard(400, 0)
+// A refund landing after the bill was paid can leave a negative outstanding; it
+// commits nothing and must not read as negative usage.
+func TestCreditUsageFor_ACreditCommitsNothing(t *testing.T) {
+	usage := creditCard(400).CreditUsageFor(-25)
 
-	if got := card.Outstanding(); got != 0 {
-		t.Fatalf("expected no outstanding, got %v", got)
+	if usage.Outstanding != 0 {
+		t.Errorf("expected outstanding clamped to 0, got %v", usage.Outstanding)
 	}
-	if got := card.AvailableCredit(); !almost(got, 400) {
-		t.Fatalf("expected the whole limit available, got %v", got)
-	}
-}
-
-// A refund landing after the bill was paid leaves the card with a credit balance.
-// That commits nothing, and usage must not go negative.
-func TestAvailableCredit_CreditBalanceCommitsNothing(t *testing.T) {
-	card := creditCard(400, 25)
-
-	if got := card.Outstanding(); got != 0 {
-		t.Fatalf("expected outstanding clamped to 0, got %v", got)
-	}
-	if got := card.CreditUsagePercent(); got != 0 {
-		t.Fatalf("expected 0%% usage, got %v", got)
+	if usage.UsagePercent != 0 {
+		t.Errorf("expected 0%% usage, got %v", usage.UsagePercent)
 	}
 }
 
-func TestAvailableCredit_OverTheLimitGoesNegative(t *testing.T) {
-	card := creditCard(400, -450)
+func TestCreditUsageFor_OverTheLimit(t *testing.T) {
+	usage := creditCard(400).CreditUsageFor(450)
 
-	if got := card.AvailableCredit(); !almost(got, -50) {
-		t.Fatalf("expected -50 available, got %v", got)
+	if !almost(usage.Available, -50) {
+		t.Errorf("expected -50 available, got %v", usage.Available)
 	}
-	if got := card.CreditUsagePercent(); got <= 100 {
-		t.Fatalf("expected usage above 100%%, got %v", got)
-	}
-}
-
-func TestAvailableCredit_NoLimitConfiguredDoesNotDivideByZero(t *testing.T) {
-	card := &BankAccount{Type: AccountTypeCreditCard, CurrentBalance: -120}
-
-	if got := card.CreditUsagePercent(); got != 0 {
-		t.Fatalf("expected 0%% when no limit is set, got %v", got)
-	}
-	if got := card.AvailableCredit(); !almost(got, -120) {
-		t.Fatalf("expected -120 available, got %v", got)
+	if usage.UsagePercent <= 100 {
+		t.Errorf("expected usage above 100%%, got %v", usage.UsagePercent)
 	}
 }
 
-// A checking account has no limit to consume; asking is meaningless, not an error.
-func TestAvailableCredit_NonCardHasNoUsage(t *testing.T) {
-	acc := &BankAccount{Type: AccountTypeChecking, CurrentBalance: -500}
+func TestCreditUsageFor_NoLimitDoesNotDivideByZero(t *testing.T) {
+	usage := (&BankAccount{Type: AccountTypeCreditCard}).CreditUsageFor(120)
 
-	if got := acc.Outstanding(); got != 0 {
-		t.Fatalf("expected 0 outstanding on a non-card, got %v", got)
+	if usage.UsagePercent != 0 {
+		t.Errorf("expected 0%% with no limit configured, got %v", usage.UsagePercent)
 	}
-	if got := acc.CreditUsagePercent(); got != 0 {
-		t.Fatalf("expected 0%% on a non-card, got %v", got)
+}
+
+// Money figures elsewhere in this service are rounded to cents; an agent or report
+// printing the raw field should not see 19.769999999999982.
+func TestCreditUsageFor_RoundsToCents(t *testing.T) {
+	usage := creditCard(400).CreditUsageFor(380.23)
+
+	if usage.Available != 19.77 {
+		t.Fatalf("expected exactly 19.77, got %v", usage.Available)
 	}
 }
 

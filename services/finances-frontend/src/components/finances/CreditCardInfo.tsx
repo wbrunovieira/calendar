@@ -87,9 +87,9 @@ export default function CreditCardInfo({
   const currentAmount = currentInvoice?.amount || 0;
   const confirmedAmount = currentInvoice?.confirmedAmount || 0;
   const plannedAmount = currentInvoice?.plannedAmount || 0;
-  // Availability comes from everything still owed on the card, not just the open
-  // invoice — that is what the bank blocks against the limit.
-  const { available, usagePercent } = getCardUsage(account);
+  // Availability comes from every unpaid invoice, not just the open one — that is
+  // what the bank blocks against the limit.
+  const { available, usagePercent } = getCardUsage(account, invoices);
 
   // Get all unpaid invoices (OPEN or CLOSED with amount > 0)
   const unpaidInvoices = useMemo(() => {

@@ -1,34 +1,27 @@
+import type { BankAccount, Invoice } from '@/types/finances';
+
 /**
  * How much of a credit card's limit is actually committed.
  *
- * The card's `currentBalance` is the whole outstanding debt — the open invoice, any
- * closed invoice still unpaid, and whatever an installment plan or revolving credit
- * left behind. That is what the bank blocks against the limit, so it is what
- * availability has to be derived from. Deriving it from the open invoice alone makes
- * a card with older debt look emptier than it is.
+ * Outstanding is everything still owed: the open invoice AND any earlier one not yet
+ * paid — a closed bill, whatever an instalment plan or revolving credit left behind.
+ * That is what the issuer blocks against the limit. Deriving it from the open invoice
+ * alone makes a card carrying older debt look far emptier than it is; deriving it from
+ * the account balance is worse, because this system only moves a card's balance when
+ * an invoice is paid.
  *
- * A card owing money carries a negative balance; a positive one is a credit (a refund
- * that landed after the bill was paid) and commits nothing.
+ * The API answers the same question at GET /bank-accounts/{id}/credit-usage, which is
+ * the canonical source for anything that is not this screen.
  */
-export function getCardUsage(account: {
-  creditLimit?: number;
-  currentBalance: number;
-  outstanding?: number;
-  availableCredit?: number;
-  creditUsagePercent?: number;
-}): { outstanding: number; available: number; usagePercent: number } {
-  // The API derives these on the entity, so every client reads the same numbers.
-  // The local fallback keeps older payloads rendering instead of showing zeros.
-  if (account.availableCredit !== undefined && account.outstanding !== undefined) {
-    return {
-      outstanding: account.outstanding,
-      available: account.availableCredit,
-      usagePercent: account.creditUsagePercent ?? 0,
-    };
-  }
-
+export function getCardUsage(
+  account: Pick<BankAccount, 'creditLimit'>,
+  invoices: Invoice[],
+): { outstanding: number; available: number; usagePercent: number } {
   const limit = account.creditLimit || 0;
-  const outstanding = Math.max(0, -(account.currentBalance || 0));
+
+  const outstanding = invoices
+    .filter((inv) => inv.status !== 'PAID' && inv.amount > 0)
+    .reduce((total, inv) => total + inv.amount, 0);
 
   return {
     outstanding,

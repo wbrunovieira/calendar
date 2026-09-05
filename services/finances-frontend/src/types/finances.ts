@@ -68,10 +68,6 @@ export interface BankAccount {
   creditLimit?: number;
   dueDay?: number;
   closingDay?: number;
-  // Derived by the API for credit cards only — see getCardUsage.
-  outstanding?: number;
-  availableCredit?: number;
-  creditUsagePercent?: number;
   linkedAccountId?: string;
   displayOrder?: number;
   // Investment-specific fields
