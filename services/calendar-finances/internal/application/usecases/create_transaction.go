@@ -20,28 +20,28 @@ type CreateTransactionSplitInput struct {
 }
 
 type CreateTransactionInput struct {
-	ProfileID             string                        `json:"profileId"`
-	BankAccountID         string                        `json:"bankAccountId"`
-	DestinationAccountID  *string                       `json:"destinationAccountId,omitempty"`
-	CategoryID            *string                       `json:"categoryId,omitempty"`
-	DestinationCategoryID *string                       `json:"destinationCategoryId,omitempty"` // Category for the INCOME side of cross-profile transfers
-	Type                  string                        `json:"type"`
-	Status               *string                       `json:"status,omitempty"`
-	Amount               float64                       `json:"amount"`
-	Currency             string                        `json:"currency"`
-	Description          string                        `json:"description"`
-	Notes                    *string                       `json:"notes,omitempty"`
-	CostCenter               *string                       `json:"costCenter,omitempty"`
-	IsPersonalReimbursement  bool                          `json:"isPersonalReimbursement"`
-	OccurredOn               string                        `json:"occurredOn"`
-	DueOn                *string                       `json:"dueOn,omitempty"`
-	ReminderOn           *string                       `json:"reminderOn,omitempty"` // Optional reminder date for alerts (10, 5, 1, 0 days before)
-	RecurrenceRule       *string                       `json:"recurrenceRule,omitempty"`
-	InstallmentNumber    *int                          `json:"installmentNumber,omitempty"`
-	InstallmentTotal     *int                          `json:"installmentTotal,omitempty"`
-	ExternalID           *string                       `json:"externalId,omitempty"`
-	Tags                 []string                      `json:"tags,omitempty"`
-	Splits               []CreateTransactionSplitInput `json:"splits,omitempty"`
+	ProfileID               string                        `json:"profileId"`
+	BankAccountID           string                        `json:"bankAccountId"`
+	DestinationAccountID    *string                       `json:"destinationAccountId,omitempty"`
+	CategoryID              *string                       `json:"categoryId,omitempty"`
+	DestinationCategoryID   *string                       `json:"destinationCategoryId,omitempty"` // Category for the INCOME side of cross-profile transfers
+	Type                    string                        `json:"type"`
+	Status                  *string                       `json:"status,omitempty"`
+	Amount                  float64                       `json:"amount"`
+	Currency                string                        `json:"currency"`
+	Description             string                        `json:"description"`
+	Notes                   *string                       `json:"notes,omitempty"`
+	CostCenter              *string                       `json:"costCenter,omitempty"`
+	IsPersonalReimbursement bool                          `json:"isPersonalReimbursement"`
+	OccurredOn              string                        `json:"occurredOn"`
+	DueOn                   *string                       `json:"dueOn,omitempty"`
+	ReminderOn              *string                       `json:"reminderOn,omitempty"` // Optional reminder date for alerts (10, 5, 1, 0 days before)
+	RecurrenceRule          *string                       `json:"recurrenceRule,omitempty"`
+	InstallmentNumber       *int                          `json:"installmentNumber,omitempty"`
+	InstallmentTotal        *int                          `json:"installmentTotal,omitempty"`
+	ExternalID              *string                       `json:"externalId,omitempty"`
+	Tags                    []string                      `json:"tags,omitempty"`
+	Splits                  []CreateTransactionSplitInput `json:"splits,omitempty"`
 }
 
 type CreateTransactionUseCase struct {
@@ -549,7 +549,7 @@ func (uc *CreateTransactionUseCase) createInstallments(
 			InstallmentTotal:        &installmentTotal,
 			ExternalID:              input.ExternalID,
 			Tags:                    input.Tags,
-			Splits:                  splits,
+			Splits:                  splitsForInstallment(splits, amount, input.Amount),
 		}
 
 		txn, err := transaction.New(createParams)
@@ -567,5 +567,83 @@ func (uc *CreateTransactionUseCase) createInstallments(
 		}
 	}
 
+	// The rows are written; the balance still has to follow them. A credit card
+	// is settled when its invoice is paid, not when the card is used, so it
+	// stays out of this.
+	if txnStatus == transaction.StatusConfirmed && account.Type != bankaccount.AccountTypeCreditCard {
+		recalculateAccounts(uc.balanceRecalculator, account.ID)
+	}
+
 	return firstTxn, nil
+}
+
+// splitsForInstallment divides a purchase's category breakdown across one
+// installment.
+//
+// Every installment gets freshly built splits: passing the caller's slice
+// straight through made all N installments share the same *Split values, so
+// they shared one primary key and each carried the whole purchase's amounts —
+// which on its own exceeds the installment and is rejected.
+//
+// Amounts are scaled to the installment's share of the purchase, so the
+// breakdown adds up to the installment rather than to the purchase. Splits that
+// cover only part of a purchase keep covering the same part of it.
+func splitsForInstallment(splits []*transaction.Split, installmentAmount, totalAmount float64) []*transaction.Split {
+	if len(splits) == 0 || totalAmount <= 0 {
+		return nil
+	}
+
+	share := installmentAmount / totalAmount
+
+	var covered float64
+	for _, split := range splits {
+		covered += split.Amount
+	}
+	target := round2(covered * share)
+
+	out := make([]*transaction.Split, 0, len(splits))
+	var allocated float64
+	largest := -1
+
+	for _, split := range splits {
+		amount := round2(split.Amount * share)
+		if amount <= 0 {
+			continue
+		}
+
+		categoryID := split.CategoryID
+		if categoryID != nil {
+			value := *categoryID
+			categoryID = &value
+		}
+		memo := split.Memo
+		if memo != nil {
+			value := *memo
+			memo = &value
+		}
+
+		out = append(out, &transaction.Split{
+			CategoryID: categoryID,
+			Amount:     amount,
+			Memo:       memo,
+		})
+		allocated += amount
+
+		if largest == -1 || amount > out[largest].Amount {
+			largest = len(out) - 1
+		}
+	}
+
+	// Rounding each split on its own can land a cent or two off the share the
+	// installment actually covers. Put the difference on the largest split so
+	// the breakdown adds up instead of drifting.
+	if largest >= 0 {
+		if diff := round2(target - allocated); diff != 0 {
+			if adjusted := round2(out[largest].Amount + diff); adjusted > 0 {
+				out[largest].Amount = adjusted
+			}
+		}
+	}
+
+	return out
 }
