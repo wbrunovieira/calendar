@@ -20,28 +20,28 @@ type CreateTransactionSplitInput struct {
 }
 
 type CreateTransactionInput struct {
-	ProfileID             string                        `json:"profileId"`
-	BankAccountID         string                        `json:"bankAccountId"`
-	DestinationAccountID  *string                       `json:"destinationAccountId,omitempty"`
-	CategoryID            *string                       `json:"categoryId,omitempty"`
-	DestinationCategoryID *string                       `json:"destinationCategoryId,omitempty"` // Category for the INCOME side of cross-profile transfers
-	Type                  string                        `json:"type"`
-	Status               *string                       `json:"status,omitempty"`
-	Amount               float64                       `json:"amount"`
-	Currency             string                        `json:"currency"`
-	Description          string                        `json:"description"`
-	Notes                    *string                       `json:"notes,omitempty"`
-	CostCenter               *string                       `json:"costCenter,omitempty"`
-	IsPersonalReimbursement  bool                          `json:"isPersonalReimbursement"`
-	OccurredOn               string                        `json:"occurredOn"`
-	DueOn                *string                       `json:"dueOn,omitempty"`
-	ReminderOn           *string                       `json:"reminderOn,omitempty"` // Optional reminder date for alerts (10, 5, 1, 0 days before)
-	RecurrenceRule       *string                       `json:"recurrenceRule,omitempty"`
-	InstallmentNumber    *int                          `json:"installmentNumber,omitempty"`
-	InstallmentTotal     *int                          `json:"installmentTotal,omitempty"`
-	ExternalID           *string                       `json:"externalId,omitempty"`
-	Tags                 []string                      `json:"tags,omitempty"`
-	Splits               []CreateTransactionSplitInput `json:"splits,omitempty"`
+	ProfileID               string                        `json:"profileId"`
+	BankAccountID           string                        `json:"bankAccountId"`
+	DestinationAccountID    *string                       `json:"destinationAccountId,omitempty"`
+	CategoryID              *string                       `json:"categoryId,omitempty"`
+	DestinationCategoryID   *string                       `json:"destinationCategoryId,omitempty"` // Category for the INCOME side of cross-profile transfers
+	Type                    string                        `json:"type"`
+	Status                  *string                       `json:"status,omitempty"`
+	Amount                  float64                       `json:"amount"`
+	Currency                string                        `json:"currency"`
+	Description             string                        `json:"description"`
+	Notes                   *string                       `json:"notes,omitempty"`
+	CostCenter              *string                       `json:"costCenter,omitempty"`
+	IsPersonalReimbursement bool                          `json:"isPersonalReimbursement"`
+	OccurredOn              string                        `json:"occurredOn"`
+	DueOn                   *string                       `json:"dueOn,omitempty"`
+	ReminderOn              *string                       `json:"reminderOn,omitempty"` // Optional reminder date for alerts (10, 5, 1, 0 days before)
+	RecurrenceRule          *string                       `json:"recurrenceRule,omitempty"`
+	InstallmentNumber       *int                          `json:"installmentNumber,omitempty"`
+	InstallmentTotal        *int                          `json:"installmentTotal,omitempty"`
+	ExternalID              *string                       `json:"externalId,omitempty"`
+	Tags                    []string                      `json:"tags,omitempty"`
+	Splits                  []CreateTransactionSplitInput `json:"splits,omitempty"`
 }
 
 type CreateTransactionUseCase struct {
@@ -201,10 +201,23 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		input.InstallmentNumber = &one
 	}
 
-	// Handle credit card invoice assignment for expense transactions
+	// Determine the effective type for the source transaction. A cross-profile
+	// transfer leaves the source as a plain expense: the money is gone from this
+	// profile, and the other profile records the matching income.
+	effectiveType := typeValue
+	if isCrossProfile {
+		effectiveType = transaction.TypeExpense
+	}
+
+	// Handle credit card invoice assignment for expense transactions.
+	//
+	// This has to test the EFFECTIVE type, not the requested one. A cross-profile
+	// transfer paid with a card is stored as an expense on that card — it is owed to
+	// the issuer like any purchase — so testing the requested type left those charges
+	// outside every invoice, present on the card and missing from its bill.
 	var invoiceID *string
 	var inv *invoice.Invoice
-	if account.Type == bankaccount.AccountTypeCreditCard && typeValue == transaction.TypeExpense {
+	if account.Type == bankaccount.AccountTypeCreditCard && effectiveType == transaction.TypeExpense {
 		if account.ClosingDay != nil && account.DueDay != nil {
 			inv, err = uc.getOrCreateInvoiceForDate(account, occurredOn)
 			if err != nil {
@@ -214,12 +227,6 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 				invoiceID = &inv.ID
 			}
 		}
-	}
-
-	// Determine the effective type for the source transaction
-	effectiveType := typeValue
-	if isCrossProfile {
-		effectiveType = transaction.TypeExpense // Cross-profile: source becomes EXPENSE
 	}
 
 	createParams := transaction.CreateParams{
