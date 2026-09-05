@@ -30,8 +30,13 @@ type RecalculateBalanceResult struct {
 	OldBalance float64 `json:"oldBalance"`
 	NewBalance float64 `json:"newBalance"`
 	// Skipped is true when the account's balance is not derived from its
-	// transactions, so nothing was recalculated and nothing was written.
+	// transactions, so nothing was recalculated and nothing was written. A
+	// caller that cannot tell this from "recalculated to the same number" will
+	// read an unchanged balance as a confirmed one, which during a
+	// reconciliation is the worst possible answer.
 	Skipped bool `json:"skipped"`
+	// Reason explains a skip in words, for whoever is reading the response.
+	Reason string `json:"reason,omitempty"`
 }
 
 func (uc *RecalculateBalanceUseCase) Execute(accountID string) (*RecalculateBalanceResult, error) {
@@ -51,6 +56,7 @@ func (uc *RecalculateBalanceUseCase) Execute(accountID string) (*RecalculateBala
 			OldBalance: oldBalance,
 			NewBalance: oldBalance,
 			Skipped:    true,
+			Reason:     "balance is market value (quotas x quote), maintained by the price sync; nothing to recalculate from transactions",
 		}, nil
 	}
 

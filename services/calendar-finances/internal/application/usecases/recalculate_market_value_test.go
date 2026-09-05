@@ -94,11 +94,20 @@ func TestRecalculateBalance_StillRecalculatesAnInvestmentAccountWithoutQuotas(t 
 }
 
 // A sold-out position has zero quotas, so it stops being market-priced and goes
-// back to being an ordinary ledger.
+// back to being an ordinary ledger. That is what this PR decides.
+//
+// What the resulting figure should be is a separate question this test
+// deliberately does not answer: SetQuotasFromTotal writes InitialBalance =
+// the amount invested while the purchase is usually also recorded as a transfer
+// into the account, so recalculating a closed position can conjure the purchase
+// twice. That double count is tracked on its own and is not settled here —
+// asserting a number now would certify it.
 func TestRecalculateBalance_RecalculatesAPositionThatWasSoldOut(t *testing.T) {
 	const soldID = "clear-vendida"
 	account := makeQuotaAccount(soldID, bankaccount.AccountTypeInvestment, 0, 0)
-	account.InitialBalance = 0
+	// The realistic shape: the position was opened with SetQuotasFromTotal, so
+	// InitialBalance carries the amount invested even after the sale.
+	account.InitialBalance = 5000
 
 	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
 		soldID: account,
@@ -114,9 +123,29 @@ func TestRecalculateBalance_RecalculatesAPositionThatWasSoldOut(t *testing.T) {
 	}
 
 	if result.Skipped {
-		t.Error("Skipped = true for a position with no quotas left")
+		t.Error("Skipped = true for a position with no quotas left; it is an ordinary ledger again")
 	}
-	if result.NewBalance != -250 {
-		t.Errorf("NewBalance = %.2f, want -250", result.NewBalance)
+	if !accountRepo.updateCalled {
+		t.Error("a position with no quotas left must be written by the recalculation")
+	}
+}
+
+// A skipped recalculation has to say so in words. An agent reconciling a FII
+// position calls this route, sees success and an unchanged balance, and would
+// otherwise conclude the balance is confirmed correct.
+func TestRecalculateBalance_ExplainsWhyItSkipped(t *testing.T) {
+	const fiiID = "hglg11"
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		fiiID: makeQuotaAccount(fiiID, bankaccount.AccountTypeInvestment, 50, 100),
+	}}
+
+	uc := NewRecalculateBalanceUseCase(accountRepo, &fakeTransactionRepo{}, nil)
+	result, err := uc.Execute(fiiID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Reason == "" {
+		t.Error("a skipped recalculation must explain itself; an unexplained no-op reads as a confirmation")
 	}
 }
