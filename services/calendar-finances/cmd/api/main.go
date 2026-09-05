@@ -164,6 +164,9 @@ func main() {
 	financialSummaryUC := usecases.NewGetFinancialSummaryUseCase(transactionRepo, categoryRepo, bankAccountRepo)
 	transactionHandler.SetFinancialSummaryUseCase(financialSummaryUC)
 
+	cashflowSummaryUC := usecases.NewGetCashflowSummaryUseCase(transactionRepo, bankAccountRepo, categoryRepo)
+	transactionHandler.SetCashflowSummaryUseCase(cashflowSummaryUC)
+
 	budgetRepo := persistence.NewBudgetTargetRepository(db)
 	budgetService := usecases.NewBudgetTargetsService(budgetRepo, transactionRepo, categoryRepo)
 	budgetHandler := httpHandlers.NewBudgetHandlers(budgetService)
@@ -294,6 +297,7 @@ func main() {
 
 	// Transaction routes
 	apiRouter.HandleFunc("/transactions/daily-balances", transactionHandler.DailyBalances).Methods("GET")
+	apiRouter.HandleFunc("/transactions/cashflow-summary", transactionHandler.CashflowSummary).Methods("GET")
 	apiRouter.HandleFunc("/transactions/expense-analysis", transactionHandler.ExpenseAnalysis).Methods("GET")
 	apiRouter.HandleFunc("/transactions/financial-summary", transactionHandler.FinancialSummary).Methods("GET")
 	apiRouter.HandleFunc("/transactions", transactionHandler.List).Methods("GET")
