@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/brunovieira/calendar-finances/internal/database"
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
 	"github.com/brunovieira/calendar-finances/internal/domain/category"
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
@@ -28,7 +29,18 @@ func integrationDB(t *testing.T) *sql.DB {
 		t.Fatalf("open db: %v", err)
 	}
 	if err := db.Ping(); err != nil {
+		// Skipping locally is a convenience. In CI the database is a service
+		// container that is always there, so a skip would be a green tick over
+		// nothing.
+		if os.Getenv("CI") != "" {
+			t.Fatalf("integration DB unavailable in CI: %v", err)
+		}
 		t.Skipf("integration DB unavailable (%v); skipping", err)
+	}
+	// A developer's database already has the schema; CI's is empty. Running the
+	// migrations here is what lets the same test serve both.
+	if err := database.RunMigrations(db); err != nil {
+		t.Fatalf("run migrations: %v", err)
 	}
 	return db
 }
