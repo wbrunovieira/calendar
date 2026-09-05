@@ -61,14 +61,35 @@ func (uc *GetCreditUsageUseCase) outstandingFor(account *bankaccount.BankAccount
 	invoiced := make(map[string]bool, len(invoices))
 	for _, inv := range invoices {
 		invoiced[inv.ID] = true
-		if inv.Status != invoice.StatusPaid && inv.Amount > 0 {
-			outstanding += inv.Amount
+
+		// The invoice's `amount` column is not the source of truth: it is written on
+		// creation as zero and only refreshed by a manual endpoint, so in production
+		// every open and closed bill still reads 0 there. Every other read path
+		// recomputes it from the transactions, and so does this one.
+		billed, err := uc.txRepo.SumByInvoiceID(inv.ID)
+		if err != nil {
+			return 0, err
+		}
+
+		switch {
+		case inv.Status != invoice.StatusPaid:
+			outstanding += billed
+		case inv.PaidAmount != nil && *inv.PaidAmount < billed:
+			// Paying anything at all marks a bill PAID, so a partial payment would
+			// otherwise drop the whole remaining balance from view.
+			outstanding += billed - *inv.PaidAmount
 		}
 	}
 
 	// A charge that never joined an invoice is still owed — the bill it belongs to
 	// simply does not know about it yet.
-	txs, err := uc.txRepo.List(transaction.ListFilter{BankAccountID: &account.ID})
+	// The repository requires a profile: without it every call fails and the endpoint
+	// answers 500, which is exactly what shipped when the tests used a fake that
+	// ignored the filter.
+	txs, err := uc.txRepo.List(transaction.ListFilter{
+		ProfileID:     account.ProfileID,
+		BankAccountID: &account.ID,
+	})
 	if err != nil {
 		return 0, err
 	}

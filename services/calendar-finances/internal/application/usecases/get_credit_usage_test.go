@@ -20,11 +20,25 @@ func (r *usageInvoiceRepo) FindByBankAccountID(string) ([]*invoice.Invoice, erro
 
 type usageTxRepo struct {
 	mockTransactionRepo
-	txs []*transaction.Transaction
+	txs        []*transaction.Transaction
+	lastFilter transaction.ListFilter
 }
 
-func (r *usageTxRepo) List(transaction.ListFilter) ([]*transaction.Transaction, error) {
+func (r *usageTxRepo) List(filter transaction.ListFilter) ([]*transaction.Transaction, error) {
+	r.lastFilter = filter
 	return r.txs, nil
+}
+
+// Mirrors the real repository: the bill is worth what its transactions say, not what
+// the invoice row's amount column happens to hold.
+func (r *usageTxRepo) SumByInvoiceID(invoiceID string) (float64, error) {
+	total := 0.0
+	for _, tx := range r.txs {
+		if tx.InvoiceID != nil && *tx.InvoiceID == invoiceID && tx.Status == transaction.StatusConfirmed {
+			total += tx.Amount
+		}
+	}
+	return total, nil
 }
 
 func card(limit float64) *bankaccount.BankAccount {
@@ -40,12 +54,15 @@ func card(limit float64) *bankaccount.BankAccount {
 func TestGetCreditUsage_SumsWhatIsStillOwedOnTheInvoices(t *testing.T) {
 	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"card": card(400)}}
 	invoiceRepo := &usageInvoiceRepo{list: []*invoice.Invoice{
-		{ID: "closed", BankAccountID: "card", Status: invoice.StatusClosed, Amount: 253.48},
-		{ID: "open", BankAccountID: "card", Status: invoice.StatusOpen, Amount: 126.75},
-		{ID: "old", BankAccountID: "card", Status: invoice.StatusPaid, Amount: 2702.66},
+		{ID: "closed", BankAccountID: "card", Status: invoice.StatusClosed},
+		{ID: "open", BankAccountID: "card", Status: invoice.StatusOpen},
+		{ID: "old", BankAccountID: "card", Status: invoice.StatusPaid},
+	}}
+	txRepo := &usageTxRepo{txs: []*transaction.Transaction{
+		charge("closed", 253.48), charge("open", 126.75), charge("old", 2702.66),
 	}}
 
-	uc := NewGetCreditUsageUseCase(accountRepo, invoiceRepo, &usageTxRepo{})
+	uc := NewGetCreditUsageUseCase(accountRepo, invoiceRepo, txRepo)
 
 	usage, err := uc.Execute("card")
 	if err != nil {
@@ -65,13 +82,12 @@ func TestGetCreditUsage_SumsWhatIsStillOwedOnTheInvoices(t *testing.T) {
 func TestGetCreditUsage_CountsChargesWithNoInvoice(t *testing.T) {
 	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"card": card(1000)}}
 	invoiceRepo := &usageInvoiceRepo{list: []*invoice.Invoice{
-		{ID: "open", BankAccountID: "card", Status: invoice.StatusOpen, Amount: 100},
+		{ID: "open", BankAccountID: "card", Status: invoice.StatusOpen},
 	}}
 	txRepo := &usageTxRepo{txs: []*transaction.Transaction{
 		{BankAccountID: "card", Type: transaction.TypeExpense, Status: transaction.StatusConfirmed,
 			Amount: 116.03, Description: "Aporte WB Digital (via cartao MP)", OccurredOn: time.Now()},
-		{BankAccountID: "card", Type: transaction.TypeExpense, Status: transaction.StatusConfirmed,
-			Amount: 50, InvoiceID: strPtr("open"), Description: "Mercado", OccurredOn: time.Now()},
+		charge("open", 100),
 	}}
 
 	uc := NewGetCreditUsageUseCase(accountRepo, invoiceRepo, txRepo)
@@ -104,5 +120,72 @@ func TestGetCreditUsage_UnknownAccount(t *testing.T) {
 
 	if _, err := uc.Execute("nope"); err == nil {
 		t.Fatal("expected an error for an unknown account")
+	}
+}
+
+func charge(invoiceID string, amount float64) *transaction.Transaction {
+	return &transaction.Transaction{
+		BankAccountID: "card", Type: transaction.TypeExpense, Status: transaction.StatusConfirmed,
+		Amount: amount, InvoiceID: strPtr(invoiceID), Description: "Compra", OccurredOn: time.Now(),
+	}
+}
+
+// The repository refuses a query with no profile. Nothing asserted this, so the route
+// returned 500 on every call while the suite stayed green.
+func TestGetCreditUsage_QueriesWithinTheProfile(t *testing.T) {
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"card": card(400)}}
+	txRepo := &usageTxRepo{}
+
+	uc := NewGetCreditUsageUseCase(accountRepo, &usageInvoiceRepo{}, txRepo)
+	if _, err := uc.Execute("card"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if txRepo.lastFilter.ProfileID != "p1" {
+		t.Errorf("expected the account's profile in the filter, got %q", txRepo.lastFilter.ProfileID)
+	}
+	if txRepo.lastFilter.BankAccountID == nil || *txRepo.lastFilter.BankAccountID != "card" {
+		t.Error("expected the query scoped to this card")
+	}
+}
+
+// Only confirmed spending is owed. A planned charge may still be cancelled, and money
+// arriving on the card reduces the debt rather than adding to it.
+func TestGetCreditUsage_IgnoresPlannedAndIncomingOnOrphanCharges(t *testing.T) {
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"card": card(1000)}}
+	txRepo := &usageTxRepo{txs: []*transaction.Transaction{
+		{BankAccountID: "card", Type: transaction.TypeExpense, Status: transaction.StatusPlanned,
+			Amount: 500, Description: "Assinatura futura", OccurredOn: time.Now()},
+		{BankAccountID: "card", Type: transaction.TypeIncome, Status: transaction.StatusConfirmed,
+			Amount: 300, Description: "Estorno", OccurredOn: time.Now()},
+	}}
+
+	uc := NewGetCreditUsageUseCase(accountRepo, &usageInvoiceRepo{}, txRepo)
+	usage, err := uc.Execute("card")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if usage.Outstanding != 0 {
+		t.Fatalf("expected nothing owed from a planned charge or a refund, got %.2f", usage.Outstanding)
+	}
+}
+
+// A charge already counted through its invoice must not be counted again.
+func TestGetCreditUsage_DoesNotDoubleCountAnInvoicedCharge(t *testing.T) {
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"card": card(1000)}}
+	invoiceRepo := &usageInvoiceRepo{list: []*invoice.Invoice{
+		{ID: "open", BankAccountID: "card", Status: invoice.StatusOpen},
+	}}
+	txRepo := &usageTxRepo{txs: []*transaction.Transaction{charge("open", 200)}}
+
+	uc := NewGetCreditUsageUseCase(accountRepo, invoiceRepo, txRepo)
+	usage, err := uc.Execute("card")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if usage.Outstanding != 200 {
+		t.Fatalf("expected the charge counted once, got %.2f", usage.Outstanding)
 	}
 }

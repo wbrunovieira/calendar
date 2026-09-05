@@ -19,13 +19,37 @@ export function getCardUsage(
 ): { outstanding: number; available: number; usagePercent: number } {
   const limit = account.creditLimit || 0;
 
-  const outstanding = invoices
-    .filter((inv) => inv.status !== 'PAID' && inv.amount > 0)
-    .reduce((total, inv) => total + inv.amount, 0);
+  const outstanding = outstandingOn(invoices);
 
   return {
     outstanding,
     available: limit - outstanding,
     usagePercent: limit > 0 ? (outstanding / limit) * 100 : 0,
   };
+}
+
+/**
+ * What is still owed across a card's bills.
+ *
+ * A bill is marked PAID the moment anything is paid against it, however small, so a
+ * partial payment has to keep its remainder in view — dropping the bill whole is how
+ * a card owing R$301,74 reports itself as empty.
+ */
+export function outstandingOn(invoices: Invoice[]): number {
+  return invoices.reduce((total, inv) => {
+    if (inv.status !== 'PAID') return total + Math.max(0, inv.amount);
+    return total + Math.max(0, inv.amount - (inv.paidAmount ?? inv.amount));
+  }, 0);
+}
+
+/**
+ * Total credit-card debt across several cards — what net worth has to subtract.
+ * Counting only the open invoice leaves out a closed bill still unpaid or an
+ * instalment plan, and overstates net worth by exactly that much.
+ */
+export function getCardsOutstanding(
+  cards: { id: string }[],
+  invoicesByCard: Record<string, Invoice[]>,
+): number {
+  return cards.reduce((total, card) => total + outstandingOn(invoicesByCard[card.id] ?? []), 0);
 }

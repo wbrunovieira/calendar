@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getCardUsage } from './creditCard';
+import { getCardUsage, getCardsOutstanding } from './creditCard';
 import type { Invoice } from '@/types/finances';
 
 const invoice = (amount: number, status: Invoice['status']): Invoice =>
@@ -66,5 +66,48 @@ describe('getCardUsage', () => {
 
     expect(usage.outstanding).toBe(0);
     expect(usage.available).toBe(400);
+  });
+});
+
+describe('getCardUsage with a partially paid bill', () => {
+  // Paying anything at all marks a bill PAID — the backend does the same — so
+  // dropping it whole would hide the remainder. Two invoices in production are in
+  // exactly this state.
+  it('still counts what is left of a bill that was part-paid', () => {
+    const bill = { ...invoice(361.74, 'PAID'), paidAmount: 60 };
+
+    const usage = getCardUsage({ creditLimit: 400 }, [bill]);
+
+    expect(usage.outstanding).toBeCloseTo(301.74, 2);
+    expect(usage.available).toBeCloseTo(98.26, 2);
+  });
+
+  it('treats a fully paid bill as settled', () => {
+    const bill = { ...invoice(361.74, 'PAID'), paidAmount: 361.74 };
+
+    expect(getCardUsage({ creditLimit: 400 }, [bill]).outstanding).toBe(0);
+  });
+});
+
+describe('getCardsOutstanding', () => {
+  // The net-worth tile counted only the open invoice, so a card carrying an
+  // instalment plan understated the debt — and overstated net worth by the same
+  // amount. On the real R$400 card that was R$253,48.
+  it('adds up every card debt, not just the open invoices', () => {
+    const cards = [{ id: 'a' }, { id: 'b' }];
+    const invoices = {
+      a: [invoice(253.48, 'CLOSED'), invoice(126.75, 'OPEN')],
+      b: [invoice(100, 'OPEN')],
+    };
+
+    expect(getCardsOutstanding(cards, invoices)).toBeCloseTo(480.23, 2);
+  });
+
+  it('is zero when nothing is owed', () => {
+    expect(getCardsOutstanding([{ id: 'a' }], { a: [invoice(500, 'PAID')] })).toBe(0);
+  });
+
+  it('tolerates a card whose invoices have not loaded', () => {
+    expect(getCardsOutstanding([{ id: 'a' }], {})).toBe(0);
   });
 });
