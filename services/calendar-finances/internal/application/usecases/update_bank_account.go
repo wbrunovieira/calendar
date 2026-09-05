@@ -7,10 +7,15 @@ import (
 )
 
 type UpdateBankAccountInput struct {
-	ProfileID       string   `json:"profileId"`
-	Name            string   `json:"name"`
-	Type            string   `json:"type"`
-	CurrentBalance  float64  `json:"currentBalance"`
+	ProfileID      string  `json:"profileId"`
+	Name           string  `json:"name"`
+	Type           string  `json:"type"`
+	CurrentBalance float64 `json:"currentBalance"`
+	// InitialBalance is the seed balance the account was created with. It is a
+	// pointer because omitting it must preserve the stored value: only send it to
+	// correct a seed that was cadastrado wrong, since every later balance derives
+	// from it.
+	InitialBalance  *float64 `json:"initialBalance,omitempty"`
 	Currency        string   `json:"currency"`
 	IsActive        bool     `json:"isActive"`
 	BankName        *string  `json:"bankName,omitempty"`
@@ -56,6 +61,13 @@ func (uc *UpdateBankAccountUseCase) Execute(id string, input UpdateBankAccountIn
 	account.Name = input.Name
 	account.Type = bankaccount.AccountType(input.Type)
 	account.CurrentBalance = input.CurrentBalance
+	// A balance is always initialBalance + the sum of its transactions. Correcting
+	// the seed must therefore shift the current balance by the same delta —
+	// the transactions themselves did not change.
+	if input.InitialBalance != nil {
+		account.CurrentBalance += *input.InitialBalance - account.InitialBalance
+		account.InitialBalance = *input.InitialBalance
+	}
 	if input.Currency == "" {
 		// keep existing currency
 	} else if !bankaccount.IsValidCurrency(input.Currency) {
