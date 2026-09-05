@@ -44,3 +44,25 @@ describe('getCardUsage', () => {
     expect(usage.available).toBeCloseTo(-120, 2);
   });
 });
+
+describe('getCardUsage with API-derived figures', () => {
+  it('prefers what the API derived over recomputing locally', () => {
+    const usage = getCardUsage({
+      creditLimit: 400,
+      currentBalance: -380.23,
+      outstanding: 380.23,
+      availableCredit: 19.77,
+      creditUsagePercent: 95.06,
+    });
+
+    expect(usage.available).toBeCloseTo(19.77, 2);
+    expect(usage.usagePercent).toBeCloseTo(95.06, 2);
+  });
+
+  // Older payloads (or a non-card account) carry none of the derived fields.
+  it('falls back to the local computation when the API omits them', () => {
+    const usage = getCardUsage({ creditLimit: 400, currentBalance: -380.23 });
+
+    expect(usage.available).toBeCloseTo(19.77, 2);
+  });
+});

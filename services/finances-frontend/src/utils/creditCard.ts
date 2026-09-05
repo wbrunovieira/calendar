@@ -13,7 +13,20 @@
 export function getCardUsage(account: {
   creditLimit?: number;
   currentBalance: number;
+  outstanding?: number;
+  availableCredit?: number;
+  creditUsagePercent?: number;
 }): { outstanding: number; available: number; usagePercent: number } {
+  // The API derives these on the entity, so every client reads the same numbers.
+  // The local fallback keeps older payloads rendering instead of showing zeros.
+  if (account.availableCredit !== undefined && account.outstanding !== undefined) {
+    return {
+      outstanding: account.outstanding,
+      available: account.availableCredit,
+      usagePercent: account.creditUsagePercent ?? 0,
+    };
+  }
+
   const limit = account.creditLimit || 0;
   const outstanding = Math.max(0, -(account.currentBalance || 0));
 
