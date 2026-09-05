@@ -9,12 +9,12 @@ import (
 )
 
 type MarketingCampaignHandlers struct {
-	createUC      *usecases.CreateCampaignUseCase
-	listUC        *usecases.ListCampaignsUseCase
-	getUC         *usecases.GetCampaignUseCase
-	updateUC      *usecases.UpdateCampaignUseCase
-	deleteUC      *usecases.DeleteCampaignUseCase
-	getMetricsUC  *usecases.GetCampaignWithMetricsUseCase
+	createUC     *usecases.CreateCampaignUseCase
+	listUC       *usecases.ListCampaignsUseCase
+	getUC        *usecases.GetCampaignUseCase
+	updateUC     *usecases.UpdateCampaignUseCase
+	deleteUC     *usecases.DeleteCampaignUseCase
+	getMetricsUC *usecases.GetCampaignWithMetricsUseCase
 }
 
 func NewMarketingCampaignHandlers(

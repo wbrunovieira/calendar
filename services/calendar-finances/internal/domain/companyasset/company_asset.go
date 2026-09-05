@@ -12,31 +12,31 @@ import (
 type AssetCategory string
 
 const (
-	AssetCategoryHardware    AssetCategory = "HARDWARE"     // Computadores, servidores, periféricos
-	AssetCategorySoftware    AssetCategory = "SOFTWARE"     // Licenças, sistemas
-	AssetCategoryFurniture   AssetCategory = "FURNITURE"    // Móveis e utensílios
-	AssetCategoryVehicle     AssetCategory = "VEHICLE"      // Veículos
-	AssetCategoryRealEstate  AssetCategory = "REAL_ESTATE"  // Imóveis
-	AssetCategoryOther       AssetCategory = "OTHER"        // Outros
+	AssetCategoryHardware   AssetCategory = "HARDWARE"    // Computadores, servidores, periféricos
+	AssetCategorySoftware   AssetCategory = "SOFTWARE"    // Licenças, sistemas
+	AssetCategoryFurniture  AssetCategory = "FURNITURE"   // Móveis e utensílios
+	AssetCategoryVehicle    AssetCategory = "VEHICLE"     // Veículos
+	AssetCategoryRealEstate AssetCategory = "REAL_ESTATE" // Imóveis
+	AssetCategoryOther      AssetCategory = "OTHER"       // Outros
 )
 
 // CompanyAsset represents a fixed asset owned by the company
 type CompanyAsset struct {
-	ID                 string        `json:"id"`
-	ProfileID          string        `json:"profileId"`
-	Name               string        `json:"name"`
-	Category           AssetCategory `json:"category"`
-	PurchaseDate       time.Time     `json:"purchaseDate"`
-	PurchaseAmount     float64       `json:"purchaseAmount"`
-	CurrentValue       float64       `json:"currentValue"`
-	DepreciationRate   float64       `json:"depreciationRate"`   // % per year (0 = no depreciation)
-	LinkedTransactionID *string      `json:"linkedTransactionId,omitempty"`
-	Notes              *string       `json:"notes,omitempty"`
-	IsActive           bool          `json:"isActive"`
-	DisposalDate       *time.Time    `json:"disposalDate,omitempty"`
-	DisposalAmount     *float64      `json:"disposalAmount,omitempty"`
-	CreatedAt          time.Time     `json:"createdAt"`
-	UpdatedAt          time.Time     `json:"updatedAt"`
+	ID                  string        `json:"id"`
+	ProfileID           string        `json:"profileId"`
+	Name                string        `json:"name"`
+	Category            AssetCategory `json:"category"`
+	PurchaseDate        time.Time     `json:"purchaseDate"`
+	PurchaseAmount      float64       `json:"purchaseAmount"`
+	CurrentValue        float64       `json:"currentValue"`
+	DepreciationRate    float64       `json:"depreciationRate"` // % per year (0 = no depreciation)
+	LinkedTransactionID *string       `json:"linkedTransactionId,omitempty"`
+	Notes               *string       `json:"notes,omitempty"`
+	IsActive            bool          `json:"isActive"`
+	DisposalDate        *time.Time    `json:"disposalDate,omitempty"`
+	DisposalAmount      *float64      `json:"disposalAmount,omitempty"`
+	CreatedAt           time.Time     `json:"createdAt"`
+	UpdatedAt           time.Time     `json:"updatedAt"`
 }
 
 // CreateParams encapsulates parameters for creating a company asset

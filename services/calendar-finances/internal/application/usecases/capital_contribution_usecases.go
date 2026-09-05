@@ -10,13 +10,13 @@ import (
 // --- Create ---
 
 type CreateCapitalContributionInput struct {
-	ProfileID       string                           `json:"profileId"`
+	ProfileID       string                               `json:"profileId"`
 	Type            capitalcontribution.ContributionType `json:"type"`
-	Amount          float64                          `json:"amount"`
-	Date            time.Time                        `json:"date"`
-	Description     string                           `json:"description"`
-	SourceAccountID *string                          `json:"sourceAccountId,omitempty"`
-	Notes           *string                          `json:"notes,omitempty"`
+	Amount          float64                              `json:"amount"`
+	Date            time.Time                            `json:"date"`
+	Description     string                               `json:"description"`
+	SourceAccountID *string                              `json:"sourceAccountId,omitempty"`
+	Notes           *string                              `json:"notes,omitempty"`
 }
 
 type CreateCapitalContributionUseCase struct {

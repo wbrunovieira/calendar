@@ -35,10 +35,10 @@ func (m *mockAccountRepo) Update(account *bankaccount.BankAccount) error {
 	return nil
 }
 
-func (m *mockAccountRepo) Create(account *bankaccount.BankAccount) error             { return nil }
-func (m *mockAccountRepo) GetByID(id string) (*bankaccount.BankAccount, error)       { return nil, nil }
-func (m *mockAccountRepo) Delete(id string) error                                    { return nil }
-func (m *mockAccountRepo) Reorder(profileID string, ids []string) error              { return nil }
+func (m *mockAccountRepo) Create(account *bankaccount.BankAccount) error        { return nil }
+func (m *mockAccountRepo) GetByID(id string) (*bankaccount.BankAccount, error)  { return nil, nil }
+func (m *mockAccountRepo) Delete(id string) error                               { return nil }
+func (m *mockAccountRepo) Reorder(profileID string, ids []string) error         { return nil }
 func (m *mockAccountRepo) FindByID(id string) (*bankaccount.BankAccount, error) { return nil, nil }
 func (m *mockAccountRepo) FindAll() ([]*bankaccount.BankAccount, error)         { return nil, nil }
 func (m *mockAccountRepo) UpdateDisplayOrders(updates []bankaccount.DisplayOrderUpdate) error {

@@ -31,6 +31,10 @@ type Repository interface {
 	Update(tx *Transaction) error
 	UpdateStatus(id string, status Status, occurredOn time.Time, notes *string) error
 	Delete(id string) error
+	// DeleteMany removes several transactions as one unit of work. Deleting the legs
+	// of a linked pair one by one can leave the ledger half-removed — one profile
+	// holding a credit with no row behind it — with no way to tell afterwards.
+	DeleteMany(ids []string) error
 	SumByCategories(profileID string, categoryIDs []string, from, to time.Time) (map[string]float64, error)
 	SumByInvoiceID(invoiceID string) (float64, error)
 	SumByInvoiceIDByStatus(invoiceID string, status Status) (float64, error)

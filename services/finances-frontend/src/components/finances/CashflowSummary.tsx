@@ -4,11 +4,15 @@ import { useMemo, useState } from 'react';
 import type { BankAccount, Transaction, Invoice } from '@/types/finances';
 import { formatCurrency } from '@/utils/format';
 import { summarizeCashflow } from '@/utils/cashflow';
+import { getCardsOutstanding } from '@/utils/creditCard';
 
 interface CashflowSummaryProps {
   transactions: Transaction[];
   accounts: BankAccount[];
   currentInvoices?: Record<string, Invoice>;
+  /** Every invoice per card. The open one alone understates a card carrying an
+      instalment plan or a closed bill still unpaid. */
+  invoicesByAccount?: Record<string, Invoice[]>;
 }
 
 const getCurrentMonthYear = () => {
@@ -33,7 +37,7 @@ const formatShortDate = (dateStr?: string) => {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
 
-export default function CashflowSummary({ transactions, accounts, currentInvoices = {} }: CashflowSummaryProps) {
+export default function CashflowSummary({ transactions, accounts, currentInvoices = {}, invoicesByAccount = {} }: CashflowSummaryProps) {
   const currentPeriod = getCurrentMonthYear();
   const [showPatrimonio, setShowPatrimonio] = useState(false);
 
@@ -47,10 +51,7 @@ export default function CashflowSummary({ transactions, accounts, currentInvoice
   const investments = accounts.filter((acc) => acc.type === 'INVESTMENT');
 
   const availableBalance = regularAccounts.reduce((total, acc) => total + acc.currentBalance, 0);
-  const creditCardDebt = creditCards.reduce(
-    (total, acc) => total + (currentInvoices[acc.id]?.amount || 0),
-    0,
-  );
+  const creditCardDebt = getCardsOutstanding(creditCards, invoicesByAccount);
   const investmentTotal = investments.reduce((total, acc) => total + acc.currentBalance, 0);
   const netWorth = availableBalance + investmentTotal - creditCardDebt;
 

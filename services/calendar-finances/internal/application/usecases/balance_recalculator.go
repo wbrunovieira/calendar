@@ -9,15 +9,19 @@ type BalanceRecalculator interface {
 // recalculateAccounts calls the recalculator for each non-empty account ID.
 // Errors are silently absorbed: the mutation already succeeded, and the
 // manual /recalculate-balance route exists as a fallback.
-func recalculateAccounts(r BalanceRecalculator, ids ...string) {
+func recalculateAccounts(r BalanceRecalculator, ids ...string) error {
 	if r == nil {
-		return
+		return nil
 	}
 	for _, id := range ids {
-		if id != "" {
-			_, _ = r.Execute(id)
+		if id == "" {
+			continue
+		}
+		if _, err := r.Execute(id); err != nil {
+			return err
 		}
 	}
+	return nil
 }
 
 // deduplicateIDs returns a slice with unique non-empty IDs, preserving order.

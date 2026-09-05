@@ -19,6 +19,7 @@ type BankAccountHandlers struct {
 	reorderUseCase            *usecases.ReorderBankAccountsUseCase
 	recalculateBalanceUseCase *usecases.RecalculateBalanceUseCase
 	closeMonthUseCase         *usecases.CloseMonthUseCase
+	creditUsageUC             *usecases.GetCreditUsageUseCase
 	upcomingMaturitiesUseCase *usecases.ListUpcomingMaturitiesUseCase
 	sellPositionUseCase       *usecases.SellPositionUseCase
 }
@@ -85,6 +86,36 @@ func (h *BankAccountHandlers) List(w http.ResponseWriter, r *http.Request) {
 		"data":  accounts,
 		"total": len(accounts),
 	})
+}
+
+// SetCreditUsageUseCase wires the credit-usage query after construction, following
+// how the other cross-cutting queries are attached in main.go.
+func (h *BankAccountHandlers) SetCreditUsageUseCase(uc *usecases.GetCreditUsageUseCase) {
+	h.creditUsageUC = uc
+}
+
+// CreditUsage handles GET /api/v1/bank-accounts/{id}/credit-usage
+func (h *BankAccountHandlers) CreditUsage(w http.ResponseWriter, r *http.Request) {
+	if h.creditUsageUC == nil {
+		http.Error(w, "credit usage not available", http.StatusNotImplemented)
+		return
+	}
+
+	usage, err := h.creditUsageUC.Execute(mux.Vars(r)["id"])
+	if err != nil {
+		switch err {
+		case usecases.ErrBankAccountNotFound:
+			http.Error(w, err.Error(), http.StatusNotFound)
+		case usecases.ErrNotACreditCard:
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		default:
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"data": usage})
 }
 
 // UpcomingMaturities handles GET /api/v1/bank-accounts/maturities?profileId=xxx&withinDays=30

@@ -67,4 +67,3 @@ func (uc *RecalculateBalanceUseCase) computeBalance(accountID string, initialBal
 	}
 	return round2(initialBalance + txBalance), nil
 }
-

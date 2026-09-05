@@ -9,13 +9,13 @@ import (
 // --- Create ---
 
 type CreateCampaignInput struct {
-	ProfileID string                    `json:"profileId"`
-	Name      string                    `json:"name"`
+	ProfileID string                     `json:"profileId"`
+	Name      string                     `json:"name"`
 	Platform  marketingcampaign.Platform `json:"platform"`
-	StartDate time.Time                 `json:"startDate"`
-	Budget    float64                   `json:"budget"`
-	EndDate   *time.Time                `json:"endDate,omitempty"`
-	Notes     *string                   `json:"notes,omitempty"`
+	StartDate time.Time                  `json:"startDate"`
+	Budget    float64                    `json:"budget"`
+	EndDate   *time.Time                 `json:"endDate,omitempty"`
+	Notes     *string                    `json:"notes,omitempty"`
 }
 
 type CreateCampaignUseCase struct {
@@ -80,16 +80,16 @@ func (uc *GetCampaignUseCase) Execute(id string) (*marketingcampaign.MarketingCa
 // --- Update ---
 
 type UpdateCampaignInput struct {
-	Name              string                    `json:"name"`
+	Name              string                     `json:"name"`
 	Platform          marketingcampaign.Platform `json:"platform"`
-	StartDate         time.Time                 `json:"startDate"`
-	EndDate           *time.Time                `json:"endDate,omitempty"`
-	Budget            float64                   `json:"budget"`
-	RevenueAttributed float64                   `json:"revenueAttributed"`
-	Leads             int                       `json:"leads"`
-	Conversions       int                       `json:"conversions"`
-	Notes             *string                   `json:"notes,omitempty"`
-	IsActive          bool                      `json:"isActive"`
+	StartDate         time.Time                  `json:"startDate"`
+	EndDate           *time.Time                 `json:"endDate,omitempty"`
+	Budget            float64                    `json:"budget"`
+	RevenueAttributed float64                    `json:"revenueAttributed"`
+	Leads             int                        `json:"leads"`
+	Conversions       int                        `json:"conversions"`
+	Notes             *string                    `json:"notes,omitempty"`
+	IsActive          bool                       `json:"isActive"`
 }
 
 type UpdateCampaignUseCase struct {

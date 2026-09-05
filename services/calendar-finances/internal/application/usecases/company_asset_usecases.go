@@ -10,14 +10,14 @@ import (
 // --- Create ---
 
 type CreateCompanyAssetInput struct {
-	ProfileID           string                    `json:"profileId"`
-	Name                string                    `json:"name"`
+	ProfileID           string                     `json:"profileId"`
+	Name                string                     `json:"name"`
 	Category            companyasset.AssetCategory `json:"category"`
-	PurchaseDate        time.Time                 `json:"purchaseDate"`
-	PurchaseAmount      float64                   `json:"purchaseAmount"`
-	DepreciationRate    float64                   `json:"depreciationRate"`
-	LinkedTransactionID *string                   `json:"linkedTransactionId,omitempty"`
-	Notes               *string                   `json:"notes,omitempty"`
+	PurchaseDate        time.Time                  `json:"purchaseDate"`
+	PurchaseAmount      float64                    `json:"purchaseAmount"`
+	DepreciationRate    float64                    `json:"depreciationRate"`
+	LinkedTransactionID *string                    `json:"linkedTransactionId,omitempty"`
+	Notes               *string                    `json:"notes,omitempty"`
 }
 
 type CreateCompanyAssetUseCase struct {
@@ -87,16 +87,16 @@ func (uc *GetCompanyAssetUseCase) Execute(id string) (*companyasset.CompanyAsset
 // --- Update ---
 
 type UpdateCompanyAssetInput struct {
-	Name             string                    `json:"name"`
+	Name             string                     `json:"name"`
 	Category         companyasset.AssetCategory `json:"category"`
-	PurchaseDate     time.Time                 `json:"purchaseDate"`
-	PurchaseAmount   float64                   `json:"purchaseAmount"`
-	CurrentValue     float64                   `json:"currentValue"`
-	DepreciationRate float64                   `json:"depreciationRate"`
-	Notes            *string                   `json:"notes,omitempty"`
-	IsActive         bool                      `json:"isActive"`
-	DisposalDate     *time.Time                `json:"disposalDate,omitempty"`
-	DisposalAmount   *float64                  `json:"disposalAmount,omitempty"`
+	PurchaseDate     time.Time                  `json:"purchaseDate"`
+	PurchaseAmount   float64                    `json:"purchaseAmount"`
+	CurrentValue     float64                    `json:"currentValue"`
+	DepreciationRate float64                    `json:"depreciationRate"`
+	Notes            *string                    `json:"notes,omitempty"`
+	IsActive         bool                       `json:"isActive"`
+	DisposalDate     *time.Time                 `json:"disposalDate,omitempty"`
+	DisposalAmount   *float64                   `json:"disposalAmount,omitempty"`
 }
 
 type UpdateCompanyAssetUseCase struct {

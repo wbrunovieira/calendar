@@ -11,9 +11,9 @@ type fakeGoalRepoForReorder struct {
 	updates []goal.DisplayOrderUpdate
 }
 
-func (f *fakeGoalRepoForReorder) Create(g *goal.Goal) error                { return nil }
-func (f *fakeGoalRepoForReorder) Update(g *goal.Goal) error                { return nil }
-func (f *fakeGoalRepoForReorder) Delete(id string) error                   { return nil }
+func (f *fakeGoalRepoForReorder) Create(g *goal.Goal) error { return nil }
+func (f *fakeGoalRepoForReorder) Update(g *goal.Goal) error { return nil }
+func (f *fakeGoalRepoForReorder) Delete(id string) error    { return nil }
 func (f *fakeGoalRepoForReorder) FindByID(id string) (*goal.Goal, error) {
 	g, ok := f.goals[id]
 	if !ok {
