@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
+	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
 )
 
@@ -383,4 +384,95 @@ type failingRecalculator struct{}
 
 func (failingRecalculator) Execute(string) (*RecalculateBalanceResult, error) {
 	return nil, errors.New("recalculation unavailable")
+}
+
+type invoiceRecalcSpy struct {
+	called []string
+	err    error
+}
+
+func (s *invoiceRecalcSpy) Execute(invoiceID string) (*invoice.Invoice, error) {
+	s.called = append(s.called, invoiceID)
+	return nil, s.err
+}
+
+// A card purchase belongs to a bill. Deleting it without recomputing that bill leaves
+// the invoice total claiming money that is no longer owed — and the card's balance and
+// its invoice then disagree, which is exactly the drift a reconciliation has to chase.
+func TestDeleteTransaction_RecomputesTheInvoiceOfADeletedCharge(t *testing.T) {
+	invoiceID := "inv-1"
+	card := &bankaccount.BankAccount{
+		ID: "card", ProfileID: "p1", Type: bankaccount.AccountTypeCreditCard,
+	}
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"card": card}}
+	txn := &transaction.Transaction{
+		ID: "tx-1", ProfileID: "p1", BankAccountID: "card", InvoiceID: &invoiceID,
+		Type: transaction.TypeExpense, Status: transaction.StatusConfirmed,
+		Amount: 200, Currency: "BRL", Description: "Supermercado", OccurredOn: time.Now(),
+	}
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{txn}}
+
+	spy := &invoiceRecalcSpy{}
+	uc := NewDeleteTransactionUseCase(txRepo, accountRepo, nil)
+	uc.SetInvoiceRecalculator(spy)
+
+	if err := uc.Execute(txn.ID); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(spy.called) != 1 || spy.called[0] != invoiceID {
+		t.Fatalf("expected the charge's invoice to be recomputed, got %v", spy.called)
+	}
+}
+
+// A paid invoice is closed history: the recalculation refuses it, and that refusal
+// must not fail the deletion.
+func TestDeleteTransaction_APaidInvoiceRefusalDoesNotFailTheDelete(t *testing.T) {
+	invoiceID := "inv-paid"
+	card := &bankaccount.BankAccount{
+		ID: "card", ProfileID: "p1", Type: bankaccount.AccountTypeCreditCard,
+	}
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"card": card}}
+	txn := &transaction.Transaction{
+		ID: "tx-1", ProfileID: "p1", BankAccountID: "card", InvoiceID: &invoiceID,
+		Type: transaction.TypeExpense, Status: transaction.StatusConfirmed,
+		Amount: 200, Currency: "BRL", Description: "Supermercado", OccurredOn: time.Now(),
+	}
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{txn}}
+
+	uc := NewDeleteTransactionUseCase(txRepo, accountRepo, nil)
+	uc.SetInvoiceRecalculator(&invoiceRecalcSpy{err: ErrInvoiceAlreadyPaid})
+
+	if err := uc.Execute(txn.ID); err != nil {
+		t.Fatalf("a paid invoice must not block the deletion, got %v", err)
+	}
+	if len(txRepo.created) != 0 {
+		t.Fatal("expected the transaction to be deleted anyway")
+	}
+}
+
+// A transaction that belongs to no invoice must not trigger a recalculation.
+func TestDeleteTransaction_NoInvoiceNoRecalculation(t *testing.T) {
+	account := &bankaccount.BankAccount{
+		ID: "checking", ProfileID: "p1", Type: bankaccount.AccountTypeChecking,
+		InitialBalance: 1000, CurrentBalance: 700,
+	}
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"checking": account}}
+	txn := &transaction.Transaction{
+		ID: "tx-1", ProfileID: "p1", BankAccountID: "checking",
+		Type: transaction.TypeExpense, Status: transaction.StatusConfirmed,
+		Amount: 300, Currency: "BRL", Description: "Mercado", OccurredOn: time.Now(),
+	}
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{txn}}
+
+	spy := &invoiceRecalcSpy{}
+	uc := NewDeleteTransactionUseCase(txRepo, accountRepo, nil)
+	uc.SetInvoiceRecalculator(spy)
+
+	if err := uc.Execute(txn.ID); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(spy.called) != 0 {
+		t.Fatalf("expected no invoice recomputation, got %v", spy.called)
+	}
 }

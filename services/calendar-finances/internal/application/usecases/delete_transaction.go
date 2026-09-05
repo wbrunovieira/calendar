@@ -4,13 +4,27 @@ import (
 	"time"
 
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
+	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
 )
+
+// InvoiceRecalculator recomputes a card invoice's total from the transactions still
+// attached to it.
+type InvoiceRecalculator interface {
+	Execute(invoiceID string) (*invoice.Invoice, error)
+}
 
 type DeleteTransactionUseCase struct {
 	repo                transaction.Repository
 	accountRepo         bankaccount.Repository
 	balanceRecalculator BalanceRecalculator
+	invoiceRecalculator InvoiceRecalculator
+}
+
+// SetInvoiceRecalculator wires the invoice total recomputation after construction,
+// following how the other cross-cutting collaborators are attached in main.go.
+func (uc *DeleteTransactionUseCase) SetInvoiceRecalculator(r InvoiceRecalculator) {
+	uc.invoiceRecalculator = r
 }
 
 func NewDeleteTransactionUseCase(repo transaction.Repository, accountRepo bankaccount.Repository, recalculator BalanceRecalculator) *DeleteTransactionUseCase {
@@ -51,6 +65,8 @@ func (uc *DeleteTransactionUseCase) Execute(id string) error {
 	if err := uc.repo.DeleteMany(toDelete); err != nil {
 		return err
 	}
+
+	uc.recomputeInvoices(txn, linked)
 
 	if uc.balanceRecalculator != nil {
 		// The rows are already gone. Swallowing a failure here would leave the
@@ -134,5 +150,25 @@ func (uc *DeleteTransactionUseCase) reverseBalance(account *bankaccount.BankAcco
 		account.CurrentBalance -= amount
 	case transaction.TypeTransfer:
 		account.CurrentBalance += amount
+	}
+}
+
+// recomputeInvoices brings the bills of the removed charges back in line. Leaving
+// them stale makes an invoice claim money that is no longer owed, and the card's
+// balance and its invoice then disagree — the drift a reconciliation has to chase.
+//
+// A refusal is not fatal: a PAID invoice is closed history and the recalculation
+// declines it, which must not undo a deletion that already happened.
+func (uc *DeleteTransactionUseCase) recomputeInvoices(txns ...*transaction.Transaction) {
+	if uc.invoiceRecalculator == nil {
+		return
+	}
+	seen := make(map[string]bool, len(txns))
+	for _, t := range txns {
+		if t == nil || t.InvoiceID == nil || seen[*t.InvoiceID] {
+			continue
+		}
+		seen[*t.InvoiceID] = true
+		_, _ = uc.invoiceRecalculator.Execute(*t.InvoiceID)
 	}
 }
