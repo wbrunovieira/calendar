@@ -87,7 +87,7 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 		// The transaction status is already updated
 	}
 	if acc, err := uc.accountRepo.FindByID(tx.BankAccountID); err == nil && acc.Type != bankaccount.AccountTypeCreditCard {
-		recalculateAccounts(uc.balanceRecalculator, tx.BankAccountID)
+		_ = recalculateAccounts(uc.balanceRecalculator, tx.BankAccountID)
 	}
 
 	// Handle linked transaction (cross-profile paired transactions)
@@ -100,7 +100,7 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 			// Update linked transaction balance
 			_ = uc.updateBalanceOnStatusChange(linkedTx, linkedOldStatus, targetStatus)
 			if linkedAcc, err := uc.accountRepo.FindByID(linkedTx.BankAccountID); err == nil && linkedAcc.Type != bankaccount.AccountTypeCreditCard {
-				recalculateAccounts(uc.balanceRecalculator, linkedTx.BankAccountID)
+				_ = recalculateAccounts(uc.balanceRecalculator, linkedTx.BankAccountID)
 			}
 			linkedTx.Status = targetStatus
 		}

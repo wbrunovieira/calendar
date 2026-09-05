@@ -142,6 +142,8 @@ func main() {
 	// credits the card side, and recomputes the card balance from its transactions
 	payInvoiceUC := usecases.NewPayInvoiceUseCaseV2(invoiceRepo, bankAccountRepo, transactionRepo, recalculateBalanceUC)
 	recalculateInvoiceUC := usecases.NewRecalculateInvoiceAmountUseCase(invoiceRepo, transactionRepo)
+	// Deleting a charge changes the bill it belonged to.
+	deleteTransactionUC.SetInvoiceRecalculator(recalculateInvoiceUC)
 	updateInvoiceUC := usecases.NewUpdateInvoiceUseCase(invoiceRepo)
 	invoiceHandler := httpHandlers.NewInvoiceHandlers(
 		createInvoiceUC,

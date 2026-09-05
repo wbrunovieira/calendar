@@ -23,15 +23,15 @@ const (
 type ClassificationDRE string
 
 const (
-	DRERevenue         ClassificationDRE = "REVENUE"          // Receita bruta
-	DRETax             ClassificationDRE = "TAX"               // Impostos e deduções (DAS, ISS…)
-	DREFixedCost       ClassificationDRE = "FIXED_COST"        // Custo fixo operacional
-	DREVariableCost    ClassificationDRE = "VARIABLE_COST"     // Custo variável
-	DREProlabore       ClassificationDRE = "PROLABORE"         // Retirada do sócio
-	DREMarketing       ClassificationDRE = "MARKETING"         // Investimento em marketing/ads
-	DREFinancial       ClassificationDRE = "FINANCIAL"         // Rendimentos, juros, IOF
-	DREAsset           ClassificationDRE = "ASSET"             // Compra de ativo permanente
-	DRECapital         ClassificationDRE = "CAPITAL"           // Aporte de capital
+	DRERevenue      ClassificationDRE = "REVENUE"       // Receita bruta
+	DRETax          ClassificationDRE = "TAX"           // Impostos e deduções (DAS, ISS…)
+	DREFixedCost    ClassificationDRE = "FIXED_COST"    // Custo fixo operacional
+	DREVariableCost ClassificationDRE = "VARIABLE_COST" // Custo variável
+	DREProlabore    ClassificationDRE = "PROLABORE"     // Retirada do sócio
+	DREMarketing    ClassificationDRE = "MARKETING"     // Investimento em marketing/ads
+	DREFinancial    ClassificationDRE = "FINANCIAL"     // Rendimentos, juros, IOF
+	DREAsset        ClassificationDRE = "ASSET"         // Compra de ativo permanente
+	DRECapital      ClassificationDRE = "CAPITAL"       // Aporte de capital
 )
 
 // Category defines a spending or income bucket scoped to a financial profile.

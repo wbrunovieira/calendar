@@ -15,10 +15,10 @@ func TestGetQuotes_SingleTicker(t *testing.T) {
 		json.NewEncoder(w).Encode(QuoteResponse{
 			Results: []QuoteResult{
 				{
-					Symbol:             "HGLG11",
-					ShortName:          "FII CSHG LOG",
-					RegularMarketPrice: 158.50,
-					RegularMarketChange: -0.30,
+					Symbol:                     "HGLG11",
+					ShortName:                  "FII CSHG LOG",
+					RegularMarketPrice:         158.50,
+					RegularMarketChange:        -0.30,
 					RegularMarketChangePercent: -0.19,
 				},
 			},
