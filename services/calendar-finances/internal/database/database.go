@@ -172,6 +172,13 @@ func RunMigrations(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_categories_parent_id ON finance.categories(parent_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_transactions_profile_occurred ON finance.transactions(profile_id, occurred_on)`,
 		`CREATE INDEX IF NOT EXISTS idx_transactions_bank_account ON finance.transactions(bank_account_id)`,
+
+		// The incoming half of a transfer is found by destination_account_id, so
+		// every balance calculation scans on it. It was the only id column on
+		// this table without an index, which makes that half a sequential scan
+		// once per account — cheap today, and the Binance sync has already put
+		// six figures of rows in here once.
+		`CREATE INDEX IF NOT EXISTS idx_transactions_destination_account ON finance.transactions(destination_account_id) WHERE destination_account_id IS NOT NULL`,
 		// Guard-rail contra duplicatas de syncs (binance-*, dividend-*, mp-*): mesmo que o
 		// dedup na aplicação quebre, o INSERT duplicado falha no banco.
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_transactions_external_id ON finance.transactions(external_id) WHERE external_id IS NOT NULL`,
