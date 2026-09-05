@@ -116,3 +116,82 @@ func TestUpdateBankAccount_ValidCurrencyUpdates(t *testing.T) {
 		t.Fatalf("expected currency USD, got %q", repo.accounts["acc-1"].Currency)
 	}
 }
+
+// Given: an account whose seed balance was cadastrado wrong
+// When: Execute is called without initialBalance in the payload
+// Then: the seed is preserved (nil means "not sent")
+func TestUpdateBankAccount_NilInitialBalancePreservesExisting(t *testing.T) {
+	acc := makeAccountWithCurrency("acc-1", "BRL")
+	acc.InitialBalance = 3428.08
+	acc.CurrentBalance = 48.01
+	repo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"acc-1": acc}}
+
+	uc := NewUpdateBankAccountUseCase(repo)
+	input := baseUpdateInput("acc-1", "BRL")
+	input.CurrentBalance = 48.01
+	if _, err := uc.Execute("acc-1", input); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := repo.accounts["acc-1"].InitialBalance; got != 3428.08 {
+		t.Fatalf("expected initial balance to be preserved at 3428.08, got %v", got)
+	}
+	if got := repo.accounts["acc-1"].CurrentBalance; got != 48.01 {
+		t.Fatalf("expected current balance untouched at 48.01, got %v", got)
+	}
+}
+
+// Given: an account seeded 35.70 above the real opening balance
+// When: the seed is corrected downwards
+// Then: the current balance shifts by the same delta, because
+//
+//	balance = initialBalance + sum(transactions) and the transactions did not change
+func TestUpdateBankAccount_InitialBalanceShiftsCurrentBalance(t *testing.T) {
+	acc := makeAccountWithCurrency("acc-1", "BRL")
+	acc.InitialBalance = 3428.08
+	acc.CurrentBalance = 48.01
+	repo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"acc-1": acc}}
+
+	corrected := 3392.38
+	uc := NewUpdateBankAccountUseCase(repo)
+	input := baseUpdateInput("acc-1", "BRL")
+	input.CurrentBalance = 48.01
+	input.InitialBalance = &corrected
+
+	if _, err := uc.Execute("acc-1", input); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	updated := repo.accounts["acc-1"]
+	if updated.InitialBalance != corrected {
+		t.Fatalf("expected initial balance %v, got %v", corrected, updated.InitialBalance)
+	}
+	// 48.01 - 35.70 = 12.31
+	if diff := updated.CurrentBalance - 12.31; diff > 0.005 || diff < -0.005 {
+		t.Fatalf("expected current balance 12.31 after the seed correction, got %v", updated.CurrentBalance)
+	}
+}
+
+// Given: an account being updated for an unrelated reason (a rename)
+// When: initialBalance is sent unchanged
+// Then: the current balance is not shifted
+func TestUpdateBankAccount_UnchangedInitialBalanceDoesNotShiftCurrentBalance(t *testing.T) {
+	acc := makeAccountWithCurrency("acc-1", "BRL")
+	acc.InitialBalance = 100
+	acc.CurrentBalance = 250
+	repo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"acc-1": acc}}
+
+	same := 100.0
+	uc := NewUpdateBankAccountUseCase(repo)
+	input := baseUpdateInput("renamed", "BRL")
+	input.CurrentBalance = 250
+	input.InitialBalance = &same
+
+	if _, err := uc.Execute("acc-1", input); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := repo.accounts["acc-1"].CurrentBalance; got != 250 {
+		t.Fatalf("expected current balance to stay at 250, got %v", got)
+	}
+}

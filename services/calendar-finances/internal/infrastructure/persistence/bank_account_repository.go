@@ -159,6 +159,7 @@ func (r *BankAccountRepository) Update(account *bankaccount.BankAccount) error {
 			closing_day = $18, linked_account_id = $19, display_order = $20,
 			investment_type = $21, yield_type = $22, yield_rate = $23, maturity_date = $24, broker = $25,
 			number_of_quotas = $26, quota_price = $27,
+			initial_balance = $29,
 			updated_at = $28
 		WHERE id = $1
 	`
@@ -170,6 +171,7 @@ func (r *BankAccountRepository) Update(account *bankaccount.BankAccount) error {
 		account.InvestmentType, account.YieldType, account.YieldRate, account.MaturityDate, account.Broker,
 		account.NumberOfQuotas, account.QuotaPrice,
 		account.UpdatedAt,
+		account.InitialBalance,
 	)
 	if err != nil {
 		return err
