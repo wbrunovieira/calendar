@@ -2,6 +2,7 @@ package app
 
 import (
 	"database/sql"
+	"errors"
 	"log"
 	"os"
 
@@ -36,6 +37,10 @@ type App struct {
 // New wires the whole API against db. It performs no I/O, so tests can build the
 // real router — the one main.go serves — without a database.
 func New(db *sql.DB) (*App, error) {
+	if db == nil {
+		return nil, errors.New("app: a database handle is required")
+	}
+
 	// Initialize router
 	router := mux.NewRouter()
 

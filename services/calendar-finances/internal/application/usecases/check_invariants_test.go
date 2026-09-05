@@ -40,9 +40,11 @@ func (f *invariantTxRepo) SumByInvoiceID(invoiceID string) (float64, error) {
 type invariantInvoiceRepo struct {
 	invoice.Repository
 	byAccount map[string][]*invoice.Invoice
+	asked     []string
 }
 
 func (f *invariantInvoiceRepo) FindByBankAccountID(accountID string) ([]*invoice.Invoice, error) {
+	f.asked = append(f.asked, accountID)
 	return f.byAccount[accountID], nil
 }
 
@@ -113,6 +115,8 @@ func TestCheckInvariants_ReportsTheExactDriftOfACheckingAccount(t *testing.T) {
 	}
 }
 
+// Balances are money: rounding both sides to cents is what absorbs the float
+// noise of summing amounts. A tenth of a cent is not a missing transaction.
 func TestCheckInvariants_IgnoresSubCentNoise(t *testing.T) {
 	accounts := &invariantAccountRepo{accounts: []*bankaccount.BankAccount{
 		invariantCheckingAccount("acc-1", 0, 10.0),
@@ -158,7 +162,10 @@ func TestCheckInvariants_MarketValueAccountsAreReportedButDoNotFailTheCheck(t *t
 	}
 }
 
-func TestCheckInvariants_CreditCardsAreReportedButDoNotFailTheCheck(t *testing.T) {
+// A card sitting at exactly zero has never been written by anything: every
+// write path guards cards out of the balance. That difference is a known gap,
+// not a regression.
+func TestCheckInvariants_ACardNothingEverWroteDoesNotFailTheCheck(t *testing.T) {
 	card := invariantCheckingAccount("card-1", 0, 0)
 	card.Type = bankaccount.AccountTypeCreditCard
 	accounts := &invariantAccountRepo{accounts: []*bankaccount.BankAccount{card}}
@@ -171,10 +178,38 @@ func TestCheckInvariants_CreditCardsAreReportedButDoNotFailTheCheck(t *testing.T
 		t.Fatalf("expected the card to be reported, got %d entries", len(result.AccountDrifts))
 	}
 	if result.AccountDrifts[0].Note == "" {
-		t.Error("a credit card must explain why its stored balance is not maintained")
+		t.Error("a card at zero must explain why its balance was never written")
 	}
 	if !result.OK {
-		t.Error("OK = false: a card is a known gap, not a regression")
+		t.Error("OK = false: a card nothing ever wrote is a known gap, not a regression")
+	}
+}
+
+// But PayInvoiceUseCaseV2 does write a card's balance, and it recalculates the
+// card afterwards. So a card holding a non-zero balance IS maintained by the
+// same invariant as any other account, and a difference there is a real defect.
+// Excusing it would let the endpoint bless the first bug it was built to catch.
+func TestCheckInvariants_ACardWithAMaintainedBalanceFailsTheCheck(t *testing.T) {
+	card := invariantCheckingAccount("card-1", 0, -3160.58)
+	card.Type = bankaccount.AccountTypeCreditCard
+	accounts := &invariantAccountRepo{accounts: []*bankaccount.BankAccount{card}}
+	txs := &invariantTxRepo{balances: map[string]float64{"card-1": -3466.33}}
+
+	uc := NewCheckInvariantsUseCase(accounts, txs, &invariantInvoiceRepo{})
+	result, _ := uc.Execute()
+
+	if len(result.AccountDrifts) != 1 {
+		t.Fatalf("expected the card to be reported, got %d entries", len(result.AccountDrifts))
+	}
+	got := result.AccountDrifts[0]
+	if got.Note != "" {
+		t.Errorf("a maintained card must carry no excuse, got %q", got.Note)
+	}
+	if got.Drift != 305.75 {
+		t.Errorf("Drift = %v, want 305.75", got.Drift)
+	}
+	if result.OK {
+		t.Error("OK = true while a maintained card balance disagrees with its ledger")
 	}
 }
 
@@ -220,8 +255,16 @@ func TestCheckInvariants_ReportsInvoicesWhoseStoredTotalDoesNotMatchTheirTransac
 	if got.Drift != -923.04 {
 		t.Errorf("Drift = %v, want -923.04 (stored minus computed)", got.Drift)
 	}
-	if result.OK {
-		t.Error("OK = true, want false when an invoice total is stale")
+	// credit_card_invoices.amount has no writer: the read paths recompute it in
+	// memory without persisting, and the one route that does persist it refuses
+	// PAID invoices. Every stored value is stale by construction, so this can
+	// never be brought to zero. Failing the check on it would mean an alarm
+	// nobody can clear, and an alarm nobody can clear stops being read.
+	if got.Note == "" {
+		t.Error("an invoice total must explain that it is derived, not stored")
+	}
+	if !result.OK {
+		t.Error("OK = false: a stale invoice total is a known gap with no action available")
 	}
 }
 
@@ -229,12 +272,23 @@ func TestCheckInvariants_OnlyCreditCardsAreScannedForInvoices(t *testing.T) {
 	accounts := &invariantAccountRepo{accounts: []*bankaccount.BankAccount{
 		invariantCheckingAccount("acc-1", 0, 0),
 	}}
-	// byAccount is nil: asking for a checking account's invoices would be a bug,
-	// and FindByBankAccountID returning nil keeps this honest either way.
-	uc := NewCheckInvariantsUseCase(accounts, &invariantTxRepo{}, &invariantInvoiceRepo{})
+	// The checking account has invoices on file. Nothing may look at them: an
+	// empty fake here would pass with or without the guard, which is no test.
+	invoices := &invariantInvoiceRepo{byAccount: map[string][]*invoice.Invoice{
+		"acc-1": {{ID: "inv-1", BankAccountID: "acc-1", Amount: 500}},
+	}}
+	txs := &invariantTxRepo{invoiceSums: map[string]float64{"inv-1": 1}}
+
+	uc := NewCheckInvariantsUseCase(accounts, txs, invoices)
 	result, _ := uc.Execute()
 
+	if len(invoices.asked) != 0 {
+		t.Errorf("invoices were fetched for a non-card account: %v", invoices.asked)
+	}
 	if result.CheckedInvoices != 0 {
 		t.Errorf("CheckedInvoices = %d, want 0 for a checking account", result.CheckedInvoices)
+	}
+	if len(result.InvoiceDrifts) != 0 {
+		t.Errorf("a checking account has no invoices to drift: %+v", result.InvoiceDrifts)
 	}
 }

@@ -33,23 +33,38 @@ func invariantsDB(t *testing.T) *sql.DB {
 		t.Fatalf("open db: %v", err)
 	}
 	if err := db.Ping(); err != nil {
+		// Skipping locally is a convenience. Skipping in CI would turn this
+		// whole file into a green tick that ran nothing.
+		if os.Getenv("CI") != "" {
+			t.Fatalf("integration DB unavailable in CI: %v", err)
+		}
 		t.Skipf("integration DB unavailable (%v); skipping", err)
 	}
 	if err := database.RunMigrations(db); err != nil {
 		t.Fatalf("run migrations: %v", err)
 	}
 	t.Cleanup(func() {
-		invariantsCleanup(db)
+		invariantsCleanup(t, db)
 		_ = db.Close()
 	})
-	invariantsCleanup(db)
+	invariantsCleanup(t, db)
 	return db
 }
 
-func invariantsCleanup(db *sql.DB) {
-	db.Exec("DELETE FROM finance.transactions WHERE profile_id = $1", invariantsProfileID)
-	db.Exec("DELETE FROM finance.bank_accounts WHERE profile_id = $1", invariantsProfileID)
-	db.Exec("DELETE FROM finance.profiles WHERE id = $1", invariantsProfileID)
+// invariantsCleanup reports what it could not remove. Swallowing the error
+// leaves the next test failing on a duplicate key, which hides the real cause.
+func invariantsCleanup(t *testing.T, db *sql.DB) {
+	t.Helper()
+	statements := []string{
+		"DELETE FROM finance.transactions WHERE profile_id = $1",
+		"DELETE FROM finance.bank_accounts WHERE profile_id = $1",
+		"DELETE FROM finance.profiles WHERE id = $1",
+	}
+	for _, statement := range statements {
+		if _, err := db.Exec(statement, invariantsProfileID); err != nil {
+			t.Fatalf("cleanup failed (%s): %v", statement, err)
+		}
+	}
 }
 
 // invariantsSeed creates one checking account seeded with `initial` and one
@@ -91,6 +106,19 @@ func invariantsRequest(t *testing.T, db *sql.DB) (int, usecases.CheckInvariantsR
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decoding the report: %v", err)
 	}
+
+	// The cron reads the status code and nothing else, so it must never
+	// disagree with the report it accompanies. The shared database may hold
+	// other drifting accounts, which is why this is asserted as a relationship
+	// rather than a fixed 200.
+	wantCode := http.StatusConflict
+	if body.Data.OK {
+		wantCode = http.StatusOK
+	}
+	if rec.Code != wantCode {
+		t.Errorf("status = %d but ok = %v; the code must follow the report", rec.Code, body.Data.OK)
+	}
+
 	return rec.Code, body.Data
 }
 
@@ -197,5 +225,74 @@ func TestInvariantsRoute_IgnoresPlannedTransactions(t *testing.T) {
 
 	if drift := findAccountDrift(report); drift != nil {
 		t.Errorf("a planned transaction must not move the ledger: %+v", *drift)
+	}
+}
+
+// The reason this must not fail the check, proven against the real schema:
+// credit_card_invoices.amount defaults to 0 and no write path maintains it. A
+// card used once already reports a drift equal to the whole bill, and for a PAID
+// invoice there is no route that can bring it to zero — POST /invoices/{id}/
+// recalculate refuses PAID. An alarm nobody can clear stops being read.
+func TestInvariantsRoute_ReportsAStaleInvoiceTotalWithoutFailingTheCheck(t *testing.T) {
+	db := invariantsDB(t)
+	invariantsSeed(t, db, 0, 0, 0)
+
+	const cardID = "3a1f0000-0000-4000-8000-000000000003"
+	const invoiceID = "3a1f0000-0000-4000-8000-000000000004"
+
+	if _, err := db.Exec(`
+		INSERT INTO finance.bank_accounts (id, profile_id, name, type, closing_day, due_day, current_balance)
+		VALUES ($1, $2, 'Cartão E2E', 'CREDIT_CARD', 5, 15, 0)`,
+		cardID, invariantsProfileID); err != nil {
+		t.Fatalf("seed card: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO finance.credit_card_invoices
+			(id, bank_account_id, reference_date, opening_date, closing_date, due_date, amount, status)
+		VALUES ($1, $2, '2026-03-01', '2026-02-06', '2026-03-05', '2026-03-15', 0, 'PAID')`,
+		invoiceID, cardID); err != nil {
+		t.Fatalf("seed invoice: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO finance.transactions
+			(profile_id, bank_account_id, invoice_id, type, status, amount, description, occurred_on)
+		VALUES ($1, $2, $3, 'EXPENSE', 'CONFIRMED', 923.04, 'Compra', '2026-02-20')`,
+		invariantsProfileID, cardID, invoiceID); err != nil {
+		t.Fatalf("seed charge: %v", err)
+	}
+
+	_, report := invariantsRequest(t, db)
+
+	var found *usecases.InvoiceInvariant
+	for i := range report.InvoiceDrifts {
+		if report.InvoiceDrifts[i].InvoiceID == invoiceID {
+			found = &report.InvoiceDrifts[i]
+		}
+	}
+	if found == nil {
+		t.Fatal("the stale invoice total is missing from the report")
+	}
+	if found.StoredAmount != 0 || found.ComputedAmount != 923.04 {
+		t.Errorf("stored/computed = %v/%v, want 0/923.04", found.StoredAmount, found.ComputedAmount)
+	}
+	if found.Note == "" {
+		t.Error("a stale invoice total must explain that the column has no writer")
+	}
+
+	// The test database is shared, so another suite's rows can legitimately
+	// make the overall report red. What must hold is narrower and stronger: an
+	// invoice may never be the reason. Every invoice difference carries a note,
+	// so invoices can never gate the check.
+	for _, drift := range report.InvoiceDrifts {
+		if drift.Note == "" {
+			t.Errorf("an invoice difference without a note would fail a check nobody can clear: %+v", drift)
+		}
+	}
+
+	// The card itself was never written either, so it must not fail the check.
+	for _, drift := range report.AccountDrifts {
+		if drift.AccountID == cardID && drift.Note == "" {
+			t.Errorf("a card at zero balance must carry a note: %+v", drift)
+		}
 	}
 }
