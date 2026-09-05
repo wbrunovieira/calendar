@@ -89,3 +89,91 @@ func TestListPendingRecurrings_RequiresAProfile(t *testing.T) {
 		t.Fatal("expected an error when no profile is given")
 	}
 }
+
+// The cron generates a PLANNED transaction and immediately advances NextOccurrence.
+// The obligation then stops being "due" although nothing was paid, and it used to
+// vanish from this endpoint — which promises what is still owed, not what has yet to
+// be scheduled.
+func TestListPendingRecurrings_SurvivesTheCronAdvancingTheOccurrence(t *testing.T) {
+	obligation := recurringOn("Aluguel", 5, recurringtransaction.StatusActive)
+	obligation.NextOccurrence = time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC) // already advanced
+
+	scheduled := []*transaction.Transaction{{
+		Type:        transaction.TypeExpense,
+		Amount:      2000,
+		Description: "Aluguel",
+		OccurredOn:  time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC),
+		Status:      transaction.StatusPlanned, // generated, not paid
+	}}
+
+	uc := NewListPendingRecurringsUseCase(
+		&pendingRecurringRepo{list: []*recurringtransaction.RecurringTransaction{obligation}},
+		&cashflowTxRepo{txs: scheduled},
+	)
+
+	out, err := uc.Execute(ListPendingRecurringsInput{ProfileID: "p1", Reference: "2026-09-10"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(out) != 1 {
+		t.Fatalf("expected the unpaid obligation to remain pending, got %d", len(out))
+	}
+	if out[0].DaysOverdue != 5 {
+		t.Errorf("expected the overdue count from the scheduled date (5 days), got %d", out[0].DaysOverdue)
+	}
+}
+
+// Once it is actually paid it drops off, even though the planned entry may still be
+// sitting there.
+func TestListPendingRecurrings_DropsOffOncePaid(t *testing.T) {
+	obligation := recurringOn("Aluguel", 5, recurringtransaction.StatusActive)
+	obligation.NextOccurrence = time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC)
+
+	txs := []*transaction.Transaction{{
+		Type:        transaction.TypeExpense,
+		Amount:      2000,
+		Description: "Aluguel",
+		OccurredOn:  time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC),
+		Status:      transaction.StatusConfirmed,
+	}}
+
+	uc := NewListPendingRecurringsUseCase(
+		&pendingRecurringRepo{list: []*recurringtransaction.RecurringTransaction{obligation}},
+		&cashflowTxRepo{txs: txs},
+	)
+
+	out, err := uc.Execute(ListPendingRecurringsInput{ProfileID: "p1", Reference: "2026-09-10"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected nothing pending after payment, got %+v", out)
+	}
+}
+
+// A planned entry for an occurrence that has not arrived yet is not owed yet.
+func TestListPendingRecurrings_IgnoresAFutureScheduledEntry(t *testing.T) {
+	obligation := recurringOn("IPTV", 25, recurringtransaction.StatusActive)
+
+	txs := []*transaction.Transaction{{
+		Type:        transaction.TypeExpense,
+		Amount:      25,
+		Description: "IPTV",
+		OccurredOn:  time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC),
+		Status:      transaction.StatusPlanned,
+	}}
+
+	uc := NewListPendingRecurringsUseCase(
+		&pendingRecurringRepo{list: []*recurringtransaction.RecurringTransaction{obligation}},
+		&cashflowTxRepo{txs: txs},
+	)
+
+	out, err := uc.Execute(ListPendingRecurringsInput{ProfileID: "p1", Reference: "2026-09-10"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected nothing pending before the date arrives, got %+v", out)
+	}
+}

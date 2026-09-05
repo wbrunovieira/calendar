@@ -65,16 +65,6 @@ func (uc *ListPendingRecurringsUseCase) Execute(input ListPendingRecurringsInput
 		return nil, err
 	}
 
-	due := make([]*recurringtransaction.RecurringTransaction, 0, len(recurrings))
-	for _, r := range recurrings {
-		if r.IsDue(reference) {
-			due = append(due, r)
-		}
-	}
-	if len(due) == 0 {
-		return []PendingRecurring{}, nil
-	}
-
 	from := reference.AddDate(0, 0, -lookbackDays)
 	to := reference.AddDate(0, 0, lookbackDays)
 	txs, err := uc.txRepo.List(transaction.ListFilter{
@@ -86,16 +76,14 @@ func (uc *ListPendingRecurringsUseCase) Execute(input ListPendingRecurringsInput
 		return nil, err
 	}
 
-	pending := make([]PendingRecurring, 0, len(due))
-	for _, r := range due {
-		settled := false
-		for _, tx := range txs {
-			if r.IsSatisfiedBy(tx) {
-				settled = true
-				break
-			}
+	pending := make([]PendingRecurring, 0, len(recurrings))
+	for _, r := range recurrings {
+		if r.Status != recurringtransaction.StatusActive {
+			continue
 		}
-		if settled {
+
+		occurrence, owed := unpaidOccurrence(r, txs, reference)
+		if !owed {
 			continue
 		}
 
@@ -106,8 +94,8 @@ func (uc *ListPendingRecurringsUseCase) Execute(input ListPendingRecurringsInput
 			Amount:         r.Amount,
 			BankAccountID:  r.BankAccountID,
 			CategoryID:     r.CategoryID,
-			NextOccurrence: r.NextOccurrence,
-			DaysOverdue:    daysBetweenDates(r.NextOccurrence, reference),
+			NextOccurrence: occurrence,
+			DaysOverdue:    daysBetweenDates(occurrence, reference),
 		})
 	}
 
@@ -121,4 +109,42 @@ func daysBetweenDates(from, to time.Time) int {
 	a := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, time.UTC)
 	b := time.Date(to.Year(), to.Month(), to.Day(), 0, 0, 0, 0, time.UTC)
 	return int(b.Sub(a).Hours() / 24)
+}
+
+// unpaidOccurrence answers which occurrence of an obligation is still owed, if any.
+//
+// Looking only at NextOccurrence is not enough: the scheduler generates a PLANNED
+// entry for an occurrence and immediately steps NextOccurrence forward, so the
+// obligation stops being "due" while nothing has actually been paid. An entry sitting
+// there unpaid is precisely what is still owed, so it is what this reports.
+func unpaidOccurrence(
+	r *recurringtransaction.RecurringTransaction,
+	txs []*transaction.Transaction,
+	reference time.Time,
+) (time.Time, bool) {
+	var earliestUnpaid time.Time
+	for _, tx := range txs {
+		if !r.Matches(tx) || tx.OccurredOn.After(reference) {
+			continue
+		}
+		if tx.Status == transaction.StatusConfirmed {
+			// Paid. Anything scheduled for the same occurrence is settled with it.
+			if r.IsSatisfiedBy(tx) || earliestUnpaid.IsZero() {
+				return time.Time{}, false
+			}
+			continue
+		}
+		if earliestUnpaid.IsZero() || tx.OccurredOn.Before(earliestUnpaid) {
+			earliestUnpaid = tx.OccurredOn
+		}
+	}
+	if !earliestUnpaid.IsZero() {
+		return earliestUnpaid, true
+	}
+
+	// Nothing generated yet: the obligation is owed once its date has come around.
+	if r.IsDue(reference) {
+		return r.NextOccurrence, true
+	}
+	return time.Time{}, false
 }

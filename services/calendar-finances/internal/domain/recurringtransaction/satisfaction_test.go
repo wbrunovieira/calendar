@@ -174,3 +174,24 @@ func TestIsDue_OnlyActiveObligationsThatAlreadyCameAround(t *testing.T) {
 		t.Error("a paused obligation is never due")
 	}
 }
+
+// Matches answers "is this the same bill", with no opinion about which occurrence it
+// belongs to. It is what lets a caller find the entry the cron generated for an
+// occurrence that has already been stepped past.
+func TestMatches_IgnoresTheOccurrenceWindow(t *testing.T) {
+	obl := obligation()
+	obl.NextOccurrence = time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
+
+	if !obl.Matches(payment("Tim Celular", 111.57, 20)) {
+		t.Fatal("a payment for a past occurrence is still the same bill")
+	}
+	if obl.IsSatisfiedBy(payment("Tim Celular", 111.57, 20)) {
+		t.Fatal("but it does not settle the NEXT occurrence")
+	}
+}
+
+func TestMatches_StillRejectsAnotherBill(t *testing.T) {
+	if obligation().Matches(payment("Aluguel", 99, 20)) {
+		t.Fatal("a different description is a different bill")
+	}
+}

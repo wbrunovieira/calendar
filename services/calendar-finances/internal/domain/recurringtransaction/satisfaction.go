@@ -46,19 +46,21 @@ func (r *RecurringTransaction) IsDue(reference time.Time) bool {
 // id of the recurrence that generated it, a renamed transaction stays pending — noise,
 // where the alternative is silently marking the wrong bill as paid.
 func (r *RecurringTransaction) IsSatisfiedBy(tx *transaction.Transaction) bool {
-	if tx == nil {
-		return false
-	}
-	if tx.Status == transaction.StatusCancelled {
+	return r.Matches(tx) && r.withinWindow(tx.OccurredOn)
+}
+
+// Matches answers whether a transaction is this bill at all, with no opinion about
+// which occurrence it belongs to. Callers that need to find the entry generated for an
+// occurrence the schedule has already stepped past use this; callers asking whether
+// THIS occurrence is settled use IsSatisfiedBy.
+func (r *RecurringTransaction) Matches(tx *transaction.Transaction) bool {
+	if tx == nil || tx.Status == transaction.StatusCancelled {
 		return false
 	}
 	if string(tx.Type) != r.Type {
 		return false
 	}
 	if r.BankAccountID != nil && tx.BankAccountID != *r.BankAccountID {
-		return false
-	}
-	if !r.withinWindow(tx.OccurredOn) {
 		return false
 	}
 	return normalize(tx.Description) == normalize(r.Description)
