@@ -207,9 +207,9 @@ func TestBudgetSummaryWithSubcategories(t *testing.T) {
 	// Transactions are on child categories
 	txRepo := &fakeTxRepoForBudget{
 		sums: map[string]float64{
-			child1ID:     500,  // Supermercado
-			child2ID:     200,  // Restaurante
-			grandchildID: 100,  // iFood
+			child1ID:     500, // Supermercado
+			child2ID:     200, // Restaurante
+			grandchildID: 100, // iFood
 		},
 	}
 
@@ -312,4 +312,13 @@ func TestBudgetSummaryEmptyPeriod(t *testing.T) {
 	if len(summary) != 0 {
 		t.Fatalf("expected 0 summary items, got %d", len(summary))
 	}
+}
+
+func (r *fakeTxRepoForBudget) DeleteMany(ids []string) error {
+	for _, id := range ids {
+		if err := r.Delete(id); err != nil {
+			return err
+		}
+	}
+	return nil
 }

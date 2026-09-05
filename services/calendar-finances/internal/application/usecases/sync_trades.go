@@ -16,12 +16,12 @@ import (
 )
 
 type SyncTradesUseCase struct {
-	binanceClient    *binance.Client
-	accountRepo      bankaccount.Repository
-	transactionRepo  transaction.Repository
-	purchaseRepo     cryptopurchase.Repository
-	symbols          []string // e.g., ["SOLBRL"]
-	strategy         string   // e.g., "grid-bot-1"
+	binanceClient   *binance.Client
+	accountRepo     bankaccount.Repository
+	transactionRepo transaction.Repository
+	purchaseRepo    cryptopurchase.Repository
+	symbols         []string // e.g., ["SOLBRL"]
+	strategy        string   // e.g., "grid-bot-1"
 }
 
 type SyncTradesResult struct {

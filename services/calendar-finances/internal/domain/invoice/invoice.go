@@ -18,20 +18,20 @@ const (
 
 // Invoice represents a credit card billing cycle
 type Invoice struct {
-	ID            string    `json:"id"`
-	BankAccountID string    `json:"bankAccountId"` // Credit card account
-	ReferenceDate time.Time `json:"referenceDate"` // Month/Year reference (e.g., 2026-01-01 for January 2026)
-	OpeningDate   time.Time `json:"openingDate"`   // When this invoice started accepting transactions
-	ClosingDate   time.Time `json:"closingDate"`   // When this invoice closes
-	DueDate       time.Time `json:"dueDate"`       // Payment due date
-	Amount          float64   `json:"amount"`          // Total invoice amount (confirmed + planned)
-	ConfirmedAmount float64   `json:"confirmedAmount"` // Sum of CONFIRMED transactions only
-	PlannedAmount   float64   `json:"plannedAmount"`   // Sum of PLANNED transactions only
-	Status          Status    `json:"status"`
-	PaidAt        *time.Time `json:"paidAt,omitempty"`
-	PaidAmount    *float64   `json:"paidAmount,omitempty"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
+	ID              string     `json:"id"`
+	BankAccountID   string     `json:"bankAccountId"`   // Credit card account
+	ReferenceDate   time.Time  `json:"referenceDate"`   // Month/Year reference (e.g., 2026-01-01 for January 2026)
+	OpeningDate     time.Time  `json:"openingDate"`     // When this invoice started accepting transactions
+	ClosingDate     time.Time  `json:"closingDate"`     // When this invoice closes
+	DueDate         time.Time  `json:"dueDate"`         // Payment due date
+	Amount          float64    `json:"amount"`          // Total invoice amount (confirmed + planned)
+	ConfirmedAmount float64    `json:"confirmedAmount"` // Sum of CONFIRMED transactions only
+	PlannedAmount   float64    `json:"plannedAmount"`   // Sum of PLANNED transactions only
+	Status          Status     `json:"status"`
+	PaidAt          *time.Time `json:"paidAt,omitempty"`
+	PaidAmount      *float64   `json:"paidAmount,omitempty"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	UpdatedAt       time.Time  `json:"updatedAt"`
 }
 
 // CreateParams contains the parameters to create a new invoice

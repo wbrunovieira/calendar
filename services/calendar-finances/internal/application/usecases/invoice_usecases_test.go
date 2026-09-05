@@ -1692,3 +1692,12 @@ func TestGetOrCreateInvoice_HighClosingDay_ShouldCreateNextInvoiceWhenCurrentExi
 		t.Errorf("expected same invoice ID for second transaction, got different: %s vs %s", *tx2.InvoiceID, *tx.InvoiceID)
 	}
 }
+
+func (f *fakeTransactionRepoWithInvoice) DeleteMany(ids []string) error {
+	for _, id := range ids {
+		if err := f.Delete(id); err != nil {
+			return err
+		}
+	}
+	return nil
+}

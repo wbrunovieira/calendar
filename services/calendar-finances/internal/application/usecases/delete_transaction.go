@@ -41,20 +41,22 @@ func (uc *DeleteTransactionUseCase) Execute(id string) error {
 
 	affected := uc.affectedAccounts(txn, linked)
 
+	// Both legs go in one unit of work. Removing them one at a time can leave the
+	// pair half-deleted — the other profile holding a credit with no row behind it —
+	// while the caller is told the whole thing failed, so nobody goes looking.
+	toDelete := []string{id}
 	if linked != nil {
-		// Failing quietly here is what leaves "money that arrived from nowhere": the
-		// pair would be half-deleted and the caller told it succeeded.
-		if err := uc.repo.Delete(linked.ID); err != nil {
-			return err
-		}
+		toDelete = append(toDelete, linked.ID)
 	}
-	if err := uc.repo.Delete(id); err != nil {
-		return ErrTransactionNotFound
+	if err := uc.repo.DeleteMany(toDelete); err != nil {
+		return err
 	}
 
 	if uc.balanceRecalculator != nil {
-		recalculateAccounts(uc.balanceRecalculator, affected...)
-		return nil
+		// The rows are already gone. Swallowing a failure here would leave the
+		// balances permanently stale behind a 204, and nobody would know to run the
+		// recalculation by hand.
+		return recalculateAccounts(uc.balanceRecalculator, affected...)
 	}
 
 	// Without a recalculator wired, undo each leg by hand. Same result, but derived

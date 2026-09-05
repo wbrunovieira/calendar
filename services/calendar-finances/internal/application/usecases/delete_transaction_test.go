@@ -255,9 +255,132 @@ type failingDeleteRepo struct {
 	failFor string
 }
 
-func (r *failingDeleteRepo) Delete(id string) error {
-	if id == r.failFor {
+func (r *failingDeleteRepo) DeleteMany(ids []string) error {
+	for _, id := range ids {
+		if id == r.failFor {
+			return errors.New("boom")
+		}
+	}
+	return r.fakeTransactionRepo.DeleteMany(ids)
+}
+
+// Deleting a linked pair must be all-or-nothing. Half-deleting it leaves the other
+// profile holding a credit with no ledger row behind it, and the caller is told
+// something failed — so nobody goes looking.
+func TestDeleteTransaction_LinkedPairIsRemovedAtomically(t *testing.T) {
+	source := &bankaccount.BankAccount{
+		ID: "personal", ProfileID: "p1", Type: bankaccount.AccountTypeChecking,
+		InitialBalance: 1000, CurrentBalance: 700,
+	}
+	destination := &bankaccount.BankAccount{
+		ID: "company", ProfileID: "p2", Type: bankaccount.AccountTypeChecking,
+		InitialBalance: 0, CurrentBalance: 300,
+	}
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		"personal": source, "company": destination,
+	}}
+
+	destID, linkedID := "company", "tx-linked"
+	src := &transaction.Transaction{
+		ID: "tx-src", ProfileID: "p1", BankAccountID: "personal",
+		DestinationAccountID: &destID, LinkedTransactionID: &linkedID,
+		Type: transaction.TypeExpense, Status: transaction.StatusConfirmed,
+		Amount: 300, Currency: "BRL", Description: "Aporte", OccurredOn: time.Now(),
+	}
+	linked := &transaction.Transaction{
+		ID: linkedID, ProfileID: "p2", BankAccountID: "company",
+		Type: transaction.TypeIncome, Status: transaction.StatusConfirmed,
+		Amount: 300, Currency: "BRL", Description: "Aporte recebido", OccurredOn: time.Now(),
+	}
+	txRepo := &atomicDeleteSpy{fakeTransactionRepo: fakeTransactionRepo{
+		created: []*transaction.Transaction{src, linked},
+	}}
+
+	if err := NewDeleteTransactionUseCase(txRepo, accountRepo, nil).Execute(src.ID); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(txRepo.deletedTogether) != 1 {
+		t.Fatalf("expected a single atomic delete, got %d calls", len(txRepo.deletedTogether))
+	}
+	if len(txRepo.deletedTogether[0]) != 2 {
+		t.Fatalf("expected both legs in one unit of work, got %v", txRepo.deletedTogether[0])
+	}
+}
+
+// When the deletion fails, nothing must have been removed and the balances must not
+// have been touched.
+func TestDeleteTransaction_FailedDeleteLeavesEverythingAlone(t *testing.T) {
+	account := &bankaccount.BankAccount{
+		ID: "checking", ProfileID: "p1", Type: bankaccount.AccountTypeChecking,
+		InitialBalance: 1000, CurrentBalance: 700,
+	}
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"checking": account}}
+	txn := &transaction.Transaction{
+		ID: "tx-1", ProfileID: "p1", BankAccountID: "checking",
+		Type: transaction.TypeExpense, Status: transaction.StatusConfirmed,
+		Amount: 300, Currency: "BRL", Description: "Mercado", OccurredOn: time.Now(),
+	}
+	txRepo := &atomicDeleteSpy{
+		fakeTransactionRepo: fakeTransactionRepo{created: []*transaction.Transaction{txn}},
+		fail:                true,
+	}
+
+	if err := NewDeleteTransactionUseCase(txRepo, accountRepo, nil).Execute(txn.ID); err == nil {
+		t.Fatal("expected the failure to surface")
+	}
+	if len(txRepo.created) != 1 {
+		t.Error("expected the transaction to survive a failed delete")
+	}
+	if account.CurrentBalance != 700 {
+		t.Errorf("expected the balance untouched at 700, got %.2f", account.CurrentBalance)
+	}
+}
+
+// A recalculation that fails must not be swallowed: the row is already gone, so a
+// silent failure leaves the balance permanently stale behind a 204.
+func TestDeleteTransaction_RecalculationFailureSurfaces(t *testing.T) {
+	account := &bankaccount.BankAccount{
+		ID: "checking", ProfileID: "p1", Type: bankaccount.AccountTypeChecking,
+		InitialBalance: 1000, CurrentBalance: 700,
+	}
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"checking": account}}
+	txn := &transaction.Transaction{
+		ID: "tx-1", ProfileID: "p1", BankAccountID: "checking",
+		Type: transaction.TypeExpense, Status: transaction.StatusConfirmed,
+		Amount: 300, Currency: "BRL", Description: "Mercado", OccurredOn: time.Now(),
+	}
+	txRepo := &atomicDeleteSpy{fakeTransactionRepo: fakeTransactionRepo{
+		created: []*transaction.Transaction{txn},
+	}}
+
+	err := NewDeleteTransactionUseCase(txRepo, accountRepo, failingRecalculator{}).Execute(txn.ID)
+	if err == nil {
+		t.Fatal("expected a failed recalculation to surface, not a silent stale balance")
+	}
+}
+
+type atomicDeleteSpy struct {
+	fakeTransactionRepo
+	deletedTogether [][]string
+	fail            bool
+}
+
+func (r *atomicDeleteSpy) DeleteMany(ids []string) error {
+	if r.fail {
 		return errors.New("boom")
 	}
-	return r.fakeTransactionRepo.Delete(id)
+	r.deletedTogether = append(r.deletedTogether, ids)
+	for _, id := range ids {
+		if err := r.fakeTransactionRepo.Delete(id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type failingRecalculator struct{}
+
+func (failingRecalculator) Execute(string) (*RecalculateBalanceResult, error) {
+	return nil, errors.New("recalculation unavailable")
 }
