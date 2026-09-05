@@ -17,64 +17,92 @@ func NewDeleteTransactionUseCase(repo transaction.Repository, accountRepo bankac
 	return &DeleteTransactionUseCase{repo: repo, accountRepo: accountRepo, balanceRecalculator: recalculator}
 }
 
+// Execute removes a transaction and leaves every account it touched reading as if it
+// had never existed.
+//
+// The rows are deleted BEFORE the balances are recomputed. Recomputing first — which
+// is what this used to do — reads the transaction that is about to disappear and puts
+// the old numbers straight back, so the deletion silently left a phantom balance
+// behind: on the destination of a transfer, and on the source of any confirmed entry.
 func (uc *DeleteTransactionUseCase) Execute(id string) error {
 	txn, err := uc.repo.GetByID(id)
 	if err != nil {
 		return ErrTransactionNotFound
 	}
 
-	// Handle linked transaction (cross-profile paired transactions)
+	// A cross-profile transfer is stored as two linked rows; deleting one without the
+	// other would leave money that arrived from nowhere.
+	var linked *transaction.Transaction
 	if txn.LinkedTransactionID != nil {
-		linkedTxn, err := uc.repo.GetByID(*txn.LinkedTransactionID)
-		if err == nil {
-			// Reverse linked transaction balance
-			if linkedTxn.Status == transaction.StatusConfirmed {
-				linkedAccount, err := uc.accountRepo.FindByID(linkedTxn.BankAccountID)
-				if err == nil && linkedAccount.Type != bankaccount.AccountTypeCreditCard {
-					uc.reverseBalance(linkedAccount, linkedTxn.Type, linkedTxn.Amount)
-					linkedAccount.UpdatedAt = time.Now()
-					if err := uc.accountRepo.Update(linkedAccount); err != nil {
-						return err
-					}
-					recalculateAccounts(uc.balanceRecalculator, linkedAccount.ID)
-				}
-			}
-			// Delete linked transaction
-			_ = uc.repo.Delete(linkedTxn.ID)
+		if found, err := uc.repo.GetByID(*txn.LinkedTransactionID); err == nil {
+			linked = found
 		}
 	}
 
-	// Reverse balance for CONFIRMED non-credit-card transactions
-	if txn.Status == transaction.StatusConfirmed {
-		account, err := uc.accountRepo.FindByID(txn.BankAccountID)
-		if err == nil && account.Type != bankaccount.AccountTypeCreditCard {
+	affected := affectedAccounts(txn, linked)
+
+	if linked != nil {
+		_ = uc.repo.Delete(linked.ID)
+	}
+	if err := uc.repo.Delete(id); err != nil {
+		return ErrTransactionNotFound
+	}
+
+	if uc.balanceRecalculator != nil {
+		recalculateAccounts(uc.balanceRecalculator, affected...)
+		return nil
+	}
+
+	// Without a recalculator wired, undo each leg by hand. Same result, but derived
+	// from the transaction instead of from the ledger.
+	return uc.reverseByHand(txn, linked)
+}
+
+// affectedAccounts lists every account whose balance depended on the rows being
+// removed. Only confirmed transactions ever moved money.
+func affectedAccounts(txns ...*transaction.Transaction) []string {
+	ids := make([]string, 0, len(txns)*2)
+	for _, t := range txns {
+		if t == nil || t.Status != transaction.StatusConfirmed {
+			continue
+		}
+		ids = append(ids, t.BankAccountID)
+		if t.DestinationAccountID != nil {
+			ids = append(ids, *t.DestinationAccountID)
+		}
+	}
+	return deduplicateIDs(ids...)
+}
+
+func (uc *DeleteTransactionUseCase) reverseByHand(txns ...*transaction.Transaction) error {
+	for _, txn := range txns {
+		if txn == nil || txn.Status != transaction.StatusConfirmed {
+			continue
+		}
+
+		// Creating a transaction on a credit card does not move the card's balance —
+		// a card's position is derived from its invoices — so undoing one must not
+		// move it either. The recalculator path above has no such asymmetry: it
+		// recomputes every account from the ledger.
+		if account, err := uc.accountRepo.FindByID(txn.BankAccountID); err == nil && !account.IsCreditCard() {
 			uc.reverseBalance(account, txn.Type, txn.Amount)
 			account.UpdatedAt = time.Now()
 			if err := uc.accountRepo.Update(account); err != nil {
 				return err
 			}
+		}
 
-			// For same-profile TRANSFER: also reverse the destination account credit
-			if txn.Type == transaction.TypeTransfer && txn.DestinationAccountID != nil {
-				destAccount, err := uc.accountRepo.FindByID(*txn.DestinationAccountID)
-				if err == nil {
-					destAccount.CurrentBalance -= txn.Amount
-					destAccount.UpdatedAt = time.Now()
-					if err := uc.accountRepo.Update(destAccount); err != nil {
-						return err
-					}
-					recalculateAccounts(uc.balanceRecalculator, account.ID, destAccount.ID)
-				}
-			} else {
-				recalculateAccounts(uc.balanceRecalculator, account.ID)
+		if txn.DestinationAccountID == nil {
+			continue
+		}
+		if destination, err := uc.accountRepo.FindByID(*txn.DestinationAccountID); err == nil {
+			destination.CurrentBalance -= txn.Amount
+			destination.UpdatedAt = time.Now()
+			if err := uc.accountRepo.Update(destination); err != nil {
+				return err
 			}
 		}
 	}
-
-	if err := uc.repo.Delete(id); err != nil {
-		return ErrTransactionNotFound
-	}
-
 	return nil
 }
 
