@@ -702,7 +702,7 @@ func (uc *PayInvoiceUseCaseV2) Execute(input PayInvoiceInput) (*invoice.Invoice,
 					creditCard.UpdatedAt = time.Now()
 					_ = uc.accountRepo.Update(creditCard)
 					// When wired, recompute both balances from transactions (authoritative).
-					recalculateAccounts(uc.recalculator, linkedAccount.ID, creditCard.ID)
+					_ = recalculateAccounts(uc.recalculator, linkedAccount.ID, creditCard.ID)
 				}
 			}
 		}
@@ -724,7 +724,7 @@ func (uc *PayInvoiceUseCaseV2) Execute(input PayInvoiceInput) (*invoice.Invoice,
 	if err == nil {
 		cardCredit.Status = transactionPkg.StatusConfirmed
 		if createErr := uc.transactionRepo.Create(cardCredit); createErr == nil {
-			recalculateAccounts(uc.recalculator, creditCard.ID)
+			_ = recalculateAccounts(uc.recalculator, creditCard.ID)
 		}
 	}
 

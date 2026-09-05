@@ -594,6 +594,37 @@ func (r *TransactionRepository) UpdateStatus(id string, status transaction.Statu
 	return nil
 }
 
+// DeleteMany removes several transactions in a single database transaction, so a
+// linked pair can never end up half-removed. Every id must exist: if one is already
+// gone the whole thing rolls back, which is safer than silently deleting the rest.
+func (r *TransactionRepository) DeleteMany(ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, id := range ids {
+		result, err := tx.Exec(`DELETE FROM finance.transactions WHERE id = $1`, id)
+		if err != nil {
+			return err
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if affected == 0 {
+			return transaction.ErrNotFound
+		}
+	}
+
+	return tx.Commit()
+}
+
 func (r *TransactionRepository) Delete(id string) error {
 	result, err := r.db.Exec(`DELETE FROM finance.transactions WHERE id = $1`, id)
 	if err != nil {

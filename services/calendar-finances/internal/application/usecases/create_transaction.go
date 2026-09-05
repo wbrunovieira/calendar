@@ -20,28 +20,28 @@ type CreateTransactionSplitInput struct {
 }
 
 type CreateTransactionInput struct {
-	ProfileID             string                        `json:"profileId"`
-	BankAccountID         string                        `json:"bankAccountId"`
-	DestinationAccountID  *string                       `json:"destinationAccountId,omitempty"`
-	CategoryID            *string                       `json:"categoryId,omitempty"`
-	DestinationCategoryID *string                       `json:"destinationCategoryId,omitempty"` // Category for the INCOME side of cross-profile transfers
-	Type                  string                        `json:"type"`
-	Status               *string                       `json:"status,omitempty"`
-	Amount               float64                       `json:"amount"`
-	Currency             string                        `json:"currency"`
-	Description          string                        `json:"description"`
-	Notes                    *string                       `json:"notes,omitempty"`
-	CostCenter               *string                       `json:"costCenter,omitempty"`
-	IsPersonalReimbursement  bool                          `json:"isPersonalReimbursement"`
-	OccurredOn               string                        `json:"occurredOn"`
-	DueOn                *string                       `json:"dueOn,omitempty"`
-	ReminderOn           *string                       `json:"reminderOn,omitempty"` // Optional reminder date for alerts (10, 5, 1, 0 days before)
-	RecurrenceRule       *string                       `json:"recurrenceRule,omitempty"`
-	InstallmentNumber    *int                          `json:"installmentNumber,omitempty"`
-	InstallmentTotal     *int                          `json:"installmentTotal,omitempty"`
-	ExternalID           *string                       `json:"externalId,omitempty"`
-	Tags                 []string                      `json:"tags,omitempty"`
-	Splits               []CreateTransactionSplitInput `json:"splits,omitempty"`
+	ProfileID               string                        `json:"profileId"`
+	BankAccountID           string                        `json:"bankAccountId"`
+	DestinationAccountID    *string                       `json:"destinationAccountId,omitempty"`
+	CategoryID              *string                       `json:"categoryId,omitempty"`
+	DestinationCategoryID   *string                       `json:"destinationCategoryId,omitempty"` // Category for the INCOME side of cross-profile transfers
+	Type                    string                        `json:"type"`
+	Status                  *string                       `json:"status,omitempty"`
+	Amount                  float64                       `json:"amount"`
+	Currency                string                        `json:"currency"`
+	Description             string                        `json:"description"`
+	Notes                   *string                       `json:"notes,omitempty"`
+	CostCenter              *string                       `json:"costCenter,omitempty"`
+	IsPersonalReimbursement bool                          `json:"isPersonalReimbursement"`
+	OccurredOn              string                        `json:"occurredOn"`
+	DueOn                   *string                       `json:"dueOn,omitempty"`
+	ReminderOn              *string                       `json:"reminderOn,omitempty"` // Optional reminder date for alerts (10, 5, 1, 0 days before)
+	RecurrenceRule          *string                       `json:"recurrenceRule,omitempty"`
+	InstallmentNumber       *int                          `json:"installmentNumber,omitempty"`
+	InstallmentTotal        *int                          `json:"installmentTotal,omitempty"`
+	ExternalID              *string                       `json:"externalId,omitempty"`
+	Tags                    []string                      `json:"tags,omitempty"`
+	Splits                  []CreateTransactionSplitInput `json:"splits,omitempty"`
 }
 
 type CreateTransactionUseCase struct {
@@ -307,7 +307,7 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 			if err := uc.accountRepo.Update(destinationAccount); err != nil {
 				return nil, err
 			}
-			recalculateAccounts(uc.balanceRecalculator, account.ID, destinationAccount.ID)
+			_ = recalculateAccounts(uc.balanceRecalculator, account.ID, destinationAccount.ID)
 		}
 
 		return txn, nil
@@ -333,9 +333,9 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 			if err := uc.accountRepo.Update(destinationAccount); err != nil {
 				return nil, err
 			}
-			recalculateAccounts(uc.balanceRecalculator, account.ID, *destinationAccountID)
+			_ = recalculateAccounts(uc.balanceRecalculator, account.ID, *destinationAccountID)
 		} else {
-			recalculateAccounts(uc.balanceRecalculator, account.ID)
+			_ = recalculateAccounts(uc.balanceRecalculator, account.ID)
 		}
 	}
 

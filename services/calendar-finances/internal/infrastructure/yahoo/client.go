@@ -35,16 +35,16 @@ type chartResponse struct {
 
 // FIIData holds market data for a Brazilian FII (Fundo de Investimento Imobiliário).
 type FIIData struct {
-	CurrentPrice     float64            `json:"current_price"`
-	PriceChange12M   float64            `json:"price_change_12m"`
-	Dividends12M     float64            `json:"dividends_12m"`
-	DividendYield    float64            `json:"dividend_yield"`
-	LastDividend     float64            `json:"last_dividend"`
-	LastDividendDate string             `json:"last_dividend_date"`
-	PriceToBook      *float64           `json:"price_to_book"`
-	BookValue        *float64           `json:"book_value"`
-	TotalReturn12M   float64            `json:"total_return_12m"`
-	MonthlyDividends []MonthlyDividend  `json:"monthly_dividends"`
+	CurrentPrice     float64           `json:"current_price"`
+	PriceChange12M   float64           `json:"price_change_12m"`
+	Dividends12M     float64           `json:"dividends_12m"`
+	DividendYield    float64           `json:"dividend_yield"`
+	LastDividend     float64           `json:"last_dividend"`
+	LastDividendDate string            `json:"last_dividend_date"`
+	PriceToBook      *float64          `json:"price_to_book"`
+	BookValue        *float64          `json:"book_value"`
+	TotalReturn12M   float64           `json:"total_return_12m"`
+	MonthlyDividends []MonthlyDividend `json:"monthly_dividends"`
 }
 
 // MonthlyDividend holds dividend data for a single month.
@@ -77,8 +77,8 @@ type quoteSummaryResponse struct {
 type fiiChartResponse struct {
 	Chart struct {
 		Result []struct {
-			Timestamp  []int64 `json:"timestamp"`
-			Events     struct {
+			Timestamp []int64 `json:"timestamp"`
+			Events    struct {
 				Dividends map[string]struct {
 					Amount float64 `json:"amount"`
 					Date   int64   `json:"date"`

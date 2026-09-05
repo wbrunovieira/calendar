@@ -11,25 +11,25 @@ import (
 )
 
 type UpdateTransactionInput struct {
-	BankAccountID        string   `json:"bankAccountId"`
-	DestinationAccountID *string  `json:"destinationAccountId,omitempty"`
-	CategoryID           *string  `json:"categoryId,omitempty"`
-	Type                 string   `json:"type"`
-	Status               *string  `json:"status,omitempty"`
-	Amount               float64  `json:"amount"`
-	Currency             string   `json:"currency"`
-	Description          string   `json:"description"`
-	Notes                    *string  `json:"notes,omitempty"`
-	CostCenter               *string  `json:"costCenter,omitempty"`
-	IsPersonalReimbursement  bool     `json:"isPersonalReimbursement"`
-	OccurredOn               string   `json:"occurredOn"`
-	DueOn                *string  `json:"dueOn,omitempty"`
-	ReminderOn           *string  `json:"reminderOn,omitempty"` // Optional reminder date for alerts
-	RecurrenceRule       *string  `json:"recurrenceRule,omitempty"`
-	InstallmentNumber    *int     `json:"installmentNumber,omitempty"`
-	InstallmentTotal     *int     `json:"installmentTotal,omitempty"`
-	ExternalID           *string  `json:"externalId,omitempty"`
-	Tags                 []string `json:"tags,omitempty"`
+	BankAccountID           string   `json:"bankAccountId"`
+	DestinationAccountID    *string  `json:"destinationAccountId,omitempty"`
+	CategoryID              *string  `json:"categoryId,omitempty"`
+	Type                    string   `json:"type"`
+	Status                  *string  `json:"status,omitempty"`
+	Amount                  float64  `json:"amount"`
+	Currency                string   `json:"currency"`
+	Description             string   `json:"description"`
+	Notes                   *string  `json:"notes,omitempty"`
+	CostCenter              *string  `json:"costCenter,omitempty"`
+	IsPersonalReimbursement bool     `json:"isPersonalReimbursement"`
+	OccurredOn              string   `json:"occurredOn"`
+	DueOn                   *string  `json:"dueOn,omitempty"`
+	ReminderOn              *string  `json:"reminderOn,omitempty"` // Optional reminder date for alerts
+	RecurrenceRule          *string  `json:"recurrenceRule,omitempty"`
+	InstallmentNumber       *int     `json:"installmentNumber,omitempty"`
+	InstallmentTotal        *int     `json:"installmentTotal,omitempty"`
+	ExternalID              *string  `json:"externalId,omitempty"`
+	Tags                    []string `json:"tags,omitempty"`
 }
 
 type UpdateTransactionUseCase struct {
@@ -220,7 +220,7 @@ func (uc *UpdateTransactionUseCase) Execute(id string, input UpdateTransactionIn
 	if destinationAccountID != nil {
 		ids = append(ids, *destinationAccountID)
 	}
-	recalculateAccounts(uc.balanceRecalculator, ids...)
+	_ = recalculateAccounts(uc.balanceRecalculator, ids...)
 
 	return existing, nil
 }

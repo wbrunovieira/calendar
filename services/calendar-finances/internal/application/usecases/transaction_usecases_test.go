@@ -53,7 +53,7 @@ func (f *fakeAccountRepo) Update(acc *bankaccount.BankAccount) error {
 	}
 	return nil
 }
-func (f *fakeAccountRepo) Delete(string) error                                    { return nil }
+func (f *fakeAccountRepo) Delete(string) error                                        { return nil }
 func (f *fakeAccountRepo) UpdateDisplayOrders([]bankaccount.DisplayOrderUpdate) error { return nil }
 func (f *fakeAccountRepo) FindByID(id string) (*bankaccount.BankAccount, error) {
 	if acc, ok := f.accounts[id]; ok {
@@ -3703,7 +3703,7 @@ func TestUpdateTransaction_TransferDestinationChange_AdjustsBothDests(t *testing
 		Type:                 transaction.TypeTransfer,
 		Status:               transaction.StatusConfirmed,
 		Amount:               200,
-		Currency:              "BRL",
+		Currency:             "BRL",
 		Description:          "Transferencia",
 		OccurredOn:           now,
 		CreatedAt:            now,
@@ -3765,24 +3765,24 @@ func TestUpdateTransaction_CreditCardAccountChange_ReassignsInvoice(t *testing.T
 
 	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
 		ccAccountA: {
-			ID:          ccAccountA,
-			ProfileID:   profileID,
-			Name:        "Cartão Nubank",
-			Type:        bankaccount.AccountTypeCreditCard,
-			Currency:    "BRL",
-			IsActive:    true,
-			ClosingDay:  &closingDay,
-			DueDay:      &dueDay,
+			ID:         ccAccountA,
+			ProfileID:  profileID,
+			Name:       "Cartão Nubank",
+			Type:       bankaccount.AccountTypeCreditCard,
+			Currency:   "BRL",
+			IsActive:   true,
+			ClosingDay: &closingDay,
+			DueDay:     &dueDay,
 		},
 		ccAccountB: {
-			ID:          ccAccountB,
-			ProfileID:   profileID,
-			Name:        "Cartão Mercado Pago",
-			Type:        bankaccount.AccountTypeCreditCard,
-			Currency:    "BRL",
-			IsActive:    true,
-			ClosingDay:  &closingDay,
-			DueDay:      &dueDay,
+			ID:         ccAccountB,
+			ProfileID:  profileID,
+			Name:       "Cartão Mercado Pago",
+			Type:       bankaccount.AccountTypeCreditCard,
+			Currency:   "BRL",
+			IsActive:   true,
+			ClosingDay: &closingDay,
+			DueDay:     &dueDay,
 		},
 	}}
 
@@ -4240,14 +4240,14 @@ func TestCreateTransaction_Installments_ShouldCreateMultipleTransactions(t *test
 	installmentTotal := 2
 
 	input := CreateTransactionInput{
-		ProfileID:      profileID,
-		BankAccountID:  creditCardID,
-		Type:           "EXPENSE",
-		Status:         &confirmedStatus,
-		Amount:         31.46,
-		Currency:       "BRL",
-		Description:    "Kvn Imersao 2026 Dolar",
-		OccurredOn:     "2026-02-28",
+		ProfileID:        profileID,
+		BankAccountID:    creditCardID,
+		Type:             "EXPENSE",
+		Status:           &confirmedStatus,
+		Amount:           31.46,
+		Currency:         "BRL",
+		Description:      "Kvn Imersao 2026 Dolar",
+		OccurredOn:       "2026-02-28",
 		InstallmentTotal: &installmentTotal,
 	}
 
@@ -4546,4 +4546,13 @@ func TestCreateTransaction_ManualInstallment_ShouldNotAutoCreate(t *testing.T) {
 	if txn.InvoiceID == nil {
 		t.Fatalf("expected invoiceID to be set for credit card transaction")
 	}
+}
+
+func (f *fakeTransactionRepo) DeleteMany(ids []string) error {
+	for _, id := range ids {
+		if err := f.Delete(id); err != nil {
+			return err
+		}
+	}
+	return nil
 }

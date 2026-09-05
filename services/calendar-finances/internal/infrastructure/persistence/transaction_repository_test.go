@@ -48,9 +48,9 @@ func TestTransactionRepositoryCreate(t *testing.T) {
 			txn.ID,
 			txn.ProfileID,
 			txn.BankAccountID,
-			nil,   // destination_account_id
-			nil,   // category_id
-			nil,   // invoice_id
+			nil, // destination_account_id
+			nil, // category_id
+			nil, // invoice_id
 			txn.Type,
 			txn.Status,
 			txn.Amount,
