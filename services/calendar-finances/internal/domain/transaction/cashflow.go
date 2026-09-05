@@ -5,18 +5,25 @@ import (
 	"github.com/brunovieira/calendar-finances/internal/domain/category"
 )
 
+// maxCategoryDepth stops a malformed parent chain from looping forever.
+const maxCategoryDepth = 16
+
 // IsSettlement reports whether the transaction only moves money around instead of
 // earning or spending it, and therefore must stay out of a cashflow view.
 //
-// Two shapes qualify, and both are recognised structurally rather than by reading the
+// Three shapes qualify, all recognised structurally rather than by reading the
 // description — a description is free text a person types, and a rule that depends on
 // the wording silently breaks the month when someone writes it differently:
 //
 //   - the INCOME credit that lands on a credit card when its bill is paid. The
-//     purchases on that card already were the expense; counting the payment as income
-//     would cancel them out.
-//   - money moving INTO another account of the same owner — paying a card bill from a
-//     checking account, funding an investment. Nothing was earned or spent.
+//     purchases on that card already were the expense.
+//   - a TRANSFER into another account of the same owner — paying a card bill from
+//     checking, funding an investment. Nothing was earned or spent.
+//   - an expense that pays an invoice. Bills entered by hand carry the invoice link
+//     but no destination, and they are the majority of the payments in this database.
+//
+// An EXPENSE carrying a destination is NOT a settlement: that is the source leg of a
+// cross-profile transfer, where money genuinely left this profile.
 //
 // `account` is where the transaction sits and `destination` is the other end of a
 // transfer, if any. A caller that cannot resolve them passes nil, and the transaction
@@ -25,20 +32,37 @@ func (t *Transaction) IsSettlement(account, destination *bankaccount.BankAccount
 	if account != nil && account.IsCreditCard() && t.Type == TypeIncome {
 		return true
 	}
-
-	return destination != nil
+	if t.Type == TypeExpense && t.InvoiceID != nil && (account == nil || !account.IsCreditCard()) {
+		return true
+	}
+	return t.Type == TypeTransfer && destination != nil
 }
 
-// IsYield reports whether income came from the balance producing it — interest, a
+// IsYieldIn reports whether income came from the balance producing it — interest, a
 // dividend, a fund's daily yield — rather than from work or a sale.
 //
-// The answer is the category's DRE bucket, which is the accounting classification the
-// user already maintains. Reading it off the description instead would call
-// "Rendimento da venda do carro" yield and miss "juros da poupanca", and the two
-// buckets are taxed and read differently.
-func (t *Transaction) IsYield(cat *category.Category) bool {
-	if t.Type != TypeIncome || cat == nil || cat.ClassificationDRE == nil {
+// The answer is the category's DRE bucket, inherited from ancestors exactly as the
+// financial report resolves it: a subcategory "Rendimento CDB" under a FINANCIAL
+// "Rendimentos" is yield, and reading only the leaf would disagree with the report on
+// the same data. `categories` indexes the profile's categories by id so the chain can
+// be walked without a repository call per transaction.
+func (t *Transaction) IsYieldIn(cat *category.Category, categories map[string]*category.Category) bool {
+	if t.Type != TypeIncome {
 		return false
 	}
-	return *cat.ClassificationDRE == category.DREFinancial
+	return dreBucketOf(cat, categories) == category.DREFinancial
+}
+
+// dreBucketOf walks up to the nearest ancestor carrying a classification.
+func dreBucketOf(cat *category.Category, categories map[string]*category.Category) category.ClassificationDRE {
+	for depth := 0; cat != nil && depth < maxCategoryDepth; depth++ {
+		if cat.ClassificationDRE != nil && *cat.ClassificationDRE != "" {
+			return *cat.ClassificationDRE
+		}
+		if cat.ParentID == nil {
+			return ""
+		}
+		cat = categories[*cat.ParentID]
+	}
+	return ""
 }

@@ -10,10 +10,12 @@ import (
 
 type cashflowTxRepo struct {
 	mockTransactionRepo
-	txs []*transaction.Transaction
+	txs        []*transaction.Transaction
+	lastFilter transaction.ListFilter
 }
 
-func (r *cashflowTxRepo) List(transaction.ListFilter) ([]*transaction.Transaction, error) {
+func (r *cashflowTxRepo) List(filter transaction.ListFilter) ([]*transaction.Transaction, error) {
+	r.lastFilter = filter
 	return r.txs, nil
 }
 
@@ -124,5 +126,85 @@ func TestGetCashflowSummary_RejectsAMalformedPeriod(t *testing.T) {
 
 	if _, err := uc.Execute(CashflowSummaryInput{ProfileID: "p1", From: "setembro", To: "2026-09-30"}); err == nil {
 		t.Fatal("expected an error for a date that is not YYYY-MM-DD")
+	}
+}
+
+// The seventeen hand-entered card payments in this database are typed as ordinary
+// expenses with no destination. Counting them double-counts the purchases they pay.
+func TestGetCashflowSummary_DropsHandEnteredInvoicePayments(t *testing.T) {
+	invoiceID := "inv-1"
+	accounts := []*bankaccount.BankAccount{
+		{ID: "checking", ProfileID: "p1", Type: bankaccount.AccountTypeChecking},
+		{ID: "card", ProfileID: "p1", Type: bankaccount.AccountTypeCreditCard},
+	}
+	txs := []*transaction.Transaction{
+		{BankAccountID: "card", Type: transaction.TypeExpense, Amount: 200, Description: "Supermercado"},
+		{BankAccountID: "checking", Type: transaction.TypeExpense, Amount: 200,
+			InvoiceID: &invoiceID, Description: "Pagamento fatura cartao Nubank (venc 03/08)"},
+	}
+
+	uc := NewGetCashflowSummaryUseCase(
+		&cashflowTxRepo{txs: txs},
+		&cashflowAccountRepo{list: accounts},
+		&cashflowCategoryRepo{},
+	)
+
+	out, err := uc.Execute(CashflowSummaryInput{ProfileID: "p1", From: "2026-09-01", To: "2026-09-30"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.Expense != 200 {
+		t.Fatalf("expected only the purchase counted (200), got %.2f", out.Expense)
+	}
+}
+
+// Yield must follow the same inheritance the DRE report uses.
+func TestGetCashflowSummary_YieldInheritsTheParentBucket(t *testing.T) {
+	financial := category.DREFinancial
+	parent := &category.Category{ID: "root", ProfileID: "p1", ClassificationDRE: &financial}
+	leaf := &category.Category{ID: "leaf", ProfileID: "p1", ParentID: &parent.ID}
+
+	accounts := []*bankaccount.BankAccount{{ID: "checking", ProfileID: "p1", Type: bankaccount.AccountTypeChecking}}
+	txs := []*transaction.Transaction{
+		{BankAccountID: "checking", Type: transaction.TypeIncome, Amount: 40,
+			CategoryID: strPtr("leaf"), Description: "CDB Arbi"},
+	}
+
+	uc := NewGetCashflowSummaryUseCase(
+		&cashflowTxRepo{txs: txs},
+		&cashflowAccountRepo{list: accounts},
+		&cashflowCategoryRepo{list: []*category.Category{parent, leaf}},
+	)
+
+	out, err := uc.Execute(CashflowSummaryInput{ProfileID: "p1", From: "2026-09-01", To: "2026-09-30"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.IncomeYield != 40 {
+		t.Fatalf("expected 40 of yield via the parent bucket, got %.2f", out.IncomeYield)
+	}
+}
+
+// The query itself must be constrained: only confirmed transactions, only the period,
+// only this profile. The fake used to throw the filter away, so nothing checked it.
+func TestGetCashflowSummary_ConstrainsTheQuery(t *testing.T) {
+	repo := &cashflowTxRepo{}
+	uc := NewGetCashflowSummaryUseCase(repo, &cashflowAccountRepo{}, &cashflowCategoryRepo{})
+
+	if _, err := uc.Execute(CashflowSummaryInput{ProfileID: "p1", From: "2026-09-01", To: "2026-09-30"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if repo.lastFilter.ProfileID != "p1" {
+		t.Errorf("expected the profile in the filter, got %q", repo.lastFilter.ProfileID)
+	}
+	if repo.lastFilter.Status == nil || *repo.lastFilter.Status != transaction.StatusConfirmed {
+		t.Error("expected only CONFIRMED transactions to be requested")
+	}
+	if repo.lastFilter.OccurredFrom == nil || repo.lastFilter.OccurredFrom.Format("2006-01-02") != "2026-09-01" {
+		t.Error("expected the period start in the filter")
+	}
+	if repo.lastFilter.OccurredTo == nil || repo.lastFilter.OccurredTo.Format("2006-01-02") != "2026-09-30" {
+		t.Error("expected the period end in the filter")
 	}
 }

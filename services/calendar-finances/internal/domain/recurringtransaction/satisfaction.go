@@ -7,9 +7,22 @@ import (
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
 )
 
-// satisfactionWindowDays tolerates paying a bill a few days late, or a few days early
-// in the previous month, without losing track of which occurrence it settled.
-const satisfactionWindowDays = 7
+// satisfactionWindow bounds how far a payment can sit from the occurrence it settles.
+// It is half the interval the rule implies, so a payment can only ever belong to the
+// nearest occurrence: anything further away settled the previous one.
+func (r *RecurringTransaction) satisfactionWindow() time.Duration {
+	rule := strings.ToUpper(r.RecurrenceRule)
+	switch {
+	case strings.Contains(rule, "FREQ=DAILY"):
+		return 0
+	case strings.Contains(rule, "FREQ=WEEKLY"):
+		return 3 * 24 * time.Hour
+	case strings.Contains(rule, "FREQ=YEARLY"):
+		return 180 * 24 * time.Hour
+	default: // monthly, and anything unrecognised
+		return 15 * 24 * time.Hour
+	}
+}
 
 // IsDue reports whether the obligation has already come around and is still active.
 func (r *RecurringTransaction) IsDue(reference time.Time) bool {
@@ -26,9 +39,12 @@ func (r *RecurringTransaction) IsDue(reference time.Time) bool {
 // plan quoted at 99 arrives at 111,57, and comparing amounts kept obligations flagged
 // as pending long after they had been paid.
 //
-// Two shapes match. A transaction generated from this recurrence carries its rule, so
-// it is recognised even if someone renamed it afterwards; anything paid by hand is
-// matched by description, which is what a person repeats when they pay the same bill.
+// Matching is by description, within a window around the occurrence date. The
+// recurrence rule is deliberately not used as a fallback: it is a plain string copied
+// onto every generated transaction, so two unrelated bills falling on the same day of
+// the month share it, and one would settle the other. Until a transaction carries the
+// id of the recurrence that generated it, a renamed transaction stays pending — noise,
+// where the alternative is silently marking the wrong bill as paid.
 func (r *RecurringTransaction) IsSatisfiedBy(tx *transaction.Transaction) bool {
 	if tx == nil {
 		return false
@@ -42,31 +58,18 @@ func (r *RecurringTransaction) IsSatisfiedBy(tx *transaction.Transaction) bool {
 	if r.BankAccountID != nil && tx.BankAccountID != *r.BankAccountID {
 		return false
 	}
-	if !r.sameOccurrence(tx.OccurredOn) {
+	if !r.withinWindow(tx.OccurredOn) {
 		return false
-	}
-
-	if tx.RecurrenceRule != nil && *tx.RecurrenceRule != "" && *tx.RecurrenceRule == r.RecurrenceRule {
-		return true
 	}
 	return normalize(tx.Description) == normalize(r.Description)
 }
 
-// sameOccurrence accepts the same calendar month, or a payment within the tolerance
-// window on either side — which is how a bill due on the 30th gets paid on the 3rd.
-func (r *RecurringTransaction) sameOccurrence(paidOn time.Time) bool {
-	due := dateOf(r.NextOccurrence)
-	paid := dateOf(paidOn)
-
-	if due.Year() == paid.Year() && due.Month() == paid.Month() {
-		return true
+func (r *RecurringTransaction) withinWindow(paidOn time.Time) bool {
+	distance := dateOf(paidOn).Sub(dateOf(r.NextOccurrence))
+	if distance < 0 {
+		distance = -distance
 	}
-
-	diff := paid.Sub(due).Hours() / 24
-	if diff < 0 {
-		diff = -diff
-	}
-	return diff <= satisfactionWindowDays
+	return distance <= r.satisfactionWindow()
 }
 
 func dateOf(t time.Time) time.Time {

@@ -76,7 +76,7 @@ func TestIsYield_ComesFromTheCategoryClassification(t *testing.T) {
 
 	tx := &Transaction{Type: TypeIncome, Description: "Pix recebido"}
 
-	if !tx.IsYield(yieldCat) {
+	if !tx.IsYieldIn(yieldCat, map[string]*category.Category{yieldCat.ID: yieldCat}) {
 		t.Fatal("income in a FINANCIAL category is yield regardless of its wording")
 	}
 }
@@ -87,7 +87,7 @@ func TestIsYield_EarnedRevenueIsNot(t *testing.T) {
 
 	tx := &Transaction{Type: TypeIncome, Description: "Rendimento do projeto X"}
 
-	if tx.IsYield(revenueCat) {
+	if tx.IsYieldIn(revenueCat, map[string]*category.Category{revenueCat.ID: revenueCat}) {
 		t.Fatal("a REVENUE category is earned income even when the text says rendimento")
 	}
 }
@@ -96,7 +96,7 @@ func TestIsYield_ExpenseIsNeverYield(t *testing.T) {
 	financial := category.DREFinancial
 	tx := &Transaction{Type: TypeExpense}
 
-	if tx.IsYield(&category.Category{ClassificationDRE: &financial}) {
+	if tx.IsYieldIn(&category.Category{ClassificationDRE: &financial}, nil) {
 		t.Fatal("an expense in the FINANCIAL bucket is a fee, not yield")
 	}
 }
@@ -104,10 +104,83 @@ func TestIsYield_ExpenseIsNeverYield(t *testing.T) {
 func TestIsYield_UnclassifiedCategoryIsNotYield(t *testing.T) {
 	tx := &Transaction{Type: TypeIncome, Description: "Rendimento da conta"}
 
-	if tx.IsYield(nil) {
+	if tx.IsYieldIn(nil, nil) {
 		t.Fatal("without a classification the safe answer is: not yield")
 	}
-	if tx.IsYield(&category.Category{}) {
+	if tx.IsYieldIn(&category.Category{}, nil) {
 		t.Fatal("an unclassified category must not be guessed from the description")
+	}
+}
+
+// A card bill paid by hand — typed as an ordinary expense on the funding account,
+// with no destination — is still a settlement. Seventeen such rows exist in this
+// database, R$ 26.044,85 worth: counting them as expenses double-counts the purchases
+// they pay for. The wording varies ("Pagamento fatura cartao Nubank (venc 03/08)"),
+// so the description cannot be the test — the invoice link is.
+func TestIsSettlement_HandEnteredInvoicePayment(t *testing.T) {
+	invoiceID := "inv-1"
+	tx := &Transaction{Type: TypeExpense, InvoiceID: &invoiceID}
+
+	if !tx.IsSettlement(acc(bankaccount.AccountTypeChecking), nil) {
+		t.Fatal("an expense that pays an invoice settles it, however it was typed in")
+	}
+}
+
+// An EXPENSE carrying a destination is the source leg of a cross-profile transfer.
+// Money genuinely left this profile, so it is not a settlement.
+func TestIsSettlement_ExpenseWithDestinationIsRealSpending(t *testing.T) {
+	tx := &Transaction{Type: TypeExpense}
+
+	if tx.IsSettlement(acc(bankaccount.AccountTypeChecking), acc(bankaccount.AccountTypeChecking)) {
+		t.Fatal("a cross-profile expense is real spending, not an internal settlement")
+	}
+}
+
+// Only a TRANSFER moves money between the owner's own accounts.
+func TestIsSettlement_OnlyTransfersCountAsInternalMovement(t *testing.T) {
+	income := &Transaction{Type: TypeIncome}
+
+	if income.IsSettlement(acc(bankaccount.AccountTypeChecking), acc(bankaccount.AccountTypeInvestment)) {
+		t.Fatal("an INCOME with a destination is not an internal transfer")
+	}
+}
+
+// Yield classification must agree with the DRE report, which lets a subcategory
+// inherit its parent's bucket. "Rendimento CDB" under "Rendimentos" is FINANCIAL in
+// the report; reading only the leaf made it not-yield here.
+func TestIsYield_InheritsTheParentClassification(t *testing.T) {
+	financial := category.DREFinancial
+	parent := &category.Category{ID: "root", ClassificationDRE: &financial}
+	leaf := &category.Category{ID: "leaf", ParentID: &parent.ID}
+
+	tx := &Transaction{Type: TypeIncome, Description: "CDB Arbi"}
+
+	if !tx.IsYieldIn(leaf, map[string]*category.Category{"root": parent, "leaf": leaf}) {
+		t.Fatal("a subcategory of a FINANCIAL parent is yield, as the DRE report already says")
+	}
+}
+
+func TestIsYield_DoesNotInheritFromANonFinancialParent(t *testing.T) {
+	revenue := category.DRERevenue
+	parent := &category.Category{ID: "root", ClassificationDRE: &revenue}
+	leaf := &category.Category{ID: "leaf", ParentID: &parent.ID}
+
+	tx := &Transaction{Type: TypeIncome, Description: "Rendimento do projeto"}
+
+	if tx.IsYieldIn(leaf, map[string]*category.Category{"root": parent, "leaf": leaf}) {
+		t.Fatal("a REVENUE branch is earned income")
+	}
+}
+
+// A cycle in the parent chain must not hang the request.
+func TestIsYield_SurvivesACycleInTheCategoryTree(t *testing.T) {
+	a := &category.Category{ID: "a"}
+	b := &category.Category{ID: "b", ParentID: &a.ID}
+	a.ParentID = &b.ID
+
+	tx := &Transaction{Type: TypeIncome}
+
+	if tx.IsYieldIn(a, map[string]*category.Category{"a": a, "b": b}) {
+		t.Fatal("a cycle must resolve to not-yield rather than loop forever")
 	}
 }

@@ -110,7 +110,7 @@ func (uc *GetCashflowSummaryUseCase) Execute(input CashflowSummaryInput) (*Cashf
 			if tx.CategoryID != nil {
 				cat = categoryByID[*tx.CategoryID]
 			}
-			if tx.IsYield(cat) {
+			if tx.IsYieldIn(cat, categoryByID) {
 				out.IncomeYield += tx.Amount
 			} else {
 				out.IncomeOther += tx.Amount
