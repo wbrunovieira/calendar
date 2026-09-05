@@ -162,12 +162,16 @@ func main() {
 	recurringService := usecases.NewRecurringTransactionsService(recurringRepo)
 	processRecurringUC := usecases.NewProcessRecurringTransactionsUseCase(recurringRepo, createTransactionUC)
 	recurringHandler := httpHandlers.NewRecurringTransactionHandlers(recurringService, processRecurringUC)
+	recurringHandler.SetPendingUseCase(usecases.NewListPendingRecurringsUseCase(recurringRepo, transactionRepo))
 
 	expenseAnalysisUC := usecases.NewGetExpenseAnalysisUseCase(transactionRepo, categoryRepo, recurringRepo, bankAccountRepo)
 	transactionHandler.SetExpenseAnalysisUseCase(expenseAnalysisUC)
 
 	financialSummaryUC := usecases.NewGetFinancialSummaryUseCase(transactionRepo, categoryRepo, bankAccountRepo)
 	transactionHandler.SetFinancialSummaryUseCase(financialSummaryUC)
+
+	cashflowSummaryUC := usecases.NewGetCashflowSummaryUseCase(transactionRepo, bankAccountRepo, categoryRepo)
+	transactionHandler.SetCashflowSummaryUseCase(cashflowSummaryUC)
 
 	budgetRepo := persistence.NewBudgetTargetRepository(db)
 	budgetService := usecases.NewBudgetTargetsService(budgetRepo, transactionRepo, categoryRepo)
@@ -300,6 +304,7 @@ func main() {
 
 	// Transaction routes
 	apiRouter.HandleFunc("/transactions/daily-balances", transactionHandler.DailyBalances).Methods("GET")
+	apiRouter.HandleFunc("/transactions/cashflow-summary", transactionHandler.CashflowSummary).Methods("GET")
 	apiRouter.HandleFunc("/transactions/expense-analysis", transactionHandler.ExpenseAnalysis).Methods("GET")
 	apiRouter.HandleFunc("/transactions/financial-summary", transactionHandler.FinancialSummary).Methods("GET")
 	apiRouter.HandleFunc("/transactions", transactionHandler.List).Methods("GET")
@@ -309,6 +314,7 @@ func main() {
 	apiRouter.HandleFunc("/transactions/{id}/status", transactionHandler.UpdateStatus).Methods("PUT")
 	apiRouter.HandleFunc("/recurring-transactions", recurringHandler.List).Methods("GET")
 	apiRouter.HandleFunc("/recurring-transactions", recurringHandler.Create).Methods("POST")
+	apiRouter.HandleFunc("/recurring-transactions/pending", recurringHandler.Pending).Methods("GET")
 	apiRouter.HandleFunc("/recurring-transactions/process", recurringHandler.Process).Methods("POST")
 	apiRouter.HandleFunc("/recurring-transactions/{id}", recurringHandler.Update).Methods("PUT")
 	apiRouter.HandleFunc("/recurring-transactions/{id}/status", recurringHandler.UpdateStatus).Methods("PATCH")

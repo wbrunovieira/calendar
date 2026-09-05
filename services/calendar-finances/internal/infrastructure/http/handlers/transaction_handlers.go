@@ -17,6 +17,7 @@ type TransactionHandlers struct {
 	updateStatusUseCase     *usecases.UpdateTransactionStatusUseCase
 	deleteUseCase           *usecases.DeleteTransactionUseCase
 	dailyBalancesUseCase    *usecases.GetDailyBalancesUseCase
+	cashflowSummaryUseCase  *usecases.GetCashflowSummaryUseCase
 	expenseAnalysisUseCase  *usecases.GetExpenseAnalysisUseCase
 	financialSummaryUseCase *usecases.GetFinancialSummaryUseCase
 }
@@ -41,6 +42,10 @@ func NewTransactionHandlers(
 
 func (h *TransactionHandlers) SetDailyBalancesUseCase(uc *usecases.GetDailyBalancesUseCase) {
 	h.dailyBalancesUseCase = uc
+}
+
+func (h *TransactionHandlers) SetCashflowSummaryUseCase(uc *usecases.GetCashflowSummaryUseCase) {
+	h.cashflowSummaryUseCase = uc
 }
 
 func (h *TransactionHandlers) SetExpenseAnalysisUseCase(uc *usecases.GetExpenseAnalysisUseCase) {
@@ -241,6 +246,27 @@ func (h *TransactionHandlers) DailyBalances(w http.ResponseWriter, r *http.Reque
 		"data":  balances,
 		"total": len(balances),
 	})
+}
+
+// CashflowSummary handles GET /api/v1/transactions/cashflow-summary
+func (h *TransactionHandlers) CashflowSummary(w http.ResponseWriter, r *http.Request) {
+	if h.cashflowSummaryUseCase == nil {
+		http.Error(w, "cashflow summary not available", http.StatusNotImplemented)
+		return
+	}
+
+	out, err := h.cashflowSummaryUseCase.Execute(usecases.CashflowSummaryInput{
+		ProfileID: r.URL.Query().Get("profileId"),
+		From:      r.URL.Query().Get("from"),
+		To:        r.URL.Query().Get("to"),
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"data": out})
 }
 
 // ExpenseAnalysis handles GET /api/v1/transactions/expense-analysis
