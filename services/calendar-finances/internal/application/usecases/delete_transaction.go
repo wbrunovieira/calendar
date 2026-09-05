@@ -39,10 +39,14 @@ func (uc *DeleteTransactionUseCase) Execute(id string) error {
 		}
 	}
 
-	affected := affectedAccounts(txn, linked)
+	affected := uc.affectedAccounts(txn, linked)
 
 	if linked != nil {
-		_ = uc.repo.Delete(linked.ID)
+		// Failing quietly here is what leaves "money that arrived from nowhere": the
+		// pair would be half-deleted and the caller told it succeeded.
+		if err := uc.repo.Delete(linked.ID); err != nil {
+			return err
+		}
 	}
 	if err := uc.repo.Delete(id); err != nil {
 		return ErrTransactionNotFound
@@ -60,18 +64,32 @@ func (uc *DeleteTransactionUseCase) Execute(id string) error {
 
 // affectedAccounts lists every account whose balance depended on the rows being
 // removed. Only confirmed transactions ever moved money.
-func affectedAccounts(txns ...*transaction.Transaction) []string {
+//
+// Credit cards are left out on purpose. Creating a card transaction does not move the
+// card's balance — every write path skips them, and the balance is a consequence of
+// paying the invoice — so recomputing one here would make the card jump by the sum of
+// every purchase since the last bill, purely because something unrelated was deleted.
+// Making a card's balance track its transactions is a worthwhile change, but it is a
+// different one and belongs in its own PR.
+func (uc *DeleteTransactionUseCase) affectedAccounts(txns ...*transaction.Transaction) []string {
 	ids := make([]string, 0, len(txns)*2)
 	for _, t := range txns {
 		if t == nil || t.Status != transaction.StatusConfirmed {
 			continue
 		}
-		ids = append(ids, t.BankAccountID)
+		if !uc.isCreditCard(t.BankAccountID) {
+			ids = append(ids, t.BankAccountID)
+		}
 		if t.DestinationAccountID != nil {
 			ids = append(ids, *t.DestinationAccountID)
 		}
 	}
 	return deduplicateIDs(ids...)
+}
+
+func (uc *DeleteTransactionUseCase) isCreditCard(accountID string) bool {
+	account, err := uc.accountRepo.FindByID(accountID)
+	return err == nil && account.IsCreditCard()
 }
 
 func (uc *DeleteTransactionUseCase) reverseByHand(txns ...*transaction.Transaction) error {
