@@ -1,10 +1,10 @@
+//go:build integration
 // +build integration
 
 package usecases
 
 import (
 	"database/sql"
-	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -13,6 +13,7 @@ import (
 	"github.com/brunovieira/calendar-finances/internal/domain/category"
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/persistence"
+	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 )
 
@@ -44,10 +45,10 @@ func cleanIntegrationData(db *sql.DB, profileID string) {
 func integrationSeedProfile(t *testing.T, db *sql.DB, id string) {
 	t.Helper()
 	_, err := db.Exec(`
-		INSERT INTO finance.profiles (id, name, type, currency, created_at, updated_at)
-		VALUES ($1, $1, 'PERSONAL', 'BRL', now(), now())
+		INSERT INTO finance.profiles (id, calendar_id, name, type, created_at, updated_at)
+		VALUES ($1::uuid, 'integration-' || $2, $2, 'PERSONAL', now(), now())
 		ON CONFLICT (id) DO NOTHING
-	`, id)
+	`, id, id)
 	if err != nil {
 		t.Fatalf("seed profile: %v", err)
 	}
@@ -99,9 +100,9 @@ func TestIntegration_CreateConfirmedExpense_RecalculatesBalance(t *testing.T) {
 	db := integrationDB(t)
 	defer db.Close()
 
-	pid := fmt.Sprintf("int-profile-%d", time.Now().UnixNano())
-	aid := fmt.Sprintf("int-acc-%d", time.Now().UnixNano())
-	cid := fmt.Sprintf("int-cat-%d", time.Now().UnixNano())
+	pid := uuid.NewString()
+	aid := uuid.NewString()
+	cid := uuid.NewString()
 
 	cleanIntegrationData(db, pid)
 	defer cleanIntegrationData(db, pid)
@@ -161,8 +162,8 @@ func TestIntegration_DeleteConfirmedExpense_RecalculatesBalance(t *testing.T) {
 	db := integrationDB(t)
 	defer db.Close()
 
-	pid := fmt.Sprintf("int-profile-del-%d", time.Now().UnixNano())
-	aid := fmt.Sprintf("int-acc-del-%d", time.Now().UnixNano())
+	pid := uuid.NewString()
+	aid := uuid.NewString()
 
 	cleanIntegrationData(db, pid)
 	defer cleanIntegrationData(db, pid)
@@ -179,7 +180,7 @@ func TestIntegration_DeleteConfirmedExpense_RecalculatesBalance(t *testing.T) {
 	recalcUC := NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
 
 	// Seed a confirmed expense
-	txID := fmt.Sprintf("int-tx-del-%d", time.Now().UnixNano())
+	txID := uuid.NewString()
 	tx := &transaction.Transaction{
 		ID:            txID,
 		ProfileID:     pid,
@@ -217,8 +218,8 @@ func TestIntegration_UpdateStatus_PlannedToConfirmed_RecalculatesBalance(t *test
 	db := integrationDB(t)
 	defer db.Close()
 
-	pid := fmt.Sprintf("int-profile-status-%d", time.Now().UnixNano())
-	aid := fmt.Sprintf("int-acc-status-%d", time.Now().UnixNano())
+	pid := uuid.NewString()
+	aid := uuid.NewString()
 
 	cleanIntegrationData(db, pid)
 	defer cleanIntegrationData(db, pid)
@@ -234,7 +235,7 @@ func TestIntegration_UpdateStatus_PlannedToConfirmed_RecalculatesBalance(t *test
 	txRepo := persistence.NewTransactionRepository(db)
 	recalcUC := NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
 
-	txID := fmt.Sprintf("int-tx-status-%d", time.Now().UnixNano())
+	txID := uuid.NewString()
 	tx := &transaction.Transaction{
 		ID:            txID,
 		ProfileID:     pid,
