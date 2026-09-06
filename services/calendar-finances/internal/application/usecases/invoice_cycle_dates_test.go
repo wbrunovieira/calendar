@@ -1,7 +1,7 @@
 package usecases
 
 import (
-	"strings"
+	"errors"
 	"testing"
 	"time"
 
@@ -72,7 +72,12 @@ func TestGetOrCreateInvoice_NeverMergesTwoBillingCycles(t *testing.T) {
 
 	inv, err := getOrCreateInvoiceForDate(repo, cardWithCycle(cardID), txDate)
 
-	if err == nil && spansMoreThanOneCycle(inv) {
+	// Assert the success outright: a regression that starts returning an error
+	// instead of an invoice would otherwise slip through this test silently.
+	if err != nil {
+		t.Fatalf("a real purchase must still be recordable, got: %v", err)
+	}
+	if spansMoreThanOneCycle(inv) {
 		t.Fatalf("invoice merged two billing cycles: opening %s, closing %s, due %s",
 			inv.OpeningDate.Format("2006-01-02"),
 			inv.ClosingDate.Format("2006-01-02"),
@@ -125,34 +130,122 @@ func TestGetOrCreateInvoice_RelabelsInsteadOfMovingTheCycle(t *testing.T) {
 	}
 }
 
-func TestGetOrCreateInvoice_ReportsConflictWhenBothLabelsAreTaken(t *testing.T) {
+func TestGetOrCreateInvoice_StillRecordsWhenBothConventionsAreTaken(t *testing.T) {
+	// The card carries BOTH labelling conventions at once — exactly the state
+	// production is in. An earlier version of this fix hard-blocked here, which
+	// would have stopped real spending from being recorded at all.
 	cardID := "card-1"
 	repo := &fakeInvoiceRepo{invoices: map[string]*invoice.Invoice{}}
 	repo.invoices["legacy-invoice"] = legacyInvoice(cardID)
-	// Something else already squats on the due-month label with a different cycle,
-	// so neither convention frees a slot.
+	repo.invoices["september-label"] = &invoice.Invoice{
+		ID:            "september-label",
+		BankAccountID: cardID,
+		ReferenceDate: date(2026, time.September, 1),
+		OpeningDate:   date(2026, time.August, 27),
+		ClosingDate:   date(2026, time.September, 27),
+		DueDate:       date(2026, time.October, 6),
+		Status:        invoice.StatusOpen,
+	}
+
+	inv, err := getOrCreateInvoiceForDate(repo, cardWithCycle(cardID), date(2026, time.August, 10))
+	if err != nil {
+		t.Fatalf("a purchase must still be recorded when both labels are taken, got: %v", err)
+	}
+
+	// The billing period is still the correct one — only the label had to move.
+	if got, want := inv.ClosingDate, date(2026, time.August, 27); !got.Equal(want) {
+		t.Errorf("closingDate = %s, want %s", got.Format("2006-01-02"), want.Format("2006-01-02"))
+	}
+	if got, want := inv.DueDate, date(2026, time.September, 6); !got.Equal(want) {
+		t.Errorf("dueDate = %s, want %s", got.Format("2006-01-02"), want.Format("2006-01-02"))
+	}
+	if !inv.ContainsDate(date(2026, time.August, 10)) {
+		t.Error("invoice must contain the transaction date it was created for")
+	}
+	for _, taken := range []string{"legacy-invoice", "september-label"} {
+		if inv.ReferenceDate.Equal(repo.invoices[taken].ReferenceDate) && inv.ID != taken {
+			t.Errorf("label collides with %s", taken)
+		}
+	}
+}
+
+func TestGetOrCreateInvoice_DueDayAfterClosingDayStillHasAFallback(t *testing.T) {
+	// closingDay 5, dueDay 15: the invoice falls due in the SAME month it closes,
+	// so the closing-month and due-month conventions collapse into one candidate.
+	// Without a forward scan such a card has no fallback at all.
+	cardID := "card-2"
+	closing, due := 5, 15
+	card := &bankaccount.BankAccount{
+		ID: cardID, Type: bankaccount.AccountTypeCreditCard,
+		ClosingDay: &closing, DueDay: &due,
+	}
+	repo := &fakeInvoiceRepo{invoices: map[string]*invoice.Invoice{}}
 	repo.invoices["squatter"] = &invoice.Invoice{
 		ID:            "squatter",
 		BankAccountID: cardID,
 		ReferenceDate: date(2026, time.September, 1),
-		OpeningDate:   date(2026, time.November, 27),
-		ClosingDate:   date(2026, time.December, 27),
-		DueDate:       date(2027, time.January, 6),
-		Status:        invoice.StatusOpen,
+		OpeningDate:   date(2026, time.January, 5),
+		ClosingDate:   date(2026, time.February, 5),
+		DueDate:       date(2026, time.February, 15),
+		Status:        invoice.StatusClosed,
 	}
 
-	_, err := getOrCreateInvoiceForDate(repo, cardWithCycle(cardID), date(2026, time.August, 10))
-	if err == nil {
-		t.Fatal("expected the unresolvable conflict to be reported, got nil error")
+	inv, err := getOrCreateInvoiceForDate(repo, card, date(2026, time.September, 2))
+	if err != nil {
+		t.Fatalf("card with dueDay > closingDay must still get an invoice, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "legacy-invoice") {
-		t.Errorf("error should name the conflicting invoice so it can be repaired, got: %v", err)
+	if got, want := inv.ClosingDate, date(2026, time.September, 5); !got.Equal(want) {
+		t.Errorf("closingDate = %s, want %s", got.Format("2006-01-02"), want.Format("2006-01-02"))
 	}
-	for _, stored := range repo.invoices {
-		if spansMoreThanOneCycle(stored) {
-			t.Fatalf("no invoice may be left spanning two cycles, %s does", stored.ID)
-		}
+	if got, want := inv.DueDate, date(2026, time.September, 15); !got.Equal(want) {
+		t.Errorf("dueDate = %s, want %s", got.Format("2006-01-02"), want.Format("2006-01-02"))
 	}
+}
+
+func TestGetOrCreateInvoice_LoserOfARaceGetsTheWinnersInvoice(t *testing.T) {
+	// Two concurrent writers relabel to the same month; the loser's insert fails.
+	// It must return the invoice the winner just created, not a data-conflict error.
+	cardID := "card-1"
+	repo := &raceOnCreateRepo{
+		fakeInvoiceRepo: fakeInvoiceRepo{invoices: map[string]*invoice.Invoice{}},
+		winner: &invoice.Invoice{
+			ID:            "winner",
+			BankAccountID: cardID,
+			ReferenceDate: date(2026, time.September, 1),
+			OpeningDate:   date(2026, time.July, 27),
+			ClosingDate:   date(2026, time.August, 27),
+			DueDate:       date(2026, time.September, 6),
+			Status:        invoice.StatusOpen,
+		},
+	}
+
+	inv, err := getOrCreateInvoiceForDate(repo, cardWithCycle(cardID), date(2026, time.August, 10))
+	if err != nil {
+		t.Fatalf("the loser of a race must not report a conflict, got: %v", err)
+	}
+	if inv.ID != "winner" {
+		t.Errorf("expected the winner's invoice, got %s", inv.ID)
+	}
+}
+
+// raceOnCreateRepo rejects every insert, as if another writer always got there
+// first, and reveals the winner only on a lookup by date.
+type raceOnCreateRepo struct {
+	fakeInvoiceRepo
+	winner *invoice.Invoice
+	calls  int
+}
+
+func (r *raceOnCreateRepo) Create(inv *invoice.Invoice) error {
+	return errors.New("pq: duplicate key value violates unique constraint \"uq_invoice_account_reference\"")
+}
+
+func (r *raceOnCreateRepo) FindByBankAccountAndDate(bankAccountID string, txDate time.Time) (*invoice.Invoice, error) {
+	if r.winner != nil && r.winner.ContainsDate(txDate) && r.calls > 0 {
+		return r.winner, nil
+	}
+	r.calls++
+	return nil, nil
 }
 
 func TestGetOrCreateInvoice_CreatesSingleCycleWhenNoConflict(t *testing.T) {

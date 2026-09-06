@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -318,6 +319,13 @@ func (h *TransactionHandlers) FinancialSummary(w http.ResponseWriter, r *http.Re
 }
 
 func mapTransactionError(err error) int {
+	// A reference-month conflict is an operator-actionable data problem, not a
+	// server fault. Reported as 500 it reads like an outage, and callers that
+	// retry on 5xx (n8n, the agents) would retry it forever.
+	if errors.Is(err, usecases.ErrInvoiceReferenceConflict) {
+		return http.StatusConflict
+	}
+
 	switch err {
 	case usecases.ErrProfileNotFound, usecases.ErrCategoryNotFound, usecases.ErrCostCenterNotFound,
 		usecases.ErrTransactionNotFound:
