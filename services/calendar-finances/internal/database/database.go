@@ -562,6 +562,22 @@ func RunMigrations(db *sql.DB) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_cost_centers_profile ON finance.cost_centers(profile_id)`,
 
+		// A cost center can mirror a record in another system — a CRM
+		// organization, for instance. VARCHAR on purpose, never uuid: the CRM's
+		// own table holds both uuid and cuid ids, because imported records
+		// bring their own, so a uuid column would reject the older half.
+		`DO $$ BEGIN
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='finance' AND table_name='cost_centers' AND column_name='external_id') THEN
+				ALTER TABLE finance.cost_centers ADD COLUMN external_id VARCHAR(255);
+				ALTER TABLE finance.cost_centers ADD COLUMN external_source VARCHAR(60);
+			END IF;
+		END $$`,
+		// One CRM organization maps to at most one cost center per profile, so a
+		// repeated sync finds the existing one instead of creating a twin.
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_cost_centers_external
+			ON finance.cost_centers(profile_id, external_source, external_id)
+			WHERE external_id IS NOT NULL`,
+
 		// Phase 3: Marketing Campaigns
 		`CREATE TABLE IF NOT EXISTS finance.marketing_campaigns (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
