@@ -19,6 +19,7 @@ if [ "$OVERRIDE" != "auto" ] && [ "$OVERRIDE" != "all" ] && [ -n "$OVERRIDE" ]; 
   echo "services=$OVERRIDE"
   echo "migrate=false"
   echo "infra=false"
+  echo "gateway=false"
   exit 0
 fi
 
@@ -27,6 +28,7 @@ if [ "$OVERRIDE" = "all" ] || [ -z "$DEPLOYED" ] || ! git cat-file -e "$DEPLOYED
   echo "services=$ALL_SERVICES"
   echo "migrate=true"
   echo "infra=true"
+  echo "gateway=true"
   exit 0
 fi
 
@@ -36,6 +38,7 @@ SERVICES=""
 add() { case " $SERVICES " in *" $1 "*) ;; *) SERVICES="$SERVICES $1" ;; esac; }
 
 INFRA=false
+GATEWAY=false
 while IFS= read -r f; do
   case "$f" in
     services/calendar-core/*)     add calendar-core ;;
@@ -49,6 +52,10 @@ while IFS= read -r f; do
     # o step de infra aplica com `up -d`. Se mudar build.args (NEXT_PUBLIC_*),
     # rodar workflow_dispatch com services=all.
     docker-compose.prod.yml)      INFRA=true ;;
+    # A config do Authelia e montada do disco, entao o container so le a versao
+    # nova quando reinicia. Sem isto o arquivo chega no servidor e a politica
+    # antiga continua valendo — deploy verde, efeito nenhum.
+    config/authelia/*)            GATEWAY=true ;;
   esac
 done <<< "$CHANGED_FILES"
 
@@ -60,3 +67,4 @@ fi
 echo "services=$(echo $SERVICES | xargs)"
 echo "migrate=$MIGRATE"
 echo "infra=$INFRA"
+echo "gateway=$GATEWAY"
