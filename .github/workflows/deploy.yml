@@ -165,6 +165,25 @@ jobs:
         run: |
           ssh $SSH_OPTS "$VPS" 'cd /opt/calendar && RUNNING=$(docker-compose -f docker-compose.prod.yml ps --services --status running | tr "\n" " ") && echo "Rodando: $RUNNING" && docker-compose -f docker-compose.prod.yml up -d $RUNNING'
 
+      # A config do Authelia e um bind mount: o container so a le ao iniciar.
+      # Trocar o arquivo sem reiniciar deixa a politica antiga valendo.
+      - name: Aplicar politica do gateway (Authelia)
+        if: steps.detect.outputs.gateway == 'true'
+        run: |
+          ssh $SSH_OPTS "$VPS" 'cd /opt/calendar && docker-compose -f docker-compose.prod.yml restart authelia'
+          sleep 10
+          # Verificar o EFEITO, nao o status do comando. Um dominio de API que
+          # responde 200 a uma requisicao anonima esta aberto para a internet,
+          # tenha o restart "dado certo" ou nao.
+          ssh $SSH_OPTS "$VPS" 'FAIL=0
+            for d in calendar-finances calendar-health agents; do
+              CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://$d.wbdigitalsolutions.com/")
+              echo "$d -> $CODE"
+              case "$CODE" in
+                200) echo "::error::$d responde 200 sem sessao — o gateway nao esta protegendo"; FAIL=1 ;;
+              esac
+            done; exit $FAIL'
+
       - name: Prisma migrate deploy (calendar-core)
         if: steps.detect.outputs.migrate == 'true'
         run: |
