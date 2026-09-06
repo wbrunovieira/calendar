@@ -21,6 +21,8 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3336/api/v
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
+    // Carry the Authelia session cookie — same reason as the finances client.
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...options?.headers,
