@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { BankAccount, Invoice } from '@/types/finances';
 import { formatCurrency, formatDate } from '@/utils/format';
-import { getCardUsage } from '@/utils/creditCard';
+import { getCardUsage, amountLeftOn } from '@/utils/creditCard';
 
 interface InvoiceUpdateData {
   closingDate?: string;
@@ -32,6 +32,8 @@ const getStatusLabel = (status: string) => {
       return { label: 'Aberta', color: 'bg-blue-500/20 text-blue-400' };
     case 'CLOSED':
       return { label: 'Fechada', color: 'bg-yellow-500/20 text-yellow-400' };
+    case 'PARTIALLY_PAID':
+      return { label: 'Parcial', color: 'bg-amber-500/20 text-amber-400' };
     case 'PAID':
       return { label: 'Paga', color: 'bg-green-500/20 text-green-400' };
     default:
@@ -100,9 +102,14 @@ export default function CreditCardInfo({
 
   const handlePayInvoice = async (invoice: Invoice) => {
     if (!onPayInvoice || payingInvoice) return;
+    // Pay what is LEFT, not the whole bill. A partially paid bill stays payable, so
+    // sending invoice.amount would debit the funding account a second time for a
+    // sum that is no longer owed.
+    const remaining = amountLeftOn(invoice);
+    if (remaining <= 0) return;
     setPayingInvoice(invoice.id);
     try {
-      await onPayInvoice(invoice.id, invoice.amount);
+      await onPayInvoice(invoice.id, remaining);
       setShowPaymentOptions(false);
     } finally {
       setPayingInvoice(null);

@@ -629,6 +629,13 @@ func (uc *RecalculateInvoiceAmountUseCase) Execute(invoiceID string) (*invoice.I
 		return nil, err
 	}
 
+	// A recalculation can drop the total below what was already paid. Re-derive
+	// the status, or the bill sits PARTIALLY_PAID with nothing left to pay and no
+	// route ever re-evaluates it — while still counting against the card limit.
+	if inv.Status == invoice.StatusPartiallyPaid && inv.PaidAmount != nil && *inv.PaidAmount+0.005 >= inv.Amount {
+		inv.Status = invoice.StatusPaid
+	}
+
 	return inv, nil
 }
 
@@ -783,8 +790,22 @@ func (uc *PayInvoiceUseCaseV2) Execute(input PayInvoiceInput) (*invoice.Invoice,
 	// one. Amount is a cached sum that GetInvoice recomputes on every read, so a
 	// stale copy here would settle a bill that is not actually covered — the exact
 	// class of error this change exists to prevent.
+	//
+	// Which is why a failure to read that total ABORTS the payment. Falling back to
+	// the value we just called untrustworthy would settle bills on exactly the days
+	// the database is misbehaving, and production invoices routinely carry a stored
+	// amount of 0.
 	if uc.transactionRepo != nil {
-		if total, sumErr := uc.transactionRepo.SumByInvoiceID(inv.ID); sumErr == nil {
+		total, sumErr := uc.transactionRepo.SumByInvoiceID(inv.ID)
+		if sumErr != nil {
+			return nil, sumErr
+		}
+		// Trust the sum only when it says something. A bill whose charges are not
+		// linked by invoice_id (imported or entered by hand) sums to zero; treating
+		// that as "fully covered" would settle it on any payment, and writing it back
+		// would destroy the only record of what was billed. Keep the stored total in
+		// that case — it is the better of two imperfect numbers.
+		if total > 0 {
 			inv.Amount = total
 		}
 	}

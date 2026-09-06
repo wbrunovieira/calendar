@@ -113,3 +113,21 @@ func TestPayV2_EachPartialPaymentDebitsTheFundingAccountOnce(t *testing.T) {
 		t.Errorf("funding balance = %.2f, want %.2f — each partial payment must debit once", got, want)
 	}
 }
+
+// An invoice whose charges are not linked by invoice_id sums to zero. Settling it on
+// any payment would be wrong, and writing that zero back would destroy the only
+// record of what was billed.
+func TestPayV2_UnlinkedChargesKeepTheStoredTotal(t *testing.T) {
+	uc, _, id := payFixture(t, 1489.22, 0)
+
+	inv, err := uc.Execute(PayInvoiceInput{InvoiceID: id, PaidAmount: 500, PaidAt: "2026-08-03"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if inv.Status != invoice.StatusPartiallyPaid {
+		t.Errorf("status = %s, want %s — a zero sum must not settle the bill", inv.Status, invoice.StatusPartiallyPaid)
+	}
+	if inv.Amount != 1489.22 {
+		t.Errorf("amount = %.2f, want the stored 1489.22 preserved", inv.Amount)
+	}
+}

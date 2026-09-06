@@ -71,13 +71,21 @@ func (uc *GetCreditUsageUseCase) outstandingFor(account *bankaccount.BankAccount
 			return 0, err
 		}
 
-		switch {
-		case inv.Status != invoice.StatusPaid:
-			outstanding += billed
-		case inv.PaidAmount != nil && *inv.PaidAmount < billed:
-			// Paying anything at all marks a bill PAID, so a partial payment would
-			// otherwise drop the whole remaining balance from view.
-			outstanding += billed - *inv.PaidAmount
+		// What is owed is always billed minus paid, whatever the status. Branching on
+		// status instead put PARTIALLY_PAID in the "owes everything" case and counted
+		// money that had already left the checking account.
+		//
+		// A settled bill with no recorded paidAmount owes nothing: the status is the
+		// only evidence there is. Anything else defaults to nothing paid yet, which
+		// also covers legacy rows where a partial payment was stored as PAID.
+		paid := 0.0
+		if inv.PaidAmount != nil {
+			paid = *inv.PaidAmount
+		} else if inv.Status == invoice.StatusPaid {
+			paid = billed
+		}
+		if remaining := billed - paid; remaining > 0 {
+			outstanding += remaining
 		}
 	}
 

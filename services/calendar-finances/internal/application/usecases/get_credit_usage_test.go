@@ -189,3 +189,61 @@ func TestGetCreditUsage_DoesNotDoubleCountAnInvoicedCharge(t *testing.T) {
 		t.Fatalf("expected the charge counted once, got %.2f", usage.Outstanding)
 	}
 }
+
+// Adding PARTIALLY_PAID broke every consumer that split the world into PAID and
+// not-PAID: the new status lands in the "not paid" branch, which counts the WHOLE
+// bill and ignores what was already paid. The card then reports more debt than it
+// has, right after the money left the checking account.
+func TestGetCreditUsage_PartiallyPaidBillOwesOnlyTheRemainder(t *testing.T) {
+	paid := 1018.18
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"card": card(5000)}}
+	invoiceRepo := &usageInvoiceRepo{list: []*invoice.Invoice{
+		{ID: "partial", BankAccountID: "card", Status: invoice.StatusPartiallyPaid, PaidAmount: &paid},
+	}}
+	txRepo := &usageTxRepo{txs: []*transaction.Transaction{charge("partial", 1489.22)}}
+
+	usage, err := NewGetCreditUsageUseCase(accountRepo, invoiceRepo, txRepo).Execute("card")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if want := 471.04; usage.Outstanding < want-0.005 || usage.Outstanding > want+0.005 {
+		t.Errorf("outstanding = %.2f, want %.2f — the paid part must not be counted as debt", usage.Outstanding, want)
+	}
+}
+
+// Legacy rows exist where a partial payment was recorded as PAID, because that is
+// what the old code did. Those must still show their remainder.
+func TestGetCreditUsage_LegacyPaidBillWithPartialAmountStillOwes(t *testing.T) {
+	paid := 100.0
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"card": card(5000)}}
+	invoiceRepo := &usageInvoiceRepo{list: []*invoice.Invoice{
+		{ID: "legacy", BankAccountID: "card", Status: invoice.StatusPaid, PaidAmount: &paid},
+	}}
+	txRepo := &usageTxRepo{txs: []*transaction.Transaction{charge("legacy", 250)}}
+
+	usage, err := NewGetCreditUsageUseCase(accountRepo, invoiceRepo, txRepo).Execute("card")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := 150.0; usage.Outstanding < want-0.005 || usage.Outstanding > want+0.005 {
+		t.Errorf("outstanding = %.2f, want %.2f", usage.Outstanding, want)
+	}
+}
+
+// A settled bill with no paidAmount recorded owes nothing: the status is all we have.
+func TestGetCreditUsage_SettledBillWithoutPaidAmountOwesNothing(t *testing.T) {
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"card": card(5000)}}
+	invoiceRepo := &usageInvoiceRepo{list: []*invoice.Invoice{
+		{ID: "settled", BankAccountID: "card", Status: invoice.StatusPaid},
+	}}
+	txRepo := &usageTxRepo{txs: []*transaction.Transaction{charge("settled", 900)}}
+
+	usage, err := NewGetCreditUsageUseCase(accountRepo, invoiceRepo, txRepo).Execute("card")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if usage.Outstanding != 0 {
+		t.Errorf("outstanding = %.2f, want 0", usage.Outstanding)
+	}
+}
