@@ -1669,8 +1669,11 @@ func TestGetOrCreateInvoice_HighClosingDay_ShouldCreateNextInvoiceWhenCurrentExi
 		t.Errorf("expected April invoice, got %s", newInv.ReferenceDate.Month())
 	}
 
-	// The April invoice opening should be Feb 25 (day after March invoice closing Feb 24)
-	expectedOpening := time.Date(2026, 2, 25, 0, 0, 0, 0, time.UTC)
+	// The new invoice opens ON the previous closing date, not the day after.
+	// ContainsDate is [opening, closing), so Feb 24 is excluded from the March
+	// invoice; opening on Feb 25 would leave a purchase made on Feb 24 with no
+	// invoice at all. Opening on Feb 24 covers it exactly once.
+	expectedOpening := time.Date(2026, 2, 24, 0, 0, 0, 0, time.UTC)
 	if !newInv.OpeningDate.Equal(expectedOpening) {
 		t.Errorf("expected April invoice opening on %s, got %s", expectedOpening.Format("2006-01-02"), newInv.OpeningDate.Format("2006-01-02"))
 	}

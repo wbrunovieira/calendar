@@ -1,6 +1,7 @@
 package usecases
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -191,21 +192,72 @@ func (uc *GetOrCreateInvoiceForDateUseCase) Execute(bankAccountID string, txDate
 		// If duplicate key (invoice for this reference month already exists but with
 		// different dates that don't contain our txDate), try the next month
 		if isUniqueViolation(err) {
-			nextMonth := refDate.AddDate(0, 1, 0)
-			params.ReferenceDate = nextMonth
-			inv, err = invoice.New(params)
-			if err != nil {
-				return nil, err
+			// Same reasoning as getOrCreateInvoiceForDate: never move a cycle
+			// forward to dodge a label collision.
+			if raced, findErr := uc.invoiceRepo.FindByBankAccountAndDate(bankAccountID, txDate); findErr == nil && raced != nil {
+				return raced, nil
 			}
-			if err := uc.invoiceRepo.Create(inv); err != nil {
-				return nil, err
+			existing, _ := uc.invoiceRepo.FindByBankAccountID(bankAccountID)
+			var conflicting *invoice.Invoice
+			for _, ei := range existing {
+				if ei.ReferenceDate.Year() == refDate.Year() && ei.ReferenceDate.Month() == refDate.Month() {
+					conflicting = ei
+					break
+				}
 			}
-			return inv, nil
+			if relabelled := relabelByDueMonth(inv); relabelled != nil {
+				createErr := uc.invoiceRepo.Create(relabelled)
+				if createErr == nil {
+					return relabelled, nil
+				}
+				if !isUniqueViolation(createErr) {
+					return nil, createErr
+				}
+			}
+			return nil, referenceMonthConflictError(refDate, conflicting)
 		}
 		return nil, err
 	}
 
 	return inv, nil
+}
+
+// relabelByDueMonth returns a copy of inv labelled by the month it FALLS DUE
+// instead of the month it closes, leaving opening/closing/due untouched.
+//
+// Older invoices on this database were labelled by their due month, so when that
+// convention collides with invoice.New's closing-month label, borrowing the older
+// convention frees the label without touching the billing period. Returns nil when
+// both conventions land on the same month, since retrying would just collide again.
+func relabelByDueMonth(inv *invoice.Invoice) *invoice.Invoice {
+	dueMonth := time.Date(inv.DueDate.Year(), inv.DueDate.Month(), 1, 0, 0, 0, 0, time.UTC)
+	if dueMonth.Equal(inv.ReferenceDate) {
+		return nil
+	}
+	relabelled := *inv
+	relabelled.ReferenceDate = dueMonth
+	return &relabelled
+}
+
+// referenceMonthConflictError describes a collision on the
+// (bank_account_id, reference_date) unique constraint where the invoice already
+// holding the label covers a different billing cycle than the one we need.
+//
+// It happens when two labelling conventions meet: older rows are labelled by the
+// month the invoice FALLS DUE, while invoice.New labels by the month it CLOSES.
+// The fix is to repair the mislabelled row's reference_date, which is why the
+// message names it.
+func referenceMonthConflictError(refDate time.Time, conflicting *invoice.Invoice) error {
+	if conflicting == nil {
+		return fmt.Errorf("invoice reference month %s is already taken on this card, but the conflicting invoice could not be read",
+			refDate.Format("2006-01"))
+	}
+	return fmt.Errorf("invoice reference month %s is already used by invoice %s, which covers %s to %s (due %s); refusing to shift the new cycle forward — repair that invoice's reference_date",
+		refDate.Format("2006-01"),
+		conflicting.ID,
+		conflicting.OpeningDate.Format("2006-01-02"),
+		conflicting.ClosingDate.Format("2006-01-02"),
+		conflicting.DueDate.Format("2006-01-02"))
 }
 
 // isUniqueViolation checks if the error is a unique constraint violation
@@ -280,27 +332,34 @@ func getOrCreateInvoiceForDate(repo invoice.Repository, account *bankaccount.Ban
 			return existingInv, nil
 		}
 
-		nextMonth := refDate.AddDate(0, 1, 0)
-		params.ReferenceDate = nextMonth
-		inv, err = invoice.New(params)
-		if err != nil {
-			return nil, err
-		}
-		if existingInv != nil {
-			inv.OpeningDate = existingInv.ClosingDate.AddDate(0, 0, 1)
+		// A concurrent writer may have created the invoice we need between our
+		// lookup and our insert. Look again before treating this as a conflict.
+		if raced, findErr := repo.FindByBankAccountAndDate(account.ID, txDate); findErr == nil && raced != nil {
+			return raced, nil
 		}
 
-		if err := repo.Create(inv); err != nil {
-			if isUniqueViolation(err) {
-				for _, ei := range existingInvoices {
-					if ei.ReferenceDate.Year() == nextMonth.Year() && ei.ReferenceDate.Month() == nextMonth.Month() {
-						return ei, nil
-					}
-				}
+		// The reference month is taken by an invoice covering a DIFFERENT cycle.
+		// reference_date is only a LABEL; opening/closing/due are the truth. So
+		// relabel — never move the cycle.
+		//
+		// Moving it is what the old code did, and it made the dates lie: closing
+		// and due jumped past the period the transaction belongs to, and
+		// openingDate was stretched back to cover the gap, merging two cycles into
+		// one invoice. That is how the Nubank Juridica card ended up with a single
+		// invoice spanning 2026-07-28 to 2026-09-27: the cycle that should have
+		// closed on 2026-08-27 never existed, and a real R$ 119,94 payment made on
+		// 2026-09-03 had no invoice to land on.
+		if relabelled := relabelByDueMonth(inv); relabelled != nil {
+			createErr := repo.Create(relabelled)
+			if createErr == nil {
+				return relabelled, nil
 			}
-			return nil, err
+			if !isUniqueViolation(createErr) {
+				return nil, createErr
+			}
 		}
-		return inv, nil
+
+		return nil, referenceMonthConflictError(refDate, existingInv)
 	}
 
 	return inv, nil
