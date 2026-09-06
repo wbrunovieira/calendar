@@ -322,6 +322,8 @@ func mapTransactionError(err error) int {
 	// A reference-month conflict is an operator-actionable data problem, not a
 	// server fault. Reported as 500 it reads like an outage, and callers that
 	// retry on 5xx (n8n, the agents) would retry it forever.
+	// ErrInvoiceCycleMismatch deliberately falls through to 500: it is our bug,
+	// and retrying callers must see a 5xx so it surfaces instead of being dropped.
 	if errors.Is(err, usecases.ErrInvoiceReferenceConflict) {
 		return http.StatusConflict
 	}

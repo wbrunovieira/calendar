@@ -210,10 +210,22 @@ func (uc *GetOrCreateInvoiceForDateUseCase) Execute(bankAccountID string, txDate
 // so handlers map it to 409 rather than 500.
 var ErrInvoiceReferenceConflict = errors.New("invoice reference month conflict")
 
+// ErrInvoiceCycleMismatch means calculateReferenceMonth and invoice.New disagreed
+// and produced a cycle that does not contain the transaction that asked for it.
+// That is a server-side date-math bug, not a data conflict: it consults no stored
+// data, so telling an operator to inspect their invoices would point at healthy
+// rows, and a 4xx would make retrying callers drop it silently instead of alerting.
+var ErrInvoiceCycleMismatch = errors.New("computed invoice cycle does not contain the transaction date")
+
 // referenceLabelSearchMonths bounds the forward scan for a free label. Exhausting
-// it means dozens of consecutive months are taken on one card, which is corruption
+// it means this many consecutive months are taken on one card, which is corruption
 // no retry will fix.
-const referenceLabelSearchMonths = 24
+//
+// Kept small on purpose: every candidate costs a failed INSERT (which Postgres also
+// logs as an ERROR) plus a SELECT, and createInstallments calls this once per
+// instalment — so a 12x purchase on a conflicted card pays the whole scan twelve
+// times before failing.
+const referenceLabelSearchMonths = 6
 
 // daysInMonth returns the number of days in the given month.
 func daysInMonth(year int, month time.Month) int {
@@ -273,8 +285,8 @@ func createInvoiceWithFreeLabel(repo invoice.Repository, inv *invoice.Invoice, t
 	// would mint another row and burn another label. Failing here is loud; writing
 	// it is silent and unbounded.
 	if !inv.ContainsDate(txDate) {
-		return nil, fmt.Errorf("%w: computed cycle %s to %s does not contain %s on card %s",
-			ErrInvoiceReferenceConflict,
+		return nil, fmt.Errorf("%w: cycle %s to %s does not contain %s on card %s",
+			ErrInvoiceCycleMismatch,
 			inv.OpeningDate.Format("2006-01-02"),
 			inv.ClosingDate.Format("2006-01-02"),
 			txDate.Format("2006-01-02"),

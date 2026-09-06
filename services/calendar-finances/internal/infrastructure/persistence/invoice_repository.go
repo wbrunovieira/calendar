@@ -120,6 +120,12 @@ func (r *InvoiceRepository) FindByBankAccountAndDate(bankAccountID string, txDat
 		WHERE bank_account_id = $1
 			AND opening_date <= $2
 			AND closing_date > $2
+		-- LIMIT 1 without ORDER BY lets Postgres return either row, and change its
+		-- mind as the plan or physical order changes. Legacy overlapping cycles
+		-- exist on this database, and this is the single reuse path for invoice
+		-- creation, so an unordered pick would scatter one period's charges across
+		-- two invoices nondeterministically.
+		ORDER BY closing_date DESC
 		LIMIT 1
 	`
 	inv := &invoice.Invoice{}
