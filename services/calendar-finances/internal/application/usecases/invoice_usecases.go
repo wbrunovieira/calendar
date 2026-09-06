@@ -215,6 +215,10 @@ var ErrInvoiceReferenceConflict = errors.New("invoice reference month conflict")
 // That is a server-side date-math bug, not a data conflict: it consults no stored
 // data, so telling an operator to inspect their invoices would point at healthy
 // rows, and a 4xx would make retrying callers drop it silently instead of alerting.
+// ErrInvoiceTotalUnavailable means the authoritative invoice total could not be
+// read, so settlement cannot be decided. It is our side failing, not the caller's.
+var ErrInvoiceTotalUnavailable = errors.New("could not read the invoice total")
+
 var ErrInvoiceCycleMismatch = errors.New("computed invoice cycle does not contain the transaction date")
 
 // referenceLabelSearchMonths bounds the forward scan for a free label. Exhausting
@@ -625,15 +629,14 @@ func (uc *RecalculateInvoiceAmountUseCase) Execute(invoiceID string) (*invoice.I
 	inv.Amount = total
 	inv.UpdatedAt = time.Now()
 
-	if err := uc.invoiceRepo.Update(inv); err != nil {
-		return nil, err
-	}
-
 	// A recalculation can drop the total below what was already paid. Re-derive
 	// the status, or the bill sits PARTIALLY_PAID with nothing left to pay and no
 	// route ever re-evaluates it — while still counting against the card limit.
 	if inv.Status == invoice.StatusPartiallyPaid && inv.PaidAmount != nil && *inv.PaidAmount+0.005 >= inv.Amount {
 		inv.Status = invoice.StatusPaid
+	}
+	if err := uc.invoiceRepo.Update(inv); err != nil {
+		return nil, err
 	}
 
 	return inv, nil
@@ -795,10 +798,14 @@ func (uc *PayInvoiceUseCaseV2) Execute(input PayInvoiceInput) (*invoice.Invoice,
 	// the value we just called untrustworthy would settle bills on exactly the days
 	// the database is misbehaving, and production invoices routinely carry a stored
 	// amount of 0.
+	settlementTotal := inv.Amount
 	if uc.transactionRepo != nil {
 		total, sumErr := uc.transactionRepo.SumByInvoiceID(inv.ID)
 		if sumErr != nil {
-			return nil, sumErr
+			// Wrapped, not raw: the handler maps everything unrecognised to 400, so a
+			// database failure would reach the agents and n8n as a client error
+			// carrying the driver's message.
+			return nil, fmt.Errorf("%w: %v", ErrInvoiceTotalUnavailable, sumErr)
 		}
 		// Trust the sum only when it says something. A bill whose charges are not
 		// linked by invoice_id (imported or entered by hand) sums to zero; treating
@@ -807,10 +814,25 @@ func (uc *PayInvoiceUseCaseV2) Execute(input PayInvoiceInput) (*invoice.Invoice,
 		// that case — it is the better of two imperfect numbers.
 		if total > 0 {
 			inv.Amount = total
+			settlementTotal = total
+		}
+
+		// Settlement is decided on the CONFIRMED charges alone. SumByInvoiceID counts
+		// planned rows too, and you cannot be asked to settle money that has not been
+		// spent yet: a bill carrying planned charges could never reach PAID, so it
+		// would keep accepting payments instead of refusing them.
+		if confirmed, cErr := uc.transactionRepo.SumByInvoiceIDByStatus(inv.ID, transactionPkg.StatusConfirmed); cErr == nil && confirmed > 0 {
+			settlementTotal = confirmed
 		}
 	}
 
-	if err := inv.Pay(input.PaidAmount, paidAt); err != nil {
+	// Pay compares against Amount, so hand it the settlement total and put the real
+	// one back afterwards: Amount must keep meaning "everything billed".
+	billed := inv.Amount
+	inv.Amount = settlementTotal
+	payErr := inv.Pay(input.PaidAmount, paidAt)
+	inv.Amount = billed
+	if payErr != nil {
 		if inv.IsPaid() {
 			return nil, ErrInvoiceAlreadyPaid
 		}

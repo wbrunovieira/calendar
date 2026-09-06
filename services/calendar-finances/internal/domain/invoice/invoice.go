@@ -188,6 +188,12 @@ func (i *Invoice) AmountRemaining() float64 {
 	paid := 0.0
 	if i.PaidAmount != nil {
 		paid = *i.PaidAmount
+	} else if i.Status == StatusPaid {
+		// Settled before amounts were recorded: the status is the only evidence
+		// there is. Without this branch a legacy PAID row reports its whole value as
+		// still owed, and since consumers prefer this derived field over their own
+		// fallback, every historically paid bill would come back as debt.
+		paid = i.Amount
 	}
 	remaining := i.Amount - paid
 	if remaining < paymentTolerance {
