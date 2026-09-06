@@ -173,16 +173,37 @@ jobs:
           ssh $SSH_OPTS "$VPS" 'cd /opt/calendar && docker-compose -f docker-compose.prod.yml restart authelia'
           sleep 10
           # Verificar o EFEITO, nao o status do comando. Um dominio de API que
-          # responde 200 a uma requisicao anonima esta aberto para a internet,
+          # responde a uma requisicao anonima esta aberto para a internet,
           # tenha o restart "dado certo" ou nao.
+          #
+          # Exigir o redirect EXPLICITAMENTE, em vez de so reprovar o 200. A
+          # versao anterior tratava qualquer nao-200 como seguro e deu falso
+          # negativo: calendar-health e agents passaram verdes enquanto estavam
+          # abertos, porque respondem 404 em "/" e o 404 vinha do app — ou seja,
+          # a requisicao anonima chegou ate ele. Só o calendar-finances
+          # denunciou, e por acaso: e o unico com rota em "/".
           ssh $SSH_OPTS "$VPS" 'FAIL=0
             for d in calendar-finances calendar-health agents; do
               CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://$d.wbdigitalsolutions.com/")
-              echo "$d -> $CODE"
+              echo "$d -> $CODE (esperado 302)"
               case "$CODE" in
-                200) echo "::error::$d responde 200 sem sessao — o gateway nao esta protegendo"; FAIL=1 ;;
+                302|401) ;;
+                *) echo "::error::$d respondeu $CODE sem sessao, esperado 302 — o gateway nao esta protegendo"; FAIL=1 ;;
               esac
-            done; exit $FAIL'
+            done
+            # calendar-agents nao pode entrar no Authelia: o n8n o chama
+            # server-to-server, sem sessao de navegador. O mapa da API, porem,
+            # nao serve a consumidor nenhum e estava publico.
+            for path in docs openapi.json; do
+              CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://calendar-agents.wbdigitalsolutions.com/$path")
+              echo "calendar-agents/$path -> $CODE (esperado 404)"
+              [ "$CODE" = "404" ] || { echo "::error::calendar-agents/$path respondeu $CODE, esperado 404"; FAIL=1; }
+            done
+            # E o caminho que o n8n usa precisa continuar vivo.
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://calendar-agents.wbdigitalsolutions.com/health")
+            echo "calendar-agents/health -> $CODE (esperado 200)"
+            [ "$CODE" = "200" ] || { echo "::error::calendar-agents/health respondeu $CODE — o pipeline do n8n quebrou"; FAIL=1; }
+            exit $FAIL'
 
       - name: Prisma migrate deploy (calendar-core)
         if: steps.detect.outputs.migrate == 'true'
