@@ -62,7 +62,7 @@ func newInstallmentFixture(t *testing.T, accType bankaccount.AccountType, initia
 	recalculator := NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
 
 	return &installmentFixture{
-		useCase:     NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{}, recalculator),
+		useCase:     NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{}, recalculator, nil),
 		accountRepo: accountRepo,
 		txRepo:      txRepo,
 		accountID:   accountID,

@@ -61,6 +61,7 @@ func seedProfileAndAccount(t *testing.T, db *sql.DB, profileID, accountID string
 
 func cleanupTestData(db *sql.DB, profileID string) {
 	db.Exec("DELETE FROM finance.bank_accounts WHERE profile_id = $1", profileID)
+	db.Exec("DELETE FROM finance.cost_centers WHERE profile_id = $1", profileID)
 	db.Exec("DELETE FROM finance.profiles WHERE id = $1", profileID)
 	db.Exec("DELETE FROM finance.transaction_tags WHERE transaction_id IN (SELECT id FROM finance.transactions WHERE profile_id = $1)", profileID)
 	db.Exec("DELETE FROM finance.transaction_splits WHERE transaction_id IN (SELECT id FROM finance.transactions WHERE profile_id = $1)", profileID)

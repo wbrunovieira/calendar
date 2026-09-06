@@ -62,6 +62,7 @@ func (h *TransactionHandlers) List(w http.ResponseWriter, r *http.Request) {
 	profileID := q.Get("profileId")
 	bankAccountID := q.Get("bankAccountId")
 	invoiceID := q.Get("invoiceId")
+	costCenterID := q.Get("costCenterId")
 	status := q.Get("status")
 	typeValue := q.Get("type")
 	occurredFrom := q.Get("occurredFrom")
@@ -77,6 +78,10 @@ func (h *TransactionHandlers) List(w http.ResponseWriter, r *http.Request) {
 	}
 	if invoiceID != "" {
 		invoicePtr = &invoiceID
+	}
+	var costCenterPtr *string
+	if costCenterID != "" {
+		costCenterPtr = &costCenterID
 	}
 	if status != "" {
 		statusPtr = &status
@@ -95,6 +100,7 @@ func (h *TransactionHandlers) List(w http.ResponseWriter, r *http.Request) {
 		ProfileID:            profileID,
 		BankAccountID:        bankAccountPtr,
 		InvoiceID:            invoicePtr,
+		CostCenterID:         costCenterPtr,
 		Status:               statusPtr,
 		Type:                 typePtr,
 		OccurredFrom:         fromPtr,
@@ -313,7 +319,8 @@ func (h *TransactionHandlers) FinancialSummary(w http.ResponseWriter, r *http.Re
 
 func mapTransactionError(err error) int {
 	switch err {
-	case usecases.ErrProfileNotFound, usecases.ErrCategoryNotFound, usecases.ErrTransactionNotFound:
+	case usecases.ErrProfileNotFound, usecases.ErrCategoryNotFound, usecases.ErrCostCenterNotFound,
+		usecases.ErrTransactionNotFound:
 		return http.StatusNotFound
 	case usecases.ErrBankAccountNotFound, usecases.ErrBankAccountMismatch, usecases.ErrDestinationRequired,
 		usecases.ErrInvalidInput, usecases.ErrInvalidTransactionType,

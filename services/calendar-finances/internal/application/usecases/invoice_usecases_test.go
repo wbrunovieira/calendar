@@ -281,7 +281,7 @@ func TestGetCurrentInvoice_ShouldReturnConfirmedAndPlannedAmounts(t *testing.T) 
 // Test: Transaction before closing day should go to current month's invoice
 func TestCreditCardTransaction_BeforeClosingDay_GoesToCurrentMonthInvoice(t *testing.T) {
 	f := newTestFixtures()
-	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil)
+	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil, nil)
 
 	// Card closes on day 9, transaction on day 5 should go to January invoice
 	confirmedStatus := "CONFIRMED"
@@ -331,7 +331,7 @@ func TestCreditCardTransaction_BeforeClosingDay_GoesToCurrentMonthInvoice(t *tes
 // Test: Transaction on closing day should go to next month's invoice
 func TestCreditCardTransaction_OnClosingDay_GoesToNextMonthInvoice(t *testing.T) {
 	f := newTestFixtures()
-	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil)
+	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil, nil)
 
 	confirmedStatus := "CONFIRMED"
 	input := CreateTransactionInput{
@@ -368,7 +368,7 @@ func TestCreditCardTransaction_OnClosingDay_GoesToNextMonthInvoice(t *testing.T)
 // Test: Transaction after closing day should go to next month's invoice
 func TestCreditCardTransaction_AfterClosingDay_GoesToNextMonthInvoice(t *testing.T) {
 	f := newTestFixtures()
-	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil)
+	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil, nil)
 
 	confirmedStatus := "CONFIRMED"
 	input := CreateTransactionInput{
@@ -405,7 +405,7 @@ func TestCreditCardTransaction_AfterClosingDay_GoesToNextMonthInvoice(t *testing
 // Test: Multiple transactions should accumulate in same invoice
 func TestCreditCardTransaction_MultipleTransactions_AccumulateInSameInvoice(t *testing.T) {
 	f := newTestFixtures()
-	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil)
+	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil, nil)
 
 	confirmedStatus := "CONFIRMED"
 
@@ -480,7 +480,7 @@ func TestCreditCardTransaction_MultipleTransactions_AccumulateInSameInvoice(t *t
 // Test: Transactions across closing day boundary should go to different invoices
 func TestCreditCardTransaction_AcrossClosingBoundary_DifferentInvoices(t *testing.T) {
 	f := newTestFixtures()
-	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil)
+	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil, nil)
 
 	confirmedStatus := "CONFIRMED"
 
@@ -555,7 +555,7 @@ func TestCreditCardTransaction_AcrossClosingBoundary_DifferentInvoices(t *testin
 // Test: Non-credit card transaction should not have invoice
 func TestCheckingAccountTransaction_NoInvoice(t *testing.T) {
 	f := newTestFixtures()
-	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil)
+	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil, nil)
 
 	confirmedStatus := "CONFIRMED"
 	input := CreateTransactionInput{
@@ -597,7 +597,7 @@ func TestCreditCardIncomeTransaction_NoInvoice(t *testing.T) {
 		UpdatedAt: time.Now(),
 	}
 
-	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil)
+	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil, nil)
 
 	confirmedStatus := "CONFIRMED"
 	input := CreateTransactionInput{
@@ -626,7 +626,7 @@ func TestCreditCardIncomeTransaction_NoInvoice(t *testing.T) {
 // Test: December year-end crossing
 func TestCreditCardTransaction_YearEndCrossing(t *testing.T) {
 	f := newTestFixtures()
-	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil)
+	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil, nil)
 
 	confirmedStatus := "CONFIRMED"
 
@@ -663,7 +663,7 @@ func TestCreditCardTransaction_YearEndCrossing(t *testing.T) {
 // Test: Invoice dates calculation
 func TestInvoiceDatesCalculation(t *testing.T) {
 	f := newTestFixtures()
-	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil)
+	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil, nil)
 
 	confirmedStatus := "CONFIRMED"
 	input := CreateTransactionInput{
@@ -705,7 +705,7 @@ func TestInvoiceDatesCalculation(t *testing.T) {
 // Test: RecalculateInvoiceAmount use case
 func TestRecalculateInvoiceAmount(t *testing.T) {
 	f := newTestFixtures()
-	createUC := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil)
+	createUC := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil, nil)
 	recalcUC := NewRecalculateInvoiceAmountUseCase(f.invoiceRepo, f.txRepo)
 
 	confirmedStatus := "CONFIRMED"
@@ -807,7 +807,7 @@ func TestCalculateReferenceMonth(t *testing.T) {
 // Test: PLANNED transaction should also be assigned to invoice
 func TestCreditCardPlannedTransaction_AssignedToInvoice(t *testing.T) {
 	f := newTestFixtures()
-	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil)
+	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil, nil)
 
 	// PLANNED status (default)
 	input := CreateTransactionInput{
@@ -902,7 +902,7 @@ func TestInvoiceWithDifferentConfigurations(t *testing.T) {
 			card.ClosingDay = &tc.closingDay
 			card.DueDay = &tc.dueDay
 
-			useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil)
+			useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil, nil)
 
 			confirmedStatus := "CONFIRMED"
 			input := CreateTransactionInput{
@@ -1453,7 +1453,7 @@ func TestUpdateInvoice_PaidInvoice_ShouldReturnError(t *testing.T) {
 // Test: ListInvoices should NOT recalculate amount for CLOSED invoices
 func TestListInvoices_ShouldAlwaysRecalculateAmount_EvenWhenClosed(t *testing.T) {
 	f := newTestFixtures()
-	createTxUC := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil)
+	createTxUC := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil, nil)
 
 	confirmedStatus := "CONFIRMED"
 
@@ -1505,7 +1505,7 @@ func TestListInvoices_ShouldAlwaysRecalculateAmount_EvenWhenClosed(t *testing.T)
 // Test: ListInvoices SHOULD recalculate amount for OPEN invoices
 func TestListInvoices_ShouldRecalculateOpenInvoiceAmount(t *testing.T) {
 	f := newTestFixtures()
-	createTxUC := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil)
+	createTxUC := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil, nil)
 
 	confirmedStatus := "CONFIRMED"
 
@@ -1569,7 +1569,7 @@ func TestListInvoices_ShouldRecalculateOpenInvoiceAmount(t *testing.T) {
 // Test: GetInvoice should ALWAYS recalculate amount from transactions, even for CLOSED invoices
 func TestGetInvoice_ShouldAlwaysRecalculateAmount_EvenWhenClosed(t *testing.T) {
 	f := newTestFixtures()
-	createTxUC := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil)
+	createTxUC := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil, nil)
 
 	confirmedStatus := "CONFIRMED"
 	input := CreateTransactionInput{
@@ -1639,7 +1639,7 @@ func TestGetOrCreateInvoice_HighClosingDay_ShouldCreateNextInvoiceWhenCurrentExi
 	f.invoiceRepo.Create(marchInv)
 
 	// Transaction on Mar 4 should auto-create April invoice
-	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil)
+	useCase := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil, nil)
 
 	confirmedStatus := "CONFIRMED"
 	input := CreateTransactionInput{
@@ -1700,7 +1700,7 @@ func TestGetOrCreateInvoice_HighClosingDay_ShouldCreateNextInvoiceWhenCurrentExi
 // reachable through the API and not a hypothetical.
 func TestGetInvoice_NetsARefundInsteadOfAddingIt(t *testing.T) {
 	f := newTestFixtures()
-	createTxUC := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil)
+	createTxUC := NewCreateTransactionUseCase(f.profileRepo, f.accountRepo, f.categoryRepo, f.txRepo, f.invoiceRepo, nil, nil)
 
 	confirmed := "CONFIRMED"
 	purchase, err := createTxUC.Execute(CreateTransactionInput{

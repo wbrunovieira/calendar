@@ -58,6 +58,7 @@ func TestTransactionRepositoryCreate(t *testing.T) {
 			txn.Description,
 			nil,   // notes
 			nil,   // cost_center
+			nil,   // cost_center_id
 			false, // is_personal_reimbursement
 			txn.OccurredOn,
 			nil, // due_on
@@ -102,16 +103,16 @@ func TestTransactionRepositoryFindByExternalID(t *testing.T) {
 
 	now := fixedTime()
 
-	// Column list must match scanTransaction exactly (24 columns, including
+	// Column list must match scanTransaction exactly (25 columns, including
 	// is_personal_reimbursement) — a mismatch silently broke dedup by external_id.
 	txRows := sqlmock.NewRows([]string{
 		"id", "profile_id", "bank_account_id", "destination_account_id", "category_id", "invoice_id",
-		"type", "status", "amount", "currency", "description", "notes", "cost_center", "is_personal_reimbursement",
+		"type", "status", "amount", "currency", "description", "notes", "cost_center", "cost_center_id", "is_personal_reimbursement",
 		"occurred_on", "due_on", "reminder_on", "recurrence_rule", "installment_number", "installment_total",
 		"external_id", "linked_transaction_id", "created_at", "updated_at",
 	}).AddRow(
 		"tx-123", "profile-1", "account-1", nil, nil, nil,
-		"INCOME", "CONFIRMED", 11.0, "BRL", "Dividendo HGLG11", nil, nil, false,
+		"INCOME", "CONFIRMED", 11.0, "BRL", "Dividendo HGLG11", nil, nil, nil, false,
 		now, nil, nil, nil, nil, nil,
 		"dividend-HGLG11-2026-04-01-1.10", nil, now, now,
 	)
@@ -169,12 +170,12 @@ func TestTransactionRepositoryGetByID(t *testing.T) {
 
 	txRows := sqlmock.NewRows([]string{
 		"id", "profile_id", "bank_account_id", "destination_account_id", "category_id", "invoice_id",
-		"type", "status", "amount", "currency", "description", "notes", "cost_center", "is_personal_reimbursement",
+		"type", "status", "amount", "currency", "description", "notes", "cost_center", "cost_center_id", "is_personal_reimbursement",
 		"occurred_on", "due_on", "reminder_on", "recurrence_rule", "installment_number", "installment_total",
 		"external_id", "linked_transaction_id", "created_at", "updated_at",
 	}).AddRow(
 		"tx-123", "profile-1", "account-1", nil, nil, nil,
-		"EXPENSE", "CONFIRMED", 120.0, "BRL", "Conta", nil, nil, false,
+		"EXPENSE", "CONFIRMED", 120.0, "BRL", "Conta", nil, nil, nil, false,
 		now, nil, nil, nil, nil, nil,
 		nil, nil, now, now,
 	)

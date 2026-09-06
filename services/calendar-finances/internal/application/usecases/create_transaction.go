@@ -8,6 +8,7 @@ import (
 
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
 	"github.com/brunovieira/calendar-finances/internal/domain/category"
+	"github.com/brunovieira/calendar-finances/internal/domain/costcenter"
 	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
 	"github.com/brunovieira/calendar-finances/internal/domain/profile"
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
@@ -24,6 +25,7 @@ type CreateTransactionInput struct {
 	BankAccountID           string                        `json:"bankAccountId"`
 	DestinationAccountID    *string                       `json:"destinationAccountId,omitempty"`
 	CategoryID              *string                       `json:"categoryId,omitempty"`
+	CostCenterID            *string                       `json:"costCenterId,omitempty"`
 	DestinationCategoryID   *string                       `json:"destinationCategoryId,omitempty"` // Category for the INCOME side of cross-profile transfers
 	Type                    string                        `json:"type"`
 	Status                  *string                       `json:"status,omitempty"`
@@ -51,6 +53,7 @@ type CreateTransactionUseCase struct {
 	transactionRepo     transaction.Repository
 	invoiceRepo         invoice.Repository
 	balanceRecalculator BalanceRecalculator
+	costCenterRepo      costcenter.Repository
 }
 
 func NewCreateTransactionUseCase(
@@ -60,6 +63,7 @@ func NewCreateTransactionUseCase(
 	transactionRepo transaction.Repository,
 	invoiceRepo invoice.Repository,
 	recalculator BalanceRecalculator,
+	costCenterRepo costcenter.Repository,
 ) *CreateTransactionUseCase {
 	return &CreateTransactionUseCase{
 		profileRepo:         profileRepo,
@@ -68,6 +72,7 @@ func NewCreateTransactionUseCase(
 		transactionRepo:     transactionRepo,
 		invoiceRepo:         invoiceRepo,
 		balanceRecalculator: recalculator,
+		costCenterRepo:      costCenterRepo,
 	}
 }
 
@@ -128,6 +133,18 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 			}
 		}
 		destinationAccountID = &destinationAccount.ID
+	}
+
+	// A cost center from another profile would file one company's revenue under
+	// another's client, so it is checked the same way a category is.
+	if input.CostCenterID != nil {
+		center, err := uc.costCenterRepo.FindByID(*input.CostCenterID)
+		if err != nil {
+			return nil, ErrCostCenterNotFound
+		}
+		if center.ProfileID != input.ProfileID {
+			return nil, ErrCostCenterNotFound
+		}
 	}
 
 	// Validate source category
@@ -241,6 +258,7 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		Description:             input.Description,
 		Notes:                   input.Notes,
 		CostCenter:              input.CostCenter,
+		CostCenterID:            input.CostCenterID,
 		IsPersonalReimbursement: input.IsPersonalReimbursement,
 		OccurredOn:              occurredOn,
 		DueOn:                   dueOn,
@@ -541,6 +559,25 @@ func (uc *CreateTransactionUseCase) createInstallments(
 
 		installmentNum := i
 		installmentTotal := total
+
+		// One purchase carries one external id, but its instalments are separate
+		// rows and external_id is unique. Copying the id onto all of them wrote
+		// the first and violated the key on the second, leaving an orphan
+		// instalment behind with no rollback. Suffixing keeps the deal
+		// recognisable while making each row its own.
+		externalID := input.ExternalID
+		if externalID != nil {
+			suffixed := fmt.Sprintf("%s-%dof%d", *externalID, i, total)
+			externalID = &suffixed
+		}
+
+		// Each instalment falls due one month after the previous one. A single
+		// date for the whole plan makes a receivables view wrong on sight.
+		var installmentDueOn *time.Time
+		if dueOn != nil {
+			shifted := dueOn.AddDate(0, i-1, 0)
+			installmentDueOn = &shifted
+		}
 		description := fmt.Sprintf("%s - Parcela %d/%d", input.Description, i, total)
 
 		// Handle credit card invoice assignment
@@ -568,13 +605,14 @@ func (uc *CreateTransactionUseCase) createInstallments(
 			Description:             description,
 			Notes:                   input.Notes,
 			CostCenter:              input.CostCenter,
+			CostCenterID:            input.CostCenterID,
 			IsPersonalReimbursement: input.IsPersonalReimbursement,
 			OccurredOn:              installmentDate,
-			DueOn:                   dueOn,
+			DueOn:                   installmentDueOn,
 			ReminderOn:              reminderOn,
 			InstallmentNumber:       &installmentNum,
 			InstallmentTotal:        &installmentTotal,
-			ExternalID:              input.ExternalID,
+			ExternalID:              externalID,
 			Tags:                    input.Tags,
 			Splits:                  splitsForInstallment(splits, amount, input.Amount),
 		}

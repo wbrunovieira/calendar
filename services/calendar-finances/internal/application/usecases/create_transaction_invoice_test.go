@@ -46,7 +46,7 @@ func TestCreateTransaction_CrossProfileTransferFromCardJoinsTheInvoice(t *testin
 	}}
 	invoiceRepo := &fakeInvoiceRepo{}
 
-	uc := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, &fakeTransactionRepo{}, invoiceRepo, nil)
+	uc := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, &fakeTransactionRepo{}, invoiceRepo, nil, nil)
 
 	confirmed := "CONFIRMED"
 	sourceCat, destCat, destAcc := "loan", "income", "company-account"
@@ -86,7 +86,7 @@ func TestCreateTransaction_CardExpenseStillJoinsTheInvoice(t *testing.T) {
 
 	uc := NewCreateTransactionUseCase(profileRepo, accountRepo,
 		&fakeCategoryRepo{categories: map[string]*category.Category{}},
-		&fakeTransactionRepo{}, &fakeInvoiceRepo{}, nil)
+		&fakeTransactionRepo{}, &fakeInvoiceRepo{}, nil, nil)
 
 	confirmed := "CONFIRMED"
 	txn, err := uc.Execute(CreateTransactionInput{
@@ -120,7 +120,7 @@ func TestCreateTransaction_SameProfileTransferFromCardJoinsNoInvoice(t *testing.
 
 	uc := NewCreateTransactionUseCase(profileRepo, accountRepo,
 		&fakeCategoryRepo{categories: map[string]*category.Category{}},
-		&fakeTransactionRepo{}, &fakeInvoiceRepo{}, nil)
+		&fakeTransactionRepo{}, &fakeInvoiceRepo{}, nil, nil)
 
 	confirmed := "CONFIRMED"
 	dest := "checking"
