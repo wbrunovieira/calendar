@@ -32,17 +32,24 @@ Base URL: `https://api.mcp.ai/api/openfinance`. Every call is a `POST` to base U
 path. Success: `{"ok": true, "tool": "<id>", "result": <payload>}`. Errors come back
 as `{"error": {"code", "message", ...}}` — read the body, don't use `curl --fail`.
 
-## ⚠️ Account migration in progress (2026-09-05)
+## Account (mcp.ai)
 
-Bruno moved to a **new mcp.ai account** so the PJ plan can hold the CNPJ connection:
+| | |
+|---|---|
+| Login | **bruno@wbdigitalsolutions.com** |
+| User ID | **`usr_c2sc1drm4hsl`** |
+| Toolkit | **`tk_6gkli6i5iokw`** |
+| Plan | **PJ Ilimitado, R$ 99,90/month** — the PF tiers cannot connect a CNPJ |
 
-| | Old (abandoned) | New (current) |
-|---|---|---|
-| Login | wbrunovieira77@gmail.com | **bruno@wbdigitalsolutions.com** |
-| User ID | `usr_kv7dh20mdvh5` | **`usr_c2sc1drm4hsl`** (active since 2026-09-05) |
-| Toolkit | `tk_5ey5wn9nsfx8` | **`tk_6gkli6i5iokw`** |
-| Plan | free trial | **PJ Ilimitado, R$ 99,90/mês — subscribed** |
-| Connections | Mercado Pago only | 3 connected on 2026-09-05 — see table below |
+Credentials live in `services/calendar-finances/.env` (gitignored):
+`MCP_AI_API_KEY` for the REST API, `BANCO_MCP_URL` for registering the MCP server.
+Both point at this account.
+
+**The MCP server resolves its account when the session starts.** If `toolkit_info`
+reports a different `toolkit_id` or `acting_as.user_id` than the two above, the running
+session is bound to stale credentials and no amount of retrying will fix it — start a
+new Claude Code session. A session bound to an expired account answers every call with
+`free_tier_limit_reached`, which reads like a billing problem and is not one.
 
 ## Connections on the current account (2026-09-05)
 
@@ -81,15 +88,7 @@ Consequently every ID in the table below is stale — rediscover with
 revoke the old MP consent (11/08) in the Mercado Pago app, since it still feeds the
 abandoned workspace.
 
-## Bruno's connection on the OLD account (found 2026-08-11 — historical reference)
-
-| What | ID | Detail |
-|---|---|---|
-| Connection (`item_id`) | `0cd91348-06c1-4675-a570-8af6ba414ad1` | connector_id `606`, "Mercado Pago" |
-| Checking account | `b1b50f0c-3b05-4f40-86b7-039a4fa949c2` | "Mercado Pago (Conta Pré-paga)", número 7750044166-2 |
-| Credit card | `cd8caca1-6f86-46fa-8681-136534e994fe` | Visa, final 1529 |
-
-If IDs stop working (reconnect expired, or a second bank gets added later), rediscover
+If IDs stop working (a reconnect expired, or a bank is added later), rediscover them
 via `openfinance_list_connections` and `openfinance_list_accounts` (examples below).
 
 ## Common calls
@@ -104,7 +103,7 @@ curl -s -X POST "https://api.mcp.ai/api/openfinance/accounts/list" \
 ```bash
 curl -s -X POST "https://api.mcp.ai/api/openfinance/transactions/list" \
   -H "Authorization: Bearer $MCP_AI_API_KEY" -H "Content-Type: application/json" \
-  -d '{"account_id":"b1b50f0c-3b05-4f40-86b7-039a4fa949c2","from":"2026-08-01","to":"2026-08-31"}'
+  -d '{"account_id":"74e75926-60f5-4755-a3f6-6d2451b2af8a","from":"2026-08-01","to":"2026-08-31"}'
 ```
 
 **Fatura (credit card bills)** — returns CLOSED bills only, with a derived
@@ -113,7 +112,7 @@ the `payment_status_legend` in the response, it explains the cross-bill heuristi
 ```bash
 curl -s -X POST "https://api.mcp.ai/api/openfinance/credit-card-bills/list" \
   -H "Authorization: Bearer $MCP_AI_API_KEY" -H "Content-Type: application/json" \
-  -d '{"account_id":"cd8caca1-6f86-46fa-8681-136534e994fe"}'
+  -d '{"account_id":"2c9d2ca0-6490-410a-9523-aba1a8fc45a5"}'
 ```
 The **currently open** cycle (not yet closed) doesn't show up here — its running
 total is the `balance` field from `accounts/list` on the CREDIT account instead.
