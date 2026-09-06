@@ -1,6 +1,7 @@
 package invoice
 
 import (
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -13,8 +14,16 @@ type Status string
 const (
 	StatusOpen   Status = "OPEN"   // Current invoice, accepting transactions
 	StatusClosed Status = "CLOSED" // Invoice closed, waiting payment
-	StatusPaid   Status = "PAID"   // Invoice paid
+	StatusPaid   Status = "PAID"   // Invoice fully settled
+	// StatusPartiallyPaid means money was paid against the bill but it is not
+	// settled. Without it, a partial payment marked the bill PAID and the
+	// remaining debt vanished from the ledger.
+	StatusPartiallyPaid Status = "PARTIALLY_PAID"
 )
+
+// paymentTolerance absorbs float dust so that instalments summing to the total
+// within half a cent settle the bill instead of leaving it a fraction short.
+const paymentTolerance = 0.005
 
 // Invoice represents a credit card billing cycle
 type Invoice struct {
@@ -127,6 +136,13 @@ func (i *Invoice) Close() error {
 }
 
 // Pay marks the invoice as paid
+// Pay records a payment against the bill. Payments ACCUMULATE: the bill only
+// becomes StatusPaid once they cover Amount, and stays StatusPartiallyPaid until
+// then, so the outstanding debt remains visible.
+//
+// This matters in a cash squeeze, when a card bill is deliberately paid in parts.
+// Settling it on the first payment regardless of size erased real debt from the
+// ledger — the books looked right and were wrong.
 func (i *Invoice) Pay(paidAmount float64, paidAt time.Time) error {
 	if i.Status == StatusPaid {
 		return errors.New("invoice is already paid")
@@ -134,11 +150,56 @@ func (i *Invoice) Pay(paidAmount float64, paidAt time.Time) error {
 	if paidAmount <= 0 {
 		return errors.New("paid amount must be greater than zero")
 	}
-	i.Status = StatusPaid
-	i.PaidAmount = &paidAmount
+
+	total := paidAmount
+	if i.PaidAmount != nil {
+		total += *i.PaidAmount
+	}
+
+	if total+paymentTolerance >= i.Amount {
+		i.Status = StatusPaid
+	} else {
+		i.Status = StatusPartiallyPaid
+	}
+
+	i.PaidAmount = &total
 	i.PaidAt = &paidAt
 	i.touch()
 	return nil
+}
+
+// MarshalJSON adds the outstanding debt to the payload. It is DERIVED on every
+// read rather than stored, so it can never drift from Amount and PaidAmount the
+// way a persisted copy would.
+func (i *Invoice) MarshalJSON() ([]byte, error) {
+	type invoiceJSON Invoice
+	return json.Marshal(struct {
+		*invoiceJSON
+		AmountRemaining float64 `json:"amountRemaining"`
+	}{
+		invoiceJSON:     (*invoiceJSON)(i),
+		AmountRemaining: i.AmountRemaining(),
+	})
+}
+
+// AmountRemaining is the debt still owed on this bill. It never goes negative:
+// overpaying settles the bill, it does not create negative debt.
+func (i *Invoice) AmountRemaining() float64 {
+	paid := 0.0
+	if i.PaidAmount != nil {
+		paid = *i.PaidAmount
+	}
+	remaining := i.Amount - paid
+	if remaining < paymentTolerance {
+		return 0
+	}
+	return remaining
+}
+
+// IsPartiallyPaid reports whether money was paid against the bill without
+// settling it.
+func (i *Invoice) IsPartiallyPaid() bool {
+	return i.Status == StatusPartiallyPaid
 }
 
 // Reopen reopens a closed invoice (not paid)

@@ -779,8 +779,21 @@ func (uc *PayInvoiceUseCaseV2) Execute(input PayInvoiceInput) (*invoice.Invoice,
 		return nil, ErrInvalidInput
 	}
 
+	// Decide settled-vs-partial against the AUTHORITATIVE total, not the stored
+	// one. Amount is a cached sum that GetInvoice recomputes on every read, so a
+	// stale copy here would settle a bill that is not actually covered — the exact
+	// class of error this change exists to prevent.
+	if uc.transactionRepo != nil {
+		if total, sumErr := uc.transactionRepo.SumByInvoiceID(inv.ID); sumErr == nil {
+			inv.Amount = total
+		}
+	}
+
 	if err := inv.Pay(input.PaidAmount, paidAt); err != nil {
-		return nil, ErrInvoiceAlreadyPaid
+		if inv.IsPaid() {
+			return nil, ErrInvoiceAlreadyPaid
+		}
+		return nil, ErrInvalidInput
 	}
 
 	if err := uc.invoiceRepo.Update(inv); err != nil {
