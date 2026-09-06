@@ -31,12 +31,27 @@ access_control:
   rules:
     - domain: 'auth.wbdigitalsolutions.com'
       policy: bypass
+    # calendar-core carries its own bearer token and is called server-to-server
+    # by n8n and the agents, which have no browser session. It stays open here
+    # because its own gate is the one that matters.
+    - domain: 'calendar-api.wbdigitalsolutions.com'
+      policy: bypass
+    # These three had no authentication of any kind, and bypassing the gateway
+    # left them answering the public internet. Verified from outside the server,
+    # with no credentials: calendar-finances returned account balances on a GET
+    # and reached field validation on a POST (400, not 401 — nothing guards the
+    # write path); calendar-health served profiles; agents reached FastAPI
+    # validation on a POST (422) and published /docs, and its endpoints spend
+    # money on LLM calls.
+    #
+    # Nothing on the server calls them over the public domain — the dashboards
+    # now send the Authelia session cookie, and service-to-service traffic goes
+    # over the Docker network.
     - domain:
-        - 'calendar-api.wbdigitalsolutions.com'
         - 'calendar-finances.wbdigitalsolutions.com'
         - 'calendar-health.wbdigitalsolutions.com'
         - 'agents.wbdigitalsolutions.com'
-      policy: bypass
+      policy: one_factor
     - domain:
         - 'calendar.wbdigitalsolutions.com'
         - 'finances.wbdigitalsolutions.com'
