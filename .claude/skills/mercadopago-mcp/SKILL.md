@@ -36,31 +36,47 @@ as `{"error": {"code", "message", ...}}` — read the body, don't use `curl --fa
 
 | | |
 |---|---|
-| Login | **bruno@wbdigitalsolutions.com** |
-| User ID | **`usr_c2sc1drm4hsl`** |
-| Toolkit | **`tk_6gkli6i5iokw`** |
+| Login | in `MCP_AI_ACCOUNT_LOGIN` (`.env`) |
+| User ID | in `MCP_AI_USER_ID` (`.env`) |
+| Toolkit | in `MCP_AI_TOOLKIT_ID` (`.env`) |
 | Plan | **PJ Ilimitado, R$ 99,90/month** — the PF tiers cannot connect a CNPJ |
+
+> This repository is **public**. Account and bank identifiers are deliberately kept
+> out of it and live in `services/calendar-finances/.env` (gitignored) and in the
+> agent's private memory. Do not paste real ones back into this file — none of them
+> is a credential on its own, but an account number plus a card's last four digits
+> plus the account e-mail is exactly the material used to impersonate someone on a
+> bank's support line.
 
 Credentials live in `services/calendar-finances/.env` (gitignored):
 `MCP_AI_API_KEY` for the REST API, `BANCO_MCP_URL` for registering the MCP server.
 Both point at this account.
 
 **The MCP server resolves its account when the session starts.** If `toolkit_info`
-reports a different `toolkit_id` or `acting_as.user_id` than the two above, the running
+reports a different `toolkit_id` or `acting_as.user_id` than the ones in `.env`, the running
 session is bound to stale credentials and no amount of retrying will fix it — start a
 new Claude Code session. A session bound to an expired account answers every call with
 `free_tier_limit_reached`, which reads like a billing problem and is not one.
 
-## Connections on the current account (2026-09-05)
+## Connections on the current account
 
-Pass `item` (item_id, connector_id or bank name) on every call — there is more than one now.
+Four institutions are connected: **Mercado Pago (PF)**, **Clear Corretora**,
+**Nubank PF** and **Nubank Empresas (PJ)**. Each contributes a BANK account, and
+Mercado Pago, Nubank PF and Nubank Empresas each also contribute a CREDIT account.
 
-| Bank | connector | item_id | Accounts |
-|---|---|---|---|
-| Mercado Pago | 606 | `41421d5e-bc52-4318-91db-494d75368009` | BANK `74e75926-60f5-4755-a3f6-6d2451b2af8a` (conta) · CREDIT `2c9d2ca0-6490-410a-9523-aba1a8fc45a5` (final 1529) |
-| Clear Corretora | 623 | `978ed108-6a15-48c1-8353-07782162ed74` | BANK `6278c236-58d7-4d5c-93f8-05d8224b9fc0` (Banco XP 348) · BANK `f864ee76-128f-4bf1-879f-1d5d84c5ddbd` (XP CCTVM 102, onde caem os dividendos) |
-| **Nubank PF** | 612 | `4fba1e15-0c91-4420-8389-dcfc89be60c3` | BANK `b298efbd-6eb8-4b8d-b170-4cb4710f1e21` (41722077-9) · CREDIT `832402c5-2d76-4dad-b661-5f0b8d1d7271` (final 5435, Mastercard) |
-| **Nubank Empresas** | 664 | `3272dd35-fb8b-4579-aefd-dd64a0732171` | BANK `d1772561-029e-49e2-ad3d-b78c70824a08` (28156336-9) · CREDIT `4c275204-1c7e-4cb9-b8ee-036709e141ff` (final 0471) |
+**Item and account IDs are not written down here** — discover them at runtime, which
+is more reliable anyway since they change whenever a connection is re-authorised:
+
+```bash
+curl -s -X POST "https://api.mcp.ai/api/openfinance/connections/list" \
+  -H "Authorization: Bearer $MCP_AI_API_KEY" -H "Content-Type: application/json" -d '{}'
+curl -s -X POST "https://api.mcp.ai/api/openfinance/accounts/list" \
+  -H "Authorization: Bearer $MCP_AI_API_KEY" -H "Content-Type: application/json" -d '{}'
+```
+
+`accounts/list` returns each account's `account_id`, `type` (BANK / CREDIT), bank name
+and masked number, which is enough to pick the one you need. The connector numbers are
+stable and safe to note: Mercado Pago 606, Nubank PF 612, Clear 623, Nubank Empresas 664.
 
 All 4 slots of the PJ Ilimitado plan are used — a 5th bank would cost R$ 19,90/month
 extra, charged automatically as a metered Stripe item.
@@ -103,7 +119,7 @@ curl -s -X POST "https://api.mcp.ai/api/openfinance/accounts/list" \
 ```bash
 curl -s -X POST "https://api.mcp.ai/api/openfinance/transactions/list" \
   -H "Authorization: Bearer $MCP_AI_API_KEY" -H "Content-Type: application/json" \
-  -d '{"account_id":"74e75926-60f5-4755-a3f6-6d2451b2af8a","from":"2026-08-01","to":"2026-08-31"}'
+  -d '{"account_id":"<BANK account_id from accounts/list>","from":"2026-08-01","to":"2026-08-31"}'
 ```
 
 **Fatura (credit card bills)** — returns CLOSED bills only, with a derived
@@ -112,7 +128,7 @@ the `payment_status_legend` in the response, it explains the cross-bill heuristi
 ```bash
 curl -s -X POST "https://api.mcp.ai/api/openfinance/credit-card-bills/list" \
   -H "Authorization: Bearer $MCP_AI_API_KEY" -H "Content-Type: application/json" \
-  -d '{"account_id":"2c9d2ca0-6490-410a-9523-aba1a8fc45a5"}'
+  -d '{"account_id":"<CREDIT account_id from accounts/list>"}'
 ```
 The **currently open** cycle (not yet closed) doesn't show up here — its running
 total is the `balance` field from `accounts/list` on the CREDIT account instead.
@@ -152,10 +168,19 @@ was confirmed to exist, still untested) are in
 
 ## Known discrepancy to watch (found while testing, 2026-08-11)
 
-Real Mercado Pago **credit card** via this API: limit R$ 4.400,00, used R$ 2.818,69,
-available R$ 1.581,31. The **internal system** record for "Cartão Mercado Pago"
-(`73567965-1f0b-4d2e-868a-b1cfdc05fbbd`) has `creditLimit: 2600` and
-`currentBalance: -739.79` — doesn't match. Don't patch either number; this needs the
-same investigation approach as [[finances-reconciliation-open-2026-08]] (find the
-missing/wrong transactions, or confirm the card's real limit changed and update the
-static field — never force the balance).
+The real Mercado Pago **credit card** limit reported over Open Finance does not match
+the `creditLimit` recorded for "Cartão Mercado Pago"
+(`73567965-1f0b-4d2e-868a-b1cfdc05fbbd`) in `calendar-finances`, and the balances
+disagree too. Figures are in the agent's private memory, not here.
+
+Don't patch either number. This needs the same approach as
+[[finances-reconciliation-open-2026-08]]: find the missing/wrong transactions, or
+confirm the card's real limit changed and update that static field — never force a
+balance.
+
+⚠️ Before treating a card difference as real, check WHICH quantity each side reports.
+The bank's "used" figure consumes the limit and includes future installments, while the
+internal `currentBalance` tracks the open bill — comparing the two invents a
+discrepancy. For the open cycle prefer `credit-card-bills/list` with
+`include_open_bill: true` over the `balance` field of `accounts/list`, whose meaning is
+connector-dependent.
