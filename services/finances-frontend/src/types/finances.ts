@@ -340,7 +340,7 @@ export interface BudgetSummaryItem {
   remaining: number;
 }
 
-export type InvoiceStatus = 'OPEN' | 'CLOSED' | 'PAID';
+export type InvoiceStatus = 'OPEN' | 'CLOSED' | 'PAID' | 'PARTIALLY_PAID';
 
 export interface Invoice {
   id: string;
@@ -355,6 +355,8 @@ export interface Invoice {
   status: InvoiceStatus;
   paidAt?: string;
   paidAmount?: number;
+  /** What is still owed. Derived by the API on every read, never stored. */
+  amountRemaining?: number;
   createdAt: string;
   updatedAt: string;
 }

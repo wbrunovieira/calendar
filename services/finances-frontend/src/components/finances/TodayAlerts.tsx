@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { Transaction, RecurringTransaction, Invoice, BankAccount, Category } from '@/types/finances';
 import { formatCurrency } from '@/utils/format';
+import { amountLeftOn } from '@/utils/creditCard';
 import { findPendingRecurrings } from '@/utils/pendingAlerts';
 
 interface TodayAlertsProps {
@@ -111,7 +112,10 @@ export default function TodayAlerts({
       if (!account) return;
       accountInvoices.forEach((inv) => {
         const dueDate = extractDateStr(inv.dueDate);
-        if (inv.status !== 'PAID' && dueDate && dueDate <= today && inv.amount > 0) {
+        // Alert on what is LEFT: a partially paid bill is still overdue, but for
+        // the remainder, not the whole amount.
+        const owed = amountLeftOn(inv);
+        if (inv.status !== 'PAID' && dueDate && dueDate <= today && owed > 0) {
           const daysOverdue = getDaysOverdue(inv.dueDate, today);
           result.push({
             invoice: inv,
@@ -179,11 +183,11 @@ export default function TodayAlerts({
     });
 
     todayInvoices.forEach(({ invoice }) => {
-      toPay += invoice.amount;
+      toPay += amountLeftOn(invoice);
     });
 
     overdueInvoices.forEach(({ invoice }) => {
-      overduePay += invoice.amount;
+      overduePay += amountLeftOn(invoice);
     });
 
     return { toPay, toReceive, overduePay, overdueReceive };
@@ -409,7 +413,7 @@ export default function TodayAlerts({
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-red-400 font-semibold">{formatCurrency(invoice.amount)}</span>
+                    <span className="text-red-400 font-semibold">{formatCurrency(amountLeftOn(invoice))}</span>
                     {onPayInvoice && !payingInvoiceDates[invoice.id] && (
                       <button
                         onClick={() => openPayInvoice(invoice.id)}
@@ -431,7 +435,7 @@ export default function TodayAlerts({
                       className="px-2 py-1 bg-white/10 border border-white/20 rounded-lg text-white text-xs focus:outline-none focus:ring-1 focus:ring-red-400"
                     />
                     <button
-                      onClick={() => handlePayInvoice(invoice.id, invoice.amount)}
+                      onClick={() => handlePayInvoice(invoice.id, amountLeftOn(invoice))}
                       disabled={!!loadingAction}
                       className="px-3 py-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white text-xs rounded-lg transition-colors"
                     >
@@ -580,7 +584,7 @@ export default function TodayAlerts({
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-red-400 font-semibold">{formatCurrency(invoice.amount)}</span>
+                    <span className="text-red-400 font-semibold">{formatCurrency(amountLeftOn(invoice))}</span>
                     {onPayInvoice && !payingInvoiceDates[invoice.id] && (
                       <button
                         onClick={() => openPayInvoice(invoice.id)}
@@ -602,7 +606,7 @@ export default function TodayAlerts({
                       className="px-2 py-1 bg-white/10 border border-white/20 rounded-lg text-white text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400"
                     />
                     <button
-                      onClick={() => handlePayInvoice(invoice.id, invoice.amount)}
+                      onClick={() => handlePayInvoice(invoice.id, amountLeftOn(invoice))}
                       disabled={!!loadingAction}
                       className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-600 text-white text-xs rounded-lg transition-colors"
                     >

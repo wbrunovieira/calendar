@@ -450,6 +450,15 @@ func RunMigrations(db *sql.DB) error {
 			ALTER TABLE finance.bank_accounts ADD CONSTRAINT bank_accounts_type_check
 				CHECK (type IN ('CHECKING', 'SAVINGS', 'INVESTMENT', 'CREDIT_CARD', 'CASH', 'EXCHANGE', 'WALLET', 'OTHER'));
 		END $$`,
+		// Migration: allow PARTIALLY_PAID on credit card invoices.
+		// A bill paid in parts used to be marked PAID on the first payment, which
+		// erased the outstanding debt from the ledger.
+		`DO $$
+		BEGIN
+			ALTER TABLE finance.credit_card_invoices DROP CONSTRAINT IF EXISTS credit_card_invoices_status_check;
+			ALTER TABLE finance.credit_card_invoices ADD CONSTRAINT credit_card_invoices_status_check
+				CHECK (status IN ('OPEN', 'CLOSED', 'PAID', 'PARTIALLY_PAID'));
+		END $$`,
 		// Migration: Create crypto_purchases table for tracking structured purchase data
 		`CREATE TABLE IF NOT EXISTS finance.crypto_purchases (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

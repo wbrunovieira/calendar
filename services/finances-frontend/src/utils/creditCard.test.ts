@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getCardUsage, getCardsOutstanding } from './creditCard';
+import { getCardUsage, getCardsOutstanding, amountLeftOn, outstandingOn } from './creditCard';
 import type { Invoice } from '@/types/finances';
 
 const invoice = (amount: number, status: Invoice['status']): Invoice =>
@@ -109,5 +109,49 @@ describe('getCardsOutstanding', () => {
 
   it('tolerates a card whose invoices have not loaded', () => {
     expect(getCardsOutstanding([{ id: 'a' }], {})).toBe(0);
+  });
+});
+
+// A bill can now be PARTIALLY_PAID. Every consumer used to split the world into PAID
+// and not-PAID, treating "not paid" as "the whole bill is owed" — which counts money
+// that has already left the checking account, and, on the pay button, spends it again.
+describe('amountLeftOn', () => {
+  const withPayment = (amount: number, status: Invoice['status'], paidAmount?: number, amountRemaining?: number): Invoice =>
+    ({ ...invoice(amount, status), paidAmount, amountRemaining }) as Invoice;
+
+  it('owes only the remainder on a partially paid bill', () => {
+    expect(amountLeftOn(withPayment(1489.22, 'PARTIALLY_PAID', 1018.18))).toBeCloseTo(471.04, 2);
+  });
+
+  it('prefers the amount the API derived', () => {
+    // Stored amount is stale; amountRemaining is authoritative.
+    expect(amountLeftOn(withPayment(100, 'PARTIALLY_PAID', 10, 471.04))).toBeCloseTo(471.04, 2);
+  });
+
+  it('owes nothing on a settled bill with no recorded payment', () => {
+    expect(amountLeftOn(invoice(900, 'PAID'))).toBe(0);
+  });
+
+  it('still shows the remainder of a legacy bill stored as PAID after a partial payment', () => {
+    expect(amountLeftOn(withPayment(250, 'PAID', 100))).toBeCloseTo(150, 2);
+  });
+
+  it('owes the whole amount on an untouched bill', () => {
+    expect(amountLeftOn(invoice(300, 'CLOSED'))).toBeCloseTo(300, 2);
+  });
+
+  it('never returns negative debt when overpaid', () => {
+    expect(amountLeftOn(withPayment(100, 'PAID', 150))).toBe(0);
+  });
+});
+
+describe('outstandingOn with partial payments', () => {
+  it('counts each bill by what is left, not by its status', () => {
+    const bills = [
+      { ...invoice(1489.22, 'PARTIALLY_PAID'), paidAmount: 1018.18 } as Invoice,
+      invoice(300, 'CLOSED'),
+      invoice(900, 'PAID'),
+    ];
+    expect(outstandingOn(bills)).toBeCloseTo(771.04, 2);
   });
 });

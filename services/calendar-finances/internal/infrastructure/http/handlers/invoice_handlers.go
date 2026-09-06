@@ -171,6 +171,9 @@ func (h *InvoiceHandlers) Pay(w http.ResponseWriter, r *http.Request) {
 	invoice, err := h.payUC.Execute(input)
 	if err != nil {
 		status := http.StatusBadRequest
+		if errors.Is(err, usecases.ErrInvoiceTotalUnavailable) {
+			status = http.StatusInternalServerError
+		}
 		if err == usecases.ErrInvoiceNotFound {
 			status = http.StatusNotFound
 		}

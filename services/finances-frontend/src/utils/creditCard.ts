@@ -29,17 +29,35 @@ export function getCardUsage(
 }
 
 /**
+ * What a single bill still owes.
+ *
+ * The API derives `amountRemaining` on every read; the fallback covers payloads from
+ * before that field existed. A bill marked PAID with no recorded paidAmount owes
+ * nothing — the status is the only evidence there is.
+ *
+ * Use this anywhere a bill's debt is shown or paid. Sending `invoice.amount` to the
+ * pay endpoint on a partially paid bill debits the funding account a second time for
+ * money that is no longer owed.
+ */
+export function amountLeftOn(invoice: Invoice): number {
+  if (typeof invoice.amountRemaining === 'number') return Math.max(0, invoice.amountRemaining);
+  const paid = invoice.paidAmount ?? (invoice.status === 'PAID' ? invoice.amount : 0);
+  return Math.max(0, invoice.amount - paid);
+}
+
+/**
  * What is still owed across a card's bills.
  *
- * A bill is marked PAID the moment anything is paid against it, however small, so a
- * partial payment has to keep its remainder in view — dropping the bill whole is how
- * a card owing R$301,74 reports itself as empty.
+ * Always billed minus paid, whatever the status. Branching on status instead put a
+ * partially paid bill in the "owes everything" case and counted money that had
+ * already left the checking account.
+ *
+ * A bill marked PAID with no paidAmount recorded owes nothing — the status is the
+ * only evidence there is. Everything else defaults to nothing paid yet, which also
+ * covers legacy rows where a partial payment was stored as PAID.
  */
 export function outstandingOn(invoices: Invoice[]): number {
-  return invoices.reduce((total, inv) => {
-    if (inv.status !== 'PAID') return total + Math.max(0, inv.amount);
-    return total + Math.max(0, inv.amount - (inv.paidAmount ?? inv.amount));
-  }, 0);
+  return invoices.reduce((total, inv) => total + amountLeftOn(inv), 0);
 }
 
 /**

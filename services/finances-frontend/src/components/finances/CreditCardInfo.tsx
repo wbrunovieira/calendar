@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { BankAccount, Invoice } from '@/types/finances';
 import { formatCurrency, formatDate } from '@/utils/format';
-import { getCardUsage } from '@/utils/creditCard';
+import { getCardUsage, amountLeftOn } from '@/utils/creditCard';
 
 interface InvoiceUpdateData {
   closingDate?: string;
@@ -32,6 +32,8 @@ const getStatusLabel = (status: string) => {
       return { label: 'Aberta', color: 'bg-blue-500/20 text-blue-400' };
     case 'CLOSED':
       return { label: 'Fechada', color: 'bg-yellow-500/20 text-yellow-400' };
+    case 'PARTIALLY_PAID':
+      return { label: 'Parcial', color: 'bg-amber-500/20 text-amber-400' };
     case 'PAID':
       return { label: 'Paga', color: 'bg-green-500/20 text-green-400' };
     default:
@@ -91,18 +93,26 @@ export default function CreditCardInfo({
   // what the bank blocks against the limit.
   const { available, usagePercent } = getCardUsage(account, invoices);
 
-  // Get all unpaid invoices (OPEN or CLOSED with amount > 0)
+  // Bills that still owe something. Keyed on the remainder, not the status: a
+  // PARTIALLY_PAID bill with nothing left would otherwise sit here and make the
+  // button a silent no-op, and a legacy PAID bill that still owes money could
+  // never be paid from this screen.
   const unpaidInvoices = useMemo(() => {
     return invoices.filter(
-      (inv) => inv.status !== 'PAID' && inv.amount > 0
+      (inv) => amountLeftOn(inv) > 0
     ).sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
   }, [invoices]);
 
   const handlePayInvoice = async (invoice: Invoice) => {
     if (!onPayInvoice || payingInvoice) return;
+    // Pay what is LEFT, not the whole bill. A partially paid bill stays payable, so
+    // sending invoice.amount would debit the funding account a second time for a
+    // sum that is no longer owed.
+    const remaining = amountLeftOn(invoice);
+    if (remaining <= 0) return;
     setPayingInvoice(invoice.id);
     try {
-      await onPayInvoice(invoice.id, invoice.amount);
+      await onPayInvoice(invoice.id, remaining);
       setShowPaymentOptions(false);
     } finally {
       setPayingInvoice(null);
@@ -243,7 +253,10 @@ export default function CreditCardInfo({
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="text-white font-semibold">{formatCurrency(invoice.amount)}</p>
+                        <p className="text-white font-semibold">{formatCurrency(amountLeftOn(invoice))}</p>
+                        {amountLeftOn(invoice) < invoice.amount && (
+                          <p className="text-[10px] text-white/40">de {formatCurrency(invoice.amount)}</p>
+                        )}
                         {payingInvoice === invoice.id ? (
                           <span className="text-xs text-white/50">Pagando...</span>
                         ) : (
@@ -273,7 +286,7 @@ export default function CreditCardInfo({
           <div className="space-y-2 pt-2 border-t border-white/10">
             {invoices.map((invoice) => {
               const status = getStatusLabel(invoice.status);
-              const canPay = invoice.status !== 'PAID' && invoice.amount > 0;
+              const canPay = amountLeftOn(invoice) > 0;
               const isSelected = selectedInvoiceId === invoice.id;
               const isEditing = editingInvoiceId === invoice.id;
               return (
@@ -305,7 +318,10 @@ export default function CreditCardInfo({
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="text-right">
-                        <p className="text-white font-semibold text-sm">{formatCurrency(invoice.amount)}</p>
+                        <p className="text-white font-semibold text-sm">{formatCurrency(amountLeftOn(invoice))}</p>
+                        {amountLeftOn(invoice) < invoice.amount && (
+                          <p className="text-[10px] text-white/40">de {formatCurrency(invoice.amount)}</p>
+                        )}
                         <span className={`text-xs px-2 py-0.5 rounded-full ${status.color}`}>
                           {status.label}
                         </span>
