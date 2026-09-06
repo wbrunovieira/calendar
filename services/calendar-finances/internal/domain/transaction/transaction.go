@@ -30,19 +30,22 @@ const (
 
 // Transaction encapsulates the financial movement registered in the system.
 type Transaction struct {
-	ID                      string     `json:"id"`
-	ProfileID               string     `json:"profileId"`
-	BankAccountID           string     `json:"bankAccountId"`
-	DestinationAccountID    *string    `json:"destinationAccountId,omitempty"`
-	CategoryID              *string    `json:"categoryId,omitempty"`
-	InvoiceID               *string    `json:"invoiceId,omitempty"` // Credit card invoice this transaction belongs to
-	Type                    Type       `json:"type"`
-	Status                  Status     `json:"status"`
-	Amount                  float64    `json:"amount"`
-	Currency                string     `json:"currency"`
-	Description             string     `json:"description"`
-	Notes                   *string    `json:"notes,omitempty"`
-	CostCenter              *string    `json:"costCenter,omitempty"`
+	ID                   string  `json:"id"`
+	ProfileID            string  `json:"profileId"`
+	BankAccountID        string  `json:"bankAccountId"`
+	DestinationAccountID *string `json:"destinationAccountId,omitempty"`
+	CategoryID           *string `json:"categoryId,omitempty"`
+	InvoiceID            *string `json:"invoiceId,omitempty"` // Credit card invoice this transaction belongs to
+	Type                 Type    `json:"type"`
+	Status               Status  `json:"status"`
+	Amount               float64 `json:"amount"`
+	Currency             string  `json:"currency"`
+	Description          string  `json:"description"`
+	Notes                *string `json:"notes,omitempty"`
+	CostCenter           *string `json:"costCenter,omitempty"`
+	// CostCenterID links the transaction to a client, project or department.
+	// CostCenter above is the older free-text field, kept as it was.
+	CostCenterID            *string    `json:"costCenterId,omitempty"`
 	IsPersonalReimbursement bool       `json:"isPersonalReimbursement"`
 	OccurredOn              time.Time  `json:"occurredOn"`
 	DueOn                   *time.Time `json:"dueOn,omitempty"`
@@ -71,6 +74,7 @@ type CreateParams struct {
 	Description             string
 	Notes                   *string
 	CostCenter              *string
+	CostCenterID            *string
 	IsPersonalReimbursement bool
 	OccurredOn              time.Time
 	DueOn                   *time.Time
@@ -134,6 +138,7 @@ func New(params CreateParams) (*Transaction, error) {
 		Description:             description,
 		Notes:                   cloneString(params.Notes),
 		CostCenter:              cloneString(params.CostCenter),
+		CostCenterID:            cloneString(params.CostCenterID),
 		IsPersonalReimbursement: params.IsPersonalReimbursement,
 		OccurredOn:              params.OccurredOn,
 		DueOn:                   cloneTime(params.DueOn),

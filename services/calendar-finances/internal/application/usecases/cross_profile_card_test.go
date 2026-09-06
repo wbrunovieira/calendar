@@ -66,7 +66,7 @@ func newCrossProfileFixture(t *testing.T, sourceType, destType bankaccount.Accou
 
 	return &crossProfileFixture{
 		useCase: NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, &fakeInvoiceRepo{},
-			NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)),
+			NewRecalculateBalanceUseCase(accountRepo, txRepo, nil), nil),
 		accountRepo: accountRepo,
 		sourceID:    sourceAccount,
 		destID:      destAccount,

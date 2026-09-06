@@ -80,7 +80,7 @@ func setupProcessRecurringTest() (
 func TestProcessRecurring_NoDueTransactions(t *testing.T) {
 	recurringRepo, profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, _, _, _ := setupProcessRecurringTest()
 
-	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
+	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 	uc := NewProcessRecurringTransactionsUseCase(recurringRepo, createUC)
 
 	result, err := uc.Execute()
@@ -106,7 +106,7 @@ func TestProcessRecurring_SingleExpense_CreatesTransaction(t *testing.T) {
 	rec := makeRecurring(prof.ID, &acct.ID, &cat.ID, "EXPENSE", 87.00, "GoTo VoIP", "FREQ=MONTHLY;BYMONTHDAY=15", today)
 	recurringRepo.items[rec.ID] = rec
 
-	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
+	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 	uc := NewProcessRecurringTransactionsUseCase(recurringRepo, createUC)
 
 	result, err := uc.Execute()
@@ -165,7 +165,7 @@ func TestProcessRecurring_Income_CreatesTransaction(t *testing.T) {
 	rec := makeRecurring(prof.ID, &acct.ID, &incomeCat.ID, "INCOME", 1500.00, "Revalida Italia", "FREQ=MONTHLY;BYMONTHDAY=5", today)
 	recurringRepo.items[rec.ID] = rec
 
-	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
+	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 	uc := NewProcessRecurringTransactionsUseCase(recurringRepo, createUC)
 
 	result, err := uc.Execute()
@@ -197,7 +197,7 @@ func TestProcessRecurring_AdvancesNextOccurrence(t *testing.T) {
 	rec := makeRecurring(prof.ID, &acct.ID, &cat.ID, "EXPENSE", 25.00, "VPS", "FREQ=MONTHLY;BYMONTHDAY=5", feb5)
 	recurringRepo.items[rec.ID] = rec
 
-	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
+	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 	uc := NewProcessRecurringTransactionsUseCase(recurringRepo, createUC)
 
 	_, err := uc.Execute()
@@ -228,7 +228,7 @@ func TestProcessRecurring_SkipsPausedAndCancelled(t *testing.T) {
 	cancelled.Status = recurringtransaction.StatusCanceled
 	recurringRepo.items[cancelled.ID] = cancelled
 
-	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
+	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 	uc := NewProcessRecurringTransactionsUseCase(recurringRepo, createUC)
 
 	result, err := uc.Execute()
@@ -261,7 +261,7 @@ func TestProcessRecurring_MultipleDue_ProcessesAll(t *testing.T) {
 	recurringRepo.items[rec2.ID] = rec2
 	recurringRepo.items[rec3.ID] = rec3
 
-	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
+	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 	uc := NewProcessRecurringTransactionsUseCase(recurringRepo, createUC)
 
 	result, err := uc.Execute()
@@ -310,7 +310,7 @@ func TestProcessRecurring_CreditCard_CreatesTransaction(t *testing.T) {
 	rec := makeRecurring(prof.ID, &ccAcct.ID, &cat.ID, "EXPENSE", 572.89, "Claude Code", "FREQ=MONTHLY;BYMONTHDAY=16", today)
 	recurringRepo.items[rec.ID] = rec
 
-	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
+	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 	uc := NewProcessRecurringTransactionsUseCase(recurringRepo, createUC)
 
 	result, err := uc.Execute()
@@ -350,7 +350,7 @@ func TestProcessRecurring_PartialFailure_ContinuesProcessing(t *testing.T) {
 	recGood := makeRecurring(prof.ID, &acct.ID, &cat.ID, "EXPENSE", 87.00, "GoTo VoIP", "FREQ=MONTHLY;BYMONTHDAY=15", today)
 	recurringRepo.items[recGood.ID] = recGood
 
-	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil)
+	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 	uc := NewProcessRecurringTransactionsUseCase(recurringRepo, createUC)
 
 	result, err := uc.Execute()

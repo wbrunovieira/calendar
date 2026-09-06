@@ -71,6 +71,7 @@ func New(db *sql.DB) (*App, error) {
 	invoiceRepo := persistence.NewInvoiceRepository(db)
 	transactionRepo := persistence.NewTransactionRepository(db)
 	checkpointRepo := persistence.NewCheckpointRepository(db)
+	costCenterRepo := persistence.NewCostCenterRepository(db)
 
 	// Initialize Bank Account use cases and handlers
 	createBankAccountUC := usecases.NewCreateBankAccountUseCase(bankAccountRepo)
@@ -112,7 +113,7 @@ func New(db *sql.DB) (*App, error) {
 	)
 
 	// Initialize Transaction use cases and handlers
-	createTransactionUC := usecases.NewCreateTransactionUseCase(profileRepo, bankAccountRepo, categoryRepo, transactionRepo, invoiceRepo, recalculateBalanceUC)
+	createTransactionUC := usecases.NewCreateTransactionUseCase(profileRepo, bankAccountRepo, categoryRepo, transactionRepo, invoiceRepo, recalculateBalanceUC, costCenterRepo)
 	listTransactionsUC := usecases.NewListTransactionsUseCase(transactionRepo)
 	getTransactionUC := usecases.NewGetTransactionUseCase(transactionRepo)
 	updateTransactionUC := usecases.NewUpdateTransactionUseCase(bankAccountRepo, categoryRepo, transactionRepo, invoiceRepo, recalculateBalanceUC)
@@ -249,7 +250,6 @@ func New(db *sql.DB) (*App, error) {
 	)
 
 	// Cost Centers
-	costCenterRepo := persistence.NewCostCenterRepository(db)
 	createCostCenterUC := usecases.NewCreateCostCenterUseCase(costCenterRepo)
 	listCostCentersUC := usecases.NewListCostCentersUseCase(costCenterRepo)
 	getCostCenterUC := usecases.NewGetCostCenterUseCase(costCenterRepo)

@@ -142,6 +142,7 @@ func TestIntegration_CreateConfirmedExpense_RecalculatesBalance(t *testing.T) {
 		txRepo,
 		&fakeInvoiceRepo{},
 		recalcUC,
+		nil,
 	)
 
 	status := "CONFIRMED"

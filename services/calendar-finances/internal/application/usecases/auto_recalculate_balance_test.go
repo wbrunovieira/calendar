@@ -108,6 +108,7 @@ func baseCreateUC(
 		&fakeTransactionRepo{},
 		&fakeInvoiceRepo{},
 		recalculator,
+		nil,
 	)
 }
 
@@ -222,6 +223,7 @@ func TestCreateTransaction_CreditCardExpense_DoesNotTriggerRecalculate(t *testin
 		&fakeTransactionRepo{},
 		&fakeInvoiceRepo{},
 		recalc,
+		nil,
 	)
 
 	status := "CONFIRMED"
@@ -265,6 +267,7 @@ func TestCreateTransaction_ConfirmedIncome_BalanceIsCorrect(t *testing.T) {
 		txRepo,
 		&fakeInvoiceRepo{},
 		recalc,
+		nil,
 	)
 
 	status := "CONFIRMED"
