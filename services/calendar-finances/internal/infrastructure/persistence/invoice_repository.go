@@ -58,7 +58,9 @@ func (r *InvoiceRepository) FindByBankAccountID(bankAccountID string) ([]*invoic
 			amount, status, paid_at, paid_amount, created_at, updated_at
 		FROM finance.credit_card_invoices
 		WHERE bank_account_id = $1
-		ORDER BY reference_date DESC
+		-- Ordered by the cycle, not the label: reference_date is only a name and
+		-- gets relabelled on a collision, which would reorder cards arbitrarily.
+		ORDER BY closing_date DESC
 	`
 	rows, err := r.db.Query(query, bankAccountID)
 	if err != nil {
@@ -87,7 +89,9 @@ func (r *InvoiceRepository) FindOpenByBankAccountID(bankAccountID string) (*invo
 			amount, status, paid_at, paid_amount, created_at, updated_at
 		FROM finance.credit_card_invoices
 		WHERE bank_account_id = $1 AND status = 'OPEN'
-		ORDER BY reference_date DESC
+		-- Ordered by the cycle, not the label: reference_date is only a name and
+		-- gets relabelled on a collision, which would reorder cards arbitrarily.
+		ORDER BY closing_date DESC
 		LIMIT 1
 	`
 	inv := &invoice.Invoice{}
@@ -116,6 +120,12 @@ func (r *InvoiceRepository) FindByBankAccountAndDate(bankAccountID string, txDat
 		WHERE bank_account_id = $1
 			AND opening_date <= $2
 			AND closing_date > $2
+		-- LIMIT 1 without ORDER BY lets Postgres return either row, and change its
+		-- mind as the plan or physical order changes. Legacy overlapping cycles
+		-- exist on this database, and this is the single reuse path for invoice
+		-- creation, so an unordered pick would scatter one period's charges across
+		-- two invoices nondeterministically.
+		ORDER BY closing_date DESC
 		LIMIT 1
 	`
 	inv := &invoice.Invoice{}

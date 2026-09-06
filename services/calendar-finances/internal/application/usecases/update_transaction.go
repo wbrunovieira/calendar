@@ -187,7 +187,12 @@ func (uc *UpdateTransactionUseCase) Execute(id string, input UpdateTransactionIn
 		if account.Type == bankaccount.AccountTypeCreditCard && typeValue == transaction.TypeExpense {
 			if account.ClosingDay != nil && account.DueDay != nil {
 				inv, invErr := getOrCreateInvoiceForDate(uc.invoiceRepo, account, occurredOn)
-				if invErr == nil && inv != nil {
+				if invErr != nil {
+					// Detaching the charge would return 200 while the purchase
+					// stays on the card and disappears from its bill. Surface it.
+					return nil, invErr
+				}
+				if inv != nil {
 					existing.InvoiceID = &inv.ID
 				} else {
 					existing.InvoiceID = nil

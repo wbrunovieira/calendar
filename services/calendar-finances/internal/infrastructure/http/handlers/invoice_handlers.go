@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -127,6 +128,9 @@ func (h *InvoiceHandlers) Create(w http.ResponseWriter, r *http.Request) {
 		status := http.StatusBadRequest
 		if err == usecases.ErrBankAccountNotFound {
 			status = http.StatusNotFound
+		}
+		if errors.Is(err, usecases.ErrInvoiceReferenceConflict) {
+			status = http.StatusConflict
 		}
 		http.Error(w, err.Error(), status)
 		return

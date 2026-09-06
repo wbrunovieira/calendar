@@ -1,6 +1,8 @@
 package usecases
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -63,6 +65,13 @@ func (uc *CreateInvoiceUseCase) Execute(input CreateInvoiceInput) (*invoice.Invo
 	}
 
 	if err := uc.invoiceRepo.Create(inv); err != nil {
+		// A relabelled invoice may already hold this month's label. Say so, instead
+		// of leaking "pq: duplicate key value violates unique constraint ..." as a
+		// 400 that gives the caller nothing to act on.
+		if isUniqueViolation(err) {
+			return nil, fmt.Errorf("%w: reference month %s is already taken on card %s, possibly by a cycle relabelled after a collision",
+				ErrInvoiceReferenceConflict, refDate.Format("2006-01"), input.BankAccountID)
+		}
 		return nil, err
 	}
 
@@ -187,25 +196,163 @@ func (uc *GetOrCreateInvoiceForDateUseCase) Execute(bankAccountID string, txDate
 		return nil, err
 	}
 
-	if err := uc.invoiceRepo.Create(inv); err != nil {
-		// If duplicate key (invoice for this reference month already exists but with
-		// different dates that don't contain our txDate), try the next month
-		if isUniqueViolation(err) {
-			nextMonth := refDate.AddDate(0, 1, 0)
-			params.ReferenceDate = nextMonth
-			inv, err = invoice.New(params)
-			if err != nil {
-				return nil, err
-			}
-			if err := uc.invoiceRepo.Create(inv); err != nil {
-				return nil, err
-			}
-			return inv, nil
-		}
+	created, err := createInvoiceWithFreeLabel(uc.invoiceRepo, inv, txDate, refDate)
+	if err != nil {
 		return nil, err
 	}
+	inv = created
 
 	return inv, nil
+}
+
+// ErrInvoiceReferenceConflict means no free reference label could be found for a
+// billing cycle. It is an operator-actionable data conflict, not a server fault,
+// so handlers map it to 409 rather than 500.
+var ErrInvoiceReferenceConflict = errors.New("invoice reference month conflict")
+
+// ErrInvoiceCycleMismatch means calculateReferenceMonth and invoice.New disagreed
+// and produced a cycle that does not contain the transaction that asked for it.
+// That is a server-side date-math bug, not a data conflict: it consults no stored
+// data, so telling an operator to inspect their invoices would point at healthy
+// rows, and a 4xx would make retrying callers drop it silently instead of alerting.
+var ErrInvoiceCycleMismatch = errors.New("computed invoice cycle does not contain the transaction date")
+
+// referenceLabelSearchMonths bounds the forward scan for a free label. Exhausting
+// it means this many consecutive months are taken on one card, which is corruption
+// no retry will fix.
+//
+// Kept small on purpose: every candidate costs a failed INSERT (which Postgres also
+// logs as an ERROR) plus a SELECT, and createInstallments calls this once per
+// instalment — so a 12x purchase on a conflicted card pays the whole scan twelve
+// times before failing.
+const referenceLabelSearchMonths = 6
+
+// daysInMonth returns the number of days in the given month.
+func daysInMonth(year int, month time.Month) int {
+	return time.Date(year, month+1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, -1).Day()
+}
+
+func firstOfMonth(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
+}
+
+// candidateReferenceLabels lists reference months to try for a cycle, in order of
+// preference: the month it closes, then the month it falls due, then forward.
+//
+// reference_date is only a LABEL; the billing period — opening, closing, due — is
+// the truth, and no candidate here touches it. Two conventions exist in this
+// database (older rows are labelled by due month, invoice.New by closing month), so
+// both are tried before falling back to a merely-free month.
+//
+// The forward scan is not decoration. Cards with dueDay > closingDay fall due in the
+// closing month, so the two conventions collapse into a single candidate; without
+// the scan those cards would have no fallback at all and a label collision would
+// refuse to record a real purchase.
+//
+// Note the relabel is not a one-off borrow: once a card takes a later label for one
+// cycle, the next cycle collides with it and shifts too, so the card stays on the
+// later convention. That is cosmetic — the UI renders the reference month — and is
+// strictly better than blocking a purchase.
+func candidateReferenceLabels(inv *invoice.Invoice) []time.Time {
+	closing := firstOfMonth(inv.ClosingDate)
+	due := firstOfMonth(inv.DueDate)
+
+	labels := []time.Time{closing}
+	if !due.Equal(closing) {
+		labels = append(labels, due)
+	}
+
+	last := closing
+	if due.After(last) {
+		last = due
+	}
+	for i := 1; i <= referenceLabelSearchMonths; i++ {
+		labels = append(labels, last.AddDate(0, i, 0))
+	}
+	return labels
+}
+
+// createInvoiceWithFreeLabel inserts inv, resolving collisions on the
+// (bank_account_id, reference_date) unique constraint by relabelling it — never by
+// moving the billing period, which is what corrupted the Nubank Juridica card.
+//
+// After every collision it re-reads by date, because a concurrent writer may have
+// created exactly the cycle we need. Without that, the loser of a race reports a
+// data conflict that does not exist.
+func createInvoiceWithFreeLabel(repo invoice.Repository, inv *invoice.Invoice, txDate time.Time, refDate time.Time) (*invoice.Invoice, error) {
+	// Refuse to persist a cycle that does not cover the transaction that asked for
+	// it. Such an invoice can never be found again by date, so every later purchase
+	// would mint another row and burn another label. Failing here is loud; writing
+	// it is silent and unbounded.
+	if !inv.ContainsDate(txDate) {
+		return nil, fmt.Errorf("%w: cycle %s to %s does not contain %s on card %s",
+			ErrInvoiceCycleMismatch,
+			inv.OpeningDate.Format("2006-01-02"),
+			inv.ClosingDate.Format("2006-01-02"),
+			txDate.Format("2006-01-02"),
+			inv.BankAccountID)
+	}
+
+	for _, label := range candidateReferenceLabels(inv) {
+		candidate := *inv
+		candidate.ReferenceDate = label
+
+		err := repo.Create(&candidate)
+		if err == nil {
+			return &candidate, nil
+		}
+		if !isUniqueViolation(err) {
+			return nil, err
+		}
+
+		raced, findErr := repo.FindByBankAccountAndDate(inv.BankAccountID, txDate)
+		if findErr != nil {
+			return nil, findErr
+		}
+		if raced != nil {
+			return raced, nil
+		}
+	}
+
+	// Only on the failing path is it worth a scan to name the blocking row.
+	return nil, referenceLabelExhaustedError(inv, conflictingInvoiceForLabel(repo, inv.BankAccountID, refDate))
+}
+
+// conflictingInvoiceForLabel finds the invoice holding a reference label on this
+// card, for the error message only. A read failure must not become a misleading
+// "repair your data" instruction, so it degrades to nil.
+func conflictingInvoiceForLabel(repo invoice.Repository, bankAccountID string, refDate time.Time) *invoice.Invoice {
+	existing, err := repo.FindByBankAccountID(bankAccountID)
+	if err != nil {
+		return nil
+	}
+	for _, ei := range existing {
+		if ei.ReferenceDate.Year() == refDate.Year() && ei.ReferenceDate.Month() == refDate.Month() {
+			return ei
+		}
+	}
+	return nil
+}
+
+func referenceLabelExhaustedError(inv *invoice.Invoice, conflicting *invoice.Invoice) error {
+	cycle := fmt.Sprintf("cycle %s to %s (due %s)",
+		inv.OpeningDate.Format("2006-01-02"),
+		inv.ClosingDate.Format("2006-01-02"),
+		inv.DueDate.Format("2006-01-02"))
+
+	if conflicting == nil {
+		return fmt.Errorf("%w: no free reference month for %s on card %s after %d months",
+			ErrInvoiceReferenceConflict, cycle, inv.BankAccountID, referenceLabelSearchMonths)
+	}
+	// Name the row holding the PREFERRED label as a starting point, not as the
+	// culprit: after a full scan the blockers are spread across many months, and
+	// this row may be perfectly healthy. Saying "repair this one" would send an
+	// operator to edit correct data.
+	return fmt.Errorf("%w: no free reference month for %s after %d candidates; the preferred label %s is held by invoice %s (covering %s to %s) — inspect this card's invoices for overlapping or mislabelled cycles",
+		ErrInvoiceReferenceConflict, cycle, referenceLabelSearchMonths,
+		conflicting.ReferenceDate.Format("2006-01"), conflicting.ID,
+		conflicting.OpeningDate.Format("2006-01-02"),
+		conflicting.ClosingDate.Format("2006-01-02"))
 }
 
 // isUniqueViolation checks if the error is a unique constraint violation
@@ -220,8 +367,19 @@ func calculateReferenceMonth(txDate time.Time, closingDay int) time.Time {
 	month := txDate.Month()
 	day := txDate.Day()
 
+	// Compare against the day the cycle ACTUALLY closes this month, not the raw
+	// closingDay. invoice.New clamps closing to the month's length (a card closing
+	// on the 31st closes on the 28th in February), so comparing against the
+	// unclamped value routes a purchase made on the clamped closing day into an
+	// invoice whose closing is that very day — and ContainsDate is [opening,
+	// closing), so the invoice would not contain the purchase that created it.
+	effectiveClosingDay := closingDay
+	if lastDay := daysInMonth(year, month); closingDay > lastDay {
+		effectiveClosingDay = lastDay
+	}
+
 	// If transaction day is on or after closing day, it goes to next month's invoice
-	if day >= closingDay {
+	if day >= effectiveClosingDay {
 		month++
 		if month > 12 {
 			month = 1
@@ -258,50 +416,11 @@ func getOrCreateInvoiceForDate(repo invoice.Repository, account *bankaccount.Ban
 		return nil, err
 	}
 
-	if err := repo.Create(inv); err != nil {
-		if !isUniqueViolation(err) {
-			return nil, err
-		}
-
-		existingInvoices, listErr := repo.FindByBankAccountID(account.ID)
-		if listErr != nil {
-			return nil, listErr
-		}
-
-		var existingInv *invoice.Invoice
-		for _, ei := range existingInvoices {
-			if ei.ReferenceDate.Year() == refDate.Year() && ei.ReferenceDate.Month() == refDate.Month() {
-				existingInv = ei
-				break
-			}
-		}
-
-		if existingInv != nil && existingInv.ContainsDate(txDate) {
-			return existingInv, nil
-		}
-
-		nextMonth := refDate.AddDate(0, 1, 0)
-		params.ReferenceDate = nextMonth
-		inv, err = invoice.New(params)
-		if err != nil {
-			return nil, err
-		}
-		if existingInv != nil {
-			inv.OpeningDate = existingInv.ClosingDate.AddDate(0, 0, 1)
-		}
-
-		if err := repo.Create(inv); err != nil {
-			if isUniqueViolation(err) {
-				for _, ei := range existingInvoices {
-					if ei.ReferenceDate.Year() == nextMonth.Year() && ei.ReferenceDate.Month() == nextMonth.Month() {
-						return ei, nil
-					}
-				}
-			}
-			return nil, err
-		}
-		return inv, nil
+	created, err := createInvoiceWithFreeLabel(repo, inv, txDate, refDate)
+	if err != nil {
+		return nil, err
 	}
+	inv = created
 
 	return inv, nil
 }
