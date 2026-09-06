@@ -132,6 +132,12 @@
           FILE="/etc/nginx/sites-available/${conf}.wbdigitalsolutions.com.conf"
           [ -f "$FILE" ] && cp "$FILE" "$BACKUP_DIR/"
         done
+        # The API vhosts are certbot-managed regular files in sites-enabled,
+        # not symlinks into sites-available. Back up where they actually live.
+        for conf in calendar-finances calendar-health agents calendar-agents; do
+          FILE="/etc/nginx/sites-enabled/${conf}.wbdigitalsolutions.com.conf"
+          [ -f "$FILE" ] && cp "$FILE" "$BACKUP_DIR/"
+        done
         echo "Backed up to $BACKUP_DIR"
       changed_when: false
 
@@ -336,6 +342,75 @@
       raw: systemctl reload nginx
       ignore_errors: true
 
+
+    # ── Protect the API vhosts ───────────────────────────────
+    # These three answered the public internet with no authentication of any
+    # kind: calendar-finances served balances on a GET and reached field
+    # validation on a POST, so nothing guarded the write path either.
+    #
+    # PR #32 added them to Authelia's access_control, but the policy alone does
+    # nothing — nginx has to call the gateway. That half was missing, and the
+    # domains stayed open while the config said they were protected.
+    #
+    # These files are certbot-managed and use cert paths that differ from the
+    # frontends, so this INSERTS the includes instead of rewriting the file.
+    # Re-running is safe: a vhost that already includes the snippet is skipped.
+    - name: Include Authelia snippets in the API vhosts
+      raw: |
+        python3 - <<'PYEOF'
+        import os, re
+        SITES = ["calendar-finances", "calendar-health", "agents"]
+        LOC = "    include /etc/nginx/snippets/authelia-location.conf;"
+        REQ = "        include /etc/nginx/snippets/authelia-authrequest.conf;"
+        for name in SITES:
+            p = "/etc/nginx/sites-enabled/%s.wbdigitalsolutions.com.conf" % name
+            if not os.path.exists(p):
+                print("SKIP (missing): %s" % name); continue
+            src = open(p).read()
+            if "authelia" in src:
+                print("SKIP (already protected): %s" % name); continue
+            out, did_loc, did_req = [], False, False
+            for line in src.split("\n"):
+                out.append(line)
+                if not did_loc and re.match(r"\s*server_name\s", line):
+                    out.append(""); out.append(LOC); did_loc = True
+                elif not did_req and re.match(r"\s*location\s+/\s*\{", line):
+                    out.append(REQ); did_req = True
+            if not (did_loc and did_req):
+                raise SystemExit("ERROR: anchors not found in %s (loc=%s req=%s)" % (name, did_loc, did_req))
+            open(p, "w").write("\n".join(out))
+            print("PROTECTED: %s" % name)
+        PYEOF
+
+    # calendar-agents is a second vhost onto the same agents container, and n8n
+    # calls it server-to-server with no browser session — Authelia would kill the
+    # WhatsApp pipeline. Its /agents/* routes stay reachable; the API map does
+    # not need to be, and it was public.
+    - name: Block the API map on calendar-agents
+      raw: |
+        python3 - <<'PYEOF'
+        import os
+        p = "/etc/nginx/sites-enabled/calendar-agents.wbdigitalsolutions.com.conf"
+        if not os.path.exists(p):
+            print("SKIP (missing): calendar-agents")
+        else:
+            s = open(p).read()
+            if "openapi" in s:
+                print("SKIP (already blocked): calendar-agents")
+            else:
+                block = (
+                    "\n    # n8n only calls /agents/*. The API map is not needed by any\n"
+                    "    # consumer and was reachable anonymously from the internet.\n"
+                    "    location ~ ^/(docs|redoc|openapi\\.json)$ {\n"
+                    "        return 404;\n"
+                    "    }\n"
+                )
+                i = s.index("location / {")
+                s = s[:i].rstrip("\n") + "\n" + block + "\n    " + s[i:]
+                open(p, "w").write(s)
+                print("BLOCKED: calendar-agents /docs /redoc /openapi.json")
+        PYEOF
+
     # ── Final verification ───────────────────────────────────
     - name: Verify Authelia health
       raw: |
@@ -351,12 +426,22 @@
         done
       changed_when: false
 
-    - name: Verify APIs still accessible (bypass)
+    # These were listed as "bypass" while they in fact answered anyone. They are
+    # protected now, so the expected result is a redirect, not a 200.
+    - name: Verify protected APIs redirect to login
       raw: |
-        echo "calendar-api:  $(curl -sf -o /dev/null -w '%{http_code}' https://calendar-api.wbdigitalsolutions.com/ || echo 'DOWN')"
-        echo "finances-api:  $(curl -sf -o /dev/null -w '%{http_code}' https://calendar-finances.wbdigitalsolutions.com/api/v1/health || echo 'DOWN')"
-        echo "health-api:    $(curl -sf -o /dev/null -w '%{http_code}' https://calendar-health.wbdigitalsolutions.com/api/v1/health || echo 'DOWN')"
-        echo "agents-api:    $(curl -sf -o /dev/null -w '%{http_code}' https://agents.wbdigitalsolutions.com/health || echo 'DOWN')"
+        for domain in calendar-finances.wbdigitalsolutions.com calendar-health.wbdigitalsolutions.com agents.wbdigitalsolutions.com; do
+          STATUS=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://$domain/ 2>/dev/null || echo "FAIL")
+          echo "  $domain → $STATUS (expect 302)"
+        done
+
+    - name: Verify the genuinely-bypassed paths still answer
+      raw: |
+        # calendar-api carries its own bearer token; calendar-agents is called
+        # server-to-server by n8n and has no browser session to offer.
+        echo "calendar-api:      $(curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://calendar-api.wbdigitalsolutions.com/ || echo 'DOWN') (expect 200/404)"
+        echo "calendar-agents:   $(curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://calendar-agents.wbdigitalsolutions.com/health || echo 'DOWN') (expect 200)"
+        echo "calendar-agents/docs: $(curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://calendar-agents.wbdigitalsolutions.com/docs || echo 'DOWN') (expect 404)"
       changed_when: false
 
     - name: Authelia setup summary
@@ -368,16 +453,19 @@
         echo "Login: https://auth.wbdigitalsolutions.com"
         echo "User:  bruno"
         echo ""
-        echo "Protected:"
+        echo "Protected (frontends):"
         echo "  - https://calendar.wbdigitalsolutions.com"
         echo "  - https://finances.wbdigitalsolutions.com"
         echo "  - https://health.wbdigitalsolutions.com"
         echo "  - https://calendar-langfuse.wbdigitalsolutions.com"
         echo ""
-        echo "Bypass (APIs):"
-        echo "  - https://calendar-api.wbdigitalsolutions.com"
+        echo "Protected (APIs):"
         echo "  - https://calendar-finances.wbdigitalsolutions.com"
         echo "  - https://calendar-health.wbdigitalsolutions.com"
         echo "  - https://agents.wbdigitalsolutions.com"
+        echo ""
+        echo "Bypass, by design:"
+        echo "  - https://calendar-api.wbdigitalsolutions.com   (own bearer token)"
+        echo "  - https://calendar-agents.wbdigitalsolutions.com (n8n, server-to-server; /docs blocked)"
         echo "=========================================="
       changed_when: false
