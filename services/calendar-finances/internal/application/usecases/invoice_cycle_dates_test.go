@@ -292,3 +292,42 @@ func TestGetOrCreateInvoice_ReusesInvoiceCoveringTheDate(t *testing.T) {
 		t.Errorf("no new invoice should be created, have %d", len(repo.invoices))
 	}
 }
+
+func TestGetOrCreateInvoice_ClampedClosingDayReusesOneInvoice(t *testing.T) {
+	// closingDay 31 on a 28-day month: safeDate clamps the real closing to 02-28,
+	// but calculateReferenceMonth used to compare against the unclamped 31, routing
+	// a 02-28 purchase into February — whose closing is 02-28 exclusive, so the
+	// invoice did not contain it. FindByBankAccountAndDate then missed every time
+	// and the forward label scan minted a fresh row per purchase.
+	cardID := "card-3"
+	closing, due := 31, 10
+	card := &bankaccount.BankAccount{
+		ID: cardID, Type: bankaccount.AccountTypeCreditCard,
+		ClosingDay: &closing, DueDay: &due,
+	}
+	repo := &fakeInvoiceRepo{invoices: map[string]*invoice.Invoice{}}
+	txDate := date(2026, time.February, 28)
+
+	first, err := getOrCreateInvoiceForDate(repo, card, txDate)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !first.ContainsDate(txDate) {
+		t.Fatalf("invoice must contain the date it was created for: opening %s, closing %s",
+			first.OpeningDate.Format("2006-01-02"), first.ClosingDate.Format("2006-01-02"))
+	}
+
+	// Three more purchases the same day must land on that same invoice.
+	for i := 0; i < 3; i++ {
+		again, err := getOrCreateInvoiceForDate(repo, card, txDate)
+		if err != nil {
+			t.Fatalf("unexpected error on call %d: %v", i+2, err)
+		}
+		if again.ID != first.ID {
+			t.Errorf("call %d created a new invoice %s instead of reusing %s", i+2, again.ID, first.ID)
+		}
+	}
+	if len(repo.invoices) != 1 {
+		t.Errorf("expected exactly 1 invoice, got %d — labels are being burned per purchase", len(repo.invoices))
+	}
+}

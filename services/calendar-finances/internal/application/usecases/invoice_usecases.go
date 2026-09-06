@@ -65,6 +65,13 @@ func (uc *CreateInvoiceUseCase) Execute(input CreateInvoiceInput) (*invoice.Invo
 	}
 
 	if err := uc.invoiceRepo.Create(inv); err != nil {
+		// A relabelled invoice may already hold this month's label. Say so, instead
+		// of leaking "pq: duplicate key value violates unique constraint ..." as a
+		// 400 that gives the caller nothing to act on.
+		if isUniqueViolation(err) {
+			return nil, fmt.Errorf("%w: reference month %s is already taken on card %s, possibly by a cycle relabelled after a collision",
+				ErrInvoiceReferenceConflict, refDate.Format("2006-01"), input.BankAccountID)
+		}
 		return nil, err
 	}
 
@@ -208,6 +215,11 @@ var ErrInvoiceReferenceConflict = errors.New("invoice reference month conflict")
 // no retry will fix.
 const referenceLabelSearchMonths = 24
 
+// daysInMonth returns the number of days in the given month.
+func daysInMonth(year int, month time.Month) int {
+	return time.Date(year, month+1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, -1).Day()
+}
+
 func firstOfMonth(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
 }
@@ -256,6 +268,19 @@ func candidateReferenceLabels(inv *invoice.Invoice) []time.Time {
 // created exactly the cycle we need. Without that, the loser of a race reports a
 // data conflict that does not exist.
 func createInvoiceWithFreeLabel(repo invoice.Repository, inv *invoice.Invoice, txDate time.Time, refDate time.Time) (*invoice.Invoice, error) {
+	// Refuse to persist a cycle that does not cover the transaction that asked for
+	// it. Such an invoice can never be found again by date, so every later purchase
+	// would mint another row and burn another label. Failing here is loud; writing
+	// it is silent and unbounded.
+	if !inv.ContainsDate(txDate) {
+		return nil, fmt.Errorf("%w: computed cycle %s to %s does not contain %s on card %s",
+			ErrInvoiceReferenceConflict,
+			inv.OpeningDate.Format("2006-01-02"),
+			inv.ClosingDate.Format("2006-01-02"),
+			txDate.Format("2006-01-02"),
+			inv.BankAccountID)
+	}
+
 	for _, label := range candidateReferenceLabels(inv) {
 		candidate := *inv
 		candidate.ReferenceDate = label
@@ -307,11 +332,15 @@ func referenceLabelExhaustedError(inv *invoice.Invoice, conflicting *invoice.Inv
 		return fmt.Errorf("%w: no free reference month for %s on card %s after %d months",
 			ErrInvoiceReferenceConflict, cycle, inv.BankAccountID, referenceLabelSearchMonths)
 	}
-	return fmt.Errorf("%w: no free reference month for %s; invoice %s covers %s to %s (due %s) — repair its reference_date",
-		ErrInvoiceReferenceConflict, cycle, conflicting.ID,
+	// Name the row holding the PREFERRED label as a starting point, not as the
+	// culprit: after a full scan the blockers are spread across many months, and
+	// this row may be perfectly healthy. Saying "repair this one" would send an
+	// operator to edit correct data.
+	return fmt.Errorf("%w: no free reference month for %s after %d candidates; the preferred label %s is held by invoice %s (covering %s to %s) — inspect this card's invoices for overlapping or mislabelled cycles",
+		ErrInvoiceReferenceConflict, cycle, referenceLabelSearchMonths,
+		conflicting.ReferenceDate.Format("2006-01"), conflicting.ID,
 		conflicting.OpeningDate.Format("2006-01-02"),
-		conflicting.ClosingDate.Format("2006-01-02"),
-		conflicting.DueDate.Format("2006-01-02"))
+		conflicting.ClosingDate.Format("2006-01-02"))
 }
 
 // isUniqueViolation checks if the error is a unique constraint violation
@@ -326,8 +355,19 @@ func calculateReferenceMonth(txDate time.Time, closingDay int) time.Time {
 	month := txDate.Month()
 	day := txDate.Day()
 
+	// Compare against the day the cycle ACTUALLY closes this month, not the raw
+	// closingDay. invoice.New clamps closing to the month's length (a card closing
+	// on the 31st closes on the 28th in February), so comparing against the
+	// unclamped value routes a purchase made on the clamped closing day into an
+	// invoice whose closing is that very day — and ContainsDate is [opening,
+	// closing), so the invoice would not contain the purchase that created it.
+	effectiveClosingDay := closingDay
+	if lastDay := daysInMonth(year, month); closingDay > lastDay {
+		effectiveClosingDay = lastDay
+	}
+
 	// If transaction day is on or after closing day, it goes to next month's invoice
-	if day >= closingDay {
+	if day >= effectiveClosingDay {
 		month++
 		if month > 12 {
 			month = 1
