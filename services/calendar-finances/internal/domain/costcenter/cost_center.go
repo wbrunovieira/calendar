@@ -24,17 +24,26 @@ type CostCenter struct {
 	Name      string     `json:"name"`
 	Type      CenterType `json:"type"`
 	Color     *string    `json:"color,omitempty"`
-	IsActive  bool       `json:"isActive"`
-	CreatedAt time.Time  `json:"createdAt"`
-	UpdatedAt time.Time  `json:"updatedAt"`
+	// ExternalID is the id this cost center mirrors in another system — a CRM
+	// organization, say. Deliberately an opaque string: the CRM's own table
+	// holds both uuid and cuid values, because imported records bring their
+	// own ids, so anything that validates the shape breaks on the older half
+	// of the customer base.
+	ExternalID  *string   `json:"externalId,omitempty"`
+	ExternalSrc string    `json:"externalSource,omitempty"`
+	IsActive    bool      `json:"isActive"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
 // CreateParams encapsulates parameters for creating a cost center
 type CreateParams struct {
-	ProfileID string
-	Name      string
-	Type      CenterType
-	Color     *string
+	ProfileID   string
+	Name        string
+	Type        CenterType
+	Color       *string
+	ExternalID  *string
+	ExternalSrc string
 }
 
 // UpdateParams encapsulates parameters for updating a cost center
@@ -59,14 +68,16 @@ func NewCostCenter(p CreateParams) (*CostCenter, error) {
 
 	now := time.Now()
 	return &CostCenter{
-		ID:        uuid.New().String(),
-		ProfileID: p.ProfileID,
-		Name:      strings.TrimSpace(p.Name),
-		Type:      p.Type,
-		Color:     p.Color,
-		IsActive:  true,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:          uuid.New().String(),
+		ProfileID:   p.ProfileID,
+		Name:        strings.TrimSpace(p.Name),
+		Type:        p.Type,
+		Color:       p.Color,
+		ExternalID:  trimmedOrNil(p.ExternalID),
+		ExternalSrc: strings.TrimSpace(p.ExternalSrc),
+		IsActive:    true,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}, nil
 }
 
@@ -93,4 +104,17 @@ func isValidType(t CenterType) bool {
 	default:
 		return false
 	}
+}
+
+// trimmedOrNil keeps an empty external reference out of the database, so a blank
+// string from a form never becomes a link to nothing.
+func trimmedOrNil(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }

@@ -11,6 +11,11 @@ type CreateCostCenterInput struct {
 	Name      string                `json:"name"`
 	Type      costcenter.CenterType `json:"type"`
 	Color     *string               `json:"color,omitempty"`
+	// ExternalID mirrors a record in another system (a CRM organization, say).
+	// Opaque string on purpose — see the domain for why the shape is not
+	// validated.
+	ExternalID  *string `json:"externalId,omitempty"`
+	ExternalSrc string  `json:"externalSource,omitempty"`
 }
 
 type CreateCostCenterUseCase struct {
@@ -23,10 +28,12 @@ func NewCreateCostCenterUseCase(repo costcenter.Repository) *CreateCostCenterUse
 
 func (uc *CreateCostCenterUseCase) Execute(input CreateCostCenterInput) (*costcenter.CostCenter, error) {
 	c, err := costcenter.NewCostCenter(costcenter.CreateParams{
-		ProfileID: input.ProfileID,
-		Name:      input.Name,
-		Type:      input.Type,
-		Color:     input.Color,
+		ProfileID:   input.ProfileID,
+		Name:        input.Name,
+		Type:        input.Type,
+		Color:       input.Color,
+		ExternalID:  input.ExternalID,
+		ExternalSrc: input.ExternalSrc,
 	})
 	if err != nil {
 		return nil, err
