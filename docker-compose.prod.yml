@@ -182,7 +182,9 @@ services:
       context: ./services/finances-frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: https://calendar-finances.wbdigitalsolutions.com/api/v1
+        # Relative: the dashboard now proxies the API through its own origin,
+        # so the browser never calls a sibling subdomain and there is no CORS.
+        NEXT_PUBLIC_API_URL: /api/v1
         NEXT_PUBLIC_CALENDAR_API_URL: https://calendar-api.wbdigitalsolutions.com
         NEXT_PUBLIC_CALENDAR_API_TOKEN: ${API_TOKEN:-}
     container_name: finances-frontend
@@ -193,6 +195,9 @@ services:
       - NODE_ENV=production
       - TZ=America/Sao_Paulo
       - MAGIC_FORMULA_URL=http://magic-formula:8000
+      # Where the proxy forwards to, server-side over the Docker network.
+      # Runtime, not build arg: it is never sent to the browser.
+      - FINANCES_API_INTERNAL_URL=http://calendar-finances:3335
     depends_on:
       - calendar-finances
       - magic-formula
@@ -209,7 +214,7 @@ services:
       context: ./services/health-frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: https://calendar-health.wbdigitalsolutions.com/api/v1
+        NEXT_PUBLIC_API_URL: /api/v1
         NEXT_PUBLIC_CALENDAR_API_URL: https://calendar-api.wbdigitalsolutions.com
         NEXT_PUBLIC_CALENDAR_API_TOKEN: ${API_TOKEN:-}
     container_name: health-frontend
@@ -219,6 +224,8 @@ services:
     environment:
       - NODE_ENV=production
       - TZ=America/Sao_Paulo
+      # Where the proxy forwards to, server-side over the Docker network.
+      - HEALTH_API_INTERNAL_URL=http://calendar-health:3336
     depends_on:
       - calendar-health
     networks:
