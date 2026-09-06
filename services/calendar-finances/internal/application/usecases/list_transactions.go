@@ -12,6 +12,7 @@ type ListTransactionsInput struct {
 	ProfileID            string
 	BankAccountID        *string
 	InvoiceID            *string
+	CostCenterID         *string
 	Status               *string
 	Type                 *string
 	OccurredFrom         *string
@@ -55,6 +56,12 @@ func (uc *ListTransactionsUseCase) Execute(input ListTransactionsInput) (*ListTr
 		trimmed := strings.TrimSpace(*input.InvoiceID)
 		if trimmed != "" {
 			filter.InvoiceID = &trimmed
+		}
+		if input.CostCenterID != nil {
+			trimmed := strings.TrimSpace(*input.CostCenterID)
+			if trimmed != "" {
+				filter.CostCenterID = &trimmed
+			}
 		}
 	}
 

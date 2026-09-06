@@ -132,3 +132,92 @@ func seedCostCenter(t *testing.T, db *sql.DB, id, profileID string) {
 		t.Fatalf("seed cost center: %v", err)
 	}
 }
+
+// Update has to carry the cost center too. Today the use case loads the
+// aggregate and mutates it field by field, so an untouched field survives by
+// accident — the moment anything rebuilds the entity from the input instead,
+// every edited transaction silently loses its client. This pins the column.
+func TestTransactionRepository_UpdateKeepsTheCostCenter(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+
+	profileID := uuid.NewString()
+	accountID := uuid.NewString()
+	centerID := uuid.NewString()
+	otherCenter := uuid.NewString()
+
+	cleanupTestData(db, profileID)
+	defer cleanupTestData(db, profileID)
+	seedProfileAndAccount(t, db, profileID, accountID)
+	seedCostCenter(t, db, centerID, profileID)
+	seedCostCenter(t, db, otherCenter, profileID)
+
+	repo := NewTransactionRepository(db)
+	tx := &transaction.Transaction{
+		ID: uuid.NewString(), ProfileID: profileID, BankAccountID: accountID,
+		CostCenterID: &centerID, Type: transaction.TypeIncome, Status: transaction.StatusConfirmed,
+		Amount: 500, Currency: "BRL", Description: "Sinal",
+		OccurredOn: time.Date(2026, 8, 31, 0, 0, 0, 0, time.UTC),
+	}
+	if err := repo.Create(tx); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// Same transaction, different client.
+	tx.CostCenterID = &otherCenter
+	tx.Description = "Sinal (cliente corrigido)"
+	if err := repo.Update(tx); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	got, err := repo.GetByID(tx.ID)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if got.CostCenterID == nil {
+		t.Fatal("the update wiped the cost center")
+	}
+	if *got.CostCenterID != otherCenter {
+		t.Errorf("CostCenterID = %q, want %q", *got.CostCenterID, otherCenter)
+	}
+}
+
+// And clearing it has to be possible, or a transaction filed under the wrong
+// client can never be un-filed.
+func TestTransactionRepository_UpdateCanClearTheCostCenter(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+
+	profileID := uuid.NewString()
+	accountID := uuid.NewString()
+	centerID := uuid.NewString()
+
+	cleanupTestData(db, profileID)
+	defer cleanupTestData(db, profileID)
+	seedProfileAndAccount(t, db, profileID, accountID)
+	seedCostCenter(t, db, centerID, profileID)
+
+	repo := NewTransactionRepository(db)
+	tx := &transaction.Transaction{
+		ID: uuid.NewString(), ProfileID: profileID, BankAccountID: accountID,
+		CostCenterID: &centerID, Type: transaction.TypeIncome, Status: transaction.StatusConfirmed,
+		Amount: 500, Currency: "BRL", Description: "Sinal",
+		OccurredOn: time.Date(2026, 8, 31, 0, 0, 0, 0, time.UTC),
+	}
+	if err := repo.Create(tx); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	tx.CostCenterID = nil
+	if err := repo.Update(tx); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	got, err := repo.GetByID(tx.ID)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if got.CostCenterID != nil {
+		t.Errorf("the cost center survived being cleared: %q", *got.CostCenterID)
+	}
+}

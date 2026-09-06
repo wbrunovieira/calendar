@@ -559,6 +559,25 @@ func (uc *CreateTransactionUseCase) createInstallments(
 
 		installmentNum := i
 		installmentTotal := total
+
+		// One purchase carries one external id, but its instalments are separate
+		// rows and external_id is unique. Copying the id onto all of them wrote
+		// the first and violated the key on the second, leaving an orphan
+		// instalment behind with no rollback. Suffixing keeps the deal
+		// recognisable while making each row its own.
+		externalID := input.ExternalID
+		if externalID != nil {
+			suffixed := fmt.Sprintf("%s-%dof%d", *externalID, i, total)
+			externalID = &suffixed
+		}
+
+		// Each instalment falls due one month after the previous one. A single
+		// date for the whole plan makes a receivables view wrong on sight.
+		var installmentDueOn *time.Time
+		if dueOn != nil {
+			shifted := dueOn.AddDate(0, i-1, 0)
+			installmentDueOn = &shifted
+		}
 		description := fmt.Sprintf("%s - Parcela %d/%d", input.Description, i, total)
 
 		// Handle credit card invoice assignment
@@ -589,11 +608,11 @@ func (uc *CreateTransactionUseCase) createInstallments(
 			CostCenterID:            input.CostCenterID,
 			IsPersonalReimbursement: input.IsPersonalReimbursement,
 			OccurredOn:              installmentDate,
-			DueOn:                   dueOn,
+			DueOn:                   installmentDueOn,
 			ReminderOn:              reminderOn,
 			InstallmentNumber:       &installmentNum,
 			InstallmentTotal:        &installmentTotal,
-			ExternalID:              input.ExternalID,
+			ExternalID:              externalID,
 			Tags:                    input.Tags,
 			Splits:                  splitsForInstallment(splits, amount, input.Amount),
 		}

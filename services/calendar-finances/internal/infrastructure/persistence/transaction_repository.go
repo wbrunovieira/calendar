@@ -209,6 +209,12 @@ func (r *TransactionRepository) List(filter transaction.ListFilter) ([]*transact
 			addCondition("invoice_id", "=", trimmed)
 		}
 	}
+	if filter.CostCenterID != nil {
+		trimmed := strings.TrimSpace(*filter.CostCenterID)
+		if trimmed != "" {
+			addCondition("cost_center_id", "=", trimmed)
+		}
+	}
 
 	if filter.Status != nil {
 		addCondition("status", "=", *filter.Status)
@@ -296,6 +302,11 @@ func (r *TransactionRepository) Count(filter transaction.ListFilter) (int, error
 	if filter.InvoiceID != nil {
 		if trimmed := strings.TrimSpace(*filter.InvoiceID); trimmed != "" {
 			conditions = append(conditions, addCondition("invoice_id", "=", trimmed))
+		}
+	}
+	if filter.CostCenterID != nil {
+		if trimmed := strings.TrimSpace(*filter.CostCenterID); trimmed != "" {
+			conditions = append(conditions, addCondition("cost_center_id", "=", trimmed))
 		}
 	}
 	if filter.Status != nil {
