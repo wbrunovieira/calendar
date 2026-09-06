@@ -19,6 +19,11 @@ export async function apiFetch<T = unknown>(
   const url = path.startsWith('http') ? path : `${API_BASE}${path}`;
   const res = await fetch(url, {
     ...options,
+    // Carry the Authelia session cookie. The API lives on a sibling subdomain
+    // and the session cookie is issued for wbdigitalsolutions.com, so without
+    // this the browser sends nothing and the gateway cannot recognise us —
+    // which is why the API domain had to be left open to the internet.
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...options?.headers,
