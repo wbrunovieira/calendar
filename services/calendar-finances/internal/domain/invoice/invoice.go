@@ -296,7 +296,12 @@ func (i *Invoice) RestatePayments(total float64) {
 	}
 	if total <= 0 {
 		i.PaidAmount = nil
-		i.PaidAt = nil
+		// PaidAt deliberately survives. It records that this bill was settled once,
+		// and Reopen() reads it: clearing it here re-opened the path
+		// PAID -> reverse the payment -> CLOSED -> Reopen() -> OPEN, which puts an old
+		// cycle back to accepting charges from a later one. The bill is payable again
+		// either way, because Pay() does not care about status — so nothing is lost by
+		// keeping the fact.
 	} else {
 		restated := math.Round(total*100) / 100
 		i.PaidAmount = &restated

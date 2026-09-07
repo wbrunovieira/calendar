@@ -279,3 +279,58 @@ func TestUpdateTransaction_MovingToCheckingClearsInvoice(t *testing.T) {
 		t.Errorf("expected InvoiceID to be nil after moving to checking, got %s", *updated.InvoiceID)
 	}
 }
+
+// Ending a transaction's life must say why and by whom, at every door.
+//
+// The requirement lived on the status route, and the full-replace PUT walked around
+// it: pausing a recurrence cancelled its planned entry through here with
+// reversal_reason and reversed_by left NULL, and the database CHECK never noticed
+// because it only covers REVERSED. A control enforced at one door and open at the
+// other is not a control.
+func TestUpdateTransaction_CannotCancelThroughTheFullReplaceRoute(t *testing.T) {
+	txn := &transaction.Transaction{
+		ID: "tx-1", ProfileID: "p1", BankAccountID: "acc-1",
+		Type: transaction.TypeExpense, Status: transaction.StatusPlanned,
+		Amount: 25, Currency: "BRL", Description: "Contabo - VPS",
+		OccurredOn: time.Date(2026, time.September, 9, 0, 0, 0, 0, time.UTC),
+	}
+	repo := &fakeTransactionRepo{created: []*transaction.Transaction{txn}}
+	accounts := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		"acc-1": {ID: "acc-1", ProfileID: "p1", Name: "Conta", Type: bankaccount.AccountTypeChecking, Currency: "BRL"},
+	}}
+
+	cancelled := "CANCELLED"
+	_, err := NewUpdateTransactionUseCase(accounts, nil, repo, nil, nil).Execute("tx-1", UpdateTransactionInput{
+		BankAccountID: "acc-1", Type: "EXPENSE", Status: &cancelled,
+		Amount: 25, Currency: "BRL", Description: "Contabo - VPS", OccurredOn: "2026-09-09",
+	})
+	if err == nil {
+		t.Fatal("cancelling through the editing route must be refused")
+	}
+	if repo.created[0].Status != transaction.StatusPlanned {
+		t.Errorf("the transaction must be untouched, got %s", repo.created[0].Status)
+	}
+}
+
+// Editing an entry that is already cancelled must still work: the guard is about
+// CHANGING the status, not about the status a row happens to have.
+func TestUpdateTransaction_EditingAnAlreadyCancelledEntryStillWorks(t *testing.T) {
+	txn := &transaction.Transaction{
+		ID: "tx-1", ProfileID: "p1", BankAccountID: "acc-1",
+		Type: transaction.TypeExpense, Status: transaction.StatusCancelled,
+		Amount: 25, Currency: "BRL", Description: "errado",
+		OccurredOn: time.Date(2026, time.September, 9, 0, 0, 0, 0, time.UTC),
+	}
+	repo := &fakeTransactionRepo{created: []*transaction.Transaction{txn}}
+	accounts := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		"acc-1": {ID: "acc-1", ProfileID: "p1", Name: "Conta", Type: bankaccount.AccountTypeChecking, Currency: "BRL"},
+	}}
+
+	cancelled := "CANCELLED"
+	if _, err := NewUpdateTransactionUseCase(accounts, nil, repo, nil, nil).Execute("tx-1", UpdateTransactionInput{
+		BankAccountID: "acc-1", Type: "EXPENSE", Status: &cancelled,
+		Amount: 25, Currency: "BRL", Description: "Contabo - VPS", OccurredOn: "2026-09-09",
+	}); err != nil {
+		t.Fatalf("correcting the description of a cancelled entry must work: %v", err)
+	}
+}

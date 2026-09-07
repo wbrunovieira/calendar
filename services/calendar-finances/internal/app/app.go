@@ -87,7 +87,8 @@ func New(db *sql.DB) (*App, error) {
 	// Without the trail wired, Apply writes a balance correction that nothing records
 	// and finance.balance_adjustments stays empty forever — the audit exists in the
 	// schema and not in the system.
-	recalculateBalanceUC.SetAdjustmentLog(persistence.NewBalanceAdjustmentLog(db))
+	adjustmentLog := persistence.NewBalanceAdjustmentLog(db)
+	recalculateBalanceUC.SetAdjustmentLog(adjustmentLog)
 	upcomingMaturitiesUC := usecases.NewListUpcomingMaturitiesUseCase(bankAccountRepo)
 	sellPositionUC := usecases.NewSellPositionUseCase(bankAccountRepo, transactionRepo)
 	bankAccountHandler := httpHandlers.NewBankAccountHandlers(
@@ -122,7 +123,7 @@ func New(db *sql.DB) (*App, error) {
 	createTransactionUC := usecases.NewCreateTransactionUseCase(profileRepo, bankAccountRepo, categoryRepo, transactionRepo, invoiceRepo, recalculateBalanceUC, costCenterRepo)
 	// Instalment series become all-or-nothing. Without this the loop writes row by
 	// row, and a failure partway leaves a half-written plan behind an error.
-	createTransactionUC.SetUnitOfWork(&boundUnitOfWork{uow: persistence.NewUnitOfWork(db), checkpoints: checkpointRepo})
+	createTransactionUC.SetUnitOfWork(&boundUnitOfWork{uow: persistence.NewUnitOfWork(db), checkpoints: checkpointRepo, adjustments: adjustmentLog})
 	listTransactionsUC := usecases.NewListTransactionsUseCase(transactionRepo)
 	getTransactionUC := usecases.NewGetTransactionUseCase(transactionRepo)
 	updateTransactionUC := usecases.NewUpdateTransactionUseCase(bankAccountRepo, categoryRepo, transactionRepo, invoiceRepo, recalculateBalanceUC)
@@ -150,7 +151,7 @@ func New(db *sql.DB) (*App, error) {
 	payInvoiceUC := usecases.NewPayInvoiceUseCaseV2(invoiceRepo, bankAccountRepo, transactionRepo, recalculateBalanceUC)
 	// The five writes a payment performs become all-or-nothing. This is the path that
 	// left thousands in invoices reading as paid with no matching credit on the card.
-	payInvoiceUC.SetUnitOfWork(&boundUnitOfWork{uow: persistence.NewUnitOfWork(db), checkpoints: checkpointRepo})
+	payInvoiceUC.SetUnitOfWork(&boundUnitOfWork{uow: persistence.NewUnitOfWork(db), checkpoints: checkpointRepo, adjustments: adjustmentLog})
 	recalculateInvoiceUC := usecases.NewRecalculateInvoiceAmountUseCase(invoiceRepo, transactionRepo)
 	// Deleting a charge changes the bill it belonged to.
 	deleteTransactionUC.SetInvoiceRecalculator(recalculateInvoiceUC)
@@ -449,6 +450,20 @@ type boundUnitOfWork struct {
 	// checkpoints stay on the pool. They are a maintenance cache for the balance
 	// recalculation, not part of the unit that must land together.
 	checkpoints balancecheckpoint.Repository
+	// adjustments is the trail. Without it the recalculator built for the transaction
+	// absorbs a drift and records nothing, while the one on the pool records it — the
+	// audit would then depend on which path happened to run.
+	adjustments usecases.BalanceAdjustmentLog
+}
+
+// recalculator builds one bound to the open transaction, carrying the same trail the
+// pool-bound one has.
+func (b *boundUnitOfWork) recalculator(r persistence.Repositories) usecases.BalanceRecalculator {
+	uc := usecases.NewRecalculateBalanceUseCase(r.Accounts, r.Transactions, b.checkpoints)
+	if b.adjustments != nil {
+		uc.SetAdjustmentLog(b.adjustments)
+	}
+	return uc
 }
 
 func (b *boundUnitOfWork) Do(fn func(usecases.TxRepos) error) error {
@@ -460,7 +475,7 @@ func (b *boundUnitOfWork) Do(fn func(usecases.TxRepos) error) error {
 			// The recalculation must read the rows this transaction just wrote. Built
 			// on the pool it would run on another connection, see none of them, and
 			// write back a balance that is stale the moment it commits.
-			Recalculator: usecases.NewRecalculateBalanceUseCase(r.Accounts, r.Transactions, b.checkpoints),
+			Recalculator: b.recalculator(r),
 		})
 	})
 }

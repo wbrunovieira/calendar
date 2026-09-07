@@ -10,9 +10,12 @@ type BalanceRecalculator interface {
 	Refresh(accountID string) (*RecalculateBalanceResult, error)
 }
 
-// recalculateAccounts calls the recalculator for each non-empty account ID.
-// Errors are silently absorbed: the mutation already succeeded, and the
-// manual /recalculate-balance route exists as a fallback.
+// recalculateAccounts calls the recalculator for each non-empty account ID and
+// RETURNS the first failure.
+//
+// Most callers still discard it with `_ =`, which is where a stale balance goes
+// unnoticed — but the absorbing happens at the call sites, not here. The comment used
+// to say otherwise and sent a reviewer looking in the wrong file.
 func recalculateAccounts(r BalanceRecalculator, ids ...string) error {
 	if r == nil {
 		return nil

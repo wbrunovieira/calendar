@@ -1,6 +1,7 @@
 package usecases
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -146,6 +147,20 @@ func (uc *UpdateTransactionUseCase) Execute(id string, input UpdateTransactionIn
 		status, err = parseTransactionStatus(*input.Status)
 		if err != nil {
 			return nil, ErrInvalidInput
+		}
+		// Ending a transaction's life has to say why and by whom, and this route
+		// carries neither. It is a full replace of the editable fields; the status
+		// route is where a lifecycle change belongs, because it demands the motive and
+		// the actor and persists them.
+		//
+		// Without this the requirement was enforceable at one door and open at the
+		// other: pausing a recurrence cancelled its planned entry through here, with
+		// reversal_reason and reversed_by left NULL, and the database CHECK never saw
+		// it because it only covers REVERSED.
+		if status != existing.Status && (status == transaction.StatusCancelled || status == transaction.StatusReversed) {
+			return nil, fmt.Errorf(
+				"%w: use PUT /transactions/{id}/status to cancel (it requires reasonCode and actor) or POST /transactions/{id}/reversal to reverse",
+				ErrInvalidInput)
 		}
 	}
 

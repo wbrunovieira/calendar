@@ -244,3 +244,92 @@ func TestRebuildPlan_TheStoredLabelIsReportedButNotMatchedOn(t *testing.T) {
 		t.Errorf("the stored label should be reported: %+v", plan.Actions)
 	}
 }
+
+// The shape that dominates the real database: a cycle that closes and falls due on
+// exactly the right days, opened one day late by an older convention.
+//
+// Reported as a reshape it drowned the genuine findings — on Bruno's three cards, 8 of
+// 10 actions were this and the other 2 were real. It is not cosmetic either: with
+// [opening, closing) half-open, opening a day late leaves one day covered by no
+// invoice at all. So it gets its own name and its own weight.
+func TestRebuildPlan_ACycleOpenedADayLateIsNamedForWhatItIs(t *testing.T) {
+	accounts, txns, invoices := rebuildFixture(t)
+	invoices.list = []*invoice.Invoice{
+		{ID: "off-by-one", BankAccountID: "card", Status: invoice.StatusPaid,
+			ReferenceDate: day(2026, time.March, 1),
+			OpeningDate:   day(2026, time.February, 28), // canonical is 27/02
+			ClosingDate:   day(2026, time.March, 27), DueDate: day(2026, time.April, 3)},
+	}
+	txns.created = []*transaction.Transaction{purchase("t1", day(2026, time.March, 15), 100)}
+
+	plan, err := NewRebuildInvoiceCyclesUseCase(accounts, txns, invoices).Plan("card")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	aligned := plan.OfKind(RebuildAlignOpening)
+	if len(aligned) != 1 {
+		t.Fatalf("expected one alignment, got %+v", plan.Actions)
+	}
+	if len(plan.OfKind(RebuildReshapeWindow)) != 0 {
+		t.Error("a boundary a day out is not a cycle in the wrong place")
+	}
+	if aligned[0].PurchasesAtRisk != 0 {
+		t.Errorf("no purchase sits on the disputed day, got %d", aligned[0].PurchasesAtRisk)
+	}
+	// A settled bill whose boundary moves over nobody reallocates nothing. Demanding a
+	// human for it is how the flag stopped meaning anything: every card came back unsafe.
+	if aligned[0].RequiresApproval {
+		t.Error("moving a boundary no purchase stands on is not a decision for a human")
+	}
+	if !plan.SafeToApplyUnattended {
+		t.Error("a plan that reallocates no money is safe")
+	}
+}
+
+// The same boundary, with a purchase standing on the disputed day, is a real
+// reallocation and does need a human.
+func TestRebuildPlan_ADayOutWithAPurchaseOnItNeedsApproval(t *testing.T) {
+	accounts, txns, invoices := rebuildFixture(t)
+	invoices.list = []*invoice.Invoice{
+		{ID: "off-by-one", BankAccountID: "card", Status: invoice.StatusPaid,
+			ReferenceDate: day(2026, time.March, 1),
+			OpeningDate:   day(2026, time.February, 28),
+			ClosingDate:   day(2026, time.March, 27), DueDate: day(2026, time.April, 3)},
+	}
+	txns.created = []*transaction.Transaction{purchase("t1", day(2026, time.February, 27), 100)}
+
+	plan, _ := NewRebuildInvoiceCyclesUseCase(accounts, txns, invoices).Plan("card")
+	aligned := plan.OfKind(RebuildAlignOpening)
+	if len(aligned) != 1 || aligned[0].PurchasesAtRisk != 1 {
+		t.Fatalf("the purchase on the disputed day must be counted: %+v", plan.Actions)
+	}
+	if !aligned[0].RequiresApproval {
+		t.Error("moving a purchase between settled bills is a decision for a human")
+	}
+}
+
+// Two invoices claiming one cycle used to vanish from the report, leaving a bare
+// boolean and no way to find the rows.
+func TestRebuildPlan_TwoInvoicesOnOneCycleAreNamed(t *testing.T) {
+	accounts, txns, invoices := rebuildFixture(t)
+	window := func(id string) *invoice.Invoice {
+		return &invoice.Invoice{ID: id, BankAccountID: "card", Status: invoice.StatusClosed,
+			ReferenceDate: day(2026, time.March, 1),
+			OpeningDate:   day(2026, time.February, 27), ClosingDate: day(2026, time.March, 27),
+			DueDate: day(2026, time.April, 3)}
+	}
+	invoices.list = []*invoice.Invoice{window("first"), window("second")}
+	txns.created = []*transaction.Transaction{purchase("t1", day(2026, time.March, 15), 100)}
+
+	plan, _ := NewRebuildInvoiceCyclesUseCase(accounts, txns, invoices).Plan("card")
+	clashes := plan.OfKind(RebuildOverlappingCycles)
+	if len(clashes) != 1 {
+		t.Fatalf("the clash must be reported, got %+v", plan.Actions)
+	}
+	if clashes[0].InvoiceID == "" || clashes[0].OtherInvoiceID == "" {
+		t.Error("both invoices must be named, or nobody can find them")
+	}
+	if plan.SafeToApplyUnattended {
+		t.Error("a clash is not safe to resolve unattended")
+	}
+}

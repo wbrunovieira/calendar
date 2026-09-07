@@ -19,6 +19,20 @@ const (
 	// RebuildReshapeWindow: an invoice exists for the cycle but covers the wrong dates.
 	// This is what a fused cycle looks like — one invoice standing where two belong.
 	RebuildReshapeWindow = "RESHAPE_WINDOW"
+	// RebuildAlignOpening: the cycle closes and falls due on the right days, and only
+	// its opening is off — in practice by one day, from an older convention that
+	// opened a cycle the day AFTER the previous one closed.
+	//
+	// It is separated from a reshape because it is a different size of problem, and
+	// because on real data it is most of the volume: reporting the two under one name
+	// buried the genuine findings under the boundary ones. It is not cosmetic, though
+	// — [opening, closing) is half-open, so opening a day late leaves a one-day gap
+	// that belongs to no invoice at all.
+	RebuildAlignOpening = "ALIGN_OPENING"
+	// RebuildOverlappingCycles: two invoices claim the same cycle. Naming it beats the
+	// bare flag it replaced, which dropped the second invoice out of the report
+	// entirely and left a reader seeing "nothing to repair".
+	RebuildOverlappingCycles = "OVERLAPPING_CYCLES"
 )
 
 // RebuildAction is one proposed repair. It carries both windows so the difference is
@@ -40,9 +54,13 @@ type RebuildAction struct {
 	CanonicalClosing time.Time `json:"canonicalClosing"`
 	CanonicalDue     time.Time `json:"canonicalDue"`
 
-	TransactionsAffected int    `json:"transactionsAffected"`
-	RequiresApproval     bool   `json:"requiresApproval"`
-	Reason               string `json:"reason"`
+	TransactionsAffected int `json:"transactionsAffected"`
+	// PurchasesAtRisk counts the live purchases that would change bills if this action
+	// were applied. Zero means the repair moves a boundary nobody is standing on.
+	PurchasesAtRisk  int    `json:"purchasesAtRisk"`
+	RequiresApproval bool   `json:"requiresApproval"`
+	Reason           string `json:"reason"`
+	OtherInvoiceID   string `json:"otherInvoiceId,omitempty"`
 }
 
 // RebuildPlan is the whole diagnosis for one card. It changes nothing.
@@ -155,15 +173,18 @@ func (uc *RebuildInvoiceCyclesUseCase) Plan(bankAccountID string) (*RebuildPlan,
 	// invoice read as damage and proposed shoving it a month forward, orphaning every
 	// purchase inside it.
 	matched := make([]*invoice.Invoice, len(cycles))
+	overlaps := [][2]*invoice.Invoice{}
 	for _, inv := range existing {
 		idx := bestCycleFor(cycles, inv)
 		if idx < 0 {
 			continue
 		}
 		if matched[idx] != nil {
-			// Two invoices claiming one cycle is an overlap, which the invariant
-			// report names. Repairing it is not this planner's call.
-			plan.SafeToApplyUnattended = false
+			// Two invoices claiming one cycle. Repairing it is not this planner's
+			// call, but hiding it certainly is not either: the flag alone left a
+			// reader seeing an empty plan with a bare boolean and no way to find the
+			// rows.
+			overlaps = append(overlaps, [2]*invoice.Invoice{matched[idx], inv})
 			continue
 		}
 		matched[idx] = inv
@@ -197,16 +218,44 @@ func (uc *RebuildInvoiceCyclesUseCase) Plan(bankAccountID string) (*RebuildPlan,
 			continue
 		}
 
-		action.Kind = RebuildReshapeWindow
 		action.InvoiceID = current.ID
 		action.InvoiceStatus = string(current.Status)
 		action.InvoiceLabel = monthKey(current.ReferenceDate)
 		action.CurrentOpening = &current.OpeningDate
 		action.CurrentClosing = &current.ClosingDate
 		action.CurrentDue = &current.DueDate
-		action.Reason = windowReason(current, cycle)
-		action.RequiresApproval = wasEverSettled(current)
+		action.PurchasesAtRisk = purchasesBetween(purchases, current.OpeningDate, cycle.OpeningDate)
+
+		if sameDay(current.ClosingDate, cycle.ClosingDate) && sameDay(current.DueDate, cycle.DueDate) {
+			action.Kind = RebuildAlignOpening
+			action.Reason = "the cycle closes and falls due correctly; only its opening is off, leaving a gap no invoice covers"
+		} else {
+			action.Kind = RebuildReshapeWindow
+			action.Reason = windowReason(current, cycle)
+			action.PurchasesAtRisk = action.TransactionsAffected
+		}
+
+		// Approval is about money moving between bills, not about the bill having been
+		// paid. Nudging a boundary nobody stands on changes no allocation, and
+		// demanding a human for it is how the flag stopped carrying information —
+		// every card in the database came back unsafe.
+		action.RequiresApproval = wasEverSettled(current) && action.PurchasesAtRisk > 0
 		plan.Actions = append(plan.Actions, action)
+	}
+
+	for _, pair := range overlaps {
+		plan.Actions = append(plan.Actions, RebuildAction{
+			Kind:             RebuildOverlappingCycles,
+			InvoiceID:        pair[0].ID,
+			OtherInvoiceID:   pair[1].ID,
+			InvoiceStatus:    string(pair[0].Status),
+			InvoiceLabel:     monthKey(pair[0].ReferenceDate),
+			CanonicalOpening: pair[0].OpeningDate,
+			CanonicalClosing: pair[0].ClosingDate,
+			CanonicalDue:     pair[0].DueDate,
+			RequiresApproval: true,
+			Reason:           "two invoices cover the same cycle; a charge in it lands on whichever is found first",
+		})
 	}
 
 	for _, a := range plan.Actions {
@@ -305,9 +354,10 @@ func cycleContaining(cycles []*invoice.Invoice, at time.Time) int {
 }
 
 // bestCycleFor decides which cycle a stored invoice is trying to be. An exact closing
-// date settles it; otherwise the cycle it overlaps most does. A fused invoice covering
-// two cycles therefore claims the later one, and the earlier one is reported missing —
-// which is what it is.
+// date settles it; otherwise the cycle it overlaps most does, and an exact tie goes to
+// the earlier one, since the comparison is strict and the cycles are in closing order.
+// A fused invoice covering two cycles therefore claims whichever it covers more of,
+// and the rest are reported missing — which is what they are.
 func bestCycleFor(cycles []*invoice.Invoice, inv *invoice.Invoice) int {
 	for i, c := range cycles {
 		if sameDay(c.ClosingDate, inv.ClosingDate) {
@@ -322,6 +372,22 @@ func bestCycleFor(cycles []*invoice.Invoice, inv *invoice.Invoice) int {
 		}
 	}
 	return best
+}
+
+// purchasesBetween counts the live charges sitting in the span two candidate openings
+// disagree about — the ones that would change bills if the window moved.
+func purchasesBetween(purchases []*transactionPkg.Transaction, a, b time.Time) int {
+	from, to := a, b
+	if to.Before(from) {
+		from, to = to, from
+	}
+	n := 0
+	for _, txn := range purchases {
+		if !txn.OccurredOn.Before(from) && txn.OccurredOn.Before(to) {
+			n++
+		}
+	}
+	return n
 }
 
 func overlapBetween(aFrom, aTo, bFrom, bTo time.Time) time.Duration {
@@ -365,13 +431,4 @@ func sameDay(a, b time.Time) bool {
 	ay, am, ad := a.UTC().Date()
 	by, bm, bd := b.UTC().Date()
 	return ay == by && am == bm && ad == bd
-}
-
-func sortedKeys(m map[string]time.Time) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
