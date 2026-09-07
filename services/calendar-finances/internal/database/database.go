@@ -474,6 +474,40 @@ func RunMigrations(db *sql.DB) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_statement_imports_account ON finance.statement_imports(account_id, period_to DESC)`,
 
+		// One row per idempotency key, so a retried write performs its effect once.
+		// Four clients write to this API and n8n retries are simultaneous by nature,
+		// so low volume is no protection.
+		`CREATE TABLE IF NOT EXISTS finance.idempotency_keys (
+			key TEXT PRIMARY KEY,
+			endpoint TEXT NOT NULL,
+			request_hash TEXT NOT NULL,
+			response_status INT,
+			-- TEXT, not JSONB: a replay must be told exactly what the first attempt
+			-- answered, and JSONB normalises whitespace and key order on the way back.
+			response_body TEXT,
+			created_at TIMESTAMP NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_idempotency_created ON finance.idempotency_keys(created_at)`,
+		// A database created before this change has response_body as JSONB, and
+		// CREATE TABLE IF NOT EXISTS does not alter a column. JSONB normalises
+		// whitespace and key order, so a replay would be told something subtly
+		// different from what the first attempt answered.
+		`ALTER TABLE finance.idempotency_keys ALTER COLUMN response_body TYPE TEXT`,
+
+		// A natural key for invoice payments is still MISSING, deliberately.
+		//
+		// Idempotency-Key protects a client against its own retry; it does not stop two
+		// DIFFERENT clients doing the same thing — the web form and the WhatsApp agent
+		// both paying the same bill. The reviewer's suggested key is
+		// (invoice_id, date, amount), but the payment leg does not carry invoice_id
+		// today, and the obvious substitute — (destination_account, date, amount) —
+		// would refuse two genuinely identical transfers on one day, which is a real
+		// thing to do.
+		//
+		// Current production data would not violate that broader index, and that is
+		// exactly why it would be tempting: it passes today and blocks a legitimate
+		// operation later. The prerequisite is putting invoice_id on the payment leg.
+
 		// Reconciliation matches, N:N and append-only.
 		//
 		// A single matched_transaction_id on the line is a 1:1 model that is already

@@ -26,6 +26,10 @@ type Repositories struct {
 	Invoices     *InvoiceRepository
 	Statements   *StatementRepository
 	Matches      *MatchRepository
+	// Idempotency belongs in the set because the key and the effect must commit
+	// together: a key recorded outside the transaction survives a rolled-back effect,
+	// and the legitimate retry is then refused as a replay.
+	Idempotency *IdempotencyStore
 }
 
 // UnitOfWork runs a function inside one database transaction.
@@ -79,6 +83,7 @@ func bind(q Querier) Repositories {
 		Invoices:     &InvoiceRepository{db: q},
 		Statements:   &StatementRepository{db: q},
 		Matches:      &MatchRepository{db: q},
+		Idempotency:  &IdempotencyStore{db: q},
 	}
 }
 
