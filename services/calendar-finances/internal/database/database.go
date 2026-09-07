@@ -450,6 +450,47 @@ func RunMigrations(db *sql.DB) error {
 			ALTER TABLE finance.bank_accounts ADD CONSTRAINT bank_accounts_type_check
 				CHECK (type IN ('CHECKING', 'SAVINGS', 'INVESTMENT', 'CREDIT_CARD', 'CASH', 'EXCHANGE', 'WALLET', 'OTHER'));
 		END $$`,
+		// Migration: bank statement lines, stored verbatim.
+		//
+		// Reconciliation must be persisted data, not chat work. Everything the
+		// reconciliation of 06-07/09/2026 established — what had been checked, against
+		// which criterion, what was left over — lived only in a transcript and went
+		// away with it.
+		//
+		// Amounts are integers in minor units. Money in float64 was already forcing
+		// half-a-centavo tolerances in this codebase, and a tolerance on value is how
+		// a real difference becomes "acceptable rounding" and vanishes.
+		`CREATE TABLE IF NOT EXISTS finance.bank_statement_lines (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			account_id UUID NOT NULL REFERENCES finance.bank_accounts(id),
+			provider VARCHAR(20) NOT NULL,
+			external_id TEXT NOT NULL,
+			booked_date DATE NOT NULL,
+			value_date DATE,
+			amount_minor BIGINT NOT NULL,
+			currency CHAR(3) NOT NULL,
+			amount_account_minor BIGINT,
+			fx_rate NUMERIC(18,8),
+			description TEXT NOT NULL DEFAULT '',
+			end_to_end_id TEXT,
+			raw JSONB NOT NULL,
+			status VARCHAR(12) NOT NULL DEFAULT 'UNMATCHED'
+				CHECK (status IN ('UNMATCHED','MATCHED','IGNORED')),
+			ignored_reason TEXT,
+			imported_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			-- Idempotent import: the same window may be pulled any number of times.
+			CONSTRAINT uq_statement_provider_external UNIQUE (provider, external_id),
+			-- An ignored line without a motive is indistinguishable from one nobody
+			-- looked at.
+			CONSTRAINT statement_ignored_has_reason
+				CHECK (status <> 'IGNORED' OR ignored_reason IS NOT NULL)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_statement_account_date ON finance.bank_statement_lines(account_id, booked_date)`,
+		`CREATE INDEX IF NOT EXISTS idx_statement_status ON finance.bank_statement_lines(status) WHERE status = 'UNMATCHED'`,
+		// The Pix end-to-end id appears on BOTH sides of an internal transfer, which
+		// makes it the only key that reconciles one without guessing.
+		`CREATE INDEX IF NOT EXISTS idx_statement_e2e ON finance.bank_statement_lines(end_to_end_id) WHERE end_to_end_id IS NOT NULL`,
 		// Migration: a ledger reverses instead of deleting. The row is kept so it can
 		// still answer what was undone, when and why; balances derive from CONFIRMED,
 		// so a reversed row stops counting without disappearing.
