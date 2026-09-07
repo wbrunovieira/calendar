@@ -42,6 +42,9 @@ const (
 	UnmatchWrongMatch          = "WRONG_MATCH"
 )
 
+// ErrAlreadyUndone means the match was undone before. The first reason stands.
+var ErrAlreadyUndone = errors.New("match is already undone")
+
 // Match links one statement line to one ledger entry, for a given amount.
 //
 // N:N on purpose: an invoice payment covers many purchases, a Pix can settle two
@@ -71,8 +74,11 @@ func NewMatch(lineID, transactionID string, amountMinor int64, method Method, by
 	if strings.TrimSpace(transactionID) == "" {
 		return nil, errors.New("a match needs the transaction")
 	}
-	if amountMinor == 0 {
-		return nil, errors.New("a match needs the amount it covers: without it partial coverage cannot be told from full")
+	// Magnitude only. After sign normalisation a negative match would SUBTRACT in
+	// CoveredMinor, so a line would never close — or would close with two wrong
+	// matches cancelling each other out.
+	if amountMinor <= 0 {
+		return nil, errors.New("a match covers a positive amount: the direction belongs to the line, not to the match")
 	}
 	if strings.TrimSpace(by) == "" {
 		return nil, errors.New("a match must record who made it")
@@ -92,6 +98,12 @@ func NewMatch(lineID, transactionID string, amountMinor int64, method Method, by
 // return to pending, whoever reconciles next has to know whether a person changed
 // their mind or the entry behind it was reversed.
 func (m *Match) Unmatch(reason string, at time.Time) error {
+	// Undoing twice would overwrite the first reason with the second, and the first
+	// is the one that explains what happened. Same double-undo bug closed on the
+	// ledger three rounds ago, reincarnated in a new aggregate.
+	if m.IsUndone() {
+		return ErrAlreadyUndone
+	}
 	if strings.TrimSpace(reason) == "" {
 		return errors.New("undoing a match requires a reason")
 	}

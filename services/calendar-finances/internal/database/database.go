@@ -474,6 +474,20 @@ func RunMigrations(db *sql.DB) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_statement_imports_account ON finance.statement_imports(account_id, period_to DESC)`,
 
+		// Every correction of a stored balance, so a recalculation leaves a mark
+		// instead of erasing one.
+		`CREATE TABLE IF NOT EXISTS finance.balance_adjustments (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			account_id UUID NOT NULL REFERENCES finance.bank_accounts(id),
+			balance_before NUMERIC(15,2) NOT NULL,
+			balance_after NUMERIC(15,2) NOT NULL,
+			delta NUMERIC(15,2) NOT NULL,
+			reason TEXT NOT NULL,
+			adjusted_by TEXT NOT NULL,
+			adjusted_at TIMESTAMP NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_balance_adjustments_account ON finance.balance_adjustments(account_id, adjusted_at DESC)`,
+
 		// One row per idempotency key, so a retried write performs its effect once.
 		// Four clients write to this API and n8n retries are simultaneous by nature,
 		// so low volume is no protection.

@@ -142,3 +142,71 @@ func TestE2E_UnitOfWorkRollsBackOnPanic(t *testing.T) {
 		t.Errorf("%d rows survived a panic, want 0", got)
 	}
 }
+
+// Paying an invoice is FIVE writes: the invoice, the transfer, both account balances,
+// and the credit on the card. With no transaction around them and errors discarded in
+// the middle, this is the exact shape of the failure that left R$ 8.863,07 in "paid"
+// invoices against R$ 769,51 of credit on the card — a phantom of thousands.
+//
+// The instalment loop was covered first, but the instalment loop never lost money in
+// production. This one did.
+func TestE2E_InvoicePaymentIsAllOrNothing(t *testing.T) {
+	db := testDB(t)
+	seedUnitOfWork(t, db)
+
+	const cardID = "e2e00000-0000-0000-0000-0000000000b3"
+	const invoiceID = "e2e00000-0000-0000-0000-0000000000b4"
+	t.Cleanup(func() {
+		db.Exec(`DELETE FROM finance.transactions WHERE bank_account_id = $1 OR destination_account_id = $1`, cardID)
+		db.Exec(`DELETE FROM finance.credit_card_invoices WHERE id = $1`, invoiceID)
+		db.Exec(`DELETE FROM finance.bank_accounts WHERE id = $1`, cardID)
+	})
+	exec(t, db, `INSERT INTO finance.bank_accounts
+		(id, profile_id, name, type, initial_balance, current_balance, currency, closing_day, due_day, linked_account_id)
+		VALUES ($1,$2,'Cartao UoW','CREDIT_CARD',0,-500,'BRL',27,3,$3) ON CONFLICT (id) DO NOTHING`,
+		cardID, uowProfileID, uowAccountID)
+	exec(t, db, `INSERT INTO finance.credit_card_invoices
+		(id, bank_account_id, reference_date, opening_date, closing_date, due_date, amount, status)
+		VALUES ($1,$2,'2026-09-01','2026-07-27','2026-08-27','2026-09-03',500,'CLOSED')
+		ON CONFLICT (id) DO NOTHING`, invoiceID, cardID)
+
+	countAll := func() (invoiceStatus string, txCount int) {
+		db.QueryRow(`SELECT status FROM finance.credit_card_invoices WHERE id = $1`, invoiceID).Scan(&invoiceStatus)
+		db.QueryRow(`SELECT COUNT(*) FROM finance.transactions
+			WHERE bank_account_id = $1 OR destination_account_id = $1`, cardID).Scan(&txCount)
+		return
+	}
+
+	statusBefore, txBefore := countAll()
+	if statusBefore != "CLOSED" || txBefore != 0 {
+		t.Fatalf("setup: status=%s tx=%d", statusBefore, txBefore)
+	}
+
+	// A failure after the invoice is marked must leave the invoice unmarked too.
+	uow := persistence.NewUnitOfWork(db)
+	boom := errors.New("falha depois de marcar a fatura")
+	err := uow.Do(func(r persistence.Repositories) error {
+		inv, ferr := r.Invoices.FindByID(invoiceID)
+		if ferr != nil {
+			return ferr
+		}
+		if perr := inv.Pay(500, time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC)); perr != nil {
+			return perr
+		}
+		if uerr := r.Invoices.Update(inv); uerr != nil {
+			return uerr
+		}
+		return boom
+	})
+	if !errors.Is(err, boom) {
+		t.Fatalf("err = %v, want the failure surfaced", err)
+	}
+
+	statusAfter, txAfter := countAll()
+	if statusAfter != "CLOSED" {
+		t.Errorf("invoice status = %s, want CLOSED — a bill marked paid with no payment behind it is the phantom this prevents", statusAfter)
+	}
+	if txAfter != 0 {
+		t.Errorf("%d transactions survived a failed payment, want 0", txAfter)
+	}
+}

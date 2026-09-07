@@ -420,7 +420,7 @@ func (r *atomicDeleteSpy) ReverseMany(txns []*transaction.Transaction) error {
 
 type failingRecalculator struct{}
 
-func (failingRecalculator) Execute(string) (*RecalculateBalanceResult, error) {
+func (failingRecalculator) Refresh(string) (*RecalculateBalanceResult, error) {
 	return nil, errors.New("recalculation unavailable")
 }
 

@@ -760,6 +760,10 @@ type PayInvoiceUseCaseV2 struct {
 	accountRepo     bankaccount.Repository
 	transactionRepo transactionPkg.Repository
 	recalculator    BalanceRecalculator // optional; recomputes card balance from transactions
+	// atomically wraps the five writes a payment performs. Without it they land one
+	// by one, which is how R$ 8.863,07 of invoices read as paid against R$ 769,51 of
+	// credit on the card.
+	atomically UnitOfWork
 }
 
 func NewPayInvoiceUseCaseV2(
@@ -779,7 +783,26 @@ func NewPayInvoiceUseCaseV2(
 	return uc
 }
 
+// SetUnitOfWork makes a payment all-or-nothing.
+func (uc *PayInvoiceUseCaseV2) SetUnitOfWork(u UnitOfWork) { uc.atomically = u }
+
 func (uc *PayInvoiceUseCaseV2) Execute(input PayInvoiceInput) (*invoice.Invoice, error) {
+	if uc.atomically == nil {
+		return uc.pay(input)
+	}
+	var out *invoice.Invoice
+	err := uc.atomically.Do(func() error {
+		inv, perr := uc.pay(input)
+		out = inv
+		return perr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (uc *PayInvoiceUseCaseV2) pay(input PayInvoiceInput) (*invoice.Invoice, error) {
 	inv, err := uc.invoiceRepo.FindByID(input.InvoiceID)
 	if err != nil {
 		return nil, ErrInvoiceNotFound
@@ -867,16 +890,28 @@ func (uc *PayInvoiceUseCaseV2) Execute(input PayInvoiceInput) (*invoice.Invoice,
 				Description:          "Pagamento fatura " + creditCard.Name,
 				OccurredOn:           paidAt,
 			})
-			if terr == nil {
+			if terr != nil {
+				return nil, terr
+			}
+			{
 				transferTx.Status = transactionPkg.StatusConfirmed
-				if createErr := uc.transactionRepo.Create(transferTx); createErr == nil {
+				if createErr := uc.transactionRepo.Create(transferTx); createErr != nil {
+					return nil, createErr
+				}
+				{
 					// Debit the funding account, credit (pay down) the card.
+					// Surfaced, not discarded: a balance that failed to move behind a
+					// successful payment is invisible until a reconciliation months later.
 					linkedAccount.CurrentBalance -= input.PaidAmount
 					linkedAccount.UpdatedAt = time.Now()
-					_ = uc.accountRepo.Update(linkedAccount)
+					if uerr := uc.accountRepo.Update(linkedAccount); uerr != nil {
+						return nil, uerr
+					}
 					creditCard.CurrentBalance += input.PaidAmount
 					creditCard.UpdatedAt = time.Now()
-					_ = uc.accountRepo.Update(creditCard)
+					if uerr := uc.accountRepo.Update(creditCard); uerr != nil {
+						return nil, uerr
+					}
 					// When wired, recompute both balances from transactions (authoritative).
 					_ = recalculateAccounts(uc.recalculator, linkedAccount.ID, creditCard.ID)
 				}

@@ -11,6 +11,7 @@ import (
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/binance"
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/brapi"
 	httpHandlers "github.com/brunovieira/calendar-finances/internal/infrastructure/http/handlers"
+	"github.com/brunovieira/calendar-finances/internal/infrastructure/http/middleware"
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/persistence"
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/yahoo"
 	"github.com/gorilla/mux"
@@ -142,6 +143,9 @@ func New(db *sql.DB) (*App, error) {
 	// PayInvoiceUseCaseV2: Creates payment transaction on linked checking account when invoice is paid,
 	// credits the card side, and recomputes the card balance from its transactions
 	payInvoiceUC := usecases.NewPayInvoiceUseCaseV2(invoiceRepo, bankAccountRepo, transactionRepo, recalculateBalanceUC)
+	// The five writes a payment performs become all-or-nothing. This is the path that
+	// left thousands in invoices reading as paid with no matching credit on the card.
+	payInvoiceUC.SetUnitOfWork(&simpleUnitOfWork{uow: persistence.NewUnitOfWork(db)})
 	recalculateInvoiceUC := usecases.NewRecalculateInvoiceAmountUseCase(invoiceRepo, transactionRepo)
 	// Deleting a charge changes the bill it belonged to.
 	deleteTransactionUC.SetInvoiceRecalculator(recalculateInvoiceUC)
@@ -272,6 +276,10 @@ func New(db *sql.DB) (*App, error) {
 
 	// API v1 routes
 	apiRouter := router.PathPrefix("/api/v1").Subrouter()
+	// A repeated write performs its effect once. The key is optional, so existing
+	// clients keep working and adoption can be gradual — a guard nobody can adopt
+	// incrementally gets removed rather than adopted.
+	apiRouter.Use(middleware.Idempotency(persistence.NewIdempotencyStore(db)))
 
 	// Invariant report: every stored balance and invoice total against the
 	// transactions that justify them. Read-only by design.

@@ -39,7 +39,7 @@ func TestRecalculateBalance_LeavesAMarketPricedPositionAlone(t *testing.T) {
 			}}
 
 			uc := NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
-			result, err := uc.Execute(fiiID)
+			result, err := uc.Refresh(fiiID)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -77,7 +77,7 @@ func TestRecalculateBalance_StillRecalculatesAnInvestmentAccountWithoutQuotas(t 
 	}}
 
 	uc := NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
-	result, err := uc.Execute(caixinhaID)
+	result, err := uc.Refresh(caixinhaID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestRecalculateBalance_RecalculatesAPositionThatWasSoldOut(t *testing.T) {
 	}}
 
 	uc := NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
-	result, err := uc.Execute(soldID)
+	result, err := uc.Refresh(soldID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestRecalculateBalance_ExplainsWhyItSkipped(t *testing.T) {
 	}}
 
 	uc := NewRecalculateBalanceUseCase(accountRepo, &fakeTransactionRepo{}, nil)
-	result, err := uc.Execute(fiiID)
+	result, err := uc.Refresh(fiiID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

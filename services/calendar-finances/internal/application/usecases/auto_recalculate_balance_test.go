@@ -18,7 +18,7 @@ type trackingRecalculator struct {
 	calls []string
 }
 
-func (r *trackingRecalculator) Execute(accountID string) (*RecalculateBalanceResult, error) {
+func (r *trackingRecalculator) Refresh(accountID string) (*RecalculateBalanceResult, error) {
 	r.calls = append(r.calls, accountID)
 	return &RecalculateBalanceResult{}, nil
 }

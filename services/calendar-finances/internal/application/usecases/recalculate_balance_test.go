@@ -101,7 +101,7 @@ func TestRecalculateBalance_OutgoingTransfer_DebitsSource(t *testing.T) {
 	}
 
 	uc := NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
-	result, err := uc.Execute(caixinhaID)
+	result, err := uc.Refresh(caixinhaID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestRecalculateBalance_IncomingTransfer_CreditsDestination(t *testing.T) {
 	}
 
 	uc := NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
-	result, err := uc.Execute(contaID)
+	result, err := uc.Refresh(contaID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestRecalculateBalance_PlannedTransfer_DoesNotAffectBalance(t *testing.T) {
 	}
 
 	uc := NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
-	result, err := uc.Execute(caixinhaID)
+	result, err := uc.Refresh(caixinhaID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestRecalculateBalance_MixedTransactions_CaixinhaScenario(t *testing.T) {
 	}
 
 	uc := NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
-	result, err := uc.Execute(caixinhaID)
+	result, err := uc.Refresh(caixinhaID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -225,12 +225,12 @@ func TestRecalculateBalance_ReportsOldAndNewBalance(t *testing.T) {
 	}
 
 	uc := NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
-	_, err := uc.Execute("wrong-id")
+	_, err := uc.Refresh("wrong-id")
 	if err == nil {
 		t.Fatal("expected error for unknown account, got nil")
 	}
 	// now test the real account
-	result2, err := uc.Execute(accountID)
+	result2, err := uc.Refresh(accountID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -280,7 +280,7 @@ func TestRecalculateBalance_StaleCheckpoint_MustBeIgnoredAndUseDirectCalculation
 	checkpointRepo := &fakeCheckpointRepo{latest: staleCheckpoint}
 
 	uc := NewRecalculateBalanceUseCase(accountRepo, txRepo, checkpointRepo)
-	result, err := uc.Execute(accountID)
+	result, err := uc.Refresh(accountID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -300,7 +300,7 @@ func TestRecalculateBalance_AccountNotFound_ReturnsError(t *testing.T) {
 	txRepo := &fakeTransactionRepo{}
 
 	uc := NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
-	_, err := uc.Execute("non-existent")
+	_, err := uc.Refresh("non-existent")
 	if err == nil {
 		t.Fatal("expected error for non-existent account, got nil")
 	}

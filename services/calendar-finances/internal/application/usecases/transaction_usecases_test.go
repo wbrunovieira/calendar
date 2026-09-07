@@ -4132,10 +4132,19 @@ func TestRecalculateBalance_SumsConfirmedTransactions(t *testing.T) {
 		t.Fatalf("expected old balance 999, got %.2f", result.OldBalance)
 	}
 
-	// Account should be updated
+	// Execute REPORTS; it does not write. Correcting silently is what let a drift be
+	// erased along with the evidence of the bug behind it.
 	acc := accountRepo.accounts[accountID]
-	if acc.CurrentBalance != 900 {
-		t.Fatalf("expected account balance 900, got %.2f", acc.CurrentBalance)
+	if acc.CurrentBalance != 999 {
+		t.Fatalf("Execute wrote the balance (%.2f): reporting must not correct", acc.CurrentBalance)
+	}
+
+	// Refresh is the maintenance path and does write.
+	if _, err := useCase.Refresh(accountID); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if acc = accountRepo.accounts[accountID]; acc.CurrentBalance != 900 {
+		t.Fatalf("expected account balance 900 after Refresh, got %.2f", acc.CurrentBalance)
 	}
 }
 
