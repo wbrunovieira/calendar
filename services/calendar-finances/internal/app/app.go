@@ -284,8 +284,10 @@ func New(db *sql.DB) (*App, error) {
 	// Invariant report: every stored balance and invoice total against the
 	// transactions that justify them. Read-only by design.
 	checkInvariantsUC := usecases.NewCheckInvariantsUseCase(bankAccountRepo, transactionRepo, invoiceRepo)
-	invariantsHandler := httpHandlers.NewInvariantsHandlers(checkInvariantsUC)
+	rebuildCyclesUC := usecases.NewRebuildInvoiceCyclesUseCase(bankAccountRepo, transactionRepo, invoiceRepo)
+	invariantsHandler := httpHandlers.NewInvariantsHandlers(checkInvariantsUC, rebuildCyclesUC)
 	apiRouter.HandleFunc("/health/invariants", invariantsHandler.Check).Methods("GET")
+	apiRouter.HandleFunc("/bank-accounts/{id}/invoice-cycles/plan", invariantsHandler.InvoiceCyclePlan).Methods("GET")
 
 	// Profile routes
 	apiRouter.HandleFunc("/profiles", profileHandler.List).Methods("GET")

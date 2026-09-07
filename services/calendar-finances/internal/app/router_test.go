@@ -66,7 +66,8 @@ func registeredRoutes(t *testing.T, router *mux.Router) map[string]bool {
 //
 // The list was checked against origin/main's cmd/api/main.go, not merely
 // generated from the code it tests: main.go registered 89 routes with methods,
-// and this is those 89 plus /api/v1/health/invariants. Adding a route here
+// and this is those 89 plus the two read-only diagnostics added since,
+// /api/v1/health/invariants and the invoice-cycle plan. Adding a route here
 // should be a deliberate line, never a paste of the failure message.
 var wantRoutes = []string{
 	"DELETE /api/v1/bank-accounts/{id}",
@@ -101,6 +102,7 @@ var wantRoutes = []string{
 	"GET /api/v1/fiis/market",
 	"GET /api/v1/goals",
 	"GET /api/v1/health/invariants",
+	"GET /api/v1/bank-accounts/{id}/invoice-cycles/plan",
 	"GET /api/v1/invoices",
 	"GET /api/v1/invoices/current",
 	"GET /api/v1/invoices/{id}",

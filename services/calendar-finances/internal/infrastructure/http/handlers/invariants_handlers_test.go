@@ -48,7 +48,8 @@ func newInvariantsHandlerFor(stored, ledger float64) *InvariantsHandlers {
 		&invariantsTxRepo{balance: ledger},
 		&invariantsInvoiceRepo{},
 	)
-	return NewInvariantsHandlers(uc)
+	rebuild := usecases.NewRebuildInvoiceCyclesUseCase(accounts, &invariantsTxRepo{balance: ledger}, &invariantsInvoiceRepo{})
+	return NewInvariantsHandlers(uc, rebuild)
 }
 
 func TestInvariantsCheck_AnswersOKWhenEveryBalanceMatchesItsLedger(t *testing.T) {
