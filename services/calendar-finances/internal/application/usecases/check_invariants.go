@@ -1,6 +1,8 @@
 package usecases
 
 import (
+	"sort"
+
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
 	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
@@ -57,6 +59,37 @@ type InvoiceInvariant struct {
 	Note           string  `json:"note,omitempty"`
 }
 
+// CycleInvariant is a pair of invoices on one card whose periods overlap, or a gap
+// between two consecutive ones. Both are money with nowhere correct to go.
+//
+// This is the shape of the failure the Nubank Juridica card had: a label collision
+// made the code stretch a cycle instead of relabelling it, producing one invoice
+// covering 2026-07-28 to 2026-09-27, and a real payment with no invoice to land on.
+type CycleInvariant struct {
+	BankAccountID string `json:"bankAccountId"`
+	Kind          string `json:"kind"` // OVERLAP | GAP
+	InvoiceA      string `json:"invoiceA"`
+	InvoiceB      string `json:"invoiceB"`
+	PeriodA       string `json:"periodA"`
+	PeriodB       string `json:"periodB"`
+	Detail        string `json:"detail"`
+}
+
+// InstallmentInvariant is a series whose parts do not add up: numbers missing from
+// 1..total, or duplicated.
+//
+// The instalment loop writes rows one at a time with no database transaction around
+// it, so a failure at part 7 of 12 leaves six committed and the caller told the whole
+// thing failed — nobody goes looking.
+type InstallmentInvariant struct {
+	BankAccountID string `json:"bankAccountId"`
+	Description   string `json:"description"`
+	Total         int    `json:"total"`
+	Found         int    `json:"found"`
+	Missing       []int  `json:"missing,omitempty"`
+	Duplicated    []int  `json:"duplicated,omitempty"`
+}
+
 // CheckInvariantsResult is a read-only report. Nothing here writes: a drift is a
 // transaction to hunt down, never a number to overwrite.
 //
@@ -68,7 +101,12 @@ type CheckInvariantsResult struct {
 	CheckedInvoices int                `json:"checkedInvoices"`
 	AccountDrifts   []AccountInvariant `json:"accountDrifts"`
 	InvoiceDrifts   []InvoiceInvariant `json:"invoiceDrifts"`
-	OK              bool               `json:"ok"`
+	// CycleDrifts and InstallmentDrifts are always actionable: unlike a stored
+	// balance that tracks market quotes, there is no design reason for a card to
+	// have overlapping cycles or a half-written instalment plan.
+	CycleDrifts       []CycleInvariant       `json:"cycleDrifts"`
+	InstallmentDrifts []InstallmentInvariant `json:"installmentDrifts"`
+	OK                bool                   `json:"ok"`
 }
 
 type CheckInvariantsUseCase struct {
@@ -99,9 +137,11 @@ func (uc *CheckInvariantsUseCase) Execute() (*CheckInvariantsResult, error) {
 	}
 
 	result := &CheckInvariantsResult{
-		AccountDrifts: []AccountInvariant{},
-		InvoiceDrifts: []InvoiceInvariant{},
-		OK:            true,
+		AccountDrifts:     []AccountInvariant{},
+		InvoiceDrifts:     []InvoiceInvariant{},
+		CycleDrifts:       []CycleInvariant{},
+		InstallmentDrifts: []InstallmentInvariant{},
+		OK:                true,
 	}
 
 	for _, account := range accounts {
@@ -117,9 +157,136 @@ func (uc *CheckInvariantsUseCase) Execute() (*CheckInvariantsResult, error) {
 		if err := uc.checkInvoiceTotals(account, result); err != nil {
 			return nil, err
 		}
+		if err := uc.checkCycleCoverage(account, result); err != nil {
+			return nil, err
+		}
+		if err := uc.checkInstallmentSeries(account, result); err != nil {
+			return nil, err
+		}
 	}
 
 	return result, nil
+}
+
+// checkCycleCoverage verifies that a card's invoices tile its timeline: no two cover
+// the same day, and no day between two consecutive ones is covered by neither.
+//
+// Periods are half-open, [opening, closing), so one cycle opening exactly on the
+// previous closing date is correct and not a gap.
+func (uc *CheckInvariantsUseCase) checkCycleCoverage(
+	account *bankaccount.BankAccount,
+	result *CheckInvariantsResult,
+) error {
+	invoices, err := uc.invoiceRepo.FindByBankAccountID(account.ID)
+	if err != nil {
+		return err
+	}
+	if len(invoices) < 2 {
+		return nil
+	}
+
+	ordered := make([]*invoice.Invoice, len(invoices))
+	copy(ordered, invoices)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].OpeningDate.Before(ordered[j].OpeningDate) })
+
+	period := func(inv *invoice.Invoice) string {
+		return inv.OpeningDate.Format("2006-01-02") + " a " + inv.ClosingDate.Format("2006-01-02")
+	}
+
+	for i := 1; i < len(ordered); i++ {
+		prev, cur := ordered[i-1], ordered[i]
+		switch {
+		case cur.OpeningDate.Before(prev.ClosingDate):
+			result.CycleDrifts = append(result.CycleDrifts, CycleInvariant{
+				BankAccountID: account.ID, Kind: "OVERLAP",
+				InvoiceA: prev.ID, InvoiceB: cur.ID,
+				PeriodA: period(prev), PeriodB: period(cur),
+				Detail: "two invoices cover the same days; a purchase in the overlap lands on whichever the query happens to return",
+			})
+			result.OK = false
+		case cur.OpeningDate.After(prev.ClosingDate):
+			result.CycleDrifts = append(result.CycleDrifts, CycleInvariant{
+				BankAccountID: account.ID, Kind: "GAP",
+				InvoiceA: prev.ID, InvoiceB: cur.ID,
+				PeriodA: period(prev), PeriodB: period(cur),
+				Detail: "days covered by no invoice; a purchase there belongs to nothing",
+			})
+			result.OK = false
+		}
+	}
+	return nil
+}
+
+// checkInstallmentSeries verifies that every instalment plan on the card has all its
+// parts, numbered 1..total exactly once.
+//
+// A part that exists as REVERSED or CANCELLED still EXISTS: it was undone on purpose,
+// which is a different thing from never having been written. The bug being hunted here
+// is the half-written plan — the loop writes rows one at a time with no database
+// transaction around it, so a failure at part 7 of 12 leaves six committed and the
+// caller told the whole thing failed. Counting an undone part as missing would raise
+// a false alarm and train the reader to ignore the signal.
+//
+// Undone parts are excluded from the DUPLICATE check for the mirror reason: reversing
+// a wrong part and writing the right one is a correction, not a duplicate.
+func (uc *CheckInvariantsUseCase) checkInstallmentSeries(
+	account *bankaccount.BankAccount,
+	result *CheckInvariantsResult,
+) error {
+	accountID := account.ID
+	txns, err := uc.txRepo.List(transaction.ListFilter{
+		ProfileID:     account.ProfileID,
+		BankAccountID: &accountID,
+	})
+	if err != nil {
+		return err
+	}
+
+	type key struct {
+		description string
+		total       int
+	}
+	series := map[key]map[int]int{}
+	for _, txn := range txns {
+		if txn.InstallmentNumber == nil || txn.InstallmentTotal == nil || *txn.InstallmentTotal < 2 {
+			continue
+		}
+		k := key{txn.Description, *txn.InstallmentTotal}
+		if series[k] == nil {
+			series[k] = map[int]int{}
+		}
+		if txn.Status == transaction.StatusReversed || txn.Status == transaction.StatusCancelled {
+			// Present, but does not count towards duplication.
+			if series[k][*txn.InstallmentNumber] == 0 {
+				series[k][*txn.InstallmentNumber] = 1
+			}
+			continue
+		}
+		series[k][*txn.InstallmentNumber]++
+	}
+
+	for k, parts := range series {
+		var missing, duplicated []int
+		for n := 1; n <= k.total; n++ {
+			switch parts[n] {
+			case 0:
+				missing = append(missing, n)
+			case 1:
+			default:
+				duplicated = append(duplicated, n)
+			}
+		}
+		if len(missing) == 0 && len(duplicated) == 0 {
+			continue
+		}
+		result.InstallmentDrifts = append(result.InstallmentDrifts, InstallmentInvariant{
+			BankAccountID: account.ID, Description: k.description,
+			Total: k.total, Found: len(parts),
+			Missing: missing, Duplicated: duplicated,
+		})
+		result.OK = false
+	}
+	return nil
 }
 
 func (uc *CheckInvariantsUseCase) checkAccountBalance(

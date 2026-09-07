@@ -97,6 +97,22 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 		tx.OccurredOn = occurredAt
 	}
 
+	// Both legs are validated BEFORE anything is written. The linked leg used to be
+	// persisted and have its balance moved first, and only then checked — so
+	// confirming over a reversed counterpart did the damage and reported failure,
+	// which is the "verify the effect, never the signal" rule broken by the code
+	// meant to enforce it.
+	var linkedTx *transaction.Transaction
+	if tx.LinkedTransactionID != nil {
+		found, lerr := uc.repo.GetByID(*tx.LinkedTransactionID)
+		if lerr == nil {
+			if err := found.CanTransitionTo(targetStatus); err != nil {
+				return nil, err
+			}
+			linkedTx = found
+		}
+	}
+
 	if err := uc.repo.UpdateStatus(tx.ID, targetStatus, occurredAt, tx.Notes); err != nil {
 		return nil, err
 	}
@@ -110,27 +126,23 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 		_ = recalculateAccounts(uc.balanceRecalculator, tx.BankAccountID)
 	}
 
-	// Handle linked transaction (cross-profile paired transactions)
-	if tx.LinkedTransactionID != nil {
-		linkedTx, err := uc.repo.GetByID(*tx.LinkedTransactionID)
-		if err == nil {
-			linkedOldStatus := linkedTx.Status
-			// Update linked transaction status
-			_ = uc.repo.UpdateStatus(linkedTx.ID, targetStatus, occurredAt, linkedTx.Notes)
-			// Update linked transaction balance
-			_ = uc.updateBalanceOnStatusChange(linkedTx, linkedOldStatus, targetStatus)
-			if linkedAcc, err := uc.accountRepo.FindByID(linkedTx.BankAccountID); err == nil && linkedAcc.Type != bankaccount.AccountTypeCreditCard {
-				_ = recalculateAccounts(uc.balanceRecalculator, linkedTx.BankAccountID)
-			}
-			if err := linkedTx.SetStatus(targetStatus); err != nil {
-				return nil, err
-			}
+	// The linked leg, already validated above.
+	if linkedTx != nil {
+		linkedOldStatus := linkedTx.Status
+		// The error is surfaced, not discarded: a leg that failed to persist leaves
+		// the other profile holding a movement with no counterpart, and swallowing it
+		// means nobody goes looking.
+		if err := uc.repo.UpdateStatus(linkedTx.ID, targetStatus, occurredAt, linkedTx.Notes); err != nil {
+			return nil, err
+		}
+		_ = uc.updateBalanceOnStatusChange(linkedTx, linkedOldStatus, targetStatus)
+		if linkedAcc, err := uc.accountRepo.FindByID(linkedTx.BankAccountID); err == nil && linkedAcc.Type != bankaccount.AccountTypeCreditCard {
+			_ = recalculateAccounts(uc.balanceRecalculator, linkedTx.BankAccountID)
 		}
 	}
 
-	if err := tx.SetStatus(targetStatus); err != nil {
-		return nil, err
-	}
+	// Reflect what was persisted. Validation happened before the write, above.
+	tx.Status = targetStatus
 	return tx, nil
 }
 

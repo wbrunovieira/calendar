@@ -601,7 +601,9 @@ func (r *TransactionRepository) UpdateStatus(id string, status transaction.Statu
             occurred_on = $3,
             notes = $4,
             updated_at = NOW()
-        WHERE id = $1
+        -- REVERSED is terminal in the database too, not only in Go: two concurrent
+		-- clients, one reversing and one confirming, both pass the domain check.
+		WHERE id = $1 AND status <> 'REVERSED'
     `
 
 	result, err := r.db.Exec(query, id, status, occurredOn, nullableString(notes))

@@ -45,8 +45,8 @@ func (r *StatementRepository) UpsertMany(lines []*statement.Line) (int, int, err
 		INSERT INTO finance.bank_statement_lines
 			(id, account_id, provider, external_id, booked_date, value_date,
 			 amount_minor, currency, amount_account_minor, fx_rate,
-			 description, end_to_end_id, raw, status, imported_at, last_seen_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW(),NOW(),NOW())
+			 description, end_to_end_id, provider_status, bill_id, raw, status, imported_at, last_seen_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW(),NOW(),NOW())
 		ON CONFLICT (account_id, provider, external_id) DO UPDATE SET
 			booked_date = EXCLUDED.booked_date,
 			value_date = EXCLUDED.value_date,
@@ -56,6 +56,8 @@ func (r *StatementRepository) UpsertMany(lines []*statement.Line) (int, int, err
 			fx_rate = EXCLUDED.fx_rate,
 			description = EXCLUDED.description,
 			end_to_end_id = EXCLUDED.end_to_end_id,
+			provider_status = EXCLUDED.provider_status,
+			bill_id = EXCLUDED.bill_id,
 			raw = EXCLUDED.raw,
 			status = CASE
 				WHEN finance.bank_statement_lines.status = 'MATCHED'
@@ -96,14 +98,33 @@ func (r *StatementRepository) UpsertMany(lines []*statement.Line) (int, int, err
 		err := stmt.QueryRow(
 			l.ID, l.AccountID, string(l.Provider), l.ExternalID, l.BookedDate, l.ValueDate,
 			l.AmountMinor, l.Currency, l.AmountAccountMinor, l.FXRate,
-			l.Description, l.EndToEndID, []byte(l.Raw), string(l.Status),
+			l.Description, l.EndToEndID, string(l.ProviderStatus), l.BillID, []byte(l.Raw), string(l.Status),
 		).Scan(&storedID, &isNew)
 		if err != nil {
 			return 0, 0, err
 		}
-		if _, err := revision.Exec(storedID, l.BookedDate, l.AmountMinor, l.Currency,
-			l.AmountAccountMinor, l.Description, []byte(l.Raw)); err != nil {
+		// Only when something actually changed. A daily sync over the same window
+		// would otherwise write an identical revision every day — hundreds per line
+		// in a year, destroying the one thing the table answers: what the bank
+		// changed, and when.
+		var same bool
+		if err := tx.QueryRow(`
+			SELECT EXISTS (
+				SELECT 1 FROM finance.bank_statement_line_revisions
+				WHERE line_id = $1
+				  AND booked_date = $2 AND amount_minor = $3 AND currency = $4
+				  AND amount_account_minor IS NOT DISTINCT FROM $5
+				  AND description = $6 AND raw = $7::jsonb
+				ORDER BY seen_at DESC LIMIT 1
+			)`, storedID, l.BookedDate, l.AmountMinor, l.Currency,
+			l.AmountAccountMinor, l.Description, []byte(l.Raw)).Scan(&same); err != nil {
 			return 0, 0, err
+		}
+		if !same {
+			if _, err := revision.Exec(storedID, l.BookedDate, l.AmountMinor, l.Currency,
+				l.AmountAccountMinor, l.Description, []byte(l.Raw)); err != nil {
+				return 0, 0, err
+			}
 		}
 		if isNew {
 			inserted++
@@ -143,8 +164,12 @@ func (r *StatementRepository) Revisions(lineID string) ([]statement.Revision, er
 	return out, rows.Err()
 }
 
-func (r *StatementRepository) FindByExternalID(provider statement.Provider, externalID string) (*statement.Line, error) {
-	rows, err := r.query(`WHERE provider = $1 AND external_id = $2`, string(provider), externalID)
+// FindByExternalID takes the account because the uniqueness key does: an OFX FITID is
+// unique only WITHIN an account. Looking up without it returns an arbitrary row in
+// exactly the scenario that justified widening the key — the same shape as a LIMIT 1
+// with no ORDER BY.
+func (r *StatementRepository) FindByExternalID(accountID string, provider statement.Provider, externalID string) (*statement.Line, error) {
+	rows, err := r.query(`WHERE account_id = $1 AND provider = $2 AND external_id = $3`, accountID, string(provider), externalID)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +236,7 @@ func (r *StatementRepository) query(clause string, args ...any) ([]*statement.Li
 	rows, err := r.db.Query(`
 		SELECT id, account_id, provider, external_id, booked_date, value_date,
 		       amount_minor, currency, amount_account_minor, fx_rate,
-		       description, end_to_end_id, raw, status, ignored_reason,
+		       description, end_to_end_id, provider_status, bill_id, raw, status, ignored_reason,
 		       matched_transaction_id, imported_at, last_seen_at, updated_at
 		FROM finance.bank_statement_lines `+clause, args...)
 	if err != nil {
@@ -222,16 +247,17 @@ func (r *StatementRepository) query(clause string, args ...any) ([]*statement.Li
 	var lines []*statement.Line
 	for rows.Next() {
 		l := &statement.Line{}
-		var provider, status string
+		var provider, status, providerStatus string
 		var raw []byte
 		if err := rows.Scan(&l.ID, &l.AccountID, &provider, &l.ExternalID, &l.BookedDate, &l.ValueDate,
 			&l.AmountMinor, &l.Currency, &l.AmountAccountMinor, &l.FXRate,
-			&l.Description, &l.EndToEndID, &raw, &status, &l.IgnoredReason,
+			&l.Description, &l.EndToEndID, &providerStatus, &l.BillID, &raw, &status, &l.IgnoredReason,
 			&l.MatchedTransactionID, &l.ImportedAt, &l.LastSeenAt, &l.UpdatedAt); err != nil {
 			return nil, err
 		}
 		l.Provider = statement.Provider(provider)
 		l.Status = statement.Status(status)
+		l.ProviderStatus = statement.ProviderStatus(providerStatus)
 		l.Raw = raw
 		lines = append(lines, l)
 	}

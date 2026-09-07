@@ -632,8 +632,13 @@ func (uc *RecalculateInvoiceAmountUseCase) Execute(invoiceID string) (*invoice.I
 	// A recalculation can drop the total below what was already paid. Re-derive
 	// the status, or the bill sits PARTIALLY_PAID with nothing left to pay and no
 	// route ever re-evaluates it — while still counting against the card limit.
+	// A transition on an existing aggregate, not an initial status — and on the very
+	// aggregate where a partial payment used to be marked PAID. Kept explicit so the
+	// gate for direct status writes reads it as a transition and not as construction.
 	if inv.Status == invoice.StatusPartiallyPaid && inv.PaidAmount != nil && *inv.PaidAmount+0.005 >= inv.Amount {
-		inv.Status = invoice.StatusPaid
+		if err := inv.Pay(*inv.PaidAmount, timeOrNow(inv.PaidAt)); err != nil {
+			return nil, err
+		}
 	}
 	if err := uc.invoiceRepo.Update(inv); err != nil {
 		return nil, err
@@ -904,4 +909,13 @@ func (uc *PayInvoiceUseCaseV2) Execute(input PayInvoiceInput) (*invoice.Invoice,
 	}
 
 	return inv, nil
+}
+
+// timeOrNow keeps a recalculation from inventing a payment date when the stored one
+// is missing.
+func timeOrNow(t *time.Time) time.Time {
+	if t != nil {
+		return *t
+	}
+	return time.Now()
 }

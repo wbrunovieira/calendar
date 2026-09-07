@@ -473,6 +473,9 @@ func RunMigrations(db *sql.DB) error {
 			fx_rate NUMERIC(18,8),
 			description TEXT NOT NULL DEFAULT '',
 			end_to_end_id TEXT,
+			provider_status VARCHAR(10) NOT NULL DEFAULT 'POSTED'
+				CHECK (provider_status IN ('PENDING','POSTED')),
+			bill_id TEXT,
 			raw JSONB NOT NULL,
 			status VARCHAR(12) NOT NULL DEFAULT 'UNMATCHED'
 				CHECK (status IN ('UNMATCHED','MATCHED','IGNORED')),
@@ -523,6 +526,8 @@ func RunMigrations(db *sql.DB) error {
 		// new columns missing — which is exactly how a schema change passes locally
 		// and fails on a database that has been around.
 		`ALTER TABLE finance.bank_statement_lines ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP NOT NULL DEFAULT NOW()`,
+		`ALTER TABLE finance.bank_statement_lines ADD COLUMN IF NOT EXISTS provider_status VARCHAR(10) NOT NULL DEFAULT 'POSTED'`,
+		`ALTER TABLE finance.bank_statement_lines ADD COLUMN IF NOT EXISTS bill_id TEXT`,
 		`ALTER TABLE finance.bank_statement_lines ADD COLUMN IF NOT EXISTS matched_transaction_id UUID REFERENCES finance.transactions(id)`,
 		`DO $$
 		BEGIN
@@ -535,9 +540,14 @@ func RunMigrations(db *sql.DB) error {
 					ADD CONSTRAINT uq_statement_account_provider_external UNIQUE (account_id, provider, external_id);
 			END IF;
 			IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'statement_matched_has_reference') THEN
+				-- NOT VALID: adding a CHECK validates every existing row on the spot,
+				-- which is the next instance of the lesson just learned with
+				-- CREATE TABLE IF NOT EXISTS — it passes on an empty database and
+				-- fails on one that has been around. Existing rows are validated
+				-- separately, after they are fixed.
 				ALTER TABLE finance.bank_statement_lines
 					ADD CONSTRAINT statement_matched_has_reference
-					CHECK (status <> 'MATCHED' OR matched_transaction_id IS NOT NULL);
+					CHECK (status <> 'MATCHED' OR matched_transaction_id IS NOT NULL) NOT VALID;
 			END IF;
 		END $$`,
 		`CREATE INDEX IF NOT EXISTS idx_statement_account_date ON finance.bank_statement_lines(account_id, booked_date)`,

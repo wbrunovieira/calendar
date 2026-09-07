@@ -42,7 +42,16 @@ func (f *fakeAccountRepo) Create(*bankaccount.BankAccount) error { return nil }
 func (f *fakeAccountRepo) FindByProfileID(string) ([]*bankaccount.BankAccount, error) {
 	return nil, nil
 }
-func (f *fakeAccountRepo) FindAll() ([]*bankaccount.BankAccount, error) { return nil, nil }
+
+// Returns what was seeded. A fake that answers nil to FindAll makes any
+// whole-ledger check silently examine nothing and report OK.
+func (f *fakeAccountRepo) FindAll() ([]*bankaccount.BankAccount, error) {
+	out := make([]*bankaccount.BankAccount, 0, len(f.accounts))
+	for _, a := range f.accounts {
+		out = append(out, a)
+	}
+	return out, nil
+}
 func (f *fakeAccountRepo) Update(acc *bankaccount.BankAccount) error {
 	f.updateCalled = true
 	f.lastUpdatedID = acc.ID

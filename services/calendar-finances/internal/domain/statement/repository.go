@@ -27,7 +27,7 @@ type Repository interface {
 	// It reports how many were inserted and how many were already known, because
 	// "the import ran" and "the import brought anything" are different facts.
 	UpsertMany(lines []*Line) (inserted int, updated int, err error)
-	FindByExternalID(provider Provider, externalID string) (*Line, error)
+	FindByExternalID(accountID string, provider Provider, externalID string) (*Line, error)
 	List(filter ListFilter) ([]*Line, error)
 	Update(line *Line) error
 }

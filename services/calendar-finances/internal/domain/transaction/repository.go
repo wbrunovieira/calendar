@@ -13,6 +13,11 @@ var ErrNotFound = errors.New("transaction not found")
 // balance left crooked by a failed reversal is never investigated.
 var ErrAlreadyReversed = errors.New("transaction is already reversed")
 
+// ErrConcurrentModification means the row changed between being read and being
+// written. The caller had already loaded it, so "no rows affected" cannot mean
+// "does not exist" — it means someone else got there first.
+var ErrConcurrentModification = errors.New("transaction changed since it was read")
+
 // ListFilter encapsulates query options for fetching transactions.
 type ListFilter struct {
 	ProfileID            string

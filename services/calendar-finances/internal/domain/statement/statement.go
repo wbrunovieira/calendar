@@ -28,6 +28,22 @@ const (
 
 // Status tracks a line through reconciliation. It describes the LINE, not the money:
 // the bank's word is a fact, and these say what we have done about it.
+// ProviderStatus is what the BANK says about the line's own lifecycle, as opposed to
+// Status, which says what WE have done about it.
+type ProviderStatus string
+
+const (
+	ProviderStatusPending ProviderStatus = "PENDING"
+	ProviderStatusPosted  ProviderStatus = "POSTED"
+)
+
+// Matchable reports whether the line is settled enough to be reconciled. A pending
+// authorisation still changes amount and date when it posts, so matching it asserts a
+// check that the next sync invalidates.
+func (l *Line) Matchable() bool {
+	return l.ProviderStatus != ProviderStatusPending
+}
+
 type Status string
 
 const (
@@ -78,6 +94,16 @@ type Line struct {
 	// losing data.
 	Raw json.RawMessage `json:"raw"`
 
+	// ProviderStatus is the bank's own PENDING/POSTED. Without it, a settling
+	// authorisation only reads as "the amount changed" — so every normal settlement
+	// looks like an anomaly, and the rule that removes most of the noise cannot be
+	// written: a PENDING line is not eligible for matching at all.
+	ProviderStatus ProviderStatus `json:"providerStatus"`
+	// BillID is the provider's invoice id. Card data in Open Finance comes grouped by
+	// bill, not by account, and this is the join key the reconciliation will need on
+	// the first card it touches.
+	BillID *string `json:"billId,omitempty"`
+
 	Status        Status  `json:"status"`
 	IgnoredReason *string `json:"ignoredReason,omitempty"`
 	// MatchedTransactionID names WHAT this line was reconciled against. MATCHED
@@ -117,6 +143,8 @@ type CreateParams struct {
 	FXRate             *float64
 	Description        string
 	EndToEndID         *string
+	ProviderStatus     ProviderStatus
+	BillID             *string
 	Raw                json.RawMessage
 	// AccountCurrency lets New refuse a foreign line with no converted value. Without
 	// it, InAccountCurrency falls back to the face value and reconciles USD against
@@ -155,6 +183,11 @@ func New(params CreateParams) (*Line, error) {
 		return nil, errors.New("a line charged in another currency needs its converted value: reconciling by face value is how USD was read as BRL")
 	}
 
+	providerStatus := params.ProviderStatus
+	if providerStatus == "" {
+		providerStatus = ProviderStatusPosted
+	}
+
 	now := time.Now()
 	return &Line{
 		ID:                 uuid.New().String(),
@@ -169,6 +202,8 @@ func New(params CreateParams) (*Line, error) {
 		FXRate:             params.FXRate,
 		Description:        params.Description,
 		EndToEndID:         params.EndToEndID,
+		ProviderStatus:     providerStatus,
+		BillID:             params.BillID,
 		Raw:                params.Raw,
 		Status:             StatusUnmatched,
 		ImportedAt:         now,
@@ -199,6 +234,9 @@ func (l *Line) IsForeign(accountCurrency string) bool {
 // required: a match with no referent cannot be verified, cannot be undone knowingly,
 // and cannot notice when the entry behind it is reversed.
 func (l *Line) MarkMatched(transactionID string) error {
+	if !l.Matchable() {
+		return errors.New("a pending line cannot be matched: its amount and date still move when it posts")
+	}
 	if strings.TrimSpace(transactionID) == "" {
 		return errors.New("a match must name the transaction it was reconciled against")
 	}

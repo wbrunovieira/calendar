@@ -107,7 +107,7 @@ func TestE2E_ReimportRefreshesTheBankSideButKeepsReconciliationWork(t *testing.T
 	if _, _, err := repo.UpsertMany([]*statement.Line{lineFor(t, "plg-2", 5558, "BRL", nil)}); err != nil {
 		t.Fatalf("import: %v", err)
 	}
-	stored, err := repo.FindByExternalID(statement.ProviderPluggy, "plg-2")
+	stored, err := repo.FindByExternalID(stAccountID, statement.ProviderPluggy, "plg-2")
 	if err != nil {
 		t.Fatalf("reading back: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestE2E_ReimportRefreshesTheBankSideButKeepsReconciliationWork(t *testing.T
 		t.Fatalf("re-import: %v", err)
 	}
 
-	after, err := repo.FindByExternalID(statement.ProviderPluggy, "plg-2")
+	after, err := repo.FindByExternalID(stAccountID, statement.ProviderPluggy, "plg-2")
 	if err != nil {
 		t.Fatalf("reading back: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestE2E_ForeignLineKeepsBothAmounts(t *testing.T) {
 		t.Fatalf("import: %v", err)
 	}
 
-	line, err := repo.FindByExternalID(statement.ProviderPluggy, "plg-3")
+	line, err := repo.FindByExternalID(stAccountID, statement.ProviderPluggy, "plg-3")
 	if err != nil {
 		t.Fatalf("reading back: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestE2E_EveryVersionTheBankReportedIsKept(t *testing.T) {
 		t.Fatalf("second import: %v", err)
 	}
 
-	stored, err := repo.FindByExternalID(statement.ProviderPluggy, "plg-rev")
+	stored, err := repo.FindByExternalID(stAccountID, statement.ProviderPluggy, "plg-rev")
 	if err != nil {
 		t.Fatalf("reading back: %v", err)
 	}
@@ -250,7 +250,7 @@ func TestE2E_AMatchIsDroppedWhenTheBankSideChanges(t *testing.T) {
 	if _, _, err := repo.UpsertMany([]*statement.Line{lineFor(t, "plg-drop", 5558, "BRL", nil)}); err != nil {
 		t.Fatalf("import: %v", err)
 	}
-	stored, _ := repo.FindByExternalID(statement.ProviderPluggy, "plg-drop")
+	stored, _ := repo.FindByExternalID(stAccountID, statement.ProviderPluggy, "plg-drop")
 	if err := stored.MarkMatched(stTxID); err != nil {
 		t.Fatalf("marking: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestE2E_AMatchIsDroppedWhenTheBankSideChanges(t *testing.T) {
 		t.Fatalf("re-import: %v", err)
 	}
 
-	after, _ := repo.FindByExternalID(statement.ProviderPluggy, "plg-drop")
+	after, _ := repo.FindByExternalID(stAccountID, statement.ProviderPluggy, "plg-drop")
 	if after.Status != statement.StatusUnmatched {
 		t.Errorf("status = %s, want UNMATCHED — the amount moved, so the match was never verified against this value", after.Status)
 	}
