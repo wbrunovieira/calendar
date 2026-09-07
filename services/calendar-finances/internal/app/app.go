@@ -7,10 +7,12 @@ import (
 	"os"
 
 	"github.com/brunovieira/calendar-finances/internal/application/usecases"
+	"github.com/brunovieira/calendar-finances/internal/domain/balancecheckpoint"
 	"github.com/brunovieira/calendar-finances/internal/handlers"
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/binance"
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/brapi"
 	httpHandlers "github.com/brunovieira/calendar-finances/internal/infrastructure/http/handlers"
+	"github.com/brunovieira/calendar-finances/internal/infrastructure/http/middleware"
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/persistence"
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/yahoo"
 	"github.com/gorilla/mux"
@@ -82,6 +84,11 @@ func New(db *sql.DB) (*App, error) {
 	reorderBankAccountsUC := usecases.NewReorderBankAccountsUseCase(bankAccountRepo)
 	closeMonthUC := usecases.NewCloseMonthUseCase(bankAccountRepo, transactionRepo, checkpointRepo)
 	recalculateBalanceUC := usecases.NewRecalculateBalanceUseCase(bankAccountRepo, transactionRepo, checkpointRepo)
+	// Without the trail wired, Apply writes a balance correction that nothing records
+	// and finance.balance_adjustments stays empty forever — the audit exists in the
+	// schema and not in the system.
+	adjustmentLog := persistence.NewBalanceAdjustmentLog(db)
+	recalculateBalanceUC.SetAdjustmentLog(adjustmentLog)
 	upcomingMaturitiesUC := usecases.NewListUpcomingMaturitiesUseCase(bankAccountRepo)
 	sellPositionUC := usecases.NewSellPositionUseCase(bankAccountRepo, transactionRepo)
 	bankAccountHandler := httpHandlers.NewBankAccountHandlers(
@@ -114,6 +121,9 @@ func New(db *sql.DB) (*App, error) {
 
 	// Initialize Transaction use cases and handlers
 	createTransactionUC := usecases.NewCreateTransactionUseCase(profileRepo, bankAccountRepo, categoryRepo, transactionRepo, invoiceRepo, recalculateBalanceUC, costCenterRepo)
+	// Instalment series become all-or-nothing. Without this the loop writes row by
+	// row, and a failure partway leaves a half-written plan behind an error.
+	createTransactionUC.SetUnitOfWork(&boundUnitOfWork{uow: persistence.NewUnitOfWork(db), checkpoints: checkpointRepo, adjustments: adjustmentLog})
 	listTransactionsUC := usecases.NewListTransactionsUseCase(transactionRepo)
 	getTransactionUC := usecases.NewGetTransactionUseCase(transactionRepo)
 	updateTransactionUC := usecases.NewUpdateTransactionUseCase(bankAccountRepo, categoryRepo, transactionRepo, invoiceRepo, recalculateBalanceUC)
@@ -139,6 +149,9 @@ func New(db *sql.DB) (*App, error) {
 	// PayInvoiceUseCaseV2: Creates payment transaction on linked checking account when invoice is paid,
 	// credits the card side, and recomputes the card balance from its transactions
 	payInvoiceUC := usecases.NewPayInvoiceUseCaseV2(invoiceRepo, bankAccountRepo, transactionRepo, recalculateBalanceUC)
+	// The five writes a payment performs become all-or-nothing. This is the path that
+	// left thousands in invoices reading as paid with no matching credit on the card.
+	payInvoiceUC.SetUnitOfWork(&boundUnitOfWork{uow: persistence.NewUnitOfWork(db), checkpoints: checkpointRepo, adjustments: adjustmentLog})
 	recalculateInvoiceUC := usecases.NewRecalculateInvoiceAmountUseCase(invoiceRepo, transactionRepo)
 	// Deleting a charge changes the bill it belonged to.
 	deleteTransactionUC.SetInvoiceRecalculator(recalculateInvoiceUC)
@@ -269,12 +282,18 @@ func New(db *sql.DB) (*App, error) {
 
 	// API v1 routes
 	apiRouter := router.PathPrefix("/api/v1").Subrouter()
+	// A repeated write performs its effect once. The key is optional, so existing
+	// clients keep working and adoption can be gradual — a guard nobody can adopt
+	// incrementally gets removed rather than adopted.
+	apiRouter.Use(middleware.Idempotency(persistence.NewIdempotencyStore(db)))
 
 	// Invariant report: every stored balance and invoice total against the
 	// transactions that justify them. Read-only by design.
 	checkInvariantsUC := usecases.NewCheckInvariantsUseCase(bankAccountRepo, transactionRepo, invoiceRepo)
-	invariantsHandler := httpHandlers.NewInvariantsHandlers(checkInvariantsUC)
+	rebuildCyclesUC := usecases.NewRebuildInvoiceCyclesUseCase(bankAccountRepo, transactionRepo, invoiceRepo)
+	invariantsHandler := httpHandlers.NewInvariantsHandlers(checkInvariantsUC, rebuildCyclesUC)
 	apiRouter.HandleFunc("/health/invariants", invariantsHandler.Check).Methods("GET")
+	apiRouter.HandleFunc("/bank-accounts/{id}/invoice-cycles/plan", invariantsHandler.InvoiceCyclePlan).Methods("GET")
 
 	// Profile routes
 	apiRouter.HandleFunc("/profiles", profileHandler.List).Methods("GET")
@@ -292,6 +311,7 @@ func New(db *sql.DB) (*App, error) {
 	apiRouter.HandleFunc("/bank-accounts/{id}", bankAccountHandler.Update).Methods("PUT")
 	apiRouter.HandleFunc("/bank-accounts/{id}", bankAccountHandler.Delete).Methods("DELETE")
 	apiRouter.HandleFunc("/bank-accounts/{id}/recalculate-balance", bankAccountHandler.RecalculateBalance).Methods("POST")
+	apiRouter.HandleFunc("/bank-accounts/{id}/balance-adjustment", bankAccountHandler.ApplyBalanceAdjustment).Methods("POST")
 	apiRouter.HandleFunc("/bank-accounts/{id}/sell", bankAccountHandler.Sell).Methods("POST")
 	apiRouter.HandleFunc("/bank-accounts/{id}/credit-usage", bankAccountHandler.CreditUsage).Methods("GET")
 	apiRouter.HandleFunc("/bank-accounts/close-month", bankAccountHandler.CloseMonth).Methods("POST")
@@ -339,6 +359,12 @@ func New(db *sql.DB) (*App, error) {
 	apiRouter.HandleFunc("/goals/{id}/status", goalHandler.UpdateStatus).Methods("PATCH")
 
 	apiRouter.HandleFunc("/transactions/{id}", transactionHandler.Delete).Methods("DELETE")
+
+	// A ledger reverses instead of deleting; the DELETE above answers 405 and
+
+	// points here, so a caller is never told 204 for a row that stayed.
+
+	apiRouter.HandleFunc("/transactions/{id}/reversal", transactionHandler.Reverse).Methods("POST")
 
 	// Capital Contribution routes (aportes do sócio)
 	apiRouter.HandleFunc("/capital-contributions/summary", capitalContributionHandler.Summary).Methods("GET")
@@ -410,4 +436,46 @@ func New(db *sql.DB) (*App, error) {
 			CloseMonth:        closeMonthUC,
 		},
 	}, nil
+}
+
+// boundUnitOfWork adapts the persistence unit of work to the interface the use case
+// declares, so the application layer keeps no dependency on persistence.
+//
+// It hands over the repositories BOUND TO THE OPEN TRANSACTION. That is the whole
+// point: a use case writing through repositories built on the *sql.DB opens and
+// commits its own transactions inside this one, and the rollback here then undoes
+// nothing. The interface takes TxRepos precisely so that mistake stops compiling.
+type boundUnitOfWork struct {
+	uow *persistence.UnitOfWork
+	// checkpoints stay on the pool. They are a maintenance cache for the balance
+	// recalculation, not part of the unit that must land together.
+	checkpoints balancecheckpoint.Repository
+	// adjustments is the trail. Without it the recalculator built for the transaction
+	// absorbs a drift and records nothing, while the one on the pool records it — the
+	// audit would then depend on which path happened to run.
+	adjustments usecases.BalanceAdjustmentLog
+}
+
+// recalculator builds one bound to the open transaction, carrying the same trail the
+// pool-bound one has.
+func (b *boundUnitOfWork) recalculator(r persistence.Repositories) usecases.BalanceRecalculator {
+	uc := usecases.NewRecalculateBalanceUseCase(r.Accounts, r.Transactions, b.checkpoints)
+	if b.adjustments != nil {
+		uc.SetAdjustmentLog(b.adjustments)
+	}
+	return uc
+}
+
+func (b *boundUnitOfWork) Do(fn func(usecases.TxRepos) error) error {
+	return b.uow.Do(func(r persistence.Repositories) error {
+		return fn(usecases.TxRepos{
+			Transactions: r.Transactions,
+			Invoices:     r.Invoices,
+			Accounts:     r.Accounts,
+			// The recalculation must read the rows this transaction just wrote. Built
+			// on the pool it would run on another connection, see none of them, and
+			// write back a balance that is stale the moment it commits.
+			Recalculator: b.recalculator(r),
+		})
+	})
 }

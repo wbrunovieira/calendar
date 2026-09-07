@@ -1,6 +1,8 @@
 package usecases
 
 import (
+	"errors"
+	"strings"
 	"time"
 
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
@@ -10,7 +12,14 @@ import (
 type UpdateTransactionStatusInput struct {
 	Status     string  `json:"status"`
 	OccurredOn *string `json:"occurredOn,omitempty"`
-	Reason     *string `json:"reason,omitempty"`
+	// Reason is free text kept as a note. It does not satisfy the audit requirement
+	// on its own: the classification below is what decides the accounting effect.
+	Reason *string `json:"reason,omitempty"`
+	// ReasonCode and Actor are required to cancel. Hardcoding them would fill the
+	// column in 100% of rows with the same value — a control that appears to operate
+	// while capturing nothing, which is the defect a NULL column has, disguised.
+	ReasonCode *string `json:"reasonCode,omitempty"`
+	Actor      *string `json:"actor,omitempty"`
 }
 
 type UpdateTransactionStatusUseCase struct {
@@ -56,10 +65,21 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 		if input.Reason != nil {
 			reason = *input.Reason
 		}
-		tx.Cancel(reason)
+		if input.ReasonCode == nil || input.Actor == nil {
+			return nil, errors.New("cancelling requires reasonCode and actor: a motive not captured now cannot be reconstructed later")
+		}
+		// A confirmed movement cannot be cancelled: it is reversed, which records the
+		// motive and the actor. Cancelling would be an unaudited way out.
+		if err := tx.Cancel(transaction.ReversalReason(strings.ToUpper(*input.ReasonCode)), reason, *input.Actor, time.Now()); err != nil {
+			return nil, err
+		}
 		occurredAt = tx.OccurredOn
 	case transaction.StatusPlanned:
-		tx.Status = transaction.StatusPlanned
+		// Goes through the domain: moving a confirmed row back to planned undoes the
+		// money with no motive and no actor, and the audit CHECK never sees it.
+		if err := tx.SetStatus(transaction.StatusPlanned); err != nil {
+			return nil, err
+		}
 		if input.OccurredOn != nil {
 			if occurredAt, err = parseDate(*input.OccurredOn); err != nil {
 				return nil, err
@@ -77,7 +97,26 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 		tx.OccurredOn = occurredAt
 	}
 
-	if err := uc.repo.UpdateStatus(tx.ID, targetStatus, occurredAt, tx.Notes); err != nil {
+	// Both legs are validated BEFORE anything is written. The linked leg used to be
+	// persisted and have its balance moved first, and only then checked — so
+	// confirming over a reversed counterpart did the damage and reported failure,
+	// which is the "verify the effect, never the signal" rule broken by the code
+	// meant to enforce it.
+	var linkedTx *transaction.Transaction
+	if tx.LinkedTransactionID != nil {
+		found, lerr := uc.repo.GetByID(*tx.LinkedTransactionID)
+		if lerr != nil {
+			// Skipping it silently leaves the pair half-updated with no error, and
+			// the other profile holding a movement whose counterpart never moved.
+			return nil, lerr
+		}
+		if err := found.CanTransitionTo(targetStatus); err != nil {
+			return nil, err
+		}
+		linkedTx = found
+	}
+
+	if err := uc.persistStatus(tx, targetStatus, occurredAt); err != nil {
 		return nil, err
 	}
 
@@ -90,23 +129,27 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 		_ = recalculateAccounts(uc.balanceRecalculator, tx.BankAccountID)
 	}
 
-	// Handle linked transaction (cross-profile paired transactions)
-	if tx.LinkedTransactionID != nil {
-		linkedTx, err := uc.repo.GetByID(*tx.LinkedTransactionID)
-		if err == nil {
-			linkedOldStatus := linkedTx.Status
-			// Update linked transaction status
-			_ = uc.repo.UpdateStatus(linkedTx.ID, targetStatus, occurredAt, linkedTx.Notes)
-			// Update linked transaction balance
-			_ = uc.updateBalanceOnStatusChange(linkedTx, linkedOldStatus, targetStatus)
-			if linkedAcc, err := uc.accountRepo.FindByID(linkedTx.BankAccountID); err == nil && linkedAcc.Type != bankaccount.AccountTypeCreditCard {
-				_ = recalculateAccounts(uc.balanceRecalculator, linkedTx.BankAccountID)
-			}
-			linkedTx.Status = targetStatus
+	// The linked leg, already validated above.
+	if linkedTx != nil {
+		linkedOldStatus := linkedTx.Status
+		// The error is surfaced, not discarded: a leg that failed to persist leaves
+		// the other profile holding a movement with no counterpart, and swallowing it
+		// means nobody goes looking.
+		// The linked leg carries the same motive and actor: the domain moved it through
+		// Cancel above, so persisting it any other way would leave one profile audited
+		// and the other not.
+		if err := uc.persistStatus(linkedTx, targetStatus, occurredAt); err != nil {
+			return nil, err
+		}
+		_ = uc.updateBalanceOnStatusChange(linkedTx, linkedOldStatus, targetStatus)
+		if linkedAcc, err := uc.accountRepo.FindByID(linkedTx.BankAccountID); err == nil && linkedAcc.Type != bankaccount.AccountTypeCreditCard {
+			_ = recalculateAccounts(uc.balanceRecalculator, linkedTx.BankAccountID)
 		}
 	}
 
-	tx.Status = targetStatus
+	// No assignment here: the switch above already moved tx through the domain, so
+	// its status is the target. Re-assigning would reopen the gate with an eighth
+	// exception that is a transition and nowhere near a New().
 	return tx, nil
 }
 
@@ -178,4 +221,18 @@ func (uc *UpdateTransactionStatusUseCase) updateBalanceOnStatusChange(tx *transa
 	}
 
 	return nil
+}
+
+// persistStatus writes a status change through the path that keeps its audit. A
+// cancellation carries why and who; everything else has neither and takes the plain
+// route.
+func (uc *UpdateTransactionStatusUseCase) persistStatus(
+	txn *transaction.Transaction,
+	target transaction.Status,
+	occurredAt time.Time,
+) error {
+	if target == transaction.StatusCancelled {
+		return uc.repo.CancelStatus(txn, occurredAt)
+	}
+	return uc.repo.UpdateStatus(txn.ID, target, occurredAt, txn.Notes)
 }

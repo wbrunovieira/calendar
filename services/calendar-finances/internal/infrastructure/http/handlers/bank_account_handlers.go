@@ -232,6 +232,44 @@ func (h *BankAccountHandlers) RecalculateBalance(w http.ResponseWriter, r *http.
 	})
 }
 
+// ApplyBalanceAdjustment handles POST /api/v1/bank-accounts/{id}/balance-adjustment.
+//
+// The recalculation route reports and writes nothing, which is right: a drift is a
+// transaction to hunt down, never a number to overwrite. But there has to be a way to
+// close the last gap once the hunt is over, and it must leave a mark — otherwise the
+// only way to correct a derived balance is SQL, and a correction nobody can find
+// later is how "the balance is a result" quietly stops being true.
+//
+// Reason and actor are required, and the adjustment is recorded in
+// finance.balance_adjustments with both.
+func (h *BankAccountHandlers) ApplyBalanceAdjustment(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+
+	var body struct {
+		Reason string `json:"reason"`
+		By     string `json:"by"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+
+	result, err := h.recalculateBalanceUseCase.Apply(id, body.Reason, body.By)
+	if err != nil {
+		if err == usecases.ErrBankAccountNotFound {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		// A missing reason or actor is a client error, not a server one: the message
+		// says which, and answering 500 would send someone looking at the database.
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"data": result})
+}
+
 // CloseMonth handles POST /api/v1/bank-accounts/close-month
 // Body: { "referenceMonth": "2026-03-01" }  (any date in the target month)
 func (h *BankAccountHandlers) CloseMonth(w http.ResponseWriter, r *http.Request) {

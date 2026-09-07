@@ -33,7 +33,25 @@ func Connect(dbURL string) (*sql.DB, error) {
 func RunMigrations(db *sql.DB) error {
 	log.Println("Running database migrations...")
 
-	migrations := []string{
+	for i, migration := range migrations() {
+		if _, err := db.Exec(migration); err != nil {
+			return fmt.Errorf("migration %d failed: %w", i+1, err)
+		}
+	}
+
+	log.Println("✓ Migrations completed successfully")
+	return nil
+}
+
+// migrations returns the statements in the order they are applied.
+//
+// They run in slice order and nothing resolves dependencies between them, so a
+// statement that references a table must come after the one that creates it. That
+// is invisible on any database that already has the schema — which is every
+// developer's — and only an empty one rejects it. TestMigrationOrder_ATableIsCreatedBeforeItIsReferenced
+// checks the ordering without needing a database at all.
+func migrations() []string {
+	return []string{
 		// Ensure required extension
 		`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`,
 
@@ -450,6 +468,244 @@ func RunMigrations(db *sql.DB) error {
 			ALTER TABLE finance.bank_accounts ADD CONSTRAINT bank_accounts_type_check
 				CHECK (type IN ('CHECKING', 'SAVINGS', 'INVESTMENT', 'CREDIT_CARD', 'CASH', 'EXCHANGE', 'WALLET', 'OTHER'));
 		END $$`,
+		// Without an external id on the account, the importer has no way to know which
+		// of our accounts a statement line belongs to, and the only fallback is
+		// matching by name — the fragile matching this whole issue exists to remove.
+		`ALTER TABLE finance.bank_accounts ADD COLUMN IF NOT EXISTS provider_account_id TEXT`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_bank_accounts_provider_account
+			ON finance.bank_accounts(provider_account_id) WHERE provider_account_id IS NOT NULL`,
+
+		// Every import window, so a reconciliation report can carry a true header.
+		// Without it, "left over on the bank side" has no defined boundary: a line
+		// genuinely without a counterpart cannot be told apart from a period never
+		// fetched — the same incomplete view presented as complete that produced a
+		// phantom R$ 10.651,18 discrepancy.
+		`CREATE TABLE IF NOT EXISTS finance.statement_imports (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			account_id UUID NOT NULL REFERENCES finance.bank_accounts(id),
+			provider VARCHAR(20) NOT NULL,
+			period_from DATE NOT NULL,
+			period_to DATE NOT NULL,
+			lines_seen INT NOT NULL DEFAULT 0,
+			lines_inserted INT NOT NULL DEFAULT 0,
+			ran_at TIMESTAMP NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_statement_imports_account ON finance.statement_imports(account_id, period_to DESC)`,
+
+		// Which invoice a transaction PAYS, distinct from invoice_id, which is the
+		// invoice a card purchase BELONGS TO. Without it the only way to find a bill's
+		// payments is matching amount and date.
+		`ALTER TABLE finance.transactions ADD COLUMN IF NOT EXISTS paid_invoice_id UUID REFERENCES finance.credit_card_invoices(id)`,
+		`CREATE INDEX IF NOT EXISTS idx_transactions_paid_invoice ON finance.transactions(paid_invoice_id) WHERE paid_invoice_id IS NOT NULL`,
+
+		// Every correction of a stored balance, so a recalculation leaves a mark
+		// instead of erasing one.
+		`CREATE TABLE IF NOT EXISTS finance.balance_adjustments (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			account_id UUID NOT NULL REFERENCES finance.bank_accounts(id),
+			balance_before NUMERIC(15,2) NOT NULL,
+			balance_after NUMERIC(15,2) NOT NULL,
+			delta NUMERIC(15,2) NOT NULL,
+			reason TEXT NOT NULL,
+			adjusted_by TEXT NOT NULL,
+			adjusted_at TIMESTAMP NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_balance_adjustments_account ON finance.balance_adjustments(account_id, adjusted_at DESC)`,
+
+		// One row per idempotency key, so a retried write performs its effect once.
+		// Four clients write to this API and n8n retries are simultaneous by nature,
+		// so low volume is no protection.
+		`CREATE TABLE IF NOT EXISTS finance.idempotency_keys (
+			key TEXT PRIMARY KEY,
+			endpoint TEXT NOT NULL,
+			request_hash TEXT NOT NULL,
+			response_status INT,
+			-- TEXT, not JSONB: a replay must be told exactly what the first attempt
+			-- answered, and JSONB normalises whitespace and key order on the way back.
+			response_body TEXT,
+			created_at TIMESTAMP NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_idempotency_created ON finance.idempotency_keys(created_at)`,
+		// A database created before this change has response_body as JSONB, and
+		// CREATE TABLE IF NOT EXISTS does not alter a column. JSONB normalises
+		// whitespace and key order, so a replay would be told something subtly
+		// different from what the first attempt answered.
+		`ALTER TABLE finance.idempotency_keys ALTER COLUMN response_body TYPE TEXT`,
+
+		// A natural key for invoice payments is still MISSING, deliberately.
+		//
+		// Idempotency-Key protects a client against its own retry; it does not stop two
+		// DIFFERENT clients doing the same thing — the web form and the WhatsApp agent
+		// both paying the same bill. The reviewer's suggested key is
+		// (invoice_id, date, amount), but the payment leg does not carry invoice_id
+		// today, and the obvious substitute — (destination_account, date, amount) —
+		// would refuse two genuinely identical transfers on one day, which is a real
+		// thing to do.
+		//
+		// Current production data would not violate that broader index, and that is
+		// exactly why it would be tempting: it passes today and blocks a legitimate
+		// operation later. The prerequisite is putting invoice_id on the payment leg.
+
+		// Migration: bank statement lines, stored verbatim.
+		//
+		// Reconciliation must be persisted data, not chat work. Everything the
+		// reconciliation of 06-07/09/2026 established — what had been checked, against
+		// which criterion, what was left over — lived only in a transcript and went
+		// away with it.
+		//
+		// Amounts are integers in minor units. Money in float64 was already forcing
+		// half-a-centavo tolerances in this codebase, and a tolerance on value is how
+		// a real difference becomes "acceptable rounding" and vanishes.
+		`CREATE TABLE IF NOT EXISTS finance.bank_statement_lines (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			account_id UUID NOT NULL REFERENCES finance.bank_accounts(id),
+			provider VARCHAR(20) NOT NULL,
+			external_id TEXT NOT NULL,
+			booked_date DATE NOT NULL,
+			value_date DATE,
+			amount_minor BIGINT NOT NULL,
+			currency CHAR(3) NOT NULL,
+			amount_account_minor BIGINT,
+			-- No fx_rate column: the provider sends only the two amounts, so a stored
+			-- rate would be a derived value written down — the pattern being removed
+			-- from the rest of this system. It is computed on read.
+			description TEXT NOT NULL DEFAULT '',
+			end_to_end_id TEXT,
+			provider_status VARCHAR(10) NOT NULL DEFAULT 'POSTED'
+				CHECK (provider_status IN ('PENDING','POSTED')),
+			bill_id TEXT,
+			raw JSONB NOT NULL,
+			status VARCHAR(12) NOT NULL DEFAULT 'UNMATCHED'
+				CHECK (status IN ('UNMATCHED','MATCHED','IGNORED')),
+			ignored_reason TEXT,
+			imported_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			-- last_seen_at is bumped on every import that covered this line's window.
+			-- Keeping the raw payload does not reveal that the bank STOPPED reporting
+			-- a row; the row simply stays and the disappearance is invisible.
+			last_seen_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			-- Idempotent import: the same window may be pulled any number of times.
+			-- account_id belongs in the key: Pluggy ids are globally unique, but an
+			-- OFX FITID is unique only WITHIN an account by specification. Without it,
+			-- two statements could legitimately collide and the upsert would rewrite
+			-- one account's movement while it still claimed to belong to the other.
+			CONSTRAINT uq_statement_account_provider_external UNIQUE (account_id, provider, external_id),
+			-- An ignored line without a motive is indistinguishable from one nobody
+			-- looked at.
+			CONSTRAINT statement_ignored_has_reason
+				CHECK (status <> 'IGNORED' OR ignored_reason IS NOT NULL)
+		)`,
+		// Every version the provider ever reported, append-only. The main row is a
+		// projection of the latest; this is what makes "verbatim" true.
+		//
+		// Pluggy rewrites transactions, and overwriting raw on conflict destroys
+		// exactly the evidence that a change came from the bank and not from us. It
+		// is also what lets a match be dropped WITH a reason: without the previous
+		// version, a line that "went back to diverging" has no discoverable cause.
+		`CREATE TABLE IF NOT EXISTS finance.bank_statement_line_revisions (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			line_id UUID NOT NULL REFERENCES finance.bank_statement_lines(id) ON DELETE CASCADE,
+			seen_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			booked_date DATE NOT NULL,
+			amount_minor BIGINT NOT NULL,
+			currency CHAR(3) NOT NULL,
+			amount_account_minor BIGINT,
+			description TEXT NOT NULL DEFAULT '',
+			raw JSONB NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_statement_revisions_line ON finance.bank_statement_line_revisions(line_id, seen_at DESC)`,
+		// Incremental migration for databases that already have the first version of
+		// the table. CREATE TABLE IF NOT EXISTS is a no-op there and would leave the
+		// new columns missing — which is exactly how a schema change passes locally
+		// and fails on a database that has been around.
+		`ALTER TABLE finance.bank_statement_lines ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP NOT NULL DEFAULT NOW()`,
+		`ALTER TABLE finance.bank_statement_lines ADD COLUMN IF NOT EXISTS provider_status VARCHAR(10) NOT NULL DEFAULT 'POSTED'`,
+		`ALTER TABLE finance.bank_statement_lines ADD COLUMN IF NOT EXISTS bill_id TEXT`,
+		`DO $$
+		BEGIN
+			-- account_id belongs in the uniqueness key: an OFX FITID is unique only
+			-- WITHIN an account, so two statements could legitimately collide and the
+			-- upsert would rewrite one account's movement under the other's id.
+			ALTER TABLE finance.bank_statement_lines DROP CONSTRAINT IF EXISTS uq_statement_provider_external;
+			IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_statement_account_provider_external') THEN
+				ALTER TABLE finance.bank_statement_lines
+					ADD CONSTRAINT uq_statement_account_provider_external UNIQUE (account_id, provider, external_id);
+			END IF;
+			IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'statement_provider_status_check') THEN
+				-- The CREATE TABLE path declares this inline; without it here, a new
+				-- database has the constraint and a migrated one does not. Divergent
+				-- schemas are the same lesson as CREATE TABLE IF NOT EXISTS, now in
+				-- the very commit that documents it.
+				ALTER TABLE finance.bank_statement_lines
+					ADD CONSTRAINT statement_provider_status_check
+					CHECK (provider_status IN ('PENDING','POSTED'));
+			END IF;
+			-- matched_transaction_id and its CHECK were dropped when
+			-- reconciliation_matches arrived: a transaction id on the line as well
+			-- would be a second source for the same fact, and two sources diverge.
+			ALTER TABLE finance.bank_statement_lines DROP CONSTRAINT IF EXISTS statement_matched_has_reference;
+			ALTER TABLE finance.bank_statement_lines DROP COLUMN IF EXISTS matched_transaction_id;
+		END $$`,
+		`CREATE INDEX IF NOT EXISTS idx_statement_account_date ON finance.bank_statement_lines(account_id, booked_date)`,
+		`CREATE INDEX IF NOT EXISTS idx_statement_status ON finance.bank_statement_lines(status) WHERE status = 'UNMATCHED'`,
+		// The Pix end-to-end id appears on BOTH sides of an internal transfer, which
+		// makes it the only key that reconciles one without guessing.
+		`CREATE INDEX IF NOT EXISTS idx_statement_e2e ON finance.bank_statement_lines(end_to_end_id) WHERE end_to_end_id IS NOT NULL`,
+
+		// reconciliation_matches lives here, after bank_statement_lines, because its
+		// line_id references that table and the migrations run in slice order with no
+		// dependency resolution. It used to sit earlier, which every existing database
+		// tolerated — the table was already there — and only a fresh one rejected.
+		// Reconciliation matches, N:N and append-only.
+		//
+		// A single matched_transaction_id on the line is a 1:1 model that is already
+		// known to be wrong: an invoice payment covers many purchases, a Pix settles
+		// two bills, a split spreads one line across entries. Building the matcher on
+		// the column would mean migrating halfway through.
+		//
+		// Never deleted, only undone with a reason — a reconciliation that destroys
+		// its own history cannot say why a line went back to pending.
+		`CREATE TABLE IF NOT EXISTS finance.reconciliation_matches (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			line_id UUID NOT NULL REFERENCES finance.bank_statement_lines(id) ON DELETE CASCADE,
+			transaction_id UUID NOT NULL REFERENCES finance.transactions(id),
+			amount_minor BIGINT NOT NULL CHECK (amount_minor <> 0),
+			method VARCHAR(20) NOT NULL
+				CHECK (method IN ('EXTERNAL_ID','END_TO_END','DETERMINISTIC','FUZZY','MANUAL')),
+			score NUMERIC(5,4),
+			matched_by TEXT NOT NULL,
+			matched_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			unmatched_at TIMESTAMP,
+			unmatched_reason TEXT,
+			CONSTRAINT match_undo_has_reason
+				CHECK (unmatched_at IS NULL OR unmatched_reason IS NOT NULL)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_matches_line ON finance.reconciliation_matches(line_id) WHERE unmatched_at IS NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_matches_transaction ON finance.reconciliation_matches(transaction_id) WHERE unmatched_at IS NULL`,
+		// The same pair may be matched again after being undone, but not twice at once.
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_matches_live_pair
+			ON finance.reconciliation_matches(line_id, transaction_id) WHERE unmatched_at IS NULL`,
+		// Migration: a ledger reverses instead of deleting. The row is kept so it can
+		// still answer what was undone, when and why; balances derive from CONFIRMED,
+		// so a reversed row stops counting without disappearing.
+		`ALTER TABLE finance.transactions ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMP`,
+		`ALTER TABLE finance.transactions ADD COLUMN IF NOT EXISTS reversal_reason TEXT`,
+		`ALTER TABLE finance.transactions ADD COLUMN IF NOT EXISTS reversal_note TEXT`,
+		`ALTER TABLE finance.transactions ADD COLUMN IF NOT EXISTS reversed_by TEXT`,
+		// A reversed row must carry why and by whom. The constraint is what makes the
+		// control operate instead of merely existing in the schema.
+		`DO $$
+		BEGIN
+			ALTER TABLE finance.transactions DROP CONSTRAINT IF EXISTS transactions_reversal_audited;
+			ALTER TABLE finance.transactions ADD CONSTRAINT transactions_reversal_audited
+				CHECK (status <> 'REVERSED' OR (reversal_reason IS NOT NULL AND reversed_by IS NOT NULL));
+		END $$`,
+		`DO $$
+		BEGIN
+			ALTER TABLE finance.transactions DROP CONSTRAINT IF EXISTS transactions_status_check;
+			ALTER TABLE finance.transactions ADD CONSTRAINT transactions_status_check
+				CHECK (status IN ('PLANNED', 'CONFIRMED', 'CANCELLED', 'REVERSED'));
+		END $$`,
 		// Migration: allow PARTIALLY_PAID on credit card invoices.
 		// A bill paid in parts used to be marked PAID on the first payment, which
 		// erased the outstanding debt from the ledger.
@@ -686,13 +942,4 @@ func RunMigrations(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_balance_checkpoints_account_month
 			ON finance.balance_checkpoints (account_id, reference_month DESC)`,
 	}
-
-	for i, migration := range migrations {
-		if _, err := db.Exec(migration); err != nil {
-			return fmt.Errorf("migration %d failed: %w", i+1, err)
-		}
-	}
-
-	log.Println("✓ Migrations completed successfully")
-	return nil
 }

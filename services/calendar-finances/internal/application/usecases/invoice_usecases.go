@@ -632,13 +632,41 @@ func (uc *RecalculateInvoiceAmountUseCase) Execute(invoiceID string) (*invoice.I
 	// A recalculation can drop the total below what was already paid. Re-derive
 	// the status, or the bill sits PARTIALLY_PAID with nothing left to pay and no
 	// route ever re-evaluates it — while still counting against the card limit.
-	if inv.Status == invoice.StatusPartiallyPaid && inv.PaidAmount != nil && *inv.PaidAmount+0.005 >= inv.Amount {
-		inv.Status = invoice.StatusPaid
-	}
+	// Rederive from the amounts as they stand. This is not a payment: routing it
+	// through Pay(), which accumulates, doubled paid_amount on every reversal —
+	// a lint gate driving the domain instead of the other way round.
+	inv.RederiveStatus()
 	if err := uc.invoiceRepo.Update(inv); err != nil {
 		return nil, err
 	}
 
+	return inv, nil
+}
+
+// RestatePayments brings a bill's paid amount back in line with the payment entries
+// that still name it, and re-derives its status.
+//
+// It is deliberately separate from Execute, and deliberately works on a PAID bill:
+// Execute refuses one, because recomputing the TOTAL of a settled bill rewrites
+// history. Restating its PAYMENTS is the opposite — it is how a bill stops claiming
+// money that was reversed. Without it a reversed payment left the invoice PAID with a
+// phantom paid_amount, still counting against the card limit, and the guard on
+// Reopen() made that state unreachable through the API.
+func (uc *RecalculateInvoiceAmountUseCase) RestatePayments(invoiceID string) (*invoice.Invoice, error) {
+	inv, err := uc.invoiceRepo.FindByID(invoiceID)
+	if err != nil {
+		return nil, ErrInvoiceNotFound
+	}
+
+	total, err := uc.transactionRepo.SumLivePaymentsByInvoiceID(invoiceID)
+	if err != nil {
+		return nil, err
+	}
+
+	inv.RestatePayments(total)
+	if err := uc.invoiceRepo.Update(inv); err != nil {
+		return nil, err
+	}
 	return inv, nil
 }
 
@@ -759,6 +787,10 @@ type PayInvoiceUseCaseV2 struct {
 	accountRepo     bankaccount.Repository
 	transactionRepo transactionPkg.Repository
 	recalculator    BalanceRecalculator // optional; recomputes card balance from transactions
+	// atomically wraps the five writes a payment performs. Without it they land one
+	// by one, which is how R$ 8.863,07 of invoices read as paid against R$ 769,51 of
+	// credit on the card.
+	atomically UnitOfWork
 }
 
 func NewPayInvoiceUseCaseV2(
@@ -778,7 +810,47 @@ func NewPayInvoiceUseCaseV2(
 	return uc
 }
 
+// SetUnitOfWork makes a payment all-or-nothing.
+func (uc *PayInvoiceUseCaseV2) SetUnitOfWork(u UnitOfWork) { uc.atomically = u }
+
 func (uc *PayInvoiceUseCaseV2) Execute(input PayInvoiceInput) (*invoice.Invoice, error) {
+	if uc.atomically == nil {
+		return uc.pay(input)
+	}
+	var out *invoice.Invoice
+	err := uc.atomically.Do(func(r TxRepos) error {
+		inv, perr := uc.boundTo(r).pay(input)
+		out = inv
+		return perr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// boundTo returns a copy whose repositories write through the open transaction. See
+// the note on TxRepos: holding repositories built on the *sql.DB while inside someone
+// else's transaction is how five writes that must land together land one by one.
+func (uc *PayInvoiceUseCaseV2) boundTo(r TxRepos) *PayInvoiceUseCaseV2 {
+	bound := *uc
+	bound.atomically = nil
+	if r.Transactions != nil {
+		bound.transactionRepo = r.Transactions
+	}
+	if r.Invoices != nil {
+		bound.invoiceRepo = r.Invoices
+	}
+	if r.Accounts != nil {
+		bound.accountRepo = r.Accounts
+	}
+	if r.Recalculator != nil {
+		bound.recalculator = r.Recalculator
+	}
+	return &bound
+}
+
+func (uc *PayInvoiceUseCaseV2) pay(input PayInvoiceInput) (*invoice.Invoice, error) {
 	inv, err := uc.invoiceRepo.FindByID(input.InvoiceID)
 	if err != nil {
 		return nil, ErrInvoiceNotFound
@@ -865,17 +937,30 @@ func (uc *PayInvoiceUseCaseV2) Execute(input PayInvoiceInput) (*invoice.Invoice,
 				Currency:             linkedAccount.Currency,
 				Description:          "Pagamento fatura " + creditCard.Name,
 				OccurredOn:           paidAt,
+				PaidInvoiceID:        &inv.ID,
 			})
-			if terr == nil {
+			if terr != nil {
+				return nil, terr
+			}
+			{
 				transferTx.Status = transactionPkg.StatusConfirmed
-				if createErr := uc.transactionRepo.Create(transferTx); createErr == nil {
+				if createErr := uc.transactionRepo.Create(transferTx); createErr != nil {
+					return nil, createErr
+				}
+				{
 					// Debit the funding account, credit (pay down) the card.
+					// Surfaced, not discarded: a balance that failed to move behind a
+					// successful payment is invisible until a reconciliation months later.
 					linkedAccount.CurrentBalance -= input.PaidAmount
 					linkedAccount.UpdatedAt = time.Now()
-					_ = uc.accountRepo.Update(linkedAccount)
+					if uerr := uc.accountRepo.Update(linkedAccount); uerr != nil {
+						return nil, uerr
+					}
 					creditCard.CurrentBalance += input.PaidAmount
 					creditCard.UpdatedAt = time.Now()
-					_ = uc.accountRepo.Update(creditCard)
+					if uerr := uc.accountRepo.Update(creditCard); uerr != nil {
+						return nil, uerr
+					}
 					// When wired, recompute both balances from transactions (authoritative).
 					_ = recalculateAccounts(uc.recalculator, linkedAccount.ID, creditCard.ID)
 				}

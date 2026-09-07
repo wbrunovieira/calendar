@@ -1762,3 +1762,24 @@ func (f *fakeTransactionRepoWithInvoice) DeleteMany(ids []string) error {
 	}
 	return nil
 }
+
+func (f *fakeTransactionRepoWithInvoice) ReverseMany(txns []*transaction.Transaction) error {
+	for _, t := range txns {
+		if err := f.Update(t); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// CancelStatus mirrors the real repository: a cancellation keeps its motive and its
+// actor. A fake that dropped them would let the use case pass while production
+// recorded nothing — which is exactly how the gap it covers went unnoticed.
+func (f *fakeTransactionRepoWithInvoice) CancelStatus(txn *transaction.Transaction, occurredOn time.Time) error {
+	txn.OccurredOn = occurredOn
+	return nil
+}
+
+func (f *fakeTransactionRepoWithInvoice) SumLivePaymentsByInvoiceID(string) (float64, error) {
+	return 0, nil
+}

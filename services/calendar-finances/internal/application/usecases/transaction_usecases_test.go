@@ -42,7 +42,16 @@ func (f *fakeAccountRepo) Create(*bankaccount.BankAccount) error { return nil }
 func (f *fakeAccountRepo) FindByProfileID(string) ([]*bankaccount.BankAccount, error) {
 	return nil, nil
 }
-func (f *fakeAccountRepo) FindAll() ([]*bankaccount.BankAccount, error) { return nil, nil }
+
+// Returns what was seeded. A fake that answers nil to FindAll makes any
+// whole-ledger check silently examine nothing and report OK.
+func (f *fakeAccountRepo) FindAll() ([]*bankaccount.BankAccount, error) {
+	out := make([]*bankaccount.BankAccount, 0, len(f.accounts))
+	for _, a := range f.accounts {
+		out = append(out, a)
+	}
+	return out, nil
+}
 func (f *fakeAccountRepo) Update(acc *bankaccount.BankAccount) error {
 	f.updateCalled = true
 	f.lastUpdatedID = acc.ID
@@ -2595,20 +2604,11 @@ func TestUpdateTransactionStatus_TransferCancel_ShouldReverseDestination(t *test
 	_, err := useCase.Execute("tx-transfer-2", UpdateTransactionStatusInput{
 		Status: "CANCELLED",
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Source should be restored
-	source := accountRepo.accounts[sourceID]
-	if source.CurrentBalance != 5000 {
-		t.Fatalf("expected source balance 5000 after cancel, got %.2f", source.CurrentBalance)
-	}
-
-	// Destination should be reversed
-	dest := accountRepo.accounts[destID]
-	if dest.CurrentBalance != 1000 {
-		t.Fatalf("expected destination balance 1000 after cancel, got %.2f", dest.CurrentBalance)
+	// Cancelling a CONFIRMED movement is refused: it moved money, so it is undone by
+	// reversal, which records why and by whom. Cancelling would be a third,
+	// unaudited way out with its own semantics.
+	if err == nil {
+		t.Fatal("cancelling a confirmed transaction must be refused — use the reversal path")
 	}
 }
 
@@ -2958,9 +2958,14 @@ func TestDeleteTransaction_CrossProfileLinked_ShouldDeleteBoth(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Both transactions should be deleted
-	if len(txRepo.created) != 0 {
-		t.Fatalf("expected 0 transactions after delete, got %d", len(txRepo.created))
+	// Both rows are kept and reversed: a ledger does not delete.
+	if len(txRepo.created) != 2 {
+		t.Fatalf("expected both rows kept, got %d", len(txRepo.created))
+	}
+	for _, tx := range txRepo.created {
+		if tx.Status != transaction.StatusReversed {
+			t.Fatalf("%s status = %s, want REVERSED", tx.ID, tx.Status)
+		}
 	}
 
 	// Source balance should be restored (8500 + 1500 = 10000)
@@ -3189,30 +3194,11 @@ func TestUpdateTransactionStatus_CrossProfileCancel_ShouldReverseBoth(t *testing
 		Status: "CANCELLED",
 		Reason: strPtr("Cancelado"),
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Source balance should be restored (8500 + 50 = 8550) — EXPENSE reversal
-	source := accountRepo.accounts[sourceID]
-	if source.CurrentBalance != 8550 {
-		t.Fatalf("expected source balance 8550, got %.2f", source.CurrentBalance)
-	}
-
-	// Dest balance should be reversed (550 - 50 = 500) — INCOME reversal
-	dest := accountRepo.accounts[destID]
-	if dest.CurrentBalance != 500 {
-		t.Fatalf("expected dest balance 500, got %.2f", dest.CurrentBalance)
-	}
-
-	// Both should be cancelled
-	sourceTx, _ := txRepo.GetByID(sourceTxID)
-	if sourceTx.Status != transaction.StatusCancelled {
-		t.Fatalf("expected source CANCELLED, got %s", sourceTx.Status)
-	}
-	linkedTx, _ := txRepo.GetByID(destTxID)
-	if linkedTx.Status != transaction.StatusCancelled {
-		t.Fatalf("expected linked CANCELLED, got %s", linkedTx.Status)
+	// Cancelling a CONFIRMED movement is refused: it moved money, so it is undone by
+	// reversal, which records why and by whom. Cancelling would be a third,
+	// unaudited way out with its own semantics.
+	if err == nil {
+		t.Fatal("cancelling a confirmed transaction must be refused — use the reversal path")
 	}
 }
 
@@ -3647,14 +3633,12 @@ func TestUpdateTransaction_ConfirmedToPlanned_ReversesBalance(t *testing.T) {
 		OccurredOn:    now.Format("2006-01-02"),
 	})
 
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Balance: 800 + 200 (reverse confirmed expense) = 1000
-	acc := accountRepo.accounts[accountID]
-	if acc.CurrentBalance != 1000 {
-		t.Fatalf("expected balance 1000, got %.2f", acc.CurrentBalance)
+	// Moving a confirmed row back to planned undoes the money with no motive, no
+	// actor and no reversed_at, and the database CHECK demanding an audit trail
+	// never sees it. It is the same unaudited exit as cancelling a confirmed row,
+	// through a different door.
+	if err == nil {
+		t.Fatal("confirmed -> planned must be refused: undo a confirmed movement by reversing it")
 	}
 }
 
@@ -4148,10 +4132,19 @@ func TestRecalculateBalance_SumsConfirmedTransactions(t *testing.T) {
 		t.Fatalf("expected old balance 999, got %.2f", result.OldBalance)
 	}
 
-	// Account should be updated
+	// Execute REPORTS; it does not write. Correcting silently is what let a drift be
+	// erased along with the evidence of the bug behind it.
 	acc := accountRepo.accounts[accountID]
-	if acc.CurrentBalance != 900 {
-		t.Fatalf("expected account balance 900, got %.2f", acc.CurrentBalance)
+	if acc.CurrentBalance != 999 {
+		t.Fatalf("Execute wrote the balance (%.2f): reporting must not correct", acc.CurrentBalance)
+	}
+
+	// Refresh is the maintenance path and does write.
+	if _, err := useCase.Refresh(accountID); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if acc = accountRepo.accounts[accountID]; acc.CurrentBalance != 900 {
+		t.Fatalf("expected account balance 900 after Refresh, got %.2f", acc.CurrentBalance)
 	}
 }
 
@@ -4568,4 +4561,38 @@ func (f *fakeTransactionRepo) DeleteMany(ids []string) error {
 		}
 	}
 	return nil
+}
+
+func (f *fakeTransactionRepo) ReverseMany(txns []*transaction.Transaction) error {
+	for _, t := range txns {
+		if err := f.Update(t); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// CancelStatus mirrors the real repository: a cancellation keeps its motive and its
+// actor. A fake that dropped them would let the use case pass while production
+// recorded nothing — which is exactly how the gap it covers went unnoticed.
+func (f *fakeTransactionRepo) CancelStatus(txn *transaction.Transaction, occurredOn time.Time) error {
+	txn.OccurredOn = occurredOn
+	return nil
+}
+
+// Faithful to the real one: only live payment legs count. A fake that ignored the
+// status would let a reversed payment keep a bill looking settled — the defect this
+// method exists to close.
+func (f *fakeTransactionRepo) SumLivePaymentsByInvoiceID(invoiceID string) (float64, error) {
+	var total float64
+	for _, tx := range f.created {
+		if tx.PaidInvoiceID == nil || *tx.PaidInvoiceID != invoiceID {
+			continue
+		}
+		if tx.Status != transaction.StatusConfirmed {
+			continue
+		}
+		total += tx.Amount
+	}
+	return total, nil
 }

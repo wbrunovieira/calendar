@@ -25,8 +25,9 @@ func (f *invariantAccountRepo) FindAll() ([]*bankaccount.BankAccount, error) {
 
 type invariantTxRepo struct {
 	transaction.Repository
-	balances    map[string]float64
-	invoiceSums map[string]float64
+	balances     map[string]float64
+	invoiceSums  map[string]float64
+	installments []*transaction.Transaction
 }
 
 func (f *invariantTxRepo) CalculateBalanceByBankAccountID(accountID string) (float64, error) {
@@ -35,6 +36,12 @@ func (f *invariantTxRepo) CalculateBalanceByBankAccountID(accountID string) (flo
 
 func (f *invariantTxRepo) SumByInvoiceID(invoiceID string) (float64, error) {
 	return f.invoiceSums[invoiceID], nil
+}
+
+// The embedded interface is nil, so every method the check calls has to exist here or
+// the test panics instead of failing — which is a fine signal, but only once.
+func (f *invariantTxRepo) List(transaction.ListFilter) ([]*transaction.Transaction, error) {
+	return f.installments, nil
 }
 
 type invariantInvoiceRepo struct {

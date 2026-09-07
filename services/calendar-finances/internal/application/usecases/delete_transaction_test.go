@@ -188,8 +188,15 @@ func TestDeleteTransaction_CrossProfilePairRemovesBothLegs(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(txRepo.created) != 0 {
-		t.Errorf("expected both legs removed, %d left", len(txRepo.created))
+	// The rows stay: a ledger reverses instead of deleting, so what was undone
+	// remains auditable. Both legs must be reversed together.
+	if len(txRepo.created) != 2 {
+		t.Errorf("expected both legs kept, %d left", len(txRepo.created))
+	}
+	for _, tx := range txRepo.created {
+		if tx.Status != transaction.StatusReversed {
+			t.Errorf("%s status = %s, want REVERSED", tx.ID, tx.Status)
+		}
 	}
 	if got := accountRepo.accounts["personal"].CurrentBalance; got != 1000 {
 		t.Errorf("expected the source profile restored to 1000, got %.2f", got)
@@ -267,6 +274,17 @@ func (r *failingDeleteRepo) DeleteMany(ids []string) error {
 	return r.fakeTransactionRepo.DeleteMany(ids)
 }
 
+// The reversal path is the one in use now; a failure on either leg must surface
+// instead of leaving the pair half-reversed behind a success.
+func (r *failingDeleteRepo) ReverseMany(txns []*transaction.Transaction) error {
+	for _, t := range txns {
+		if t.ID == r.failFor {
+			return errors.New("boom")
+		}
+	}
+	return r.fakeTransactionRepo.ReverseMany(txns)
+}
+
 // Deleting a linked pair must be all-or-nothing. Half-deleting it leaves the other
 // profile holding a credit with no ledger row behind it, and the caller is told
 // something failed — so nobody goes looking.
@@ -303,11 +321,11 @@ func TestDeleteTransaction_LinkedPairIsRemovedAtomically(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(txRepo.deletedTogether) != 1 {
-		t.Fatalf("expected a single atomic delete, got %d calls", len(txRepo.deletedTogether))
+	if len(txRepo.reversedTogether) != 1 {
+		t.Fatalf("expected a single atomic reversal, got %d calls", len(txRepo.reversedTogether))
 	}
-	if len(txRepo.deletedTogether[0]) != 2 {
-		t.Fatalf("expected both legs in one unit of work, got %v", txRepo.deletedTogether[0])
+	if len(txRepo.reversedTogether[0]) != 2 {
+		t.Fatalf("expected both legs in one unit of work, got %v", txRepo.reversedTogether[0])
 	}
 }
 
@@ -365,8 +383,9 @@ func TestDeleteTransaction_RecalculationFailureSurfaces(t *testing.T) {
 
 type atomicDeleteSpy struct {
 	fakeTransactionRepo
-	deletedTogether [][]string
-	fail            bool
+	deletedTogether  [][]string
+	fail             bool
+	reversedTogether [][]string
 }
 
 func (r *atomicDeleteSpy) DeleteMany(ids []string) error {
@@ -382,15 +401,38 @@ func (r *atomicDeleteSpy) DeleteMany(ids []string) error {
 	return nil
 }
 
+func (r *atomicDeleteSpy) ReverseMany(txns []*transaction.Transaction) error {
+	ids := make([]string, 0, len(txns))
+	for _, t := range txns {
+		ids = append(ids, t.ID)
+	}
+	r.reversedTogether = append(r.reversedTogether, ids)
+	if r.fail {
+		return errors.New("boom")
+	}
+	for _, t := range txns {
+		if err := r.Update(t); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 type failingRecalculator struct{}
 
-func (failingRecalculator) Execute(string) (*RecalculateBalanceResult, error) {
+func (failingRecalculator) Refresh(string) (*RecalculateBalanceResult, error) {
 	return nil, errors.New("recalculation unavailable")
 }
 
 type invoiceRecalcSpy struct {
-	called []string
-	err    error
+	called   []string
+	restated []string
+	err      error
+}
+
+func (s *invoiceRecalcSpy) RestatePayments(invoiceID string) (*invoice.Invoice, error) {
+	s.restated = append(s.restated, invoiceID)
+	return nil, s.err
 }
 
 func (s *invoiceRecalcSpy) Execute(invoiceID string) (*invoice.Invoice, error) {
@@ -448,8 +490,8 @@ func TestDeleteTransaction_APaidInvoiceRefusalDoesNotFailTheDelete(t *testing.T)
 	if err := uc.Execute(txn.ID); err != nil {
 		t.Fatalf("a paid invoice must not block the deletion, got %v", err)
 	}
-	if len(txRepo.created) != 0 {
-		t.Fatal("expected the transaction to be deleted anyway")
+	if len(txRepo.created) != 1 || txRepo.created[0].Status != transaction.StatusReversed {
+		t.Fatal("expected the transaction to be reversed anyway")
 	}
 }
 
@@ -518,5 +560,45 @@ func TestDeleteTransaction_CardBalanceDoesNotDependOnDeletionOrder(t *testing.T)
 
 	if purchaseFirst != paymentFirst {
 		t.Fatalf("the same two deletions must leave the same balance: %.2f vs %.2f", purchaseFirst, paymentFirst)
+	}
+}
+
+// Undoing a charge and undoing a payment are different repairs on the same bill.
+//
+// The payment leg carries paid_invoice_id, not invoice_id, so the recomputation that
+// follows a reversal never looked at it: reversing an invoice payment left the bill
+// PAID with a paid_amount nobody had paid, still counting against the card limit, and
+// the guard on Reopen() then made that state unreachable through the API.
+func TestReverseTransaction_ReversingAPaymentRestatesTheBillItPaid(t *testing.T) {
+	invoiceID := "inv-1"
+	payment := &transaction.Transaction{
+		ID: "pay-1", ProfileID: "p1", BankAccountID: "checking",
+		DestinationAccountID: strPtr("card"),
+		Type:                 transaction.TypeTransfer, Status: transaction.StatusConfirmed,
+		Amount: 799.57, Currency: "BRL", Description: "Pagamento fatura",
+		OccurredOn:    time.Date(2026, time.September, 3, 0, 0, 0, 0, time.UTC),
+		PaidInvoiceID: &invoiceID,
+	}
+
+	repo := &fakeTransactionRepo{created: []*transaction.Transaction{payment}}
+	accounts := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		"checking": {ID: "checking", ProfileID: "p1", Name: "Conta", Type: bankaccount.AccountTypeChecking, Currency: "BRL"},
+		"card":     {ID: "card", ProfileID: "p1", Name: "Cartao", Type: bankaccount.AccountTypeCreditCard, Currency: "BRL"},
+	}}
+	spy := &invoiceRecalcSpy{}
+	uc := NewDeleteTransactionUseCase(repo, accounts, nil)
+	uc.SetInvoiceRecalculator(spy)
+
+	if err := uc.ExecuteWithReason(ReverseTransactionInput{
+		ID: "pay-1", Reason: transaction.ReasonNeverHappened, By: "bruno",
+	}); err != nil {
+		t.Fatalf("reverse: %v", err)
+	}
+
+	if len(spy.restated) != 1 || spy.restated[0] != invoiceID {
+		t.Fatalf("the bill this payment settled was not restated: %v", spy.restated)
+	}
+	if len(spy.called) != 0 {
+		t.Errorf("a payment is not a charge on the bill; it must not recompute the total: %v", spy.called)
 	}
 }

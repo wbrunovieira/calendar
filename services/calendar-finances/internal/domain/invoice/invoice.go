@@ -3,6 +3,7 @@ package invoice
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"time"
 
 	"github.com/google/uuid"
@@ -213,6 +214,15 @@ func (i *Invoice) Reopen() error {
 	if i.Status != StatusClosed {
 		return errors.New("can only reopen closed invoices")
 	}
+	// A bill that was ever paid must not reopen, even after its payment is reversed.
+	// RederiveStatus sends such a bill to CLOSED, which used to be unreachable from
+	// PAID — so without this guard the path PAID -> reverse payment -> CLOSED ->
+	// Reopen() puts an old cycle back to OPEN, and it starts accepting charges from a
+	// later one. That is the merged-cycle failure, through a door opened by the fix
+	// for something else.
+	if i.PaidAt != nil || (i.PaidAmount != nil && *i.PaidAmount > 0) {
+		return errors.New("a bill that was paid cannot be reopened; correct its transactions instead")
+	}
 	i.Status = StatusOpen
 	i.touch()
 	return nil
@@ -270,4 +280,62 @@ type Repository interface {
 	Update(invoice *Invoice) error
 	Delete(id string) error
 	FindOpenPastClosingDate(now time.Time) ([]*Invoice, error)
+}
+
+// RestatePayments sets what a bill has been paid to what its live payment entries
+// actually add up to, and re-derives the status from there.
+//
+// Pay() accumulates, which is right when money moves and wrong afterwards: reversing
+// a payment left paid_amount standing, so a bill that had just been un-paid still read
+// as PAID, still counted against the card limit, and — with the guard on Reopen — could
+// not be recovered through the API at all. Payment is a derived fact like the total;
+// this is the method that says so.
+func (i *Invoice) RestatePayments(total float64) {
+	if i == nil {
+		return
+	}
+	if total <= 0 {
+		i.PaidAmount = nil
+		// PaidAt deliberately survives. It records that this bill was settled once,
+		// and Reopen() reads it: clearing it here re-opened the path
+		// PAID -> reverse the payment -> CLOSED -> Reopen() -> OPEN, which puts an old
+		// cycle back to accepting charges from a later one. The bill is payable again
+		// either way, because Pay() does not care about status — so nothing is lost by
+		// keeping the fact.
+	} else {
+		restated := math.Round(total*100) / 100
+		i.PaidAmount = &restated
+	}
+	i.RederiveStatus()
+	i.touch()
+}
+
+// RederiveStatus recomputes the status from Amount and PaidAmount as they already
+// stand. It records no payment and never touches PaidAmount.
+//
+// This is what a recalculation needs. Routing it through Pay() — which accumulates —
+// doubled the recorded payment on every reversal, since a reversal recomputes the
+// invoice immediately afterwards.
+//
+// It moves in both directions on purpose: a bill whose total drops below what was
+// paid is settled, and a settled bill that later receives a charge owes again.
+func (i *Invoice) RederiveStatus() {
+	if i == nil || i.Status == StatusOpen {
+		return
+	}
+	paid := 0.0
+	if i.PaidAmount != nil {
+		paid = *i.PaidAmount
+	}
+	switch {
+	case paid <= 0:
+		if i.Status == StatusPaid || i.Status == StatusPartiallyPaid {
+			i.Status = StatusClosed
+		}
+	case paid+paymentTolerance >= i.Amount:
+		i.Status = StatusPaid
+	default:
+		i.Status = StatusPartiallyPaid
+	}
+	i.touch()
 }

@@ -1,0 +1,47 @@
+{
+  "note": "Real Pluggy credit-card bill payloads. Ids anonymised; every other field verbatim.",
+  "results": [
+    {
+      "id": "fixture-3bb2806f2fb7",
+      "dueDate": "2026-09-03T00:00:00.000Z",
+      "totalAmount": "799.57",
+      "totalAmountCurrencyCode": "BRL",
+      "billClosingDate": "2026-08-27T00:00:00.000Z",
+      "minimumPaymentAmount": "119.94",
+      "allowsInstallments": true,
+      "payments_count": 1,
+      "payments_total": "119.94",
+      "finance_charges_count": 0,
+      "finance_charges_total": "0.00",
+      "payment_status": "PAST_DUE_UNCONFIRMED"
+    },
+    {
+      "id": "fixture-51ed6fad2bae",
+      "dueDate": "2026-08-03T00:00:00.000Z",
+      "totalAmount": "1018.18",
+      "totalAmountCurrencyCode": "BRL",
+      "billClosingDate": "2026-07-27T00:00:00.000Z",
+      "minimumPaymentAmount": "168.39",
+      "allowsInstallments": true,
+      "payments_count": 1,
+      "payments_total": "1018.18",
+      "finance_charges_count": 4,
+      "finance_charges_total": "806.38",
+      "payment_status": "PAID"
+    },
+    {
+      "id": "fixture-cf36e55dfe7d",
+      "dueDate": "2026-07-03T00:00:00.000Z",
+      "totalAmount": "769.51",
+      "totalAmountCurrencyCode": "BRL",
+      "billClosingDate": "2026-06-26T00:00:00.000Z",
+      "minimumPaymentAmount": "115.42",
+      "allowsInstallments": true,
+      "payments_count": 1,
+      "payments_total": "769.51",
+      "finance_charges_count": 0,
+      "finance_charges_total": "0.00",
+      "payment_status": "PAID"
+    }
+  ]
+}

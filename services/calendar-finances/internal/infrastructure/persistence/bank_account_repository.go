@@ -10,10 +10,10 @@ import (
 )
 
 type BankAccountRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewBankAccountRepository(db *sql.DB) *BankAccountRepository {
+func NewBankAccountRepository(db Querier) *BankAccountRepository {
 	return &BankAccountRepository{db: db}
 }
 
@@ -211,11 +211,12 @@ func (r *BankAccountRepository) UpdateDisplayOrders(updates []bankaccount.Displa
 		return nil
 	}
 
-	tx, err := r.db.Begin()
+	sc, err := beginScope(r.db)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = sc.Rollback() }()
+	tx := sc
 
 	// Build a single UPDATE with CASE for efficiency
 	var ids []string
@@ -242,5 +243,5 @@ func (r *BankAccountRepository) UpdateDisplayOrders(updates []bankaccount.Displa
 		return err
 	}
 
-	return tx.Commit()
+	return sc.Commit()
 }

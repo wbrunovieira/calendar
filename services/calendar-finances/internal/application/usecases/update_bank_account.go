@@ -7,10 +7,23 @@ import (
 )
 
 type UpdateBankAccountInput struct {
-	ProfileID      string  `json:"profileId"`
-	Name           string  `json:"name"`
-	Type           string  `json:"type"`
-	CurrentBalance float64 `json:"currentBalance"`
+	ProfileID string `json:"profileId"`
+	Name      string `json:"name"`
+	Type      string `json:"type"`
+	// CurrentBalance is deliberately absent. The account form is not a way to set a
+	// balance: a balance is initialBalance plus the sum of the account's confirmed
+	// transactions, and editing a name or a closing day says nothing about those.
+	//
+	// It used to be here, as a non-pointer float64 assigned straight onto the
+	// account. That meant any client could name a balance, and a body that merely
+	// omitted the field set it to zero — with every guard around the balance
+	// (Apply's mandatory reason and author, the balance_adjustments trail, the
+	// invariant report) standing next to a door the cadastro endpoint left open.
+	// A payload still carrying the key is ignored rather than rejected, so the
+	// existing forms keep working; it simply no longer does anything.
+	//
+	// To correct a balance deliberately, use POST /bank-accounts/{id}/recalculate-balance.
+	//
 	// InitialBalance is the seed balance the account was created with. It is a
 	// pointer because omitting it must preserve the stored value: only send it to
 	// correct a seed that was cadastrado wrong, since every later balance derives
@@ -60,7 +73,6 @@ func (uc *UpdateBankAccountUseCase) Execute(id string, input UpdateBankAccountIn
 	account.ProfileID = input.ProfileID
 	account.Name = input.Name
 	account.Type = bankaccount.AccountType(input.Type)
-	account.CurrentBalance = input.CurrentBalance
 	// A balance is always initialBalance + the sum of its transactions. Correcting
 	// the seed must therefore shift the current balance by the same delta —
 	// the transactions themselves did not change.

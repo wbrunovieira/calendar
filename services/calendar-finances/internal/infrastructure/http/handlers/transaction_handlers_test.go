@@ -239,3 +239,15 @@ func TestTransactionHandlers_List_ShouldReturnAllTransactionsWithoutDateFilter(t
 		t.Errorf("Expected 2 transactions, got %d", response.Total)
 	}
 }
+
+// CancelStatus mirrors the real repository: a cancellation keeps its motive and its
+// actor. A fake that dropped them would let the use case pass while production
+// recorded nothing — which is exactly how the gap it covers went unnoticed.
+func (f *FakeTransactionRepository) CancelStatus(txn *transaction.Transaction, occurredOn time.Time) error {
+	txn.OccurredOn = occurredOn
+	return nil
+}
+
+func (f *FakeTransactionRepository) SumLivePaymentsByInvoiceID(string) (float64, error) {
+	return 0, nil
+}

@@ -2,13 +2,20 @@ package usecases
 
 // BalanceRecalculator recomputes an account's current_balance from its confirmed
 // transactions, replacing any stale incremental value.
+// BalanceRecalculator is the automatic path: it keeps a derived balance in step after
+// a write. Refresh, not Execute — Execute reports without writing, which is what the
+// manual endpoint does now, and wiring the automatic path to it would leave every
+// balance stale behind a successful response.
 type BalanceRecalculator interface {
-	Execute(accountID string) (*RecalculateBalanceResult, error)
+	Refresh(accountID string) (*RecalculateBalanceResult, error)
 }
 
-// recalculateAccounts calls the recalculator for each non-empty account ID.
-// Errors are silently absorbed: the mutation already succeeded, and the
-// manual /recalculate-balance route exists as a fallback.
+// recalculateAccounts calls the recalculator for each non-empty account ID and
+// RETURNS the first failure.
+//
+// Most callers still discard it with `_ =`, which is where a stale balance goes
+// unnoticed — but the absorbing happens at the call sites, not here. The comment used
+// to say otherwise and sent a reviewer looking in the wrong file.
 func recalculateAccounts(r BalanceRecalculator, ids ...string) error {
 	if r == nil {
 		return nil
@@ -17,7 +24,7 @@ func recalculateAccounts(r BalanceRecalculator, ids ...string) error {
 		if id == "" {
 			continue
 		}
-		if _, err := r.Execute(id); err != nil {
+		if _, err := r.Refresh(id); err != nil {
 			return err
 		}
 	}

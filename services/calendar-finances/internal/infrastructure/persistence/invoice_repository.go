@@ -9,10 +9,10 @@ import (
 )
 
 type InvoiceRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewInvoiceRepository(db *sql.DB) *InvoiceRepository {
+func NewInvoiceRepository(db Querier) *InvoiceRepository {
 	return &InvoiceRepository{db: db}
 }
 
