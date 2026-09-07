@@ -102,7 +102,7 @@ func TestMarkMatched_AndUnmatch(t *testing.T) {
 		BookedDate: time.Now(), AmountMinor: 100, Currency: "BRL", AccountCurrency: "BRL",
 	})
 
-	if err := line.MarkMatched("tx-1"); err != nil {
+	if err := line.MarkMatched(100); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if line.Status != StatusMatched {
@@ -168,14 +168,14 @@ func TestMarkMatched_RequiresTheTransactionItMatched(t *testing.T) {
 		AccountID: "acc-1", Provider: ProviderPluggy, ExternalID: "ref",
 		BookedDate: time.Now(), AmountMinor: 100, Currency: "BRL", AccountCurrency: "BRL",
 	})
-	if err := line.MarkMatched(""); err == nil {
+	if err := line.MarkMatched(0); err == nil {
 		t.Error("MATCHED with no referent asserts a check with nothing behind it")
 	}
-	if err := line.MarkMatched("tx-9"); err != nil {
+	if err := line.MarkMatched(100); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if line.MatchedTransactionID == nil || *line.MatchedTransactionID != "tx-9" {
-		t.Error("the match must name what it was reconciled against")
+	if line.Status != StatusMatched {
+		t.Error("the line must project as matched")
 	}
 }
 
@@ -189,9 +189,7 @@ func TestMarkUnmatched_ClearsBothTheReferentAndAnyOrphanReason(t *testing.T) {
 	if line.IgnoredReason != nil {
 		t.Error("an orphan reason on an unmatched line reads as a decision nobody made")
 	}
-	if line.MatchedTransactionID != nil {
-		t.Error("the referent must be cleared too")
-	}
+
 }
 
 // The sign of `amount` means opposite things depending on the account, confirmed

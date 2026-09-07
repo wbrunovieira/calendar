@@ -474,6 +474,36 @@ func RunMigrations(db *sql.DB) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_statement_imports_account ON finance.statement_imports(account_id, period_to DESC)`,
 
+		// Reconciliation matches, N:N and append-only.
+		//
+		// A single matched_transaction_id on the line is a 1:1 model that is already
+		// known to be wrong: an invoice payment covers many purchases, a Pix settles
+		// two bills, a split spreads one line across entries. Building the matcher on
+		// the column would mean migrating halfway through.
+		//
+		// Never deleted, only undone with a reason — a reconciliation that destroys
+		// its own history cannot say why a line went back to pending.
+		`CREATE TABLE IF NOT EXISTS finance.reconciliation_matches (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			line_id UUID NOT NULL REFERENCES finance.bank_statement_lines(id) ON DELETE CASCADE,
+			transaction_id UUID NOT NULL REFERENCES finance.transactions(id),
+			amount_minor BIGINT NOT NULL CHECK (amount_minor <> 0),
+			method VARCHAR(20) NOT NULL
+				CHECK (method IN ('EXTERNAL_ID','END_TO_END','DETERMINISTIC','FUZZY','MANUAL')),
+			score NUMERIC(5,4),
+			matched_by TEXT NOT NULL,
+			matched_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			unmatched_at TIMESTAMP,
+			unmatched_reason TEXT,
+			CONSTRAINT match_undo_has_reason
+				CHECK (unmatched_at IS NULL OR unmatched_reason IS NOT NULL)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_matches_line ON finance.reconciliation_matches(line_id) WHERE unmatched_at IS NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_matches_transaction ON finance.reconciliation_matches(transaction_id) WHERE unmatched_at IS NULL`,
+		// The same pair may be matched again after being undone, but not twice at once.
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_matches_live_pair
+			ON finance.reconciliation_matches(line_id, transaction_id) WHERE unmatched_at IS NULL`,
+
 		// Migration: bank statement lines, stored verbatim.
 		//
 		// Reconciliation must be persisted data, not chat work. Everything the
@@ -506,11 +536,6 @@ func RunMigrations(db *sql.DB) error {
 			status VARCHAR(12) NOT NULL DEFAULT 'UNMATCHED'
 				CHECK (status IN ('UNMATCHED','MATCHED','IGNORED')),
 			ignored_reason TEXT,
-			matched_transaction_id UUID REFERENCES finance.transactions(id),
-			-- A match must name what it was reconciled against, or it asserts a check
-			-- with nothing behind it.
-			CONSTRAINT statement_matched_has_reference
-				CHECK (status <> 'MATCHED' OR matched_transaction_id IS NOT NULL),
 			imported_at TIMESTAMP NOT NULL DEFAULT NOW(),
 			-- last_seen_at is bumped on every import that covered this line's window.
 			-- Keeping the raw payload does not reveal that the bank STOPPED reporting
@@ -554,7 +579,6 @@ func RunMigrations(db *sql.DB) error {
 		`ALTER TABLE finance.bank_statement_lines ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP NOT NULL DEFAULT NOW()`,
 		`ALTER TABLE finance.bank_statement_lines ADD COLUMN IF NOT EXISTS provider_status VARCHAR(10) NOT NULL DEFAULT 'POSTED'`,
 		`ALTER TABLE finance.bank_statement_lines ADD COLUMN IF NOT EXISTS bill_id TEXT`,
-		`ALTER TABLE finance.bank_statement_lines ADD COLUMN IF NOT EXISTS matched_transaction_id UUID REFERENCES finance.transactions(id)`,
 		`DO $$
 		BEGIN
 			-- account_id belongs in the uniqueness key: an OFX FITID is unique only
@@ -574,16 +598,11 @@ func RunMigrations(db *sql.DB) error {
 					ADD CONSTRAINT statement_provider_status_check
 					CHECK (provider_status IN ('PENDING','POSTED'));
 			END IF;
-			IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'statement_matched_has_reference') THEN
-				-- NOT VALID: adding a CHECK validates every existing row on the spot,
-				-- which is the next instance of the lesson just learned with
-				-- CREATE TABLE IF NOT EXISTS — it passes on an empty database and
-				-- fails on one that has been around. Existing rows are validated
-				-- separately, after they are fixed.
-				ALTER TABLE finance.bank_statement_lines
-					ADD CONSTRAINT statement_matched_has_reference
-					CHECK (status <> 'MATCHED' OR matched_transaction_id IS NOT NULL) NOT VALID;
-			END IF;
+			-- matched_transaction_id and its CHECK were dropped when
+			-- reconciliation_matches arrived: a transaction id on the line as well
+			-- would be a second source for the same fact, and two sources diverge.
+			ALTER TABLE finance.bank_statement_lines DROP CONSTRAINT IF EXISTS statement_matched_has_reference;
+			ALTER TABLE finance.bank_statement_lines DROP COLUMN IF EXISTS matched_transaction_id;
 		END $$`,
 		`CREATE INDEX IF NOT EXISTS idx_statement_account_date ON finance.bank_statement_lines(account_id, booked_date)`,
 		`CREATE INDEX IF NOT EXISTS idx_statement_status ON finance.bank_statement_lines(status) WHERE status = 'UNMATCHED'`,

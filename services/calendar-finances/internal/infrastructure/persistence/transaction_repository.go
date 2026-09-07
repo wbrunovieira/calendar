@@ -694,10 +694,27 @@ func (r *TransactionRepository) ReverseMany(txns []*transaction.Transaction) err
 	// It crosses aggregates deliberately: inside this transaction the undo is atomic,
 	// and at this size atomicity is worth more than layer purity.
 	for _, t := range txns {
+		// Soft-undo, so the cause survives. A plain status flip left whoever
+		// reconciles next seeing a line return to pending with no explanation —
+		// the same gap the revisions table exists to close for value changes.
 		if _, err := tx.Exec(`
-			UPDATE finance.bank_statement_lines
-			SET status = 'UNMATCHED', matched_transaction_id = NULL, updated_at = NOW()
-			WHERE matched_transaction_id = $1
+			UPDATE finance.reconciliation_matches
+			SET unmatched_at = NOW(), unmatched_reason = 'TRANSACTION_REVERSED'
+			WHERE transaction_id = $1 AND unmatched_at IS NULL
+		`, t.ID); err != nil {
+			return err
+		}
+		// The line goes back to pending only when nothing else still covers it: with
+		// N:N matches, one entry being reversed does not necessarily leave the line
+		// uncovered.
+		if _, err := tx.Exec(`
+			UPDATE finance.bank_statement_lines l
+			SET status = 'UNMATCHED', updated_at = NOW()
+			WHERE l.status = 'MATCHED'
+			  AND EXISTS (SELECT 1 FROM finance.reconciliation_matches m
+			              WHERE m.line_id = l.id AND m.transaction_id = $1)
+			  AND NOT EXISTS (SELECT 1 FROM finance.reconciliation_matches m
+			                  WHERE m.line_id = l.id AND m.unmatched_at IS NULL)
 		`, t.ID); err != nil {
 			return err
 		}

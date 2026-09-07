@@ -220,9 +220,9 @@ func (r *StatementRepository) List(filter statement.ListFilter) ([]*statement.Li
 func (r *StatementRepository) Update(line *statement.Line) error {
 	result, err := r.db.Exec(`
 		UPDATE finance.bank_statement_lines
-		SET status = $2, ignored_reason = $3, matched_transaction_id = $4, updated_at = NOW()
+		SET status = $2, ignored_reason = $3, updated_at = NOW()
 		WHERE id = $1
-	`, line.ID, string(line.Status), line.IgnoredReason, line.MatchedTransactionID)
+	`, line.ID, string(line.Status), line.IgnoredReason)
 	if err != nil {
 		return err
 	}
@@ -241,7 +241,7 @@ func (r *StatementRepository) query(clause string, args ...any) ([]*statement.Li
 		SELECT id, account_id, provider, external_id, booked_date, value_date,
 		       amount_minor, currency, amount_account_minor,
 		       description, end_to_end_id, provider_status, bill_id, raw, status, ignored_reason,
-		       matched_transaction_id, imported_at, last_seen_at, updated_at
+		       imported_at, last_seen_at, updated_at
 		FROM finance.bank_statement_lines `+clause, args...)
 	if err != nil {
 		return nil, err
@@ -256,7 +256,7 @@ func (r *StatementRepository) query(clause string, args ...any) ([]*statement.Li
 		if err := rows.Scan(&l.ID, &l.AccountID, &provider, &l.ExternalID, &l.BookedDate, &l.ValueDate,
 			&l.AmountMinor, &l.Currency, &l.AmountAccountMinor,
 			&l.Description, &l.EndToEndID, &providerStatus, &l.BillID, &raw, &status, &l.IgnoredReason,
-			&l.MatchedTransactionID, &l.ImportedAt, &l.LastSeenAt, &l.UpdatedAt); err != nil {
+			&l.ImportedAt, &l.LastSeenAt, &l.UpdatedAt); err != nil {
 			return nil, err
 		}
 		l.Provider = statement.Provider(provider)

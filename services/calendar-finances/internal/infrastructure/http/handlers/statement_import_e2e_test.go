@@ -113,7 +113,7 @@ func TestE2E_ReimportRefreshesTheBankSideButKeepsReconciliationWork(t *testing.T
 	if err != nil {
 		t.Fatalf("reading back: %v", err)
 	}
-	if err := stored.MarkMatched(stTxID); err != nil {
+	if err := stored.MarkMatched(5558); err != nil {
 		t.Fatalf("marking: %v", err)
 	}
 	if err := repo.Update(stored); err != nil {
@@ -253,7 +253,7 @@ func TestE2E_AMatchIsDroppedWhenTheBankSideChanges(t *testing.T) {
 		t.Fatalf("import: %v", err)
 	}
 	stored, _ := repo.FindByExternalID(stAccountID, statement.ProviderPluggy, "plg-drop")
-	if err := stored.MarkMatched(stTxID); err != nil {
+	if err := stored.MarkMatched(5558); err != nil {
 		t.Fatalf("marking: %v", err)
 	}
 	if err := repo.Update(stored); err != nil {
@@ -276,27 +276,32 @@ func TestE2E_AMatchIsDroppedWhenTheBankSideChanges(t *testing.T) {
 	}
 }
 
-func TestE2E_ReversingATransactionUnmatchesItsStatementLine(t *testing.T) {
-	// Detecting this later is not enough: until the invariant runs, the line reads
-	// MATCHED and drops out of the pending report, so nobody looks at it.
+func TestE2E_ReversalUndoesMatchesAndKeepsTheReason(t *testing.T) {
+	// Undoing must leave the cause on file. A plain status flip left whoever
+	// reconciles next seeing a line return to pending with no explanation.
 	db := testDB(t)
 	seedStatementAccount(t, db)
-	repo := persistence.NewStatementRepository(db)
+	lines := persistence.NewStatementRepository(db)
+	matches := persistence.NewMatchRepository(db)
 	txRepo := persistence.NewTransactionRepository(db)
 	accountRepo := persistence.NewBankAccountRepository(db)
 
-	if _, _, err := repo.UpsertMany([]*statement.Line{lineFor(t, "plg-unmatch", 5558, "BRL", nil)}); err != nil {
+	if _, _, err := lines.UpsertMany([]*statement.Line{lineFor(t, "plg-match", 5558, "BRL", nil)}); err != nil {
 		t.Fatalf("import: %v", err)
 	}
-	line, err := repo.FindByExternalID(stAccountID, statement.ProviderPluggy, "plg-unmatch")
+	line, _ := lines.FindByExternalID(stAccountID, statement.ProviderPluggy, "plg-match")
+	m, err := statement.NewMatch(line.ID, stTxID, 5558, statement.MethodExternalID, "teste")
 	if err != nil {
-		t.Fatalf("reading back: %v", err)
+		t.Fatalf("building the match: %v", err)
 	}
-	if err := line.MarkMatched(stTxID); err != nil {
+	if err := matches.Create(m); err != nil {
+		t.Fatalf("saving the match: %v", err)
+	}
+	if err := line.MarkMatched(5558); err != nil {
 		t.Fatalf("marking: %v", err)
 	}
-	if err := repo.Update(line); err != nil {
-		t.Fatalf("saving the match: %v", err)
+	if err := lines.Update(line); err != nil {
+		t.Fatalf("saving the line: %v", err)
 	}
 
 	recalc := usecases.NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
@@ -307,14 +312,25 @@ func TestE2E_ReversingATransactionUnmatchesItsStatementLine(t *testing.T) {
 		t.Fatalf("reversing: %v", err)
 	}
 
-	after, err := repo.FindByExternalID(stAccountID, statement.ProviderPluggy, "plg-unmatch")
+	stored, err := matches.ByLine(line.ID)
 	if err != nil {
-		t.Fatalf("reading back: %v", err)
+		t.Fatalf("reading matches: %v", err)
 	}
+	if len(stored) != 1 {
+		t.Fatalf("the match row must survive the undo, got %d", len(stored))
+	}
+	if !stored[0].IsUndone() {
+		t.Error("the match must be undone")
+	}
+	if stored[0].UnmatchedReason == nil || *stored[0].UnmatchedReason != statement.UnmatchTransactionReversed {
+		t.Errorf("reason = %v, want TRANSACTION_REVERSED — without it the line is pending with no explanation", stored[0].UnmatchedReason)
+	}
+	if statement.CoveredMinor(stored) != 0 {
+		t.Error("an undone match must not count as coverage")
+	}
+
+	after, _ := lines.FindByExternalID(stAccountID, statement.ProviderPluggy, "plg-match")
 	if after.Status != statement.StatusUnmatched {
-		t.Errorf("status = %s, want UNMATCHED: the entry behind the match was reversed", after.Status)
-	}
-	if after.MatchedTransactionID != nil {
-		t.Error("the referent must be cleared, or it points at an entry that no longer counts")
+		t.Errorf("line status = %s, want UNMATCHED: nothing covers it any more", after.Status)
 	}
 }

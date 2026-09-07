@@ -105,11 +105,6 @@ type Line struct {
 
 	Status        Status  `json:"status"`
 	IgnoredReason *string `json:"ignoredReason,omitempty"`
-	// MatchedTransactionID names WHAT this line was reconciled against. MATCHED
-	// without a referent is an assertion with nothing behind it: it cannot answer
-	// "matched to which entry", and it cannot notice when that entry is later
-	// reversed.
-	MatchedTransactionID *string `json:"matchedTransactionId,omitempty"`
 
 	ImportedAt time.Time `json:"importedAt"`
 	// LastSeenAt is bumped by every import covering this line's window, so a row the
@@ -237,18 +232,21 @@ func (l *Line) IsForeign(accountCurrency string) bool {
 	return !strings.EqualFold(l.Currency, accountCurrency)
 }
 
-// MarkMatched records what this line was reconciled against. The transaction id is
-// required: a match with no referent cannot be verified, cannot be undone knowingly,
-// and cannot notice when the entry behind it is reversed.
-func (l *Line) MarkMatched(transactionID string) error {
+// MarkMatched projects the line's status from the matches that cover it. What it was
+// matched AGAINST lives in reconciliation_matches, not here: keeping a transaction id
+// on the line as well would be a second source for the same fact, and two sources
+// diverge. This field exists only so a listing can filter without joining.
+//
+// Coverage is passed in rather than looked up, so the caller decides what "covered"
+// means — full or partial — and the domain does not reach for a repository.
+func (l *Line) MarkMatched(coveredMinor int64) error {
 	if !l.Matchable() {
 		return errors.New("a pending line cannot be matched: its amount and date still move when it posts")
 	}
-	if strings.TrimSpace(transactionID) == "" {
-		return errors.New("a match must name the transaction it was reconciled against")
+	if coveredMinor == 0 {
+		return errors.New("a matched line must be covered by something")
 	}
 	l.Status = StatusMatched
-	l.MatchedTransactionID = &transactionID
 	l.IgnoredReason = nil
 	l.UpdatedAt = time.Now()
 	return nil
@@ -258,7 +256,6 @@ func (l *Line) MarkMatched(transactionID string) error {
 // line, so a wrong match costs a correction and not evidence.
 func (l *Line) MarkUnmatched() {
 	l.Status = StatusUnmatched
-	l.MatchedTransactionID = nil
 	// Cleared for the same reason MarkMatched clears it: an orphan reason left on an
 	// unmatched line reads as a decision nobody made.
 	l.IgnoredReason = nil
@@ -275,7 +272,6 @@ func (l *Line) MarkIgnored(reason string) error {
 	}
 	l.Status = StatusIgnored
 	l.IgnoredReason = &trimmed
-	l.MatchedTransactionID = nil
 	l.UpdatedAt = time.Now()
 	return nil
 }
