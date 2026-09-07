@@ -95,18 +95,25 @@ type Transaction struct {
 	CostCenter           *string `json:"costCenter,omitempty"`
 	// CostCenterID links the transaction to a client, project or department.
 	// CostCenter above is the older free-text field, kept as it was.
-	CostCenterID            *string         `json:"costCenterId,omitempty"`
-	IsPersonalReimbursement bool            `json:"isPersonalReimbursement"`
-	OccurredOn              time.Time       `json:"occurredOn"`
-	DueOn                   *time.Time      `json:"dueOn,omitempty"`
-	ReminderOn              *time.Time      `json:"reminderOn,omitempty"` // Optional reminder date for alerts (10, 5, 1, 0 days before)
-	RecurrenceRule          *string         `json:"recurrenceRule,omitempty"`
-	InstallmentNumber       *int            `json:"installmentNumber,omitempty"`
-	InstallmentTotal        *int            `json:"installmentTotal,omitempty"`
-	ExternalID              *string         `json:"externalId,omitempty"`
-	ReversedAt              *time.Time      `json:"reversedAt,omitempty"`
-	ReversalReason          *ReversalReason `json:"reversalReason,omitempty"`
-	ReversalNote            *string         `json:"reversalNote,omitempty"`
+	CostCenterID            *string    `json:"costCenterId,omitempty"`
+	IsPersonalReimbursement bool       `json:"isPersonalReimbursement"`
+	OccurredOn              time.Time  `json:"occurredOn"`
+	DueOn                   *time.Time `json:"dueOn,omitempty"`
+	ReminderOn              *time.Time `json:"reminderOn,omitempty"` // Optional reminder date for alerts (10, 5, 1, 0 days before)
+	RecurrenceRule          *string    `json:"recurrenceRule,omitempty"`
+	InstallmentNumber       *int       `json:"installmentNumber,omitempty"`
+	InstallmentTotal        *int       `json:"installmentTotal,omitempty"`
+	ExternalID              *string    `json:"externalId,omitempty"`
+	// PaidInvoiceID names the invoice this transaction PAYS, as opposed to InvoiceID,
+	// which names the invoice a card purchase BELONGS TO. Without it, the only way to
+	// find a bill's payments is matching amount and date — the fragile matching this
+	// system is removing — and the invariant that live payments must not exceed the
+	// bill cannot be written at all.
+	PaidInvoiceID *string `json:"paidInvoiceId,omitempty"`
+
+	ReversedAt     *time.Time      `json:"reversedAt,omitempty"`
+	ReversalReason *ReversalReason `json:"reversalReason,omitempty"`
+	ReversalNote   *string         `json:"reversalNote,omitempty"`
 	// ReversedBy names WHO undid it: a person, an agent, or an importer. The incident
 	// that motivated this was an AI agent removing a legitimate entry, so this is not
 	// a detail — it is the central control for that risk.
@@ -140,6 +147,7 @@ type CreateParams struct {
 	InstallmentNumber       *int
 	InstallmentTotal        *int
 	ExternalID              *string
+	PaidInvoiceID           *string
 	LinkedTransactionID     *string
 	Tags                    []string
 	Splits                  []*Split
@@ -204,6 +212,7 @@ func New(params CreateParams) (*Transaction, error) {
 		InstallmentNumber:       cloneInt(params.InstallmentNumber),
 		InstallmentTotal:        cloneInt(params.InstallmentTotal),
 		ExternalID:              cloneString(params.ExternalID),
+		PaidInvoiceID:           cloneString(params.PaidInvoiceID),
 		LinkedTransactionID:     cloneString(params.LinkedTransactionID),
 		Tags:                    sanitizeTags(params.Tags),
 		Splits:                  []*Split{},

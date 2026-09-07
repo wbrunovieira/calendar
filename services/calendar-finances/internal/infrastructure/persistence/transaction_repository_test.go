@@ -70,6 +70,8 @@ func TestTransactionRepositoryCreate(t *testing.T) {
 			nil, // linked_transaction_id
 			sqlmock.AnyArg(),
 			sqlmock.AnyArg(),
+
+			sqlmock.AnyArg(), // paid_invoice_id: which invoice this payment settles
 		).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
@@ -103,7 +105,7 @@ func TestTransactionRepositoryFindByExternalID(t *testing.T) {
 
 	now := fixedTime()
 
-	// Column list must match scanTransaction exactly (25 columns, including
+	// Column list must match scanTransaction exactly (26 columns, including
 	// is_personal_reimbursement) — a mismatch silently broke dedup by external_id.
 	txRows := sqlmock.NewRows([]string{
 		"id", "profile_id", "bank_account_id", "destination_account_id", "category_id", "invoice_id",

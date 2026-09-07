@@ -889,6 +889,7 @@ func (uc *PayInvoiceUseCaseV2) pay(input PayInvoiceInput) (*invoice.Invoice, err
 				Currency:             linkedAccount.Currency,
 				Description:          "Pagamento fatura " + creditCard.Name,
 				OccurredOn:           paidAt,
+				PaidInvoiceID:        &inv.ID,
 			})
 			if terr != nil {
 				return nil, terr

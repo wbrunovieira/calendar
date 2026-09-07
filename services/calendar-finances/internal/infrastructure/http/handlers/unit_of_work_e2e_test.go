@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/brunovieira/calendar-finances/internal/application/usecases"
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/persistence"
 )
@@ -208,5 +209,50 @@ func TestE2E_InvoicePaymentIsAllOrNothing(t *testing.T) {
 	}
 	if txAfter != 0 {
 		t.Errorf("%d transactions survived a failed payment, want 0", txAfter)
+	}
+}
+
+// The payment leg carried no reference to the invoice it paid, so "which entries paid
+// this bill" could only be answered by matching amount and date — the fragile matching
+// this work exists to remove. It also blocked the invariant that catches the failure
+// behind the R$ 8.863,07 phantom: the live payments of a bill must not exceed it.
+func TestE2E_PaymentLegNamesTheInvoiceItPaid(t *testing.T) {
+	db := testDB(t)
+	seedUnitOfWork(t, db)
+
+	const cardID = "e2e00000-0000-0000-0000-0000000000b5"
+	const invoiceID = "e2e00000-0000-0000-0000-0000000000b6"
+	t.Cleanup(func() {
+		db.Exec(`DELETE FROM finance.transactions WHERE bank_account_id = $1 OR destination_account_id = $1`, cardID)
+		db.Exec(`DELETE FROM finance.credit_card_invoices WHERE id = $1`, invoiceID)
+		db.Exec(`DELETE FROM finance.bank_accounts WHERE id = $1`, cardID)
+	})
+	exec(t, db, `INSERT INTO finance.bank_accounts
+		(id, profile_id, name, type, initial_balance, current_balance, currency, closing_day, due_day, linked_account_id)
+		VALUES ($1,$2,'Cartao Vinculo','CREDIT_CARD',0,-500,'BRL',27,3,$3) ON CONFLICT (id) DO NOTHING`,
+		cardID, uowProfileID, uowAccountID)
+	exec(t, db, `INSERT INTO finance.credit_card_invoices
+		(id, bank_account_id, reference_date, opening_date, closing_date, due_date, amount, status)
+		VALUES ($1,$2,'2026-09-01','2026-07-27','2026-08-27','2026-09-03',500,'CLOSED')
+		ON CONFLICT (id) DO NOTHING`, invoiceID, cardID)
+
+	accountRepo := persistence.NewBankAccountRepository(db)
+	txRepo := persistence.NewTransactionRepository(db)
+	invoiceRepo := persistence.NewInvoiceRepository(db)
+	uc := usecases.NewPayInvoiceUseCaseV2(invoiceRepo, accountRepo, txRepo)
+
+	if _, err := uc.Execute(usecases.PayInvoiceInput{
+		InvoiceID: invoiceID, PaidAmount: 500, PaidAt: "2026-09-03",
+	}); err != nil {
+		t.Fatalf("paying: %v", err)
+	}
+
+	var linked int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM finance.transactions
+		WHERE paid_invoice_id = $1 AND type = 'TRANSFER'`, invoiceID).Scan(&linked); err != nil {
+		t.Fatalf("querying: %v", err)
+	}
+	if linked != 1 {
+		t.Errorf("%d payment legs name the invoice, want 1 — otherwise the only way to find them is matching amount and date", linked)
 	}
 }

@@ -160,3 +160,64 @@ func TestInvariants_ReversedInstalmentDoesNotBreakTheSeries(t *testing.T) {
 		}
 	}
 }
+
+// The invariant the payment link unlocks, and which the reviewer argued is better than
+// a natural uniqueness key: it does not block a legitimate duplicate, it is verifiable
+// continuously, and it catches exactly the failure behind the R$ 8.863,07 phantom —
+// invoices reading as paid far beyond what they were worth.
+func TestInvariants_PaymentsBeyondTheBillAreReported(t *testing.T) {
+	accounts, txRepo, invoices := cycleFixture(t)
+	invoices.list = []*invoice.Invoice{
+		{ID: "inv-1", BankAccountID: "card", Amount: 500,
+			OpeningDate: day(2026, time.July, 27), ClosingDate: day(2026, time.August, 27), DueDate: day(2026, time.September, 3)},
+	}
+	// The same bill paid twice: 1000 against a bill of 500.
+	invID := "inv-1"
+	for i := 0; i < 2; i++ {
+		txRepo.created = append(txRepo.created, &transaction.Transaction{
+			ID: "pay" + string(rune('0'+i)), ProfileID: "p1", BankAccountID: "checking",
+			DestinationAccountID: strPtr("card"),
+			Type:                 transaction.TypeTransfer, Status: transaction.StatusConfirmed,
+			Amount: 500, Currency: "BRL", Description: "Pagamento fatura",
+			OccurredOn: day(2026, time.September, 3), PaidInvoiceID: &invID,
+		})
+	}
+
+	got, err := NewCheckInvariantsUseCase(accounts, txRepo, invoices).Execute()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got.PaymentDrifts) == 0 {
+		t.Fatal("a bill paid beyond its value must be reported")
+	}
+	if got.PaymentDrifts[0].PaidTotal != 1000 || got.PaymentDrifts[0].InvoiceAmount != 500 {
+		t.Errorf("got paid %.2f against %.2f", got.PaymentDrifts[0].PaidTotal, got.PaymentDrifts[0].InvoiceAmount)
+	}
+	if got.OK {
+		t.Error("paying a bill twice is actionable")
+	}
+}
+
+func TestInvariants_AReversedPaymentDoesNotCountTowardsTheBill(t *testing.T) {
+	accounts, txRepo, invoices := cycleFixture(t)
+	invoices.list = []*invoice.Invoice{
+		{ID: "inv-2", BankAccountID: "card", Amount: 500,
+			OpeningDate: day(2026, time.July, 27), ClosingDate: day(2026, time.August, 27), DueDate: day(2026, time.September, 3)},
+	}
+	invID := "inv-2"
+	txRepo.created = append(txRepo.created,
+		&transaction.Transaction{ID: "live", ProfileID: "p1", BankAccountID: "checking",
+			DestinationAccountID: strPtr("card"), Type: transaction.TypeTransfer,
+			Status: transaction.StatusConfirmed, Amount: 500, Currency: "BRL",
+			Description: "Pagamento fatura", OccurredOn: day(2026, time.September, 3), PaidInvoiceID: &invID},
+		&transaction.Transaction{ID: "undone", ProfileID: "p1", BankAccountID: "checking",
+			DestinationAccountID: strPtr("card"), Type: transaction.TypeTransfer,
+			Status: transaction.StatusReversed, Amount: 500, Currency: "BRL",
+			Description: "Pagamento fatura", OccurredOn: day(2026, time.September, 3), PaidInvoiceID: &invID},
+	)
+
+	got, _ := NewCheckInvariantsUseCase(accounts, txRepo, invoices).Execute()
+	if len(got.PaymentDrifts) != 0 {
+		t.Errorf("a reversed payment must not count: %v", got.PaymentDrifts)
+	}
+}

@@ -90,6 +90,20 @@ type InstallmentInvariant struct {
 	Duplicated    []int  `json:"duplicated,omitempty"`
 }
 
+// PaymentInvariant is a bill whose live payments exceed what it is worth.
+//
+// This is the failure behind the R$ 8.863,07 phantom, seen from the other side: a bill
+// can be marked paid without the money moving, and money can move twice against one
+// bill. Unlike a uniqueness constraint it blocks nothing — two legitimate identical
+// payments stay possible — it only reports what does not add up.
+type PaymentInvariant struct {
+	InvoiceID     string  `json:"invoiceId"`
+	BankAccountID string  `json:"bankAccountId"`
+	InvoiceAmount float64 `json:"invoiceAmount"`
+	PaidTotal     float64 `json:"paidTotal"`
+	Excess        float64 `json:"excess"`
+}
+
 // CheckInvariantsResult is a read-only report. Nothing here writes: a drift is a
 // transaction to hunt down, never a number to overwrite.
 //
@@ -106,6 +120,7 @@ type CheckInvariantsResult struct {
 	// have overlapping cycles or a half-written instalment plan.
 	CycleDrifts       []CycleInvariant       `json:"cycleDrifts"`
 	InstallmentDrifts []InstallmentInvariant `json:"installmentDrifts"`
+	PaymentDrifts     []PaymentInvariant     `json:"paymentDrifts"`
 	OK                bool                   `json:"ok"`
 }
 
@@ -141,6 +156,7 @@ func (uc *CheckInvariantsUseCase) Execute() (*CheckInvariantsResult, error) {
 		InvoiceDrifts:     []InvoiceInvariant{},
 		CycleDrifts:       []CycleInvariant{},
 		InstallmentDrifts: []InstallmentInvariant{},
+		PaymentDrifts:     []PaymentInvariant{},
 		OK:                true,
 	}
 
@@ -163,9 +179,61 @@ func (uc *CheckInvariantsUseCase) Execute() (*CheckInvariantsResult, error) {
 		if err := uc.checkInstallmentSeries(account, result); err != nil {
 			return nil, err
 		}
+		if err := uc.checkPaymentsAgainstBills(account, result); err != nil {
+			return nil, err
+		}
 	}
 
 	return result, nil
+}
+
+// checkPaymentsAgainstBills reports a bill whose live payments exceed its value.
+//
+// Reversed and cancelled payments are excluded: they were undone on purpose. The
+// tolerance absorbs cent rounding only — anything above it is money that moved twice
+// or a bill that shrank after being paid, and both are worth a look.
+func (uc *CheckInvariantsUseCase) checkPaymentsAgainstBills(
+	account *bankaccount.BankAccount,
+	result *CheckInvariantsResult,
+) error {
+	invoices, err := uc.invoiceRepo.FindByBankAccountID(account.ID)
+	if err != nil {
+		return err
+	}
+	if len(invoices) == 0 {
+		return nil
+	}
+
+	accountID := account.ID
+	txns, err := uc.txRepo.List(transaction.ListFilter{ProfileID: account.ProfileID, BankAccountID: &accountID, IncludeAsDestination: true})
+	if err != nil {
+		return err
+	}
+
+	paid := map[string]float64{}
+	for _, txn := range txns {
+		if txn.PaidInvoiceID == nil {
+			continue
+		}
+		if txn.Status == transaction.StatusReversed || txn.Status == transaction.StatusCancelled {
+			continue
+		}
+		paid[*txn.PaidInvoiceID] += txn.Amount
+	}
+
+	for _, inv := range invoices {
+		total, ok := paid[inv.ID]
+		if !ok || total <= inv.Amount+0.005 {
+			continue
+		}
+		result.PaymentDrifts = append(result.PaymentDrifts, PaymentInvariant{
+			InvoiceID: inv.ID, BankAccountID: account.ID,
+			InvoiceAmount: inv.Amount, PaidTotal: total,
+			Excess: round2(total - inv.Amount),
+		})
+		result.OK = false
+	}
+	return nil
 }
 
 // checkCycleCoverage verifies that a card's invoices tile its timeline: no two cover

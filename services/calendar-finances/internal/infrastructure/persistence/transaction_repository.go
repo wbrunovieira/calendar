@@ -59,12 +59,12 @@ func (r *TransactionRepository) Create(txn *transaction.Transaction) (err error)
 			id, profile_id, bank_account_id, destination_account_id, category_id, invoice_id,
 			type, status, amount, currency, description, notes, cost_center, cost_center_id, is_personal_reimbursement,
 			occurred_on, due_on, reminder_on, recurrence_rule, installment_number, installment_total,
-			external_id, linked_transaction_id, created_at, updated_at
+			external_id, linked_transaction_id, created_at, updated_at, paid_invoice_id
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, $10, $11, $12, $13, $14, $15,
 			$16, $17, $18, $19, $20, $21,
-			$22, $23, $24, $25
+			$22, $23, $24, $25, $26
 		)
 	`
 
@@ -99,6 +99,7 @@ func (r *TransactionRepository) Create(txn *transaction.Transaction) (err error)
 		nullableString(txn.LinkedTransactionID),
 		txn.CreatedAt,
 		txn.UpdatedAt,
+		nullableString(txn.PaidInvoiceID),
 	)
 	if err != nil {
 		return err

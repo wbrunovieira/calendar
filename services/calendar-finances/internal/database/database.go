@@ -474,6 +474,12 @@ func RunMigrations(db *sql.DB) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_statement_imports_account ON finance.statement_imports(account_id, period_to DESC)`,
 
+		// Which invoice a transaction PAYS, distinct from invoice_id, which is the
+		// invoice a card purchase BELONGS TO. Without it the only way to find a bill's
+		// payments is matching amount and date.
+		`ALTER TABLE finance.transactions ADD COLUMN IF NOT EXISTS paid_invoice_id UUID REFERENCES finance.credit_card_invoices(id)`,
+		`CREATE INDEX IF NOT EXISTS idx_transactions_paid_invoice ON finance.transactions(paid_invoice_id) WHERE paid_invoice_id IS NOT NULL`,
+
 		// Every correction of a stored balance, so a recalculation leaves a mark
 		// instead of erasing one.
 		`CREATE TABLE IF NOT EXISTS finance.balance_adjustments (
