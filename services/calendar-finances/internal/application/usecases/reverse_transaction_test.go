@@ -118,3 +118,78 @@ func TestDelete_ReversesBothLegsOfALinkedTransfer(t *testing.T) {
 		}
 	}
 }
+
+// Cases the accountant flagged as likely uncovered by a happy-path test.
+
+func TestReverse_RequiresAReason(t *testing.T) {
+	txn := &transaction.Transaction{ID: "t", Status: transaction.StatusConfirmed, Amount: 10}
+	if err := txn.Reverse("", "", "bruno", time.Now()); err == nil {
+		t.Error("a reversal without a reason must be refused: a reason field that never gets filled is a control that exists in the design and does not operate")
+	}
+	if err := txn.Reverse("QUALQUER_COISA", "", "bruno", time.Now()); err == nil {
+		t.Error("an unknown reason must be refused")
+	}
+}
+
+func TestReverse_RequiresAnActor(t *testing.T) {
+	txn := &transaction.Transaction{ID: "t", Status: transaction.StatusConfirmed, Amount: 10}
+	if err := txn.Reverse(transaction.ReasonNeverHappened, "", "", time.Now()); err == nil {
+		t.Error("the actor is required: the incident behind this feature was an automated agent removing a legitimate entry")
+	}
+}
+
+func TestReverse_PlannedMustBeCancelledNotReversed(t *testing.T) {
+	// Two statuses meaning "does not count" with no written rule for which is how a
+	// ledger ends up with a balance that differs depending on who wrote the query.
+	txn := &transaction.Transaction{ID: "t", Status: transaction.StatusPlanned, Amount: 10}
+	if err := txn.Reverse(transaction.ReasonNeverHappened, "", "bruno", time.Now()); err == nil {
+		t.Error("a planned transaction never moved money — undoing it is a cancellation")
+	}
+}
+
+func TestReverse_ReasonDecidesWhetherTheEffectRetroacts(t *testing.T) {
+	// An error is a rectification and retroacts. A reversal by the issuer is a second
+	// real fact: the balance between the two dates really was what it was.
+	cases := []struct {
+		reason    transaction.ReversalReason
+		retroacts bool
+	}{
+		{transaction.ReasonNeverHappened, true},
+		{transaction.ReasonDuplicated, true},
+		{transaction.ReasonWrongAmount, true},
+		{transaction.ReasonWrongAccount, true},
+		{transaction.ReasonBankReversed, false},
+		{transaction.ReasonPaymentReturned, false},
+		{transaction.ReasonPurchaseCancelled, false},
+	}
+	for _, c := range cases {
+		txn := &transaction.Transaction{ID: "t", Status: transaction.StatusConfirmed, Amount: 10}
+		if err := txn.Reverse(c.reason, "", "bruno", time.Now()); err != nil {
+			t.Fatalf("%s: %v", c.reason, err)
+		}
+		if got := txn.ReversalRetroacts(); got != c.retroacts {
+			t.Errorf("%s: retroacts = %v, want %v", c.reason, got, c.retroacts)
+		}
+	}
+}
+
+func TestReverse_RecordsWhoAndWhy(t *testing.T) {
+	txn := &transaction.Transaction{ID: "t", Status: transaction.StatusConfirmed, Amount: 55.58}
+	at := time.Date(2026, 9, 7, 10, 0, 0, 0, time.UTC)
+
+	if err := txn.Reverse(transaction.ReasonDuplicated, "linha duplicada na importacao", "agente-claude", at); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if txn.ReversalReason == nil || *txn.ReversalReason != transaction.ReasonDuplicated {
+		t.Error("the reason must survive")
+	}
+	if txn.ReversedBy == nil || *txn.ReversedBy != "agente-claude" {
+		t.Error("the actor must survive")
+	}
+	if txn.ReversalNote == nil || *txn.ReversalNote != "linha duplicada na importacao" {
+		t.Error("the free-text note must survive alongside the enum")
+	}
+	if txn.ReversedAt == nil || !txn.ReversedAt.Equal(at) {
+		t.Error("reversedAt must record when")
+	}
+}

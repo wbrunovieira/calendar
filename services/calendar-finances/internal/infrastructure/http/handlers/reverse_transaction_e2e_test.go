@@ -133,12 +133,137 @@ func TestE2E_ReversingTwiceIsRefusedByTheDatabase(t *testing.T) {
 	}
 }
 
-// The status CHECK constraint must accept REVERSED, or the migration did not run.
-func TestE2E_DatabaseAcceptsReversedStatus(t *testing.T) {
+// The database must both accept REVERSED and refuse it without an audit trail. A
+// reason column that can be left NULL is a control that exists in the schema and does
+// not operate.
+func TestE2E_DatabaseRequiresAuditOnReversedRows(t *testing.T) {
 	db := testDB(t)
 	seedReversal(t, db)
 
-	if _, err := db.Exec(`UPDATE finance.transactions SET status = 'REVERSED' WHERE id = $1`, revTxID); err != nil {
-		t.Fatalf("the CHECK constraint rejects REVERSED — migration missing: %v", err)
+	if _, err := db.Exec(`UPDATE finance.transactions SET status = 'REVERSED' WHERE id = $1`, revTxID); err == nil {
+		t.Error("the database accepted REVERSED with no reason and no actor — the audit constraint is missing")
+	}
+
+	if _, err := db.Exec(`UPDATE finance.transactions
+		SET status = 'REVERSED', reversal_reason = 'DUPLICADO', reversed_by = 'teste', reversed_at = NOW()
+		WHERE id = $1`, revTxID); err != nil {
+		t.Fatalf("the CHECK rejects a properly audited reversal — migration wrong: %v", err)
+	}
+}
+
+// The three findings that blocked the first review round were the same failure: the
+// rest of the system did not know REVERSED existed. One test per consumer.
+
+func TestE2E_ReversedPurchaseLeavesTheInvoice(t *testing.T) {
+	// A reversed card purchase that still counts makes the invoice claim a debt with
+	// no counterpart — and the recalculation that runs right after a reversal would
+	// rewrite the total with the reversed line still in it.
+	db := testDB(t)
+	seedReversal(t, db)
+
+	const invoiceID = "e1e00000-0000-0000-0000-000000000009"
+	t.Cleanup(func() { db.Exec(`DELETE FROM finance.credit_card_invoices WHERE id = $1`, invoiceID) })
+	exec(t, db, `INSERT INTO finance.credit_card_invoices
+		(id, bank_account_id, reference_date, opening_date, closing_date, due_date, amount, status)
+		VALUES ($1,$2,'2026-07-01','2026-06-27','2026-07-27','2026-08-03',55.58,'CLOSED')
+		ON CONFLICT (id) DO NOTHING`, invoiceID, revAccountID)
+	exec(t, db, `UPDATE finance.transactions SET invoice_id = $1 WHERE id = $2`, invoiceID, revTxID)
+
+	txRepo := persistence.NewTransactionRepository(db)
+	accountRepo := persistence.NewBankAccountRepository(db)
+	recalc := usecases.NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
+
+	before, err := txRepo.SumByInvoiceID(invoiceID)
+	if err != nil {
+		t.Fatalf("summing before: %v", err)
+	}
+	if before != 55.58 {
+		t.Fatalf("setup: invoice should total 55.58, got %.2f", before)
+	}
+
+	if err := usecases.NewDeleteTransactionUseCase(txRepo, accountRepo, recalc).
+		ExecuteWithReason(usecases.ReverseTransactionInput{
+			ID: revTxID, Reason: transaction.ReasonNeverHappened, By: "teste",
+		}); err != nil {
+		t.Fatalf("reversing: %v", err)
+	}
+
+	after, err := txRepo.SumByInvoiceID(invoiceID)
+	if err != nil {
+		t.Fatalf("summing after: %v", err)
+	}
+	if after != 0 {
+		t.Errorf("invoice still totals %.2f — a reversed purchase must leave the bill", after)
+	}
+}
+
+func TestE2E_ReversedRowCannotBeConfirmedBackToLife(t *testing.T) {
+	// PUT /transactions/{id}/status was a second write path with no guard: it brought
+	// a reversed row back to CONFIRMED and applied its balance a second time.
+	db := testDB(t)
+	seedReversal(t, db)
+
+	txRepo := persistence.NewTransactionRepository(db)
+	accountRepo := persistence.NewBankAccountRepository(db)
+	recalc := usecases.NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
+
+	if err := usecases.NewDeleteTransactionUseCase(txRepo, accountRepo, recalc).
+		ExecuteWithReason(usecases.ReverseTransactionInput{
+			ID: revTxID, Reason: transaction.ReasonNeverHappened, By: "teste",
+		}); err != nil {
+		t.Fatalf("reversing: %v", err)
+	}
+
+	txn, err := txRepo.GetByID(revTxID)
+	if err != nil {
+		t.Fatalf("reading back: %v", err)
+	}
+	if err := txn.Confirm(txn.OccurredOn); err == nil {
+		t.Error("confirming a reversed row must be refused — REVERSED is terminal")
+	}
+	if err := txn.CanTransitionTo(transaction.StatusCancelled); err == nil {
+		t.Error("cancelling a reversed row must be refused too")
+	}
+}
+
+func TestE2E_ReversedRowIsHiddenFromTheDefaultListing(t *testing.T) {
+	// Showing it by default is how the next reconciliation finds it on the system
+	// side as "extra" and hunts the very phantom this feature prevents.
+	db := testDB(t)
+	seedReversal(t, db)
+
+	txRepo := persistence.NewTransactionRepository(db)
+	accountRepo := persistence.NewBankAccountRepository(db)
+	recalc := usecases.NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
+	if err := usecases.NewDeleteTransactionUseCase(txRepo, accountRepo, recalc).
+		ExecuteWithReason(usecases.ReverseTransactionInput{
+			ID: revTxID, Reason: transaction.ReasonDuplicated, By: "teste",
+		}); err != nil {
+		t.Fatalf("reversing: %v", err)
+	}
+
+	account := revAccountID
+	visible, err := txRepo.List(transaction.ListFilter{ProfileID: revProfileID, BankAccountID: &account})
+	if err != nil {
+		t.Fatalf("listing: %v", err)
+	}
+	for _, tx := range visible {
+		if tx.ID == revTxID {
+			t.Error("a reversed row must not appear in the default listing")
+		}
+	}
+
+	audit, err := txRepo.List(transaction.ListFilter{ProfileID: revProfileID, BankAccountID: &account, IncludeReversed: true})
+	if err != nil {
+		t.Fatalf("listing for audit: %v", err)
+	}
+	found := false
+	for _, tx := range audit {
+		if tx.ID == revTxID {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the audit view must still see it — otherwise the row is lost in practice")
 	}
 }

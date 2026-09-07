@@ -455,6 +455,16 @@ func RunMigrations(db *sql.DB) error {
 		// so a reversed row stops counting without disappearing.
 		`ALTER TABLE finance.transactions ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMP`,
 		`ALTER TABLE finance.transactions ADD COLUMN IF NOT EXISTS reversal_reason TEXT`,
+		`ALTER TABLE finance.transactions ADD COLUMN IF NOT EXISTS reversal_note TEXT`,
+		`ALTER TABLE finance.transactions ADD COLUMN IF NOT EXISTS reversed_by TEXT`,
+		// A reversed row must carry why and by whom. The constraint is what makes the
+		// control operate instead of merely existing in the schema.
+		`DO $$
+		BEGIN
+			ALTER TABLE finance.transactions DROP CONSTRAINT IF EXISTS transactions_reversal_audited;
+			ALTER TABLE finance.transactions ADD CONSTRAINT transactions_reversal_audited
+				CHECK (status <> 'REVERSED' OR (reversal_reason IS NOT NULL AND reversed_by IS NOT NULL));
+		END $$`,
 		`DO $$
 		BEGIN
 			ALTER TABLE finance.transactions DROP CONSTRAINT IF EXISTS transactions_status_check;

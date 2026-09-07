@@ -2595,20 +2595,11 @@ func TestUpdateTransactionStatus_TransferCancel_ShouldReverseDestination(t *test
 	_, err := useCase.Execute("tx-transfer-2", UpdateTransactionStatusInput{
 		Status: "CANCELLED",
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Source should be restored
-	source := accountRepo.accounts[sourceID]
-	if source.CurrentBalance != 5000 {
-		t.Fatalf("expected source balance 5000 after cancel, got %.2f", source.CurrentBalance)
-	}
-
-	// Destination should be reversed
-	dest := accountRepo.accounts[destID]
-	if dest.CurrentBalance != 1000 {
-		t.Fatalf("expected destination balance 1000 after cancel, got %.2f", dest.CurrentBalance)
+	// Cancelling a CONFIRMED movement is refused: it moved money, so it is undone by
+	// reversal, which records why and by whom. Cancelling would be a third,
+	// unaudited way out with its own semantics.
+	if err == nil {
+		t.Fatal("cancelling a confirmed transaction must be refused — use the reversal path")
 	}
 }
 
@@ -3194,30 +3185,11 @@ func TestUpdateTransactionStatus_CrossProfileCancel_ShouldReverseBoth(t *testing
 		Status: "CANCELLED",
 		Reason: strPtr("Cancelado"),
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Source balance should be restored (8500 + 50 = 8550) — EXPENSE reversal
-	source := accountRepo.accounts[sourceID]
-	if source.CurrentBalance != 8550 {
-		t.Fatalf("expected source balance 8550, got %.2f", source.CurrentBalance)
-	}
-
-	// Dest balance should be reversed (550 - 50 = 500) — INCOME reversal
-	dest := accountRepo.accounts[destID]
-	if dest.CurrentBalance != 500 {
-		t.Fatalf("expected dest balance 500, got %.2f", dest.CurrentBalance)
-	}
-
-	// Both should be cancelled
-	sourceTx, _ := txRepo.GetByID(sourceTxID)
-	if sourceTx.Status != transaction.StatusCancelled {
-		t.Fatalf("expected source CANCELLED, got %s", sourceTx.Status)
-	}
-	linkedTx, _ := txRepo.GetByID(destTxID)
-	if linkedTx.Status != transaction.StatusCancelled {
-		t.Fatalf("expected linked CANCELLED, got %s", linkedTx.Status)
+	// Cancelling a CONFIRMED movement is refused: it moved money, so it is undone by
+	// reversal, which records why and by whom. Cancelling would be a third,
+	// unaudited way out with its own semantics.
+	if err == nil {
+		t.Fatal("cancelling a confirmed transaction must be refused — use the reversal path")
 	}
 }
 

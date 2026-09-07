@@ -56,7 +56,11 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 		if input.Reason != nil {
 			reason = *input.Reason
 		}
-		tx.Cancel(reason)
+		// A confirmed movement cannot be cancelled: it is reversed, which records the
+		// motive and the actor. Cancelling would be a third, unaudited way out.
+		if err := tx.Cancel(transaction.ReasonNeverHappened, reason, "api", time.Now()); err != nil {
+			return nil, err
+		}
 		occurredAt = tx.OccurredOn
 	case transaction.StatusPlanned:
 		tx.Status = transaction.StatusPlanned

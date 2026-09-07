@@ -453,12 +453,10 @@ func TestUpdateTransactionStatus_ConfirmedToCancelled_TriggersRecalculate(t *tes
 	uc := setupStatusUC(accounts, []*transaction.Transaction{tx}, recalc)
 
 	_, err := uc.Execute("tx-1", UpdateTransactionStatusInput{Status: "CANCELLED"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if !recalc.calledWith(testAccount) {
-		t.Errorf("expected recalculate after CONFIRMED→CANCELLED, calls=%v", recalc.calls)
+	// Cancelling a CONFIRMED movement is refused: it is undone by reversal, which
+	// records why and by whom. Cancelling would be a third, unaudited way out.
+	if err == nil {
+		t.Fatal("cancelling a confirmed transaction must be refused — use the reversal path")
 	}
 }
 

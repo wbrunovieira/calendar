@@ -216,6 +216,12 @@ func (r *TransactionRepository) List(filter transaction.ListFilter) ([]*transact
 		}
 	}
 
+	// A reversed row is not a transaction any more; showing it by default is how the
+	// next reconciliation finds it on the system side as "extra" and goes hunting the
+	// very phantom this feature exists to prevent. The audit view asks for it.
+	if !filter.IncludeReversed {
+		conditions = append(conditions, "status <> 'REVERSED'")
+	}
 	if filter.Status != nil {
 		addCondition("status", "=", *filter.Status)
 	}
@@ -659,9 +665,12 @@ func (r *TransactionRepository) ReverseMany(txns []*transaction.Transaction) err
 	for _, t := range txns {
 		result, err := tx.Exec(`
 			UPDATE finance.transactions
-			SET status = $2, reversed_at = $3, reversal_reason = $4, updated_at = NOW()
-			WHERE id = $1
-		`, t.ID, string(t.Status), t.ReversedAt, t.ReversalReason)
+			SET status = $2, reversed_at = $3, reversal_reason = $4,
+			    reversal_note = $5, reversed_by = $6, updated_at = NOW()
+			-- The guard belongs to the UPDATE, not only to the Go check above: two
+			-- concurrent reversals both read CONFIRMED and both pass it.
+			WHERE id = $1 AND status <> 'REVERSED'
+		`, t.ID, string(t.Status), t.ReversedAt, t.ReversalReason, t.ReversalNote, t.ReversedBy)
 		if err != nil {
 			return err
 		}
@@ -670,7 +679,7 @@ func (r *TransactionRepository) ReverseMany(txns []*transaction.Transaction) err
 			return err
 		}
 		if affected == 0 {
-			return transaction.ErrNotFound
+			return transaction.ErrAlreadyReversed
 		}
 	}
 
@@ -892,7 +901,11 @@ func (r *TransactionRepository) SumByInvoiceID(invoiceID string) (float64, error
 	query := `
 		SELECT COALESCE(SUM(CASE WHEN type = 'INCOME' THEN -amount ELSE amount END), 0)
 		FROM finance.transactions
-		WHERE invoice_id = $1 AND status != 'CANCELLED'
+		-- REVERSED must be excluded here as much as CANCELLED. A reversed card
+		-- purchase that still counts makes the invoice claim a debt with no
+		-- counterpart, and the recalculation that runs right after a reversal would
+		-- rewrite the invoice total with the reversed line still in it.
+		WHERE invoice_id = $1 AND status NOT IN ('CANCELLED', 'REVERSED')
 	`
 
 	var total float64

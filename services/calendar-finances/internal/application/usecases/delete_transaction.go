@@ -38,7 +38,29 @@ func NewDeleteTransactionUseCase(repo transaction.Repository, accountRepo bankac
 // is what this used to do — reads the transaction that is about to disappear and puts
 // the old numbers straight back, so the deletion silently left a phantom balance
 // behind: on the destination of a transfer, and on the source of any confirmed entry.
+// ReverseTransactionInput carries what a reversal must record. Reason and Actor are
+// required by the domain: a reversal whose motive was not captured at the time cannot
+// be reconstructed later, and the incident that motivated all this was an automated
+// agent removing a legitimate entry.
+type ReverseTransactionInput struct {
+	ID     string
+	Reason transaction.ReversalReason
+	Note   string
+	By     string
+}
+
+// Execute reverses a transaction. Kept for callers that already carry their own
+// context; prefer ExecuteWithReason.
 func (uc *DeleteTransactionUseCase) Execute(id string) error {
+	return uc.ExecuteWithReason(ReverseTransactionInput{
+		ID:     id,
+		Reason: transaction.ReasonNeverHappened,
+		By:     "unspecified",
+	})
+}
+
+func (uc *DeleteTransactionUseCase) ExecuteWithReason(input ReverseTransactionInput) error {
+	id := input.ID
 	txn, err := uc.repo.GetByID(id)
 	if err != nil {
 		return ErrTransactionNotFound
@@ -80,8 +102,19 @@ func (uc *DeleteTransactionUseCase) Execute(id string) error {
 		}
 	}
 
+	// The verb follows the state, not the caller. A planned row never moved money,
+	// so undoing it is a cancellation; a confirmed one is a reversal. Letting both
+	// produce the same status would leave two meanings of "does not count" with no
+	// written rule for which — and an ambiguous status in a ledger becomes a balance
+	// that differs depending on who wrote the query.
 	for _, t := range toReverse {
-		if err := t.Reverse("", now); err != nil {
+		var err error
+		if t.Status == transaction.StatusPlanned {
+			err = t.Cancel(input.Reason, input.Note, input.By, now)
+		} else {
+			err = t.Reverse(input.Reason, input.Note, input.By, now)
+		}
+		if err != nil {
 			return err
 		}
 	}

@@ -33,6 +33,51 @@ const (
 	StatusReversed Status = "REVERSED"
 )
 
+// ReversalReason classifies WHY a transaction was undone, because the answer decides
+// the accounting effect. Two different economic events hide behind "undo":
+//
+//   - an ERROR (never happened, duplicated, wrong amount or account) is a
+//     rectification: nothing obliges the books to carry a September expense that did
+//     not exist, so the effect retroacts to the original date.
+//   - a REVERSAL BY THE ISSUER (chargeback, returned payment, cancelled purchase) is
+//     a second real fact with its own date. The balance between the two dates really
+//     was what it was, so the original keeps counting and the undo is a NEW dated
+//     line.
+//
+// Recording only "reversed" collapses both into one verb and destroys the history in
+// the second case.
+type ReversalReason string
+
+const (
+	ReasonNeverHappened     ReversalReason = "NUNCA_OCORREU"
+	ReasonDuplicated        ReversalReason = "DUPLICADO"
+	ReasonWrongAmount       ReversalReason = "VALOR_INCORRETO"
+	ReasonWrongAccount      ReversalReason = "CONTA_INCORRETA"
+	ReasonBankReversed      ReversalReason = "ESTORNADO_PELO_BANCO"
+	ReasonPaymentReturned   ReversalReason = "PAGAMENTO_DEVOLVIDO"
+	ReasonPurchaseCancelled ReversalReason = "COMPRA_CANCELADA"
+)
+
+// IsCorrection reports whether the reason is a bookkeeping error rather than a new
+// economic fact. Only corrections may retroact to the original date.
+func (r ReversalReason) IsCorrection() bool {
+	switch r {
+	case ReasonNeverHappened, ReasonDuplicated, ReasonWrongAmount, ReasonWrongAccount:
+		return true
+	}
+	return false
+}
+
+// Valid reports whether the reason is one the ledger knows how to treat.
+func (r ReversalReason) Valid() bool {
+	switch r {
+	case ReasonNeverHappened, ReasonDuplicated, ReasonWrongAmount, ReasonWrongAccount,
+		ReasonBankReversed, ReasonPaymentReturned, ReasonPurchaseCancelled:
+		return true
+	}
+	return false
+}
+
 // Transaction encapsulates the financial movement registered in the system.
 type Transaction struct {
 	ID                   string  `json:"id"`
@@ -50,22 +95,27 @@ type Transaction struct {
 	CostCenter           *string `json:"costCenter,omitempty"`
 	// CostCenterID links the transaction to a client, project or department.
 	// CostCenter above is the older free-text field, kept as it was.
-	CostCenterID            *string    `json:"costCenterId,omitempty"`
-	IsPersonalReimbursement bool       `json:"isPersonalReimbursement"`
-	OccurredOn              time.Time  `json:"occurredOn"`
-	DueOn                   *time.Time `json:"dueOn,omitempty"`
-	ReminderOn              *time.Time `json:"reminderOn,omitempty"` // Optional reminder date for alerts (10, 5, 1, 0 days before)
-	RecurrenceRule          *string    `json:"recurrenceRule,omitempty"`
-	InstallmentNumber       *int       `json:"installmentNumber,omitempty"`
-	InstallmentTotal        *int       `json:"installmentTotal,omitempty"`
-	ExternalID              *string    `json:"externalId,omitempty"`
-	ReversedAt              *time.Time `json:"reversedAt,omitempty"`
-	ReversalReason          *string    `json:"reversalReason,omitempty"`
-	LinkedTransactionID     *string    `json:"linkedTransactionId,omitempty"` // Points to paired transaction (cross-profile transfers)
-	Tags                    []string   `json:"tags,omitempty"`
-	Splits                  []*Split   `json:"splits,omitempty"`
-	CreatedAt               time.Time
-	UpdatedAt               time.Time
+	CostCenterID            *string         `json:"costCenterId,omitempty"`
+	IsPersonalReimbursement bool            `json:"isPersonalReimbursement"`
+	OccurredOn              time.Time       `json:"occurredOn"`
+	DueOn                   *time.Time      `json:"dueOn,omitempty"`
+	ReminderOn              *time.Time      `json:"reminderOn,omitempty"` // Optional reminder date for alerts (10, 5, 1, 0 days before)
+	RecurrenceRule          *string         `json:"recurrenceRule,omitempty"`
+	InstallmentNumber       *int            `json:"installmentNumber,omitempty"`
+	InstallmentTotal        *int            `json:"installmentTotal,omitempty"`
+	ExternalID              *string         `json:"externalId,omitempty"`
+	ReversedAt              *time.Time      `json:"reversedAt,omitempty"`
+	ReversalReason          *ReversalReason `json:"reversalReason,omitempty"`
+	ReversalNote            *string         `json:"reversalNote,omitempty"`
+	// ReversedBy names WHO undid it: a person, an agent, or an importer. The incident
+	// that motivated this was an AI agent removing a legitimate entry, so this is not
+	// a detail — it is the central control for that risk.
+	ReversedBy          *string  `json:"reversedBy,omitempty"`
+	LinkedTransactionID *string  `json:"linkedTransactionId,omitempty"` // Points to paired transaction (cross-profile transfers)
+	Tags                []string `json:"tags,omitempty"`
+	Splits              []*Split `json:"splits,omitempty"`
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 // CreateParams represents the attributes required to instantiate a transaction.
@@ -173,7 +223,37 @@ func New(params CreateParams) (*Transaction, error) {
 }
 
 // Confirm marks the transaction as executed.
+// CanTransitionTo is the single place that decides which status changes are legal.
+// Spreading this across use cases is how "reversing twice is refused" ended up
+// implemented in one of three write paths, while PUT /status quietly brought a
+// reversed row back to CONFIRMED and applied its balance a second time.
+func (t *Transaction) CanTransitionTo(next Status) error {
+	// Terminal states are checked BEFORE the same-status shortcut. Returning early on
+	// "already there" made reversing an already-reversed row succeed silently, which
+	// is exactly the double-undo this guard exists to refuse.
+	switch t.Status {
+	case StatusReversed:
+		// Terminal. Undoing an undo is a new transaction, not a status change.
+		return ErrAlreadyReversed
+	case StatusCancelled:
+		return errors.New("a cancelled transaction cannot change status")
+	case StatusConfirmed:
+		if next == StatusConfirmed {
+			return nil
+		}
+		// A confirmed movement really happened; it is undone by reversal, which
+		// records why and by whom. CANCELLED would be a third, unaudited way out.
+		if next == StatusCancelled {
+			return errors.New("a confirmed transaction must be reversed, not cancelled")
+		}
+	}
+	return nil
+}
+
 func (t *Transaction) Confirm(occurredOn time.Time) error {
+	if err := t.CanTransitionTo(StatusConfirmed); err != nil {
+		return err
+	}
 	if t == nil {
 		return errors.New("transaction is nil")
 	}
@@ -186,16 +266,36 @@ func (t *Transaction) Confirm(occurredOn time.Time) error {
 	return nil
 }
 
-// Cancel voids a transaction without removing historical data.
-func (t *Transaction) Cancel(reason string) {
+// Cancel voids a transaction that never moved money. A planned row is cancelled; a
+// confirmed one must be reversed instead, which records why and by whom. Allowing
+// both would leave two statuses meaning "does not count" with no rule for which, and
+// an ambiguous status in a ledger becomes a balance that differs depending on who
+// wrote the query.
+//
+// The audit fields are shared with the reversal path on purpose: whichever way a row
+// stops counting, the books can say why and who did it.
+func (t *Transaction) Cancel(reason ReversalReason, note, by string, at time.Time) error {
 	if t == nil {
-		return
+		return errors.New("no transaction")
 	}
-	if trimmed := strings.TrimSpace(reason); trimmed != "" {
-		t.Notes = &trimmed
+	if err := t.CanTransitionTo(StatusCancelled); err != nil {
+		return err
+	}
+	if !reason.Valid() {
+		return errors.New("a valid reason is required")
+	}
+	if by == "" {
+		return errors.New("the actor is required")
 	}
 	t.Status = StatusCancelled
+	t.ReversedAt = &at
+	t.ReversalReason = &reason
+	t.ReversedBy = &by
+	if trimmed := strings.TrimSpace(note); trimmed != "" {
+		t.ReversalNote = &trimmed
+	}
 	t.touch()
+	return nil
 }
 
 // UpdateAmount adjusts the total amount and validates the existing splits.
@@ -403,15 +503,42 @@ func round2(value float64) float64 {
 //
 // Reversing twice is refused: the second call would look like a new correction and
 // move the balance again for something already undone.
-func (t *Transaction) Reverse(reason string, at time.Time) error {
-	if t.Status == StatusReversed {
-		return errors.New("transaction is already reversed")
+func (t *Transaction) Reverse(reason ReversalReason, note, by string, at time.Time) error {
+	if err := t.CanTransitionTo(StatusReversed); err != nil {
+		return err
 	}
+	// A reason is REQUIRED. A reason field that exists and is never filled is worse
+	// than no field: it reads as a control in the design that does not operate, and
+	// the reason cannot be reconstructed six months later — the difference between a
+	// phantom entry and a genuine chargeback is exactly what a later audit needs.
+	if !reason.Valid() {
+		return errors.New("a valid reversal reason is required")
+	}
+	if by == "" {
+		return errors.New("the reversal actor is required")
+	}
+	// A planned transaction never moved money; undoing it is a cancellation, not a
+	// reversal. Letting both produce REVERSED would leave two statuses meaning
+	// "does not count" with no written rule for which — and ambiguous status in a
+	// ledger becomes a balance that differs depending on who wrote the query.
+	if t.Status == StatusPlanned {
+		return errors.New("a planned transaction must be cancelled, not reversed")
+	}
+
 	t.Status = StatusReversed
 	t.ReversedAt = &at
-	if reason != "" {
-		t.ReversalReason = &reason
+	t.ReversalReason = &reason
+	t.ReversedBy = &by
+	if note != "" {
+		t.ReversalNote = &note
 	}
 	t.UpdatedAt = time.Now()
 	return nil
+}
+
+// ReversalRetroacts reports whether undoing this transaction should take effect on
+// its original date (a bookkeeping correction) or requires a new line dated when the
+// fact happened (a real reversal by the issuer).
+func (t *Transaction) ReversalRetroacts() bool {
+	return t.ReversalReason != nil && t.ReversalReason.IsCorrection()
 }

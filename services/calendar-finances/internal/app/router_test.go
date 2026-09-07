@@ -120,6 +120,7 @@ var wantRoutes = []string{
 	"GET /health",
 	"PATCH /api/v1/goals/{id}/status",
 	"PATCH /api/v1/recurring-transactions/{id}/status",
+	"POST /api/v1/transactions/{id}/reversal",
 	"POST /api/v1/accounts",
 	"POST /api/v1/bank-accounts",
 	"POST /api/v1/bank-accounts/close-month",

@@ -340,6 +340,12 @@ func New(db *sql.DB) (*App, error) {
 
 	apiRouter.HandleFunc("/transactions/{id}", transactionHandler.Delete).Methods("DELETE")
 
+	// A ledger reverses instead of deleting; the DELETE above answers 405 and
+
+	// points here, so a caller is never told 204 for a row that stayed.
+
+	apiRouter.HandleFunc("/transactions/{id}/reversal", transactionHandler.Reverse).Methods("POST")
+
 	// Capital Contribution routes (aportes do sócio)
 	apiRouter.HandleFunc("/capital-contributions/summary", capitalContributionHandler.Summary).Methods("GET")
 	apiRouter.HandleFunc("/capital-contributions", capitalContributionHandler.List).Methods("GET")

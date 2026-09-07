@@ -62,14 +62,29 @@ func deleteRouter(t *testing.T, db *sql.DB) *mux.Router {
 	r := mux.NewRouter()
 	r.PathPrefix("/api/v1").Subrouter().
 		HandleFunc("/transactions/{id}", handler.Delete).Methods("DELETE")
+	r.PathPrefix("/api/v1").Subrouter().
+		HandleFunc("/transactions/{id}/reversal", handler.Reverse).Methods("POST")
 	return r
 }
 
+// The route that undoes a transaction is now a reversal: a ledger keeps the row. The
+// old DELETE answers 405 and points here, so these tests drive the real path.
 func deleteRequest(t *testing.T, r *mux.Router, id string) int {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/api/v1/transactions/"+id, nil))
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost,
+		"/api/v1/transactions/"+id+"/reversal?reason=NUNCA_OCORREU&by=teste-e2e", nil))
 	return rec.Code
+}
+
+// The old verb must refuse loudly instead of answering 204 for a row that stays.
+func TestDeleteTransactionRoute_DeleteVerbIsRefused(t *testing.T) {
+	db := testDB(t)
+	rec := httptest.NewRecorder()
+	deleteRouter(t, db).ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/api/v1/transactions/whatever", nil))
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("DELETE returned %d, want 405 pointing at the reversal route", rec.Code)
+	}
 }
 
 func seedForDelete(t *testing.T, db *sql.DB) (profileID string) {

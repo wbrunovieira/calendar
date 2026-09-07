@@ -8,6 +8,11 @@ import (
 // ErrNotFound is returned by repository lookups when no transaction matches.
 var ErrNotFound = errors.New("transaction not found")
 
+// ErrAlreadyReversed distinguishes "this was already undone" from "this does not
+// exist". Collapsing both into 404 tells the caller there was nothing there, so a
+// balance left crooked by a failed reversal is never investigated.
+var ErrAlreadyReversed = errors.New("transaction is already reversed")
+
 // ListFilter encapsulates query options for fetching transactions.
 type ListFilter struct {
 	ProfileID            string
@@ -21,6 +26,10 @@ type ListFilter struct {
 	IncludeAsDestination bool // Also match transfers where BankAccountID is the destination
 	Limit                *int
 	Offset               *int
+	// IncludeReversed brings reversed rows back into the result. Off by default:
+	// they are audit history, not transactions, and a reconciliation that sees them
+	// reports phantoms.
+	IncludeReversed bool
 }
 
 // Repository represents the persistence contract for transactions.

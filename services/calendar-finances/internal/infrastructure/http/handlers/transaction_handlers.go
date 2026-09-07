@@ -5,8 +5,10 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/brunovieira/calendar-finances/internal/application/usecases"
+	transactionPkg "github.com/brunovieira/calendar-finances/internal/domain/transaction"
 	"github.com/gorilla/mux"
 )
 
@@ -207,14 +209,56 @@ func (h *TransactionHandlers) UpdateStatus(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// Delete handles DELETE /api/v1/transactions/{id}
+// Delete handles DELETE /api/v1/transactions/{id}.
+//
+// The verb no longer matches what happens: a ledger reverses instead of deleting, and
+// a caller told "204 No Content" that then finds the row in the next GET concludes the
+// call failed. Kept only to point at the route that does say what it does.
 func (h *TransactionHandlers) Delete(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Allow", "POST")
+	http.Error(w, "a transaction is not deleted, it is reversed: POST /api/v1/transactions/{id}/reversal?reason=...&by=...", http.StatusMethodNotAllowed)
+}
+
+// Reverse handles POST /api/v1/transactions/{id}/reversal
+//
+// Reason and actor are required. A reversal whose motive was not captured at the time
+// cannot be reconstructed later, and the incident behind this feature was an automated
+// agent removing a legitimate entry — so knowing who reversed it is the control, not a
+// detail.
+func (h *TransactionHandlers) Reverse(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
-	if err := h.deleteUseCase.Execute(id); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+	q := r.URL.Query()
+
+	reason := transactionPkg.ReversalReason(strings.ToUpper(q.Get("reason")))
+	if !reason.Valid() {
+		http.Error(w, "reason is required and must be one of: NUNCA_OCORREU, DUPLICADO, VALOR_INCORRETO, CONTA_INCORRETA, ESTORNADO_PELO_BANCO, PAGAMENTO_DEVOLVIDO, COMPRA_CANCELADA", http.StatusBadRequest)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	by := q.Get("by")
+	if by == "" {
+		by = r.Header.Get("X-Actor")
+	}
+	if by == "" {
+		http.Error(w, "by is required: name the caller (frontend, n8n, agent, api) so a reversal can be traced", http.StatusBadRequest)
+		return
+	}
+
+	err := h.deleteUseCase.ExecuteWithReason(usecases.ReverseTransactionInput{
+		ID: id, Reason: reason, Note: q.Get("note"), By: by,
+	})
+	switch {
+	case err == nil:
+		w.WriteHeader(http.StatusNoContent)
+	case errors.Is(err, transactionPkg.ErrAlreadyReversed):
+		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, usecases.ErrTransactionNotFound), errors.Is(err, transactionPkg.ErrNotFound):
+		http.Error(w, err.Error(), http.StatusNotFound)
+	default:
+		// Anything else is our side failing. Reporting it as 404 tells the caller
+		// there was nothing there, and a balance left crooked by a failed reversal
+		// is never investigated.
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 // DailyBalances handles GET /api/v1/transactions/daily-balances
