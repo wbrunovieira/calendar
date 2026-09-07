@@ -42,6 +42,11 @@ type ImportStatementInput struct {
 	Payload []byte
 }
 
+// ErrStatementStorage marks a failure to WRITE, as opposed to a failure to read what
+// the provider sent. The caller maps them to different statuses: telling a cron that
+// its data was bad when the database was down sends someone to look in the wrong place.
+var ErrStatementStorage = errors.New("could not store the imported lines")
+
 // RejectedLine is a line the importer would not store, and why.
 type RejectedLine struct {
 	ExternalID  string `json:"externalId"`
@@ -127,7 +132,7 @@ func (uc *ImportStatementUseCase) Execute(input ImportStatementInput) (*ImportSt
 	if len(lines) > 0 {
 		inserted, updated, err := uc.lines.UpsertMany(lines)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w: %v", ErrStatementStorage, err)
 		}
 		out.Inserted, out.Updated = inserted, updated
 	}
@@ -202,21 +207,24 @@ func decodeProviderRecords(payload []byte) ([]json.RawMessage, error) {
 	if len(payload) == 0 {
 		return nil, errors.New("empty payload: nothing to import")
 	}
+	// The envelopes are distinguished by PRESENCE, not by length. A day with no
+	// movement sends a present-but-empty list, and treating that as "no recognisable
+	// list" made the morning cron report a broken import on every quiet day.
 	var wrapped struct {
-		Results      []json.RawMessage `json:"results"`
-		Transactions []json.RawMessage `json:"transactions"`
+		Results      *[]json.RawMessage `json:"results"`
+		Transactions *[]json.RawMessage `json:"transactions"`
 		Result       *struct {
-			Results []json.RawMessage `json:"results"`
+			Results *[]json.RawMessage `json:"results"`
 		} `json:"result"`
 	}
 	if err := json.Unmarshal(payload, &wrapped); err == nil {
 		switch {
-		case len(wrapped.Results) > 0:
-			return wrapped.Results, nil
-		case len(wrapped.Transactions) > 0:
-			return wrapped.Transactions, nil
-		case wrapped.Result != nil && len(wrapped.Result.Results) > 0:
-			return wrapped.Result.Results, nil
+		case wrapped.Results != nil:
+			return *wrapped.Results, nil
+		case wrapped.Transactions != nil:
+			return *wrapped.Transactions, nil
+		case wrapped.Result != nil && wrapped.Result.Results != nil:
+			return *wrapped.Result.Results, nil
 		}
 	}
 	var bare []json.RawMessage
@@ -249,13 +257,20 @@ func parseIssuerDate(value string) (time.Time, error) {
 	if strings.TrimSpace(value) == "" {
 		return time.Time{}, errors.New("date is required")
 	}
-	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05.000Z", "2006-01-02"} {
+	// A value carrying an instant is converted to the issuer's day. A bare date is
+	// ALREADY that day: parsing it as midnight UTC and then converting would walk it
+	// back to 21:00 the day before, which is the very off-by-one this function exists
+	// to prevent.
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05.000Z"} {
 		parsed, err := time.Parse(layout, value)
 		if err != nil {
 			continue
 		}
 		local := parsed.In(issuerLocation)
 		return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.UTC), nil
+	}
+	if parsed, err := time.Parse("2006-01-02", value); err == nil {
+		return time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 0, 0, 0, 0, time.UTC), nil
 	}
 	return time.Time{}, fmt.Errorf("date %q is in no format this importer reads", value)
 }

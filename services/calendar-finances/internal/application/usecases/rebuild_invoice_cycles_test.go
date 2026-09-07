@@ -128,10 +128,13 @@ func TestRebuildPlan_ReshapingASettledBillThatMovesMoneyNeedsAHumanToSayYes(t *t
 	}
 }
 
-// The counterpart, and the one the real database is full of: a window that differs
-// while every purchase stays on the same bill either way. Nothing moves, so nobody
-// has to decide anything.
-func TestRebuildPlan_AReshapeThatMovesNoMoneyDoesNotDemandAHuman(t *testing.T) {
+// Reshaping a settled bill needs a human even when nothing moves.
+//
+// The window differs, so applying it would rewrite the date a paid bill closed or fell
+// due — replacing a historical fact with today's configuration. Against the real
+// database this was the difference between "safe to apply unattended" and not: two of
+// three cards flipped to safe while still carrying a fused invoice.
+func TestRebuildPlan_ReshapingASettledBillNeedsAHumanEvenIfNothingMoves(t *testing.T) {
 	accounts, txns, invoices := rebuildFixture(t)
 	paid := 500.0
 	invoices.list = []*invoice.Invoice{
@@ -149,8 +152,41 @@ func TestRebuildPlan_AReshapeThatMovesNoMoneyDoesNotDemandAHuman(t *testing.T) {
 	if len(reshaped) != 1 || reshaped[0].PurchasesAtRisk != 0 {
 		t.Fatalf("nothing changes bills here: %+v", plan.Actions)
 	}
-	if reshaped[0].RequiresApproval {
-		t.Error("tidying a boundary that reallocates nothing is not a decision for a human")
+	if !reshaped[0].RequiresApproval {
+		t.Error("rewriting the dates a paid bill recorded is a decision for a human")
+	}
+	if plan.SafeToApplyUnattended {
+		t.Error("a plan that rewrites a settled bill must not read as safe")
+	}
+}
+
+// A fused invoice covering two months happens to close on the right day. Calling that
+// an "alignment" — with a reason describing a one-day nudge — is how it hid on a card
+// the plan declared safe.
+func TestRebuildPlan_AFusedInvoiceIsNotAnAlignment(t *testing.T) {
+	accounts, txns, invoices := rebuildFixture(t)
+	invoices.list = []*invoice.Invoice{
+		{ID: "fundida", BankAccountID: "card", Status: invoice.StatusClosed,
+			ReferenceDate: day(2026, time.August, 1),
+			// Closes and falls due correctly, but opens two months early.
+			OpeningDate: day(2026, time.June, 28), ClosingDate: day(2026, time.August, 27),
+			DueDate: day(2026, time.September, 3)},
+	}
+	txns.created = []*transaction.Transaction{
+		purchase("t1", day(2026, time.July, 10), 100),
+		purchase("t2", day(2026, time.August, 10), 100),
+	}
+
+	plan, _ := NewRebuildInvoiceCyclesUseCase(accounts, txns, invoices).Plan("card")
+
+	if len(plan.OfKind(RebuildAlignOpening)) != 0 {
+		t.Errorf("two months out is not a boundary to tidy: %+v", plan.Actions)
+	}
+	if len(plan.OfKind(RebuildReshapeWindow)) != 1 {
+		t.Fatalf("it is a cycle in the wrong place: %+v", plan.Actions)
+	}
+	if plan.SafeToApplyUnattended {
+		t.Error("a fused invoice must never read as safe to apply unattended")
 	}
 }
 

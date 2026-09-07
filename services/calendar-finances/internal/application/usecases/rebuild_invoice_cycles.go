@@ -64,6 +64,10 @@ type RebuildAction struct {
 	CanonicalDue     time.Time `json:"canonicalDue"`
 
 	TransactionsAffected int `json:"transactionsAffected"`
+	// Informational marks an action that reports and must never be applied. A cycle
+	// whose only difference is a due date reflects the card's terms as they were, and
+	// rewriting it would replace a historical fact with today's configuration.
+	Informational bool `json:"informational"`
 	// PurchasesAtRisk counts the live purchases that would change bills if this action
 	// were applied. Zero means the repair moves a boundary nobody is standing on.
 	PurchasesAtRisk  int    `json:"purchasesAtRisk"`
@@ -233,7 +237,6 @@ func (uc *RebuildInvoiceCyclesUseCase) Plan(bankAccountID string) (*RebuildPlan,
 		action.CurrentOpening = &current.OpeningDate
 		action.CurrentClosing = &current.ClosingDate
 		action.CurrentDue = &current.DueDate
-		action.PurchasesAtRisk = purchasesBetween(purchases, current.OpeningDate, cycle.OpeningDate)
 
 		// What is at risk is what would change bills, which is the symmetric difference
 		// of the two windows — not everything the cycle contains. Counting the whole
@@ -244,8 +247,10 @@ func (uc *RebuildInvoiceCyclesUseCase) Plan(bankAccountID string) (*RebuildPlan,
 		switch {
 		case sameDay(current.ClosingDate, cycle.ClosingDate) && sameDay(current.OpeningDate, cycle.OpeningDate):
 			action.Kind = RebuildTermsChanged
+			action.Informational = true
 			action.Reason = "the cycle covers the right days; only the due date differs from the card's current setting, which is what a change of terms looks like"
-		case sameDay(current.ClosingDate, cycle.ClosingDate) && sameDay(current.DueDate, cycle.DueDate):
+		case sameDay(current.ClosingDate, cycle.ClosingDate) && sameDay(current.DueDate, cycle.DueDate) &&
+			withinDays(current.OpeningDate, cycle.OpeningDate, alignmentTolerance):
 			action.Kind = RebuildAlignOpening
 			action.Reason = "the cycle closes and falls due correctly; only its opening is off, leaving a gap no invoice covers"
 		default:
@@ -253,11 +258,19 @@ func (uc *RebuildInvoiceCyclesUseCase) Plan(bankAccountID string) (*RebuildPlan,
 			action.Reason = windowReason(current, cycle)
 		}
 
-		// Approval is about money moving between bills, not about the bill having been
-		// paid. Nudging a boundary nobody stands on changes no allocation, and
-		// demanding a human for it is how the flag stopped carrying information —
-		// every card in the database came back unsafe.
-		action.RequiresApproval = wasEverSettled(current) && action.PurchasesAtRisk > 0
+		// Moving a purchase to a different bill always needs a human, whether or not
+		// this system believes the bill was paid — because that belief is unreliable.
+		// Invoice payments were recorded as plain transfers for months, so bills that
+		// were genuinely settled still read as unpaid here. Gating on settlement alone
+		// would have let a fused invoice reallocate seven charges unattended.
+		//
+		// Rewriting the dates a SETTLED bill recorded also needs one, even when nothing
+		// moves: it replaces a historical fact with today's configuration.
+		//
+		// An informational action needs neither, because it is never applied.
+		action.RequiresApproval = !action.Informational &&
+			(action.PurchasesAtRisk > 0 ||
+				(wasEverSettled(current) && action.Kind == RebuildReshapeWindow))
 		plan.Actions = append(plan.Actions, action)
 	}
 
@@ -392,6 +405,20 @@ func bestCycleFor(cycles []*invoice.Invoice, inv *invoice.Invoice) int {
 	return best
 }
 
+// alignmentTolerance is how far an opening may be out before the difference stops
+// being a boundary to tidy and becomes a cycle in the wrong place. A fused invoice
+// covering two months happens to close on the right day, and without this it was
+// reported as an "alignment" — with a reason describing a one-day nudge.
+const alignmentTolerance = 7 * 24 * time.Hour
+
+func withinDays(a, b time.Time, tolerance time.Duration) bool {
+	diff := a.Sub(b)
+	if diff < 0 {
+		diff = -diff
+	}
+	return diff <= tolerance
+}
+
 // purchasesMoving counts the live charges that would land on a different bill if the
 // window were replaced: those inside one window and outside the other, either way.
 //
@@ -406,22 +433,6 @@ func purchasesMoving(purchases []*transactionPkg.Transaction, current, canonical
 		a := inWindow(txn.OccurredOn, current.OpeningDate, current.ClosingDate)
 		b := inWindow(txn.OccurredOn, canonical.OpeningDate, canonical.ClosingDate)
 		if a != b {
-			n++
-		}
-	}
-	return n
-}
-
-// purchasesBetween counts the live charges sitting in the span two candidate openings
-// disagree about — the ones that would change bills if the window moved.
-func purchasesBetween(purchases []*transactionPkg.Transaction, a, b time.Time) int {
-	from, to := a, b
-	if to.Before(from) {
-		from, to = to, from
-	}
-	n := 0
-	for _, txn := range purchases {
-		if !txn.OccurredOn.Before(from) && txn.OccurredOn.Before(to) {
 			n++
 		}
 	}

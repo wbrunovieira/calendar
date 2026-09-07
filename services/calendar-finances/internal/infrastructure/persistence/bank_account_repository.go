@@ -24,7 +24,7 @@ func (r *BankAccountRepository) Create(account *bankaccount.BankAccount) error {
 			bank_name, bank_code, agency, account_number, account_digit, color, icon, description,
 			credit_limit, due_day, closing_day, linked_account_id, display_order,
 			investment_type, yield_type, yield_rate, maturity_date, broker,
-			number_of_quotas, quota_price, provider_account_id, provider_account_id,
+			number_of_quotas, quota_price, provider_account_id,
 			created_at, updated_at
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)

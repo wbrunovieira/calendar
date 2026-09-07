@@ -93,3 +93,43 @@ func TestIntegration_TwoAccountsCannotClaimTheSameProviderAccount(t *testing.T) 
 }
 
 var _ bankaccount.Repository = (*BankAccountRepository)(nil)
+
+// Create had no test at all: every suite seeds accounts with raw SQL, so the one
+// method that actually writes an account through the repository was never exercised.
+// A column duplicated in the INSERT list therefore broke account creation everywhere
+// while the whole suite stayed green.
+func TestIntegration_AnAccountCanActuallyBeCreated(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+
+	profileID := uuid.NewString()
+	if _, err := db.Exec(`
+		INSERT INTO finance.profiles (id, calendar_id, name, type)
+		VALUES ($1, $2, 'Integration', 'PERSONAL') ON CONFLICT (id) DO NOTHING`,
+		profileID, "create-"+profileID); err != nil {
+		t.Fatalf("seed profile: %v", err)
+	}
+
+	providerID := "prov-" + uuid.NewString()[:8]
+	account := &bankaccount.BankAccount{
+		ID: uuid.NewString(), ProfileID: profileID, Name: "Conta criada pela API",
+		Type: bankaccount.AccountTypeChecking, Currency: "BRL", IsActive: true,
+		ProviderAccountID: &providerID,
+	}
+
+	repo := NewBankAccountRepository(db)
+	if err := repo.Create(account); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	found, err := repo.FindByID(account.ID)
+	if err != nil || found == nil {
+		t.Fatalf("the created account cannot be read back: %v", err)
+	}
+	if found.Name != "Conta criada pela API" {
+		t.Errorf("name came back %q", found.Name)
+	}
+	if found.ProviderAccountID == nil || *found.ProviderAccountID != providerID {
+		t.Errorf("the mapping must survive creation, got %v", found.ProviderAccountID)
+	}
+}

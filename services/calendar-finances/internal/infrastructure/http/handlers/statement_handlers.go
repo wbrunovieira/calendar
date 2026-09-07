@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -69,6 +70,13 @@ func (h *StatementHandlers) Import(w http.ResponseWriter, r *http.Request) {
 	if provider == "" {
 		provider = statement.ProviderPluggy
 	}
+	// An unknown provider is refused rather than accepted. The uniqueness key includes
+	// it, so a typo would not fail — it would open a second namespace and import the
+	// whole statement again.
+	if !provider.Valid() {
+		http.Error(w, "unknown provider "+string(provider)+": expected PLUGGY, OFX, CSV or BINANCE", http.StatusBadRequest)
+		return
+	}
 
 	result, err := h.importUC.Execute(usecases.ImportStatementInput{
 		AccountID:       account.ID,
@@ -78,7 +86,13 @@ func (h *StatementHandlers) Import(w http.ResponseWriter, r *http.Request) {
 		Payload:         body.Payload,
 	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		// A write that failed is not bad data. Answering 400 would tell the cron to
+		// fix its payload while the database was the thing that was down.
+		status := http.StatusBadRequest
+		if errors.Is(err, usecases.ErrStatementStorage) {
+			status = http.StatusInternalServerError
+		}
+		http.Error(w, err.Error(), status)
 		return
 	}
 

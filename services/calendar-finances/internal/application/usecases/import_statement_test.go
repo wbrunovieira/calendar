@@ -231,3 +231,61 @@ func TestImportStatement_ThePendingFlagSurvives(t *testing.T) {
 		}
 	}
 }
+
+// A date with no time is already the issuer's calendar day. Parsing it as midnight UTC
+// and then converting to Sao Paulo walks it back to 21:00 the day before — the exact
+// off-by-one this importer exists to prevent, arriving through the door built to
+// prevent it. Pluggy sends full timestamps, but OFX and CSV are in the provider enum
+// and those are precisely the sources that send a bare date.
+func TestImportStatement_ADateWithNoTimeIsNotWalkedBackADay(t *testing.T) {
+	repo := &fakeStatementRepo{}
+	payload := []byte(`{"results":[{"id":"so-data","date":"2026-09-05",
+		"description":"Extrato OFX","amount":"10.00","currencyCode":"BRL","type":"DEBIT","status":"POSTED"}]}`)
+
+	if _, err := cardImport(repo).Execute(cardInput(payload)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := repo.lines[0].BookedDate
+	if got.Day() != 5 || got.Month() != time.September {
+		t.Errorf("a bare date is the day it says: got %s", got.Format("2006-01-02"))
+	}
+}
+
+// A day with no movement is the normal case, not a failure. The cron pulls every
+// morning; answering an error for an empty window makes it report a broken import on
+// any quiet day, and an alarm that cries wolf gets muted.
+func TestImportStatement_AnEmptyWindowIsNotAnError(t *testing.T) {
+	for _, payload := range []string{
+		`{"results":[]}`,
+		`{"results":[],"total":0}`,
+		`{"transactions":[]}`,
+		`[]`,
+	} {
+		repo := &fakeStatementRepo{}
+		out, err := cardImport(repo).Execute(cardInput([]byte(payload)))
+		if err != nil {
+			t.Errorf("%s: %v", payload, err)
+			continue
+		}
+		if out.Inserted != 0 || len(out.Rejected) != 0 {
+			t.Errorf("%s: expected a quiet nothing, got %+v", payload, out)
+		}
+	}
+}
+
+// Nothing imported for two different reasons must not look the same.
+func TestImportStatement_NothingImportedSaysWhy(t *testing.T) {
+	empty := &fakeStatementRepo{}
+	quiet, _ := cardImport(empty).Execute(cardInput([]byte(`{"results":[]}`)))
+
+	rejected := &fakeStatementRepo{}
+	refused, _ := cardImport(rejected).Execute(cardInput([]byte(
+		`{"results":[{"id":"","date":"2026-09-05T12:00:00.000Z","description":"x","amount":"1.00","currencyCode":"BRL","type":"DEBIT","status":"POSTED"}]}`)))
+
+	if len(quiet.Rejected) != 0 {
+		t.Error("a quiet day rejects nothing")
+	}
+	if len(refused.Rejected) == 0 {
+		t.Error("a refused line must be reported, or the two are indistinguishable")
+	}
+}

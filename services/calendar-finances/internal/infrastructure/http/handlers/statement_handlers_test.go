@@ -149,3 +149,30 @@ func TestStatementImport_RejectionsComeBackInTheResponse(t *testing.T) {
 		t.Error("a rejection with no reason is not a report")
 	}
 }
+
+// The uniqueness key includes the provider, so a typo does not fail — it opens a
+// second namespace and imports the whole statement again.
+func TestStatementImport_AnUnknownProviderIsRefused(t *testing.T) {
+	accounts := &importAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		"prov-card": {ID: "card-1", Type: bankaccount.AccountTypeCreditCard, Currency: "BRL"},
+	}}
+	rec := postImport(t, importHandler(accounts, &recordingStatementRepo{}),
+		`{"providerAccountId":"prov-card","provider":"pluggi","payload":{"results":[]}}`)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("got %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// A quiet day is not a failure. The cron pulls every morning.
+func TestStatementImport_AnEmptyWindowSucceeds(t *testing.T) {
+	accounts := &importAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		"prov-card": {ID: "card-1", Type: bankaccount.AccountTypeCreditCard, Currency: "BRL"},
+	}}
+	rec := postImport(t, importHandler(accounts, &recordingStatementRepo{}),
+		`{"providerAccountId":"prov-card","payload":{"results":[]}}`)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("got %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+}
