@@ -58,11 +58,34 @@ func (uc *DeleteTransactionUseCase) Execute(id string) error {
 	// Both legs go in one unit of work. Removing them one at a time can leave the
 	// pair half-deleted — the other profile holding a credit with no row behind it —
 	// while the caller is told the whole thing failed, so nobody goes looking.
-	toDelete := []string{id}
+	// A ledger does not delete. Reversing keeps the row, stops it counting towards
+	// balances (they are derived from CONFIRMED), and records when it was undone.
+	//
+	// Deleting destroyed evidence: during the reconciliation of 06/09/2026 a real
+	// R$ 55,58 charge was removed as a supposed phantom, and nothing in the system
+	// can now say what was removed or why.
+	now := time.Now()
+	toReverse := []*transaction.Transaction{txn}
 	if linked != nil {
-		toDelete = append(toDelete, linked.ID)
+		toReverse = append(toReverse, linked)
 	}
-	if err := uc.repo.DeleteMany(toDelete); err != nil {
+
+	// Whether a leg moved a balance is decided by the status it had BEFORE the
+	// reversal. Reading it afterwards finds REVERSED on every leg and undoes
+	// nothing — the balance stays as if the transaction were still there.
+	wasConfirmed := make([]*transaction.Transaction, 0, len(toReverse))
+	for _, t := range toReverse {
+		if t.Status == transaction.StatusConfirmed {
+			wasConfirmed = append(wasConfirmed, t)
+		}
+	}
+
+	for _, t := range toReverse {
+		if err := t.Reverse("", now); err != nil {
+			return err
+		}
+	}
+	if err := uc.repo.ReverseMany(toReverse); err != nil {
 		return err
 	}
 
@@ -77,7 +100,7 @@ func (uc *DeleteTransactionUseCase) Execute(id string) error {
 
 	// Without a recalculator wired, undo each leg by hand. Same result, but derived
 	// from the transaction instead of from the ledger.
-	return uc.reverseByHand(txn, linked)
+	return uc.reverseByHand(wasConfirmed...)
 }
 
 // affectedAccounts lists every account whose balance depended on the rows being
@@ -115,9 +138,12 @@ func (uc *DeleteTransactionUseCase) isCreditCard(accountID string) bool {
 	return err == nil && account.IsCreditCard()
 }
 
+// reverseByHand undoes the balance effect of legs that WERE confirmed. The caller
+// decides which ones those are, because by the time this runs their status already
+// says REVERSED.
 func (uc *DeleteTransactionUseCase) reverseByHand(txns ...*transaction.Transaction) error {
 	for _, txn := range txns {
-		if txn == nil || txn.Status != transaction.StatusConfirmed {
+		if txn == nil {
 			continue
 		}
 

@@ -283,3 +283,12 @@ func (m *mockTransactionRepo) DeleteMany(ids []string) error {
 	}
 	return nil
 }
+
+func (m *mockTransactionRepo) ReverseMany(txns []*transaction.Transaction) error {
+	for _, t := range txns {
+		if err := m.Update(t); err != nil {
+			return err
+		}
+	}
+	return nil
+}

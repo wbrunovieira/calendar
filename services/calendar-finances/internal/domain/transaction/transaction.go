@@ -26,6 +26,11 @@ const (
 	StatusPlanned   Status = "PLANNED"
 	StatusConfirmed Status = "CONFIRMED"
 	StatusCancelled Status = "CANCELLED"
+	// StatusReversed marks a transaction that was undone. The row is KEPT: a ledger
+	// does not delete, because a deleted row cannot answer what was undone, by whom
+	// or when. Balances are derived from CONFIRMED rows, so a reversed one stops
+	// counting without disappearing.
+	StatusReversed Status = "REVERSED"
 )
 
 // Transaction encapsulates the financial movement registered in the system.
@@ -54,6 +59,8 @@ type Transaction struct {
 	InstallmentNumber       *int       `json:"installmentNumber,omitempty"`
 	InstallmentTotal        *int       `json:"installmentTotal,omitempty"`
 	ExternalID              *string    `json:"externalId,omitempty"`
+	ReversedAt              *time.Time `json:"reversedAt,omitempty"`
+	ReversalReason          *string    `json:"reversalReason,omitempty"`
 	LinkedTransactionID     *string    `json:"linkedTransactionId,omitempty"` // Points to paired transaction (cross-profile transfers)
 	Tags                    []string   `json:"tags,omitempty"`
 	Splits                  []*Split   `json:"splits,omitempty"`
@@ -389,4 +396,22 @@ func cloneInt(value *int) *int {
 
 func round2(value float64) float64 {
 	return math.Round(value*100) / 100
+}
+
+// Reverse undoes a transaction without destroying it. The row keeps its original
+// content and stops counting towards balances; what it recorded remains auditable.
+//
+// Reversing twice is refused: the second call would look like a new correction and
+// move the balance again for something already undone.
+func (t *Transaction) Reverse(reason string, at time.Time) error {
+	if t.Status == StatusReversed {
+		return errors.New("transaction is already reversed")
+	}
+	t.Status = StatusReversed
+	t.ReversedAt = &at
+	if reason != "" {
+		t.ReversalReason = &reason
+	}
+	t.UpdatedAt = time.Now()
+	return nil
 }

@@ -450,6 +450,17 @@ func RunMigrations(db *sql.DB) error {
 			ALTER TABLE finance.bank_accounts ADD CONSTRAINT bank_accounts_type_check
 				CHECK (type IN ('CHECKING', 'SAVINGS', 'INVESTMENT', 'CREDIT_CARD', 'CASH', 'EXCHANGE', 'WALLET', 'OTHER'));
 		END $$`,
+		// Migration: a ledger reverses instead of deleting. The row is kept so it can
+		// still answer what was undone, when and why; balances derive from CONFIRMED,
+		// so a reversed row stops counting without disappearing.
+		`ALTER TABLE finance.transactions ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMP`,
+		`ALTER TABLE finance.transactions ADD COLUMN IF NOT EXISTS reversal_reason TEXT`,
+		`DO $$
+		BEGIN
+			ALTER TABLE finance.transactions DROP CONSTRAINT IF EXISTS transactions_status_check;
+			ALTER TABLE finance.transactions ADD CONSTRAINT transactions_status_check
+				CHECK (status IN ('PLANNED', 'CONFIRMED', 'CANCELLED', 'REVERSED'));
+		END $$`,
 		// Migration: allow PARTIALLY_PAID on credit card invoices.
 		// A bill paid in parts used to be marked PAID on the first payment, which
 		// erased the outstanding debt from the ledger.

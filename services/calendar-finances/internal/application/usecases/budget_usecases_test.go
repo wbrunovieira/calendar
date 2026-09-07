@@ -322,3 +322,12 @@ func (r *fakeTxRepoForBudget) DeleteMany(ids []string) error {
 	}
 	return nil
 }
+
+func (r *fakeTxRepoForBudget) ReverseMany(txns []*transaction.Transaction) error {
+	for _, t := range txns {
+		if err := r.Update(t); err != nil {
+			return err
+		}
+	}
+	return nil
+}

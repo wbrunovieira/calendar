@@ -645,6 +645,38 @@ func (r *TransactionRepository) DeleteMany(ids []string) error {
 	return tx.Commit()
 }
 
+func (r *TransactionRepository) ReverseMany(txns []*transaction.Transaction) error {
+	if len(txns) == 0 {
+		return nil
+	}
+
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, t := range txns {
+		result, err := tx.Exec(`
+			UPDATE finance.transactions
+			SET status = $2, reversed_at = $3, reversal_reason = $4, updated_at = NOW()
+			WHERE id = $1
+		`, t.ID, string(t.Status), t.ReversedAt, t.ReversalReason)
+		if err != nil {
+			return err
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if affected == 0 {
+			return transaction.ErrNotFound
+		}
+	}
+
+	return tx.Commit()
+}
+
 func (r *TransactionRepository) Delete(id string) error {
 	result, err := r.db.Exec(`DELETE FROM finance.transactions WHERE id = $1`, id)
 	if err != nil {

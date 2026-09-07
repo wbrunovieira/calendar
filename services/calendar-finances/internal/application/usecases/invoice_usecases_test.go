@@ -1762,3 +1762,12 @@ func (f *fakeTransactionRepoWithInvoice) DeleteMany(ids []string) error {
 	}
 	return nil
 }
+
+func (f *fakeTransactionRepoWithInvoice) ReverseMany(txns []*transaction.Transaction) error {
+	for _, t := range txns {
+		if err := f.Update(t); err != nil {
+			return err
+		}
+	}
+	return nil
+}

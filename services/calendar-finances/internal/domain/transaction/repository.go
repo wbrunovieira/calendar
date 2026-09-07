@@ -36,6 +36,11 @@ type Repository interface {
 	// of a linked pair one by one can leave the ledger half-removed — one profile
 	// holding a credit with no row behind it — with no way to tell afterwards.
 	DeleteMany(ids []string) error
+	// ReverseMany marks several transactions as reversed as ONE unit of work. A
+	// linked pair reversed one at a time can leave the other profile holding a
+	// credit whose counterpart no longer counts, while the caller is told the whole
+	// thing failed and nobody goes looking.
+	ReverseMany(txns []*Transaction) error
 	SumByCategories(profileID string, categoryIDs []string, from, to time.Time) (map[string]float64, error)
 	SumByInvoiceID(invoiceID string) (float64, error)
 	SumByInvoiceIDByStatus(invoiceID string, status Status) (float64, error)

@@ -188,8 +188,15 @@ func TestDeleteTransaction_CrossProfilePairRemovesBothLegs(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(txRepo.created) != 0 {
-		t.Errorf("expected both legs removed, %d left", len(txRepo.created))
+	// The rows stay: a ledger reverses instead of deleting, so what was undone
+	// remains auditable. Both legs must be reversed together.
+	if len(txRepo.created) != 2 {
+		t.Errorf("expected both legs kept, %d left", len(txRepo.created))
+	}
+	for _, tx := range txRepo.created {
+		if tx.Status != transaction.StatusReversed {
+			t.Errorf("%s status = %s, want REVERSED", tx.ID, tx.Status)
+		}
 	}
 	if got := accountRepo.accounts["personal"].CurrentBalance; got != 1000 {
 		t.Errorf("expected the source profile restored to 1000, got %.2f", got)
@@ -267,6 +274,17 @@ func (r *failingDeleteRepo) DeleteMany(ids []string) error {
 	return r.fakeTransactionRepo.DeleteMany(ids)
 }
 
+// The reversal path is the one in use now; a failure on either leg must surface
+// instead of leaving the pair half-reversed behind a success.
+func (r *failingDeleteRepo) ReverseMany(txns []*transaction.Transaction) error {
+	for _, t := range txns {
+		if t.ID == r.failFor {
+			return errors.New("boom")
+		}
+	}
+	return r.fakeTransactionRepo.ReverseMany(txns)
+}
+
 // Deleting a linked pair must be all-or-nothing. Half-deleting it leaves the other
 // profile holding a credit with no ledger row behind it, and the caller is told
 // something failed — so nobody goes looking.
@@ -303,11 +321,11 @@ func TestDeleteTransaction_LinkedPairIsRemovedAtomically(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(txRepo.deletedTogether) != 1 {
-		t.Fatalf("expected a single atomic delete, got %d calls", len(txRepo.deletedTogether))
+	if len(txRepo.reversedTogether) != 1 {
+		t.Fatalf("expected a single atomic reversal, got %d calls", len(txRepo.reversedTogether))
 	}
-	if len(txRepo.deletedTogether[0]) != 2 {
-		t.Fatalf("expected both legs in one unit of work, got %v", txRepo.deletedTogether[0])
+	if len(txRepo.reversedTogether[0]) != 2 {
+		t.Fatalf("expected both legs in one unit of work, got %v", txRepo.reversedTogether[0])
 	}
 }
 
@@ -365,8 +383,9 @@ func TestDeleteTransaction_RecalculationFailureSurfaces(t *testing.T) {
 
 type atomicDeleteSpy struct {
 	fakeTransactionRepo
-	deletedTogether [][]string
-	fail            bool
+	deletedTogether  [][]string
+	fail             bool
+	reversedTogether [][]string
 }
 
 func (r *atomicDeleteSpy) DeleteMany(ids []string) error {
@@ -376,6 +395,23 @@ func (r *atomicDeleteSpy) DeleteMany(ids []string) error {
 	r.deletedTogether = append(r.deletedTogether, ids)
 	for _, id := range ids {
 		if err := r.fakeTransactionRepo.Delete(id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *atomicDeleteSpy) ReverseMany(txns []*transaction.Transaction) error {
+	ids := make([]string, 0, len(txns))
+	for _, t := range txns {
+		ids = append(ids, t.ID)
+	}
+	r.reversedTogether = append(r.reversedTogether, ids)
+	if r.fail {
+		return errors.New("boom")
+	}
+	for _, t := range txns {
+		if err := r.Update(t); err != nil {
 			return err
 		}
 	}
@@ -448,8 +484,8 @@ func TestDeleteTransaction_APaidInvoiceRefusalDoesNotFailTheDelete(t *testing.T)
 	if err := uc.Execute(txn.ID); err != nil {
 		t.Fatalf("a paid invoice must not block the deletion, got %v", err)
 	}
-	if len(txRepo.created) != 0 {
-		t.Fatal("expected the transaction to be deleted anyway")
+	if len(txRepo.created) != 1 || txRepo.created[0].Status != transaction.StatusReversed {
+		t.Fatal("expected the transaction to be reversed anyway")
 	}
 }
 

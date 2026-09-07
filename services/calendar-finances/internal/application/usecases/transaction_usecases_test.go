@@ -2958,9 +2958,14 @@ func TestDeleteTransaction_CrossProfileLinked_ShouldDeleteBoth(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Both transactions should be deleted
-	if len(txRepo.created) != 0 {
-		t.Fatalf("expected 0 transactions after delete, got %d", len(txRepo.created))
+	// Both rows are kept and reversed: a ledger does not delete.
+	if len(txRepo.created) != 2 {
+		t.Fatalf("expected both rows kept, got %d", len(txRepo.created))
+	}
+	for _, tx := range txRepo.created {
+		if tx.Status != transaction.StatusReversed {
+			t.Fatalf("%s status = %s, want REVERSED", tx.ID, tx.Status)
+		}
 	}
 
 	// Source balance should be restored (8500 + 1500 = 10000)
@@ -4564,6 +4569,15 @@ func TestCreateTransaction_ManualInstallment_ShouldNotAutoCreate(t *testing.T) {
 func (f *fakeTransactionRepo) DeleteMany(ids []string) error {
 	for _, id := range ids {
 		if err := f.Delete(id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (f *fakeTransactionRepo) ReverseMany(txns []*transaction.Transaction) error {
+	for _, t := range txns {
+		if err := f.Update(t); err != nil {
 			return err
 		}
 	}
