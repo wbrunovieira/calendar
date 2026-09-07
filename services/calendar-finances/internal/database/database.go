@@ -33,7 +33,25 @@ func Connect(dbURL string) (*sql.DB, error) {
 func RunMigrations(db *sql.DB) error {
 	log.Println("Running database migrations...")
 
-	migrations := []string{
+	for i, migration := range migrations() {
+		if _, err := db.Exec(migration); err != nil {
+			return fmt.Errorf("migration %d failed: %w", i+1, err)
+		}
+	}
+
+	log.Println("✓ Migrations completed successfully")
+	return nil
+}
+
+// migrations returns the statements in the order they are applied.
+//
+// They run in slice order and nothing resolves dependencies between them, so a
+// statement that references a table must come after the one that creates it. That
+// is invisible on any database that already has the schema — which is every
+// developer's — and only an empty one rejects it. TestMigrationOrder_ATableIsCreatedBeforeItIsReferenced
+// checks the ordering without needing a database at all.
+func migrations() []string {
+	return []string{
 		// Ensure required extension
 		`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`,
 
@@ -528,36 +546,6 @@ func RunMigrations(db *sql.DB) error {
 		// exactly why it would be tempting: it passes today and blocks a legitimate
 		// operation later. The prerequisite is putting invoice_id on the payment leg.
 
-		// Reconciliation matches, N:N and append-only.
-		//
-		// A single matched_transaction_id on the line is a 1:1 model that is already
-		// known to be wrong: an invoice payment covers many purchases, a Pix settles
-		// two bills, a split spreads one line across entries. Building the matcher on
-		// the column would mean migrating halfway through.
-		//
-		// Never deleted, only undone with a reason — a reconciliation that destroys
-		// its own history cannot say why a line went back to pending.
-		`CREATE TABLE IF NOT EXISTS finance.reconciliation_matches (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			line_id UUID NOT NULL REFERENCES finance.bank_statement_lines(id) ON DELETE CASCADE,
-			transaction_id UUID NOT NULL REFERENCES finance.transactions(id),
-			amount_minor BIGINT NOT NULL CHECK (amount_minor <> 0),
-			method VARCHAR(20) NOT NULL
-				CHECK (method IN ('EXTERNAL_ID','END_TO_END','DETERMINISTIC','FUZZY','MANUAL')),
-			score NUMERIC(5,4),
-			matched_by TEXT NOT NULL,
-			matched_at TIMESTAMP NOT NULL DEFAULT NOW(),
-			unmatched_at TIMESTAMP,
-			unmatched_reason TEXT,
-			CONSTRAINT match_undo_has_reason
-				CHECK (unmatched_at IS NULL OR unmatched_reason IS NOT NULL)
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_matches_line ON finance.reconciliation_matches(line_id) WHERE unmatched_at IS NULL`,
-		`CREATE INDEX IF NOT EXISTS idx_matches_transaction ON finance.reconciliation_matches(transaction_id) WHERE unmatched_at IS NULL`,
-		// The same pair may be matched again after being undone, but not twice at once.
-		`CREATE UNIQUE INDEX IF NOT EXISTS uq_matches_live_pair
-			ON finance.reconciliation_matches(line_id, transaction_id) WHERE unmatched_at IS NULL`,
-
 		// Migration: bank statement lines, stored verbatim.
 		//
 		// Reconciliation must be persisted data, not chat work. Everything the
@@ -663,6 +651,40 @@ func RunMigrations(db *sql.DB) error {
 		// The Pix end-to-end id appears on BOTH sides of an internal transfer, which
 		// makes it the only key that reconciles one without guessing.
 		`CREATE INDEX IF NOT EXISTS idx_statement_e2e ON finance.bank_statement_lines(end_to_end_id) WHERE end_to_end_id IS NOT NULL`,
+
+		// reconciliation_matches lives here, after bank_statement_lines, because its
+		// line_id references that table and the migrations run in slice order with no
+		// dependency resolution. It used to sit earlier, which every existing database
+		// tolerated — the table was already there — and only a fresh one rejected.
+		// Reconciliation matches, N:N and append-only.
+		//
+		// A single matched_transaction_id on the line is a 1:1 model that is already
+		// known to be wrong: an invoice payment covers many purchases, a Pix settles
+		// two bills, a split spreads one line across entries. Building the matcher on
+		// the column would mean migrating halfway through.
+		//
+		// Never deleted, only undone with a reason — a reconciliation that destroys
+		// its own history cannot say why a line went back to pending.
+		`CREATE TABLE IF NOT EXISTS finance.reconciliation_matches (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			line_id UUID NOT NULL REFERENCES finance.bank_statement_lines(id) ON DELETE CASCADE,
+			transaction_id UUID NOT NULL REFERENCES finance.transactions(id),
+			amount_minor BIGINT NOT NULL CHECK (amount_minor <> 0),
+			method VARCHAR(20) NOT NULL
+				CHECK (method IN ('EXTERNAL_ID','END_TO_END','DETERMINISTIC','FUZZY','MANUAL')),
+			score NUMERIC(5,4),
+			matched_by TEXT NOT NULL,
+			matched_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			unmatched_at TIMESTAMP,
+			unmatched_reason TEXT,
+			CONSTRAINT match_undo_has_reason
+				CHECK (unmatched_at IS NULL OR unmatched_reason IS NOT NULL)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_matches_line ON finance.reconciliation_matches(line_id) WHERE unmatched_at IS NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_matches_transaction ON finance.reconciliation_matches(transaction_id) WHERE unmatched_at IS NULL`,
+		// The same pair may be matched again after being undone, but not twice at once.
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_matches_live_pair
+			ON finance.reconciliation_matches(line_id, transaction_id) WHERE unmatched_at IS NULL`,
 		// Migration: a ledger reverses instead of deleting. The row is kept so it can
 		// still answer what was undone, when and why; balances derive from CONFIRMED,
 		// so a reversed row stops counting without disappearing.
@@ -920,13 +942,4 @@ func RunMigrations(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_balance_checkpoints_account_month
 			ON finance.balance_checkpoints (account_id, reference_month DESC)`,
 	}
-
-	for i, migration := range migrations {
-		if _, err := db.Exec(migration); err != nil {
-			return fmt.Errorf("migration %d failed: %w", i+1, err)
-		}
-	}
-
-	log.Println("✓ Migrations completed successfully")
-	return nil
 }
