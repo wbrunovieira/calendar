@@ -223,13 +223,25 @@ func (uc *CheckInvariantsUseCase) checkPaymentsAgainstBills(
 
 	for _, inv := range invoices {
 		total, ok := paid[inv.ID]
-		if !ok || total <= inv.Amount+0.005 {
+		if !ok {
+			continue
+		}
+		// Compare against the derived total, never the stored one. inv.Amount is a
+		// cache, and production invoices routinely carry a stored amount of 0 — using
+		// it would report the whole payment as excess on every one of them, and a
+		// report that cries wolf is worse than no report.
+		worth, err := uc.txRepo.SumByInvoiceID(inv.ID)
+		if err != nil {
+			return err
+		}
+		worth = round2(worth)
+		if total <= worth+0.005 {
 			continue
 		}
 		result.PaymentDrifts = append(result.PaymentDrifts, PaymentInvariant{
 			InvoiceID: inv.ID, BankAccountID: account.ID,
-			InvoiceAmount: inv.Amount, PaidTotal: total,
-			Excess: round2(total - inv.Amount),
+			InvoiceAmount: worth, PaidTotal: total,
+			Excess: round2(total - worth),
 		})
 		result.OK = false
 	}
@@ -302,9 +314,14 @@ func (uc *CheckInvariantsUseCase) checkInstallmentSeries(
 	result *CheckInvariantsResult,
 ) error {
 	accountID := account.ID
+	// The real repository filters out REVERSED unless asked, so without this the
+	// branch below that treats a reversed instalment as present is unreachable and a
+	// deliberately reversed instalment is reported as missing — a false alarm, which
+	// is the one thing an invariant report cannot afford.
 	txns, err := uc.txRepo.List(transaction.ListFilter{
-		ProfileID:     account.ProfileID,
-		BankAccountID: &accountID,
+		ProfileID:       account.ProfileID,
+		BankAccountID:   &accountID,
+		IncludeReversed: true,
 	})
 	if err != nil {
 		return err

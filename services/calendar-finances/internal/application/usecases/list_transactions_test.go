@@ -460,3 +460,11 @@ func (r *FakeTransactionRepository) ReverseMany(txns []*transaction.Transaction)
 	}
 	return nil
 }
+
+// CancelStatus mirrors the real repository: a cancellation keeps its motive and its
+// actor. A fake that dropped them would let the use case pass while production
+// recorded nothing — which is exactly how the gap it covers went unnoticed.
+func (f *FakeTransactionRepository) CancelStatus(txn *transaction.Transaction, occurredOn time.Time) error {
+	txn.OccurredOn = occurredOn
+	return nil
+}

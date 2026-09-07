@@ -85,6 +85,27 @@ func (s *IdempotencyStore) Claim(key, endpoint, requestHash string) (Claimed, er
 	return Claimed{Status: int(status.Int64), Body: []byte(body.String)}, nil
 }
 
+// Release gives a key back, so an attempt that achieved nothing does not hold it
+// forever.
+//
+// Without this, a claim outlives any request that failed or crashed: the row keeps a
+// NULL response_status, every later retry reads it as still in flight and is refused
+// with 409, and the write never happens at all. n8n retries by default, so the shape
+// of the failure is a transient database blip followed by permanent refusal — worse
+// than having no idempotency, because it converts a retryable error into silent loss.
+//
+// Releasing after a failure can, in principle, let a retry duplicate an effect that
+// committed just before the response failed. That window is narrow — the effects this
+// guards are atomic — and the alternative is losing the write outright, which is not a
+// trade worth making.
+func (s *IdempotencyStore) Release(key string) error {
+	_, err := s.db.Exec(`
+		DELETE FROM finance.idempotency_keys
+		WHERE key = $1 AND response_status IS NULL
+	`, key)
+	return err
+}
+
 // RecordResponse stores what the first attempt answered, so a replay can be told the
 // same thing instead of being told nothing.
 func (s *IdempotencyStore) RecordResponse(key string, status int, body []byte) error {

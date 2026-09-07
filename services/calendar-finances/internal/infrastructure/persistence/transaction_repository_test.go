@@ -112,11 +112,13 @@ func TestTransactionRepositoryFindByExternalID(t *testing.T) {
 		"type", "status", "amount", "currency", "description", "notes", "cost_center", "cost_center_id", "is_personal_reimbursement",
 		"occurred_on", "due_on", "reminder_on", "recurrence_rule", "installment_number", "installment_total",
 		"external_id", "linked_transaction_id", "created_at", "updated_at",
+		"paid_invoice_id", "reversed_at", "reversal_reason", "reversal_note", "reversed_by",
 	}).AddRow(
 		"tx-123", "profile-1", "account-1", nil, nil, nil,
 		"INCOME", "CONFIRMED", 11.0, "BRL", "Dividendo HGLG11", nil, nil, nil, false,
 		now, nil, nil, nil, nil, nil,
 		"dividend-HGLG11-2026-04-01-1.10", nil, now, now,
+		nil, nil, nil, nil, nil,
 	)
 
 	mock.ExpectQuery(regexp.QuoteMeta("is_personal_reimbursement,")).
@@ -175,11 +177,13 @@ func TestTransactionRepositoryGetByID(t *testing.T) {
 		"type", "status", "amount", "currency", "description", "notes", "cost_center", "cost_center_id", "is_personal_reimbursement",
 		"occurred_on", "due_on", "reminder_on", "recurrence_rule", "installment_number", "installment_total",
 		"external_id", "linked_transaction_id", "created_at", "updated_at",
+		"paid_invoice_id", "reversed_at", "reversal_reason", "reversal_note", "reversed_by",
 	}).AddRow(
 		"tx-123", "profile-1", "account-1", nil, nil, nil,
 		"EXPENSE", "CONFIRMED", 120.0, "BRL", "Conta", nil, nil, nil, false,
 		now, nil, nil, nil, nil, nil,
 		nil, nil, now, now,
+		nil, nil, nil, nil, nil,
 	)
 
 	splitRows := sqlmock.NewRows([]string{"id", "transaction_id", "category_id", "amount", "memo", "created_at"}).

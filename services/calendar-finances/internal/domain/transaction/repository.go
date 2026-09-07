@@ -45,6 +45,11 @@ type Repository interface {
 	Count(filter ListFilter) (int, error)
 	Update(tx *Transaction) error
 	UpdateStatus(id string, status Status, occurredOn time.Time, notes *string) error
+	// CancelStatus persists a cancellation WITH the motive and the actor the domain
+	// captured. UpdateStatus writes only status, date and notes, so routing a
+	// cancellation through it demanded a reason and an actor at the door and then
+	// threw both away — a control that appears to operate while recording nothing.
+	CancelStatus(txn *Transaction, occurredOn time.Time) error
 	Delete(id string) error
 	// DeleteMany removes several transactions as one unit of work. Deleting the legs
 	// of a linked pair one by one can leave the ledger half-removed — one profile

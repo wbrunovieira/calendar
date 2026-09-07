@@ -151,7 +151,8 @@ func (r *TransactionRepository) GetByID(id string) (*transaction.Transaction, er
 		SELECT id, profile_id, bank_account_id, destination_account_id, category_id, invoice_id,
 			type, status, amount, currency, description, notes, cost_center, cost_center_id, is_personal_reimbursement,
 			occurred_on, due_on, reminder_on, recurrence_rule, installment_number, installment_total,
-			external_id, linked_transaction_id, created_at, updated_at
+			external_id, linked_transaction_id, created_at, updated_at,
+			paid_invoice_id, reversed_at, reversal_reason, reversal_note, reversed_by
 		FROM finance.transactions
 		WHERE id = $1
 	`
@@ -178,7 +179,8 @@ func (r *TransactionRepository) List(filter transaction.ListFilter) ([]*transact
         SELECT id, profile_id, bank_account_id, destination_account_id, category_id, invoice_id,
                type, status, amount, currency, description, notes, cost_center, cost_center_id, is_personal_reimbursement,
                occurred_on, due_on, reminder_on, recurrence_rule, installment_number, installment_total,
-               external_id, linked_transaction_id, created_at, updated_at
+               external_id, linked_transaction_id, created_at, updated_at,
+               paid_invoice_id, reversed_at, reversal_reason, reversal_note, reversed_by
         FROM finance.transactions
         WHERE profile_id = $1`
 
@@ -317,6 +319,12 @@ func (r *TransactionRepository) Count(filter transaction.ListFilter) (int, error
 			conditions = append(conditions, addCondition("cost_center_id", "=", trimmed))
 		}
 	}
+	// The same rule List applies, or the page says "showing 20 of 23" while listing
+	// twenty — and on a reconciliation screen an unexplained three is exactly what
+	// sends someone hunting a phantom.
+	if !filter.IncludeReversed {
+		conditions = append(conditions, "status <> 'REVERSED'")
+	}
 	if filter.Status != nil {
 		conditions = append(conditions, addCondition("status", "=", *filter.Status))
 	}
@@ -362,6 +370,11 @@ func scanTransaction(scanner transactionScanner) (*transaction.Transaction, erro
 		installmentTotal    sql.NullInt64
 		externalID          sql.NullString
 		linkedTransactionID sql.NullString
+		paidInvoiceID       sql.NullString
+		reversedAt          sql.NullTime
+		reversalReason      sql.NullString
+		reversalNote        sql.NullString
+		reversedBy          sql.NullString
 	)
 
 	err := scanner.Scan(
@@ -390,12 +403,39 @@ func scanTransaction(scanner transactionScanner) (*transaction.Transaction, erro
 		&linkedTransactionID,
 		&tx.CreatedAt,
 		&tx.UpdatedAt,
+		&paidInvoiceID,
+		&reversedAt,
+		&reversalReason,
+		&reversalNote,
+		&reversedBy,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, transaction.ErrNotFound
 		}
 		return nil, err
+	}
+
+	// Written and never read is not a record, it is a rumour. These five columns were
+	// on the INSERT and on no SELECT, so the invoice a payment settles came back nil
+	// on every load — which silently disabled the invariant built on it — and the
+	// answer to "who reversed this, and why" was reachable only through psql.
+	if paidInvoiceID.Valid {
+		tx.PaidInvoiceID = &paidInvoiceID.String
+	}
+	if reversedAt.Valid {
+		at := reversedAt.Time
+		tx.ReversedAt = &at
+	}
+	if reversalReason.Valid {
+		reason := transaction.ReversalReason(reversalReason.String)
+		tx.ReversalReason = &reason
+	}
+	if reversalNote.Valid {
+		tx.ReversalNote = &reversalNote.String
+	}
+	if reversedBy.Valid {
+		tx.ReversedBy = &reversedBy.String
 	}
 
 	if destination.Valid {
@@ -622,6 +662,36 @@ func (r *TransactionRepository) UpdateStatus(id string, status transaction.Statu
 		return transaction.ErrNotFound
 	}
 
+	return nil
+}
+
+// CancelStatus persists a cancellation together with why and who.
+//
+// It exists because UpdateStatus writes status, date and notes and nothing else: a
+// cancellation went through it carrying ReversedAt, ReversalReason and ReversedBy set
+// by the domain, and none of the three reached the database. The requirement at the
+// door was real; the record behind it was not.
+func (r *TransactionRepository) CancelStatus(txn *transaction.Transaction, occurredOn time.Time) error {
+	result, err := r.db.Exec(`
+		UPDATE finance.transactions
+		SET status = $2, occurred_on = $3, notes = $4,
+		    reversed_at = $5, reversal_reason = $6, reversal_note = $7, reversed_by = $8,
+		    updated_at = NOW()
+		-- REVERSED is terminal in the database too: two concurrent clients, one
+		-- reversing and one cancelling, both pass the domain check.
+		WHERE id = $1 AND status <> 'REVERSED'
+	`, txn.ID, string(txn.Status), occurredOn, nullableString(txn.Notes),
+		txn.ReversedAt, txn.ReversalReason, txn.ReversalNote, txn.ReversedBy)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return transaction.ErrNotFound
+	}
 	return nil
 }
 
@@ -986,7 +1056,8 @@ func (r *TransactionRepository) FindByExternalID(externalID string) (*transactio
 		SELECT id, profile_id, bank_account_id, destination_account_id, category_id, invoice_id,
 			type, status, amount, currency, description, notes, cost_center, cost_center_id, is_personal_reimbursement,
 			occurred_on, due_on, reminder_on, recurrence_rule, installment_number, installment_total,
-			external_id, linked_transaction_id, created_at, updated_at
+			external_id, linked_transaction_id, created_at, updated_at,
+			paid_invoice_id, reversed_at, reversal_reason, reversal_note, reversed_by
 		FROM finance.transactions
 		WHERE external_id = $1
 	`

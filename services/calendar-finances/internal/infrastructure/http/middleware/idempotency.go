@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/persistence"
@@ -16,6 +17,9 @@ import (
 type Store interface {
 	Claim(key, endpoint, requestHash string) (persistence.Claimed, error)
 	RecordResponse(key string, status int, body []byte) error
+	// Release returns a key claimed by an attempt that achieved nothing. Without it a
+	// failed request holds its key forever and every retry is refused with 409.
+	Release(key string) error
 }
 
 // Idempotency makes a repeated write perform its effect once.
@@ -76,12 +80,38 @@ func Idempotency(store Store) func(http.Handler) http.Handler {
 			}
 
 			rec := &recorder{ResponseWriter: w, status: http.StatusOK}
+			finished := false
+			defer func() {
+				// A panicking handler must not keep the key. The request answered
+				// nothing, so the retry that follows a crash has to be allowed through
+				// rather than refused as a replay of something that never happened.
+				if !finished {
+					_ = store.Release(key)
+				}
+			}()
 			next.ServeHTTP(rec, r)
+			finished = true
 
 			// Only a success is recorded. Replaying a failure would deny a retry that
 			// should be allowed to succeed.
 			if rec.status < 400 {
-				_ = store.RecordResponse(key, rec.status, rec.body.Bytes())
+				if err := store.RecordResponse(key, rec.status, rec.body.Bytes()); err != nil {
+					// The effect happened and the key cannot say so. Releasing here
+					// would invite a duplicate of a write that already landed, so the
+					// key stays claimed and this is logged loudly instead: a later
+					// retry gets 409 and someone has to look, which is the safer of
+					// two bad outcomes.
+					log.Printf("idempotency: effect committed but the response was not recorded for key %q: %v", key, err)
+				}
+				return
+			}
+
+			// The attempt failed, so it holds nothing worth replaying. Keeping the
+			// claim would turn a transient error into a permanent 409 and the write
+			// would never happen — the failure mode this guard exists to prevent,
+			// arriving through the other door.
+			if err := store.Release(key); err != nil {
+				log.Printf("idempotency: could not release key %q after a failed attempt: %v", key, err)
 			}
 		})
 	}

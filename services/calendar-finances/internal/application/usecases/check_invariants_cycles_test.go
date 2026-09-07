@@ -171,8 +171,15 @@ func TestInvariants_PaymentsBeyondTheBillAreReported(t *testing.T) {
 		{ID: "inv-1", BankAccountID: "card", Amount: 500,
 			OpeningDate: day(2026, time.July, 27), ClosingDate: day(2026, time.August, 27), DueDate: day(2026, time.September, 3)},
 	}
-	// The same bill paid twice: 1000 against a bill of 500.
+	// The bill is worth what its charges add up to, not what the cached column says.
 	invID := "inv-1"
+	txRepo.created = append(txRepo.created, &transaction.Transaction{
+		ID: "charge", ProfileID: "p1", BankAccountID: "card", InvoiceID: &invID,
+		Type: transaction.TypeExpense, Status: transaction.StatusConfirmed,
+		Amount: 500, Currency: "BRL", Description: "compra",
+		OccurredOn: day(2026, time.August, 10),
+	})
+	// The same bill paid twice: 1000 against a bill of 500.
 	for i := 0; i < 2; i++ {
 		txRepo.created = append(txRepo.created, &transaction.Transaction{
 			ID: "pay" + string(rune('0'+i)), ProfileID: "p1", BankAccountID: "checking",
@@ -206,6 +213,10 @@ func TestInvariants_AReversedPaymentDoesNotCountTowardsTheBill(t *testing.T) {
 	}
 	invID := "inv-2"
 	txRepo.created = append(txRepo.created,
+		&transaction.Transaction{ID: "charge", ProfileID: "p1", BankAccountID: "card", InvoiceID: &invID,
+			Type: transaction.TypeExpense, Status: transaction.StatusConfirmed,
+			Amount: 500, Currency: "BRL", Description: "compra",
+			OccurredOn: day(2026, time.August, 10)},
 		&transaction.Transaction{ID: "live", ProfileID: "p1", BankAccountID: "checking",
 			DestinationAccountID: strPtr("card"), Type: transaction.TypeTransfer,
 			Status: transaction.StatusConfirmed, Amount: 500, Currency: "BRL",

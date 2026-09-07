@@ -87,8 +87,10 @@ func TestRebuildPlan_AWindowBuiltOnTheWrongClosingDayIsReshaped(t *testing.T) {
 	if len(reshaped) != 1 {
 		t.Fatalf("a window off the card's closing day must be reported: %+v", plan.Actions)
 	}
-	if !reshaped[0].CanonicalClosing.Equal(day(2026, time.March, 27)) {
-		t.Errorf("canonical closing is 27/03, got %s", reshaped[0].CanonicalClosing.Format("2006-01-02"))
+	// The invoice is LABELLED 2026-03, but it covers February purchases: the window is
+	// the fact and the label is a name. It belongs to the cycle closing 27/02.
+	if !reshaped[0].CanonicalClosing.Equal(day(2026, time.February, 27)) {
+		t.Errorf("canonical closing is 27/02, got %s", reshaped[0].CanonicalClosing.Format("2006-01-02"))
 	}
 }
 
@@ -187,5 +189,58 @@ func checkingAccountForRebuild() *bankaccount.BankAccount {
 	return &bankaccount.BankAccount{
 		ID: "checking", ProfileID: "p1", Name: "Conta",
 		Type: bankaccount.AccountTypeChecking, Currency: "BRL",
+	}
+}
+
+// A correct invoice must not be reported as damage.
+//
+// reference_date carries two conventions in this database: older rows are labelled by
+// due month, invoice.New by closing month. Matching on it made a card with nothing
+// wrong produce two actions — create a duplicate covering a window that already
+// existed, and push the correct invoice a month forward, orphaning everything inside
+// it — and call the whole thing safe to apply unattended.
+func TestRebuildPlan_AnInvoiceLabelledByDueMonthIsNotDamage(t *testing.T) {
+	closing, due := 27, 6
+	accounts := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		"card": {ID: "card", ProfileID: "p1", Name: "Cartao", Type: bankaccount.AccountTypeCreditCard,
+			ClosingDay: &closing, DueDay: &due, Currency: "BRL"},
+	}}
+	txns := &fakeTransactionRepo{}
+	invoices := &cycleInvoiceRepo{}
+
+	// The cycle 27/08 -> 27/09 is due on 06/10, so the old convention labels it 2026-10.
+	invoices.list = []*invoice.Invoice{
+		{ID: "old-convention", BankAccountID: "card", Status: invoice.StatusOpen,
+			ReferenceDate: day(2026, time.October, 1),
+			OpeningDate:   day(2026, time.August, 27), ClosingDate: day(2026, time.September, 27),
+			DueDate: day(2026, time.October, 6)},
+	}
+	txns.created = []*transaction.Transaction{purchase("t1", day(2026, time.September, 2), 40)}
+
+	plan, err := NewRebuildInvoiceCyclesUseCase(accounts, txns, invoices).Plan("card")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(plan.Actions) != 0 {
+		t.Errorf("a correct cycle labelled by due month is not damage, got %+v", plan.Actions)
+	}
+}
+
+// The label is reported, so a human reading the plan can find the row — it is just
+// never what the match is decided on.
+func TestRebuildPlan_TheStoredLabelIsReportedButNotMatchedOn(t *testing.T) {
+	accounts, txns, invoices := rebuildFixture(t)
+	invoices.list = []*invoice.Invoice{
+		{ID: "wrong", BankAccountID: "card", Status: invoice.StatusClosed,
+			ReferenceDate: day(2026, time.March, 1),
+			OpeningDate:   day(2026, time.February, 2), ClosingDate: day(2026, time.March, 1),
+			DueDate: day(2026, time.March, 8)},
+	}
+	txns.created = []*transaction.Transaction{purchase("t1", day(2026, time.February, 15), 100)}
+
+	plan, _ := NewRebuildInvoiceCyclesUseCase(accounts, txns, invoices).Plan("card")
+	reshaped := plan.OfKind(RebuildReshapeWindow)
+	if len(reshaped) != 1 || reshaped[0].InvoiceLabel != "2026-03" {
+		t.Errorf("the stored label should be reported: %+v", plan.Actions)
 	}
 }

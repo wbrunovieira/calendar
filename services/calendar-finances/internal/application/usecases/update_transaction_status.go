@@ -116,7 +116,7 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 		linkedTx = found
 	}
 
-	if err := uc.repo.UpdateStatus(tx.ID, targetStatus, occurredAt, tx.Notes); err != nil {
+	if err := uc.persistStatus(tx, targetStatus, occurredAt); err != nil {
 		return nil, err
 	}
 
@@ -135,7 +135,10 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 		// The error is surfaced, not discarded: a leg that failed to persist leaves
 		// the other profile holding a movement with no counterpart, and swallowing it
 		// means nobody goes looking.
-		if err := uc.repo.UpdateStatus(linkedTx.ID, targetStatus, occurredAt, linkedTx.Notes); err != nil {
+		// The linked leg carries the same motive and actor: the domain moved it through
+		// Cancel above, so persisting it any other way would leave one profile audited
+		// and the other not.
+		if err := uc.persistStatus(linkedTx, targetStatus, occurredAt); err != nil {
 			return nil, err
 		}
 		_ = uc.updateBalanceOnStatusChange(linkedTx, linkedOldStatus, targetStatus)
@@ -218,4 +221,18 @@ func (uc *UpdateTransactionStatusUseCase) updateBalanceOnStatusChange(tx *transa
 	}
 
 	return nil
+}
+
+// persistStatus writes a status change through the path that keeps its audit. A
+// cancellation carries why and who; everything else has neither and takes the plain
+// route.
+func (uc *UpdateTransactionStatusUseCase) persistStatus(
+	txn *transaction.Transaction,
+	target transaction.Status,
+	occurredAt time.Time,
+) error {
+	if target == transaction.StatusCancelled {
+		return uc.repo.CancelStatus(txn, occurredAt)
+	}
+	return uc.repo.UpdateStatus(txn.ID, target, occurredAt, txn.Notes)
 }

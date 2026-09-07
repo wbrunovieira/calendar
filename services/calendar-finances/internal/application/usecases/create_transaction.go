@@ -60,10 +60,25 @@ type CreateTransactionUseCase struct {
 	atomically UnitOfWork
 }
 
-// UnitOfWork runs a function inside one database transaction. Declared here as an
-// interface so the use case does not depend on the persistence package.
+// TxRepos carries the repositories bound to an open database transaction.
+//
+// It exists because atomicity is not a property of opening a transaction — it is a
+// property of writing THROUGH it. A use case holding repositories built on the
+// *sql.DB will happily open and commit its own transactions inside someone else's,
+// and the outer rollback then undoes nothing. Handing the bound repositories to the
+// callback is what makes that mistake unavailable rather than merely discouraged.
+type TxRepos struct {
+	Transactions transaction.Repository
+	Invoices     invoice.Repository
+	Accounts     bankaccount.Repository
+	Recalculator BalanceRecalculator
+}
+
+// UnitOfWork runs a function inside one database transaction, handing it the
+// repositories bound to that transaction. Declared here as an interface so the use
+// case does not depend on the persistence package.
 type UnitOfWork interface {
-	Do(func() error) error
+	Do(func(TxRepos) error) error
 }
 
 // SetUnitOfWork wires atomic multi-row writes, following how the other cross-cutting
@@ -568,21 +583,44 @@ func (uc *CreateTransactionUseCase) createInstallments(
 	// part 7 of 12 leaves six committed while the caller is told the operation
 	// failed — a half-written plan nobody goes looking for. Without a unit of work
 	// wired, the loop behaves as it always did.
-	writeSeries := func() error {
+	writeSeries := func(uc *CreateTransactionUseCase) error {
 		firstTxn = nil
 		return uc.writeInstallments(input, account, typeValue, occurredOn, dueOn, reminderOn, splits,
 			total, installmentAmount, remainder, txnStatus, &firstTxn)
 	}
 	if uc.atomically != nil {
-		if err := uc.atomically.Do(writeSeries); err != nil {
+		if err := uc.atomically.Do(func(r TxRepos) error {
+			return writeSeries(uc.boundTo(r))
+		}); err != nil {
 			return nil, err
 		}
 		return firstTxn, nil
 	}
-	if err := writeSeries(); err != nil {
+	if err := writeSeries(uc); err != nil {
 		return nil, err
 	}
 	return firstTxn, nil
+}
+
+// boundTo returns a copy of this use case whose repositories write through the open
+// transaction. A copy, not a mutation: the use case is shared across requests, and
+// rebinding it in place would make one request's transaction visible to another.
+func (uc *CreateTransactionUseCase) boundTo(r TxRepos) *CreateTransactionUseCase {
+	bound := *uc
+	bound.atomically = nil // already inside one; Postgres has no nested transactions
+	if r.Transactions != nil {
+		bound.transactionRepo = r.Transactions
+	}
+	if r.Invoices != nil {
+		bound.invoiceRepo = r.Invoices
+	}
+	if r.Accounts != nil {
+		bound.accountRepo = r.Accounts
+	}
+	if r.Recalculator != nil {
+		bound.balanceRecalculator = r.Recalculator
+	}
+	return &bound
 }
 
 func (uc *CreateTransactionUseCase) writeInstallments(

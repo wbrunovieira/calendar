@@ -146,14 +146,3 @@ func (s *scope) Rollback() error {
 	}
 	return nil
 }
-
-// DoSimple adapts UnitOfWork to callers that only need the atomicity, not the bound
-// repositories — a use case already holding its own repositories, for instance. Those
-// repositories must be the ones this UnitOfWork was built from, or their writes land
-// outside the transaction and the atomicity is a fiction.
-//
-// It exists so the application layer can depend on `interface{ Do(func() error) error }`
-// without importing this package.
-func (u *UnitOfWork) DoSimple(fn func() error) error {
-	return u.Do(func(Repositories) error { return fn() })
-}

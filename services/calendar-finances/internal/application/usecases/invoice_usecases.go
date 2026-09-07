@@ -791,8 +791,8 @@ func (uc *PayInvoiceUseCaseV2) Execute(input PayInvoiceInput) (*invoice.Invoice,
 		return uc.pay(input)
 	}
 	var out *invoice.Invoice
-	err := uc.atomically.Do(func() error {
-		inv, perr := uc.pay(input)
+	err := uc.atomically.Do(func(r TxRepos) error {
+		inv, perr := uc.boundTo(r).pay(input)
 		out = inv
 		return perr
 	})
@@ -800,6 +800,27 @@ func (uc *PayInvoiceUseCaseV2) Execute(input PayInvoiceInput) (*invoice.Invoice,
 		return nil, err
 	}
 	return out, nil
+}
+
+// boundTo returns a copy whose repositories write through the open transaction. See
+// the note on TxRepos: holding repositories built on the *sql.DB while inside someone
+// else's transaction is how five writes that must land together land one by one.
+func (uc *PayInvoiceUseCaseV2) boundTo(r TxRepos) *PayInvoiceUseCaseV2 {
+	bound := *uc
+	bound.atomically = nil
+	if r.Transactions != nil {
+		bound.transactionRepo = r.Transactions
+	}
+	if r.Invoices != nil {
+		bound.invoiceRepo = r.Invoices
+	}
+	if r.Accounts != nil {
+		bound.accountRepo = r.Accounts
+	}
+	if r.Recalculator != nil {
+		bound.recalculator = r.Recalculator
+	}
+	return &bound
 }
 
 func (uc *PayInvoiceUseCaseV2) pay(input PayInvoiceInput) (*invoice.Invoice, error) {
