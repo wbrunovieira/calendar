@@ -1,18 +1,16 @@
 package persistence
 
 import (
-	"database/sql"
-
 	"github.com/brunovieira/calendar-finances/internal/domain/statement"
 )
 
 // MatchRepository stores reconciliation matches. Append-only: a match is undone with a
 // reason, never removed, so the history of a reconciliation survives its corrections.
 type MatchRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewMatchRepository(db *sql.DB) *MatchRepository {
+func NewMatchRepository(db Querier) *MatchRepository {
 	return &MatchRepository{db: db}
 }
 

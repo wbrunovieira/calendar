@@ -15,10 +15,10 @@ import (
 )
 
 type TransactionRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewTransactionRepository(db *sql.DB) *TransactionRepository {
+func NewTransactionRepository(db Querier) *TransactionRepository {
 	return &TransactionRepository{db: db}
 }
 
@@ -36,10 +36,11 @@ func (r *TransactionRepository) Create(txn *transaction.Transaction) (err error)
 		txn.UpdatedAt = txn.CreatedAt
 	}
 
-	sqlTx, err := r.db.Begin()
+	sc, err := beginScope(r.db)
 	if err != nil {
 		return err
 	}
+	sqlTx := sc
 
 	defer func() {
 		if p := recover(); p != nil {
@@ -463,10 +464,11 @@ func (r *TransactionRepository) Update(txn *transaction.Transaction) (err error)
 		return errors.New("transaction is nil")
 	}
 
-	sqlTx, err := r.db.Begin()
+	sc, err := beginScope(r.db)
 	if err != nil {
 		return err
 	}
+	sqlTx := sc
 
 	defer func() {
 		if p := recover(); p != nil {
@@ -630,11 +632,12 @@ func (r *TransactionRepository) DeleteMany(ids []string) error {
 		return nil
 	}
 
-	tx, err := r.db.Begin()
+	sc, err := beginScope(r.db)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = sc.Rollback() }()
+	tx := sc
 
 	for _, id := range ids {
 		result, err := tx.Exec(`DELETE FROM finance.transactions WHERE id = $1`, id)
@@ -650,7 +653,7 @@ func (r *TransactionRepository) DeleteMany(ids []string) error {
 		}
 	}
 
-	return tx.Commit()
+	return sc.Commit()
 }
 
 func (r *TransactionRepository) ReverseMany(txns []*transaction.Transaction) error {
@@ -658,11 +661,12 @@ func (r *TransactionRepository) ReverseMany(txns []*transaction.Transaction) err
 		return nil
 	}
 
-	tx, err := r.db.Begin()
+	sc, err := beginScope(r.db)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = sc.Rollback() }()
+	tx := sc
 
 	for _, t := range txns {
 		result, err := tx.Exec(`
@@ -720,7 +724,7 @@ func (r *TransactionRepository) ReverseMany(txns []*transaction.Transaction) err
 		}
 	}
 
-	return tx.Commit()
+	return sc.Commit()
 }
 
 func (r *TransactionRepository) Delete(id string) error {

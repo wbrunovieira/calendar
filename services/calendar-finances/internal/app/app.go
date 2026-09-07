@@ -114,6 +114,9 @@ func New(db *sql.DB) (*App, error) {
 
 	// Initialize Transaction use cases and handlers
 	createTransactionUC := usecases.NewCreateTransactionUseCase(profileRepo, bankAccountRepo, categoryRepo, transactionRepo, invoiceRepo, recalculateBalanceUC, costCenterRepo)
+	// Instalment series become all-or-nothing. Without this the loop writes row by
+	// row, and a failure partway leaves a half-written plan behind an error.
+	createTransactionUC.SetUnitOfWork(&simpleUnitOfWork{uow: persistence.NewUnitOfWork(db)})
 	listTransactionsUC := usecases.NewListTransactionsUseCase(transactionRepo)
 	getTransactionUC := usecases.NewGetTransactionUseCase(transactionRepo)
 	updateTransactionUC := usecases.NewUpdateTransactionUseCase(bankAccountRepo, categoryRepo, transactionRepo, invoiceRepo, recalculateBalanceUC)
@@ -417,3 +420,11 @@ func New(db *sql.DB) (*App, error) {
 		},
 	}, nil
 }
+
+// simpleUnitOfWork adapts the persistence unit of work to the narrow interface the
+// use case declares, so the application layer keeps no dependency on persistence.
+type simpleUnitOfWork struct {
+	uow *persistence.UnitOfWork
+}
+
+func (s *simpleUnitOfWork) Do(fn func() error) error { return s.uow.DoSimple(fn) }

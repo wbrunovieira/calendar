@@ -54,6 +54,22 @@ type CreateTransactionUseCase struct {
 	invoiceRepo         invoice.Repository
 	balanceRecalculator BalanceRecalculator
 	costCenterRepo      costcenter.Repository
+	// atomically runs a multi-row write as one unit. Optional: without it the
+	// instalment loop writes row by row exactly as before, which is the behaviour
+	// this exists to end but not something to fail on when unwired.
+	atomically UnitOfWork
+}
+
+// UnitOfWork runs a function inside one database transaction. Declared here as an
+// interface so the use case does not depend on the persistence package.
+type UnitOfWork interface {
+	Do(func() error) error
+}
+
+// SetUnitOfWork wires atomic multi-row writes, following how the other cross-cutting
+// collaborators are attached after construction.
+func (uc *CreateTransactionUseCase) SetUnitOfWork(u UnitOfWork) {
+	uc.atomically = u
 }
 
 func NewCreateTransactionUseCase(
@@ -535,8 +551,6 @@ func (uc *CreateTransactionUseCase) createInstallments(
 	installmentAmount := math.Floor(input.Amount/float64(total)*100) / 100
 	remainder := math.Round((input.Amount-installmentAmount*float64(total))*100) / 100
 
-	effectiveType := typeValue
-
 	var txnStatus transaction.Status
 	if input.Status != nil {
 		var err error
@@ -549,6 +563,43 @@ func (uc *CreateTransactionUseCase) createInstallments(
 	}
 
 	var firstTxn *transaction.Transaction
+
+	// The whole series is one unit of work. Writing row by row means a failure at
+	// part 7 of 12 leaves six committed while the caller is told the operation
+	// failed — a half-written plan nobody goes looking for. Without a unit of work
+	// wired, the loop behaves as it always did.
+	writeSeries := func() error {
+		firstTxn = nil
+		return uc.writeInstallments(input, account, typeValue, occurredOn, dueOn, reminderOn, splits,
+			total, installmentAmount, remainder, txnStatus, &firstTxn)
+	}
+	if uc.atomically != nil {
+		if err := uc.atomically.Do(writeSeries); err != nil {
+			return nil, err
+		}
+		return firstTxn, nil
+	}
+	if err := writeSeries(); err != nil {
+		return nil, err
+	}
+	return firstTxn, nil
+}
+
+func (uc *CreateTransactionUseCase) writeInstallments(
+	input CreateTransactionInput,
+	account *bankaccount.BankAccount,
+	typeValue transaction.Type,
+	occurredOn time.Time,
+	dueOn *time.Time,
+	reminderOn *time.Time,
+	splits []*transaction.Split,
+	total int,
+	installmentAmount float64,
+	remainder float64,
+	txnStatus transaction.Status,
+	firstTxn **transaction.Transaction,
+) error {
+	effectiveType := typeValue
 
 	for i := 1; i <= total; i++ {
 		installmentDate := occurredOn.AddDate(0, i-1, 0)
@@ -586,7 +637,7 @@ func (uc *CreateTransactionUseCase) createInstallments(
 			if account.ClosingDay != nil && account.DueDay != nil {
 				inv, err := uc.getOrCreateInvoiceForDate(account, installmentDate)
 				if err != nil {
-					return nil, err
+					return err
 				}
 				if inv != nil {
 					invoiceID = &inv.ID
@@ -619,16 +670,16 @@ func (uc *CreateTransactionUseCase) createInstallments(
 
 		txn, err := transaction.New(createParams)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		txn.Status = txnStatus
 
 		if err := uc.transactionRepo.Create(txn); err != nil {
-			return nil, err
+			return err
 		}
 
 		if i == 1 {
-			firstTxn = txn
+			*firstTxn = txn
 		}
 	}
 
@@ -639,7 +690,7 @@ func (uc *CreateTransactionUseCase) createInstallments(
 		recalculateAccounts(uc.balanceRecalculator, account.ID)
 	}
 
-	return firstTxn, nil
+	return nil
 }
 
 // splitsForInstallment divides a purchase's category breakdown across one

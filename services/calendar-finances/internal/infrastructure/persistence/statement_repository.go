@@ -1,7 +1,6 @@
 package persistence
 
 import (
-	"database/sql"
 	"strconv"
 	"strings"
 
@@ -9,10 +8,10 @@ import (
 )
 
 type StatementRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewStatementRepository(db *sql.DB) *StatementRepository {
+func NewStatementRepository(db Querier) *StatementRepository {
 	return &StatementRepository{db: db}
 }
 
@@ -30,18 +29,19 @@ func (r *StatementRepository) UpsertMany(lines []*statement.Line) (int, int, err
 		return 0, 0, nil
 	}
 
-	tx, err := r.db.Begin()
+	sc, err := beginScope(r.db)
 	if err != nil {
 		return 0, 0, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = sc.Rollback() }()
+	tx := sc
 
 	// The bank's own fields are refreshed; the reconciliation status is not touched
 	// here EXCEPT when the money itself changed. A PENDING authorisation settling as
 	// POSTED routinely changes the amount — especially on foreign purchases, which is
 	// most of this card — and a match whose bank side moved is by definition
 	// unverified. Leaving it MATCHED asserts a check nobody performed.
-	stmt, err := tx.Prepare(`
+	const insertLine = `
 		INSERT INTO finance.bank_statement_lines
 			(id, account_id, provider, external_id, booked_date, value_date,
 			 amount_minor, currency, amount_account_minor,
@@ -71,30 +71,22 @@ func (r *StatementRepository) UpsertMany(lines []*statement.Line) (int, int, err
 			last_seen_at = NOW(),
 			updated_at = NOW()
 		RETURNING id, (xmax = 0) AS inserted
-	`)
-	if err != nil {
-		return 0, 0, err
-	}
-	defer stmt.Close()
+	`
 
 	// Every version the provider reported is appended, never replaced. Overwriting
 	// raw would destroy the evidence that a change came from the bank rather than
 	// from us — and the previous version is what explains a dropped match.
-	revision, err := tx.Prepare(`
+	const insertRevision = `
 		INSERT INTO finance.bank_statement_line_revisions
 			(line_id, booked_date, amount_minor, currency, amount_account_minor, description, raw)
 		VALUES ($1,$2,$3,$4,$5,$6,$7)
-	`)
-	if err != nil {
-		return 0, 0, err
-	}
-	defer revision.Close()
+	`
 
 	var inserted, updated int
 	for _, l := range lines {
 		var storedID string
 		var isNew bool
-		err := stmt.QueryRow(
+		err := tx.QueryRow(insertLine,
 			l.ID, l.AccountID, string(l.Provider), l.ExternalID, l.BookedDate, l.ValueDate,
 			l.AmountMinor, l.Currency, l.AmountAccountMinor,
 			l.Description, l.EndToEndID, string(l.ProviderStatus), l.BillID, []byte(l.Raw), string(l.Status),
@@ -125,7 +117,7 @@ func (r *StatementRepository) UpsertMany(lines []*statement.Line) (int, int, err
 			return 0, 0, err
 		}
 		if !same {
-			if _, err := revision.Exec(storedID, l.BookedDate, l.AmountMinor, l.Currency,
+			if _, err := tx.Exec(insertRevision, storedID, l.BookedDate, l.AmountMinor, l.Currency,
 				l.AmountAccountMinor, l.Description, []byte(l.Raw)); err != nil {
 				return 0, 0, err
 			}
@@ -137,7 +129,7 @@ func (r *StatementRepository) UpsertMany(lines []*statement.Line) (int, int, err
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
+	if err := sc.Commit(); err != nil {
 		return 0, 0, err
 	}
 	return inserted, updated, nil
