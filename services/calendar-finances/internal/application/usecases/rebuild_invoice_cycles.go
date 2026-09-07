@@ -29,6 +29,15 @@ const (
 	// — [opening, closing) is half-open, so opening a day late leaves a one-day gap
 	// that belongs to no invoice at all.
 	RebuildAlignOpening = "ALIGN_OPENING"
+	// RebuildTermsChanged: the cycle covers exactly the right days and only its due
+	// date differs from what the card's CURRENT configuration would produce.
+	//
+	// This is usually not damage at all. A canonical cycle is derived from the closing
+	// and due day the card has today, and those change: the Nubank Juridica card's due
+	// day was corrected from the 6th to the 3rd, which instantly made every older
+	// invoice look wrong. The bill was right for its time. Cycle boundaries are facts
+	// about when the bill actually closed, not a function of today's settings.
+	RebuildTermsChanged = "TERMS_CHANGED"
 	// RebuildOverlappingCycles: two invoices claim the same cycle. Naming it beats the
 	// bare flag it replaced, which dropped the second invoice out of the report
 	// entirely and left a reader seeing "nothing to repair".
@@ -226,13 +235,22 @@ func (uc *RebuildInvoiceCyclesUseCase) Plan(bankAccountID string) (*RebuildPlan,
 		action.CurrentDue = &current.DueDate
 		action.PurchasesAtRisk = purchasesBetween(purchases, current.OpeningDate, cycle.OpeningDate)
 
-		if sameDay(current.ClosingDate, cycle.ClosingDate) && sameDay(current.DueDate, cycle.DueDate) {
+		// What is at risk is what would change bills, which is the symmetric difference
+		// of the two windows — not everything the cycle contains. Counting the whole
+		// cycle made a due date one day out read as "22 purchases at risk" and put
+		// every card in the database beyond automatic repair.
+		action.PurchasesAtRisk = purchasesMoving(purchases, current, cycle)
+
+		switch {
+		case sameDay(current.ClosingDate, cycle.ClosingDate) && sameDay(current.OpeningDate, cycle.OpeningDate):
+			action.Kind = RebuildTermsChanged
+			action.Reason = "the cycle covers the right days; only the due date differs from the card's current setting, which is what a change of terms looks like"
+		case sameDay(current.ClosingDate, cycle.ClosingDate) && sameDay(current.DueDate, cycle.DueDate):
 			action.Kind = RebuildAlignOpening
 			action.Reason = "the cycle closes and falls due correctly; only its opening is off, leaving a gap no invoice covers"
-		} else {
+		default:
 			action.Kind = RebuildReshapeWindow
 			action.Reason = windowReason(current, cycle)
-			action.PurchasesAtRisk = action.TransactionsAffected
 		}
 
 		// Approval is about money moving between bills, not about the bill having been
@@ -372,6 +390,26 @@ func bestCycleFor(cycles []*invoice.Invoice, inv *invoice.Invoice) int {
 		}
 	}
 	return best
+}
+
+// purchasesMoving counts the live charges that would land on a different bill if the
+// window were replaced: those inside one window and outside the other, either way.
+//
+// A due date that moved changes nothing about which purchases belong, so it counts
+// zero — which is the difference between a report worth acting on and a wall of red.
+func purchasesMoving(purchases []*transactionPkg.Transaction, current, canonical *invoice.Invoice) int {
+	inWindow := func(at time.Time, from, to time.Time) bool {
+		return !at.Before(from) && at.Before(to)
+	}
+	n := 0
+	for _, txn := range purchases {
+		a := inWindow(txn.OccurredOn, current.OpeningDate, current.ClosingDate)
+		b := inWindow(txn.OccurredOn, canonical.OpeningDate, canonical.ClosingDate)
+		if a != b {
+			n++
+		}
+	}
+	return n
 }
 
 // purchasesBetween counts the live charges sitting in the span two candidate openings
