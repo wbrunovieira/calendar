@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/brunovieira/calendar-finances/internal/application/usecases"
 	"github.com/brunovieira/calendar-finances/internal/domain/statement"
+	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/persistence"
 )
 
@@ -271,5 +273,48 @@ func TestE2E_AMatchIsDroppedWhenTheBankSideChanges(t *testing.T) {
 	revisions, _ := repo.Revisions(after.ID)
 	if len(revisions) < 2 {
 		t.Error("without the previous revision, a dropped match has no discoverable cause")
+	}
+}
+
+func TestE2E_ReversingATransactionUnmatchesItsStatementLine(t *testing.T) {
+	// Detecting this later is not enough: until the invariant runs, the line reads
+	// MATCHED and drops out of the pending report, so nobody looks at it.
+	db := testDB(t)
+	seedStatementAccount(t, db)
+	repo := persistence.NewStatementRepository(db)
+	txRepo := persistence.NewTransactionRepository(db)
+	accountRepo := persistence.NewBankAccountRepository(db)
+
+	if _, _, err := repo.UpsertMany([]*statement.Line{lineFor(t, "plg-unmatch", 5558, "BRL", nil)}); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	line, err := repo.FindByExternalID(stAccountID, statement.ProviderPluggy, "plg-unmatch")
+	if err != nil {
+		t.Fatalf("reading back: %v", err)
+	}
+	if err := line.MarkMatched(stTxID); err != nil {
+		t.Fatalf("marking: %v", err)
+	}
+	if err := repo.Update(line); err != nil {
+		t.Fatalf("saving the match: %v", err)
+	}
+
+	recalc := usecases.NewRecalculateBalanceUseCase(accountRepo, txRepo, nil)
+	if err := usecases.NewDeleteTransactionUseCase(txRepo, accountRepo, recalc).
+		ExecuteWithReason(usecases.ReverseTransactionInput{
+			ID: stTxID, Reason: transaction.ReasonDuplicated, By: "teste",
+		}); err != nil {
+		t.Fatalf("reversing: %v", err)
+	}
+
+	after, err := repo.FindByExternalID(stAccountID, statement.ProviderPluggy, "plg-unmatch")
+	if err != nil {
+		t.Fatalf("reading back: %v", err)
+	}
+	if after.Status != statement.StatusUnmatched {
+		t.Errorf("status = %s, want UNMATCHED: the entry behind the match was reversed", after.Status)
+	}
+	if after.MatchedTransactionID != nil {
+		t.Error("the referent must be cleared, or it points at an entry that no longer counts")
 	}
 }

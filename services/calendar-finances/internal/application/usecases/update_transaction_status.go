@@ -105,12 +105,15 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 	var linkedTx *transaction.Transaction
 	if tx.LinkedTransactionID != nil {
 		found, lerr := uc.repo.GetByID(*tx.LinkedTransactionID)
-		if lerr == nil {
-			if err := found.CanTransitionTo(targetStatus); err != nil {
-				return nil, err
-			}
-			linkedTx = found
+		if lerr != nil {
+			// Skipping it silently leaves the pair half-updated with no error, and
+			// the other profile holding a movement whose counterpart never moved.
+			return nil, lerr
 		}
+		if err := found.CanTransitionTo(targetStatus); err != nil {
+			return nil, err
+		}
+		linkedTx = found
 	}
 
 	if err := uc.repo.UpdateStatus(tx.ID, targetStatus, occurredAt, tx.Notes); err != nil {
@@ -141,8 +144,9 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 		}
 	}
 
-	// Reflect what was persisted. Validation happened before the write, above.
-	tx.Status = targetStatus
+	// No assignment here: the switch above already moved tx through the domain, so
+	// its status is the target. Re-assigning would reopen the gate with an eighth
+	// exception that is a transition and nowhere near a New().
 	return tx, nil
 }
 

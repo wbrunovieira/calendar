@@ -165,3 +165,52 @@ func TestInvoiceJSON_ExposesTheOutstandingDebt(t *testing.T) {
 		t.Errorf("paidAmount = %v, want 1018.18", got["paidAmount"])
 	}
 }
+
+// Recalculating an invoice must NOT re-apply the payment. Routing that through Pay()
+// to satisfy a lint gate doubled paid_amount on every reversal, because Pay is
+// additive — the aggregate where a partial payment once erased the remaining debt,
+// now inflating what was paid instead.
+func TestRederiveStatus_DoesNotTouchPaidAmount(t *testing.T) {
+	inv := billOf(1489.22)
+	if err := inv.Pay(1018.18, day(3)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	inv.RederiveStatus()
+
+	if inv.PaidAmount == nil || !nearly(*inv.PaidAmount, 1018.18) {
+		t.Errorf("paidAmount = %v, want 1018.18 untouched", inv.PaidAmount)
+	}
+	if inv.Status != StatusPartiallyPaid {
+		t.Errorf("status = %s, want %s", inv.Status, StatusPartiallyPaid)
+	}
+}
+
+func TestRederiveStatus_SettlesWhenTheTotalDropsBelowWhatWasPaid(t *testing.T) {
+	// A duplicated charge is removed and the bill recalculates below what was paid.
+	inv := billOf(1489.22)
+	_ = inv.Pay(1018.18, day(3))
+	inv.Amount = 1018.18
+
+	inv.RederiveStatus()
+
+	if inv.Status != StatusPaid {
+		t.Errorf("status = %s, want %s", inv.Status, StatusPaid)
+	}
+	if !nearly(*inv.PaidAmount, 1018.18) {
+		t.Errorf("paidAmount = %v — rederiving must never change what was paid", *inv.PaidAmount)
+	}
+}
+
+func TestRederiveStatus_ReopensAPaidBillThatGrewAgain(t *testing.T) {
+	// A settled bill that later receives a charge must stop reading as settled.
+	inv := billOf(100)
+	_ = inv.Pay(100, day(3))
+	inv.Amount = 250
+
+	inv.RederiveStatus()
+
+	if inv.Status != StatusPartiallyPaid {
+		t.Errorf("status = %s, want %s: it owes 150 again", inv.Status, StatusPartiallyPaid)
+	}
+}

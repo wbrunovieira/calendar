@@ -450,6 +450,30 @@ func RunMigrations(db *sql.DB) error {
 			ALTER TABLE finance.bank_accounts ADD CONSTRAINT bank_accounts_type_check
 				CHECK (type IN ('CHECKING', 'SAVINGS', 'INVESTMENT', 'CREDIT_CARD', 'CASH', 'EXCHANGE', 'WALLET', 'OTHER'));
 		END $$`,
+		// Without an external id on the account, the importer has no way to know which
+		// of our accounts a statement line belongs to, and the only fallback is
+		// matching by name — the fragile matching this whole issue exists to remove.
+		`ALTER TABLE finance.bank_accounts ADD COLUMN IF NOT EXISTS provider_account_id TEXT`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_bank_accounts_provider_account
+			ON finance.bank_accounts(provider_account_id) WHERE provider_account_id IS NOT NULL`,
+
+		// Every import window, so a reconciliation report can carry a true header.
+		// Without it, "left over on the bank side" has no defined boundary: a line
+		// genuinely without a counterpart cannot be told apart from a period never
+		// fetched — the same incomplete view presented as complete that produced a
+		// phantom R$ 10.651,18 discrepancy.
+		`CREATE TABLE IF NOT EXISTS finance.statement_imports (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			account_id UUID NOT NULL REFERENCES finance.bank_accounts(id),
+			provider VARCHAR(20) NOT NULL,
+			period_from DATE NOT NULL,
+			period_to DATE NOT NULL,
+			lines_seen INT NOT NULL DEFAULT 0,
+			lines_inserted INT NOT NULL DEFAULT 0,
+			ran_at TIMESTAMP NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_statement_imports_account ON finance.statement_imports(account_id, period_to DESC)`,
+
 		// Migration: bank statement lines, stored verbatim.
 		//
 		// Reconciliation must be persisted data, not chat work. Everything the
@@ -538,6 +562,15 @@ func RunMigrations(db *sql.DB) error {
 			IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_statement_account_provider_external') THEN
 				ALTER TABLE finance.bank_statement_lines
 					ADD CONSTRAINT uq_statement_account_provider_external UNIQUE (account_id, provider, external_id);
+			END IF;
+			IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'statement_provider_status_check') THEN
+				-- The CREATE TABLE path declares this inline; without it here, a new
+				-- database has the constraint and a migrated one does not. Divergent
+				-- schemas are the same lesson as CREATE TABLE IF NOT EXISTS, now in
+				-- the very commit that documents it.
+				ALTER TABLE finance.bank_statement_lines
+					ADD CONSTRAINT statement_provider_status_check
+					CHECK (provider_status IN ('PENDING','POSTED'));
 			END IF;
 			IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'statement_matched_has_reference') THEN
 				-- NOT VALID: adding a CHECK validates every existing row on the spot,

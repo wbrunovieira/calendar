@@ -685,6 +685,24 @@ func (r *TransactionRepository) ReverseMany(txns []*transaction.Transaction) err
 		}
 	}
 
+	// A statement line matched against a reversed entry asserts a check against
+	// something that no longer counts. Detecting it later is not enough: until the
+	// next invariant run the line reads MATCHED, so it drops out of the pending
+	// report and nobody looks at it — the invisible-but-wrong failure mode that
+	// hiding reversed rows from the default listing just removed elsewhere.
+	//
+	// It crosses aggregates deliberately: inside this transaction the undo is atomic,
+	// and at this size atomicity is worth more than layer purity.
+	for _, t := range txns {
+		if _, err := tx.Exec(`
+			UPDATE finance.bank_statement_lines
+			SET status = 'UNMATCHED', matched_transaction_id = NULL, updated_at = NOW()
+			WHERE matched_transaction_id = $1
+		`, t.ID); err != nil {
+			return err
+		}
+	}
+
 	return tx.Commit()
 }
 

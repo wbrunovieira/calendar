@@ -103,19 +103,24 @@ func (r *StatementRepository) UpsertMany(lines []*statement.Line) (int, int, err
 		if err != nil {
 			return 0, 0, err
 		}
-		// Only when something actually changed. A daily sync over the same window
-		// would otherwise write an identical revision every day — hundreds per line
-		// in a year, destroying the one thing the table answers: what the bank
-		// changed, and when.
+		// Compared against the LAST revision, not against any of them. EXISTS ignores
+		// ORDER BY and LIMIT, so a value that went A to B and back to A would find the
+		// first revision, call it unchanged, and drop the return from the history —
+		// which is exactly the change worth recording: an authorisation that moved on
+		// settlement and was then corrected back by the issuer.
 		var same bool
 		if err := tx.QueryRow(`
 			SELECT EXISTS (
-				SELECT 1 FROM finance.bank_statement_line_revisions
-				WHERE line_id = $1
-				  AND booked_date = $2 AND amount_minor = $3 AND currency = $4
-				  AND amount_account_minor IS NOT DISTINCT FROM $5
-				  AND description = $6 AND raw = $7::jsonb
-				ORDER BY seen_at DESC LIMIT 1
+				SELECT 1 FROM (
+					SELECT booked_date, amount_minor, currency, amount_account_minor, description, raw
+					FROM finance.bank_statement_line_revisions
+					WHERE line_id = $1
+					ORDER BY seen_at DESC
+					LIMIT 1
+				) latest
+				WHERE latest.booked_date = $2 AND latest.amount_minor = $3 AND latest.currency = $4
+				  AND latest.amount_account_minor IS NOT DISTINCT FROM $5
+				  AND latest.description = $6 AND latest.raw = $7::jsonb
 			)`, storedID, l.BookedDate, l.AmountMinor, l.Currency,
 			l.AmountAccountMinor, l.Description, []byte(l.Raw)).Scan(&same); err != nil {
 			return 0, 0, err

@@ -271,3 +271,33 @@ type Repository interface {
 	Delete(id string) error
 	FindOpenPastClosingDate(now time.Time) ([]*Invoice, error)
 }
+
+// RederiveStatus recomputes the status from Amount and PaidAmount as they already
+// stand. It records no payment and never touches PaidAmount.
+//
+// This is what a recalculation needs. Routing it through Pay() — which accumulates —
+// doubled the recorded payment on every reversal, since a reversal recomputes the
+// invoice immediately afterwards.
+//
+// It moves in both directions on purpose: a bill whose total drops below what was
+// paid is settled, and a settled bill that later receives a charge owes again.
+func (i *Invoice) RederiveStatus() {
+	if i == nil || i.Status == StatusOpen {
+		return
+	}
+	paid := 0.0
+	if i.PaidAmount != nil {
+		paid = *i.PaidAmount
+	}
+	switch {
+	case paid <= 0:
+		if i.Status == StatusPaid || i.Status == StatusPartiallyPaid {
+			i.Status = StatusClosed
+		}
+	case paid+paymentTolerance >= i.Amount:
+		i.Status = StatusPaid
+	default:
+		i.Status = StatusPartiallyPaid
+	}
+	i.touch()
+}
