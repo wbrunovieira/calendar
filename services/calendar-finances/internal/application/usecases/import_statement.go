@@ -218,13 +218,27 @@ func decodeProviderRecords(payload []byte) ([]json.RawMessage, error) {
 		} `json:"result"`
 	}
 	if err := json.Unmarshal(payload, &wrapped); err == nil {
-		switch {
-		case wrapped.Results != nil:
-			return *wrapped.Results, nil
-		case wrapped.Transactions != nil:
-			return *wrapped.Transactions, nil
-		case wrapped.Result != nil && wrapped.Result.Results != nil:
-			return *wrapped.Result.Results, nil
+		candidates := []*[]json.RawMessage{wrapped.Results, wrapped.Transactions}
+		if wrapped.Result != nil {
+			candidates = append(candidates, wrapped.Result.Results)
+		}
+		// A key carrying records wins over one that is present but empty. Taking the
+		// first present key would let {"results":[],"transactions":[...]} import
+		// nothing and answer success — silence in the shape of a 200.
+		for _, c := range candidates {
+			if c != nil && len(*c) > 0 {
+				return *c, nil
+			}
+		}
+		for _, c := range candidates {
+			if c != nil {
+				return *c, nil
+			}
+		}
+		// A key present and explicitly null means the same as an empty list on most
+		// APIs: nothing happened today. It must not read as an unparseable payload.
+		if hasNullList(payload) {
+			return nil, nil
 		}
 	}
 	var bare []json.RawMessage
@@ -232,6 +246,20 @@ func decodeProviderRecords(payload []byte) ([]json.RawMessage, error) {
 		return bare, nil
 	}
 	return nil, errors.New("payload carries no recognisable list of transactions")
+}
+
+// hasNullList reports whether the envelope named a list and set it to null.
+func hasNullList(payload []byte) bool {
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &probe); err != nil {
+		return false
+	}
+	for _, key := range []string{"results", "transactions"} {
+		if raw, ok := probe[key]; ok && strings.TrimSpace(string(raw)) == "null" {
+			return true
+		}
+	}
+	return false
 }
 
 // decodeAmount reads a value the provider may send as a string or as a number, and

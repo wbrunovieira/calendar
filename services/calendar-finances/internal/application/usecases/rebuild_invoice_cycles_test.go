@@ -434,3 +434,56 @@ func TestRebuildPlan_TwoInvoicesOnOneCycleAreNamed(t *testing.T) {
 		t.Error("a clash is not safe to resolve unattended")
 	}
 }
+
+// Creating a missing bill is harmless when its purchases belong to no invoice, and is
+// a reallocation when they currently sit inside the neighbour that swallowed the cycle.
+// Only the second needs a human — and it escaped the rule entirely, because the action
+// was appended before approval was ever decided.
+func TestRebuildPlan_CreatingACycleHeldByAnotherInvoiceNeedsApproval(t *testing.T) {
+	accounts, txns, invoices := rebuildFixture(t)
+	// One invoice swallowing two cycles; the July purchases live inside it today.
+	invoices.list = []*invoice.Invoice{
+		{ID: "fundida", BankAccountID: "card", Status: invoice.StatusClosed,
+			ReferenceDate: day(2026, time.August, 1),
+			OpeningDate:   day(2026, time.June, 28), ClosingDate: day(2026, time.August, 27),
+			DueDate: day(2026, time.September, 3)},
+	}
+	txns.created = []*transaction.Transaction{
+		purchase("t1", day(2026, time.July, 10), 100),
+		purchase("t2", day(2026, time.August, 10), 100),
+	}
+
+	plan, _ := NewRebuildInvoiceCyclesUseCase(accounts, txns, invoices).Plan("card")
+
+	created := plan.OfKind(RebuildCreateMissing)
+	if len(created) != 1 {
+		t.Fatalf("the swallowed cycle must be planned: %+v", plan.Actions)
+	}
+	if created[0].PurchasesAtRisk != 1 {
+		t.Errorf("the purchase living in the neighbour must be counted, got %d", created[0].PurchasesAtRisk)
+	}
+	if !created[0].RequiresApproval {
+		t.Error("taking a charge out of an existing bill is a decision for a human")
+	}
+}
+
+// The other half: a cycle whose purchases belong to no invoice at all. Creating it
+// takes nothing from anywhere, so nobody has to decide.
+func TestRebuildPlan_CreatingACycleNobodyCoversNeedsNoApproval(t *testing.T) {
+	accounts, txns, invoices := rebuildFixture(t)
+	invoices.list = nil
+	txns.created = []*transaction.Transaction{purchase("t1", day(2026, time.July, 10), 100)}
+
+	plan, _ := NewRebuildInvoiceCyclesUseCase(accounts, txns, invoices).Plan("card")
+
+	created := plan.OfKind(RebuildCreateMissing)
+	if len(created) != 1 || created[0].PurchasesAtRisk != 0 {
+		t.Fatalf("nothing is being taken from anywhere: %+v", plan.Actions)
+	}
+	if created[0].RequiresApproval {
+		t.Error("creating a bill for orphaned purchases is not a decision for a human")
+	}
+	if !plan.SafeToApplyUnattended {
+		t.Error("a plan that takes nothing from anywhere is safe")
+	}
+}

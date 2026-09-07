@@ -221,6 +221,15 @@ func (uc *RebuildInvoiceCyclesUseCase) Plan(bankAccountID string) (*RebuildPlan,
 			}
 			action.Kind = RebuildCreateMissing
 			action.Reason = "no invoice covers this cycle, so its purchases reach no bill"
+			// Creating the missing bill is harmless when its purchases belong to no
+			// invoice at all, and is a reallocation when they currently sit inside a
+			// neighbour that swallowed this cycle. Only the second needs a human, and
+			// telling them apart is the difference between a repair and a surprise.
+			action.PurchasesAtRisk = purchasesHeldByAnotherInvoice(purchases, cycle, existing)
+			action.RequiresApproval = action.PurchasesAtRisk > 0
+			if action.RequiresApproval {
+				plan.SafeToApplyUnattended = false
+			}
 			plan.Actions = append(plan.Actions, action)
 			continue
 		}
@@ -264,8 +273,12 @@ func (uc *RebuildInvoiceCyclesUseCase) Plan(bankAccountID string) (*RebuildPlan,
 		// were genuinely settled still read as unpaid here. Gating on settlement alone
 		// would have let a fused invoice reallocate seven charges unattended.
 		//
-		// Rewriting the dates a SETTLED bill recorded also needs one, even when nothing
-		// moves: it replaces a historical fact with today's configuration.
+		// Rewriting the CLOSING or DUE date of a settled bill needs one too, even when
+		// nothing moves: those two say what was billed and when it was owed, and
+		// replacing them rewrites what the bill recorded. A reshape is exactly the case
+		// where one of them differs. An opening nudged by a day changes neither, so it
+		// does not — and saying otherwise here while the code did something narrower
+		// is the kind of comment that sends the next reader looking for a bug.
 		//
 		// An informational action needs neither, because it is never applied.
 		action.RequiresApproval = !action.Informational &&
@@ -417,6 +430,29 @@ func withinDays(a, b time.Time, tolerance time.Duration) bool {
 		diff = -diff
 	}
 	return diff <= tolerance
+}
+
+// purchasesHeldByAnotherInvoice counts the charges that would belong to this cycle and
+// currently sit inside some other invoice's window. They are the ones that change bills
+// when the missing cycle is created.
+func purchasesHeldByAnotherInvoice(
+	purchases []*transactionPkg.Transaction,
+	cycle *invoice.Invoice,
+	existing []*invoice.Invoice,
+) int {
+	n := 0
+	for _, txn := range purchases {
+		if txn.OccurredOn.Before(cycle.OpeningDate) || !txn.OccurredOn.Before(cycle.ClosingDate) {
+			continue
+		}
+		for _, inv := range existing {
+			if !txn.OccurredOn.Before(inv.OpeningDate) && txn.OccurredOn.Before(inv.ClosingDate) {
+				n++
+				break
+			}
+		}
+	}
+	return n
 }
 
 // purchasesMoving counts the live charges that would land on a different bill if the

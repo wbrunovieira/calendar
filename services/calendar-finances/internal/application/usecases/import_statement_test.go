@@ -289,3 +289,32 @@ func TestImportStatement_NothingImportedSaysWhy(t *testing.T) {
 		t.Error("a refused line must be reported, or the two are indistinguishable")
 	}
 }
+
+// A key carrying records wins over one that is present but empty. Taking the first
+// present key would import nothing and answer success — silence shaped like a 200.
+func TestImportStatement_TheKeyWithRecordsWins(t *testing.T) {
+	repo := &fakeStatementRepo{}
+	out, err := cardImport(repo).Execute(cardInput([]byte(`{"results":[],"transactions":[
+		{"id":"t1","date":"2026-09-05T12:00:00.000Z","description":"Compra","amount":"10.00","currencyCode":"BRL","type":"DEBIT","status":"POSTED"}]}`)))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.Inserted != 1 {
+		t.Errorf("the records must not be discarded by an empty sibling key: %+v", out)
+	}
+}
+
+// A list present and explicitly null means the same as an empty one on most APIs:
+// nothing happened today. It must not read as an unparseable payload.
+func TestImportStatement_AnExplicitNullListIsAQuietDay(t *testing.T) {
+	for _, payload := range []string{`{"results":null}`, `{"transactions":null}`} {
+		out, err := cardImport(&fakeStatementRepo{}).Execute(cardInput([]byte(payload)))
+		if err != nil {
+			t.Errorf("%s: %v", payload, err)
+			continue
+		}
+		if out.Inserted != 0 || len(out.Rejected) != 0 {
+			t.Errorf("%s: expected a quiet nothing, got %+v", payload, out)
+		}
+	}
+}
