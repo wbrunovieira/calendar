@@ -11,6 +11,10 @@ import (
 // InvoiceRecalculator recomputes a card invoice's total from the transactions still
 // attached to it.
 type InvoiceRecalculator interface {
+	// RestatePayments brings a bill's paid amount back to what its live payment legs
+	// add up to. Reversing a payment used to leave the bill PAID forever, because the
+	// leg carries paid_invoice_id and not invoice_id, so nothing here ever looked at it.
+	RestatePayments(invoiceID string) (*invoice.Invoice, error)
 	Execute(invoiceID string) (*invoice.Invoice, error)
 }
 
@@ -226,12 +230,22 @@ func (uc *DeleteTransactionUseCase) recomputeInvoices(txns ...*transaction.Trans
 	if uc.invoiceRecalculator == nil {
 		return
 	}
-	seen := make(map[string]bool, len(txns))
+	// Two different links, two different meanings. invoice_id says "this charge is ON
+	// that bill"; paid_invoice_id says "this entry PAYS that bill". Undoing a charge
+	// changes what the bill is worth; undoing a payment changes what it still owes.
+	seenCharges := make(map[string]bool, len(txns))
+	seenPayments := make(map[string]bool, len(txns))
 	for _, t := range txns {
-		if t == nil || t.InvoiceID == nil || seen[*t.InvoiceID] {
+		if t == nil {
 			continue
 		}
-		seen[*t.InvoiceID] = true
-		_, _ = uc.invoiceRecalculator.Execute(*t.InvoiceID)
+		if t.InvoiceID != nil && !seenCharges[*t.InvoiceID] {
+			seenCharges[*t.InvoiceID] = true
+			_, _ = uc.invoiceRecalculator.Execute(*t.InvoiceID)
+		}
+		if t.PaidInvoiceID != nil && !seenPayments[*t.PaidInvoiceID] {
+			seenPayments[*t.PaidInvoiceID] = true
+			_, _ = uc.invoiceRecalculator.RestatePayments(*t.PaidInvoiceID)
+		}
 	}
 }

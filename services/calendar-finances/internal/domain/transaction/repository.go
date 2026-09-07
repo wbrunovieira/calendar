@@ -63,6 +63,10 @@ type Repository interface {
 	SumByCategories(profileID string, categoryIDs []string, from, to time.Time) (map[string]float64, error)
 	SumByInvoiceID(invoiceID string) (float64, error)
 	SumByInvoiceIDByStatus(invoiceID string, status Status) (float64, error)
+	// SumLivePaymentsByInvoiceID totals the payment legs that still name this invoice
+	// and still count. A reversed or cancelled payment moved no money, so it must not
+	// keep a bill looking settled.
+	SumLivePaymentsByInvoiceID(invoiceID string) (float64, error)
 	CalculateBalanceByBankAccountID(bankAccountID string) (float64, error)
 	// CalculateBalanceSince returns the net balance impact of all CONFIRMED
 	// transactions for the account that occurred on or after `since`.

@@ -4579,3 +4579,20 @@ func (f *fakeTransactionRepo) CancelStatus(txn *transaction.Transaction, occurre
 	txn.OccurredOn = occurredOn
 	return nil
 }
+
+// Faithful to the real one: only live payment legs count. A fake that ignored the
+// status would let a reversed payment keep a bill looking settled — the defect this
+// method exists to close.
+func (f *fakeTransactionRepo) SumLivePaymentsByInvoiceID(invoiceID string) (float64, error) {
+	var total float64
+	for _, tx := range f.created {
+		if tx.PaidInvoiceID == nil || *tx.PaidInvoiceID != invoiceID {
+			continue
+		}
+		if tx.Status != transaction.StatusConfirmed {
+			continue
+		}
+		total += tx.Amount
+	}
+	return total, nil
+}

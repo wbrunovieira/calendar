@@ -248,3 +248,70 @@ func TestIntegration_CountAgreesWithListAboutReversedRows(t *testing.T) {
 		t.Errorf("the audit view disagrees: count %d, list %d", auditCounted, len(auditListed))
 	}
 }
+
+// A bill whose payment is reversed must stop claiming to be paid.
+//
+// Invoice.Pay accumulates, and nothing ever reduced what it recorded. Reversing an
+// invoice payment therefore left the bill PAID with a paid_amount nobody had paid: it
+// kept counting against the card limit, and the guard added to Reopen() — which
+// refuses a bill that was ever settled — made the state unreachable through the API.
+// The money came back to the checking account and the card never noticed.
+func TestIntegration_ReversingAPaymentUnsettlesTheBill(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+
+	profileID, accountID := uuid.NewString(), uuid.NewString()
+	seedProfileAndAccount(t, db, profileID, accountID)
+
+	invoiceID := uuid.NewString()
+	if _, err := db.Exec(`
+		INSERT INTO finance.credit_card_invoices
+			(id, bank_account_id, reference_date, opening_date, closing_date, due_date,
+			 amount, paid_amount, paid_at, status)
+		VALUES ($1, $2, '2026-09-01', '2026-07-27', '2026-08-27', '2026-09-03',
+			799.57, 799.57, '2026-09-03', 'PAID')`,
+		invoiceID, accountID); err != nil {
+		t.Fatalf("seed invoice: %v", err)
+	}
+
+	repo := NewTransactionRepository(db)
+	payment, err := transaction.New(transaction.CreateParams{
+		ProfileID: profileID, BankAccountID: accountID,
+		Type: transaction.TypeExpense, Amount: 799.57, Currency: "BRL",
+		Description:   "Pagamento fatura",
+		OccurredOn:    time.Date(2026, time.September, 3, 0, 0, 0, 0, time.UTC),
+		PaidInvoiceID: &invoiceID,
+	})
+	if err != nil {
+		t.Fatalf("build payment: %v", err)
+	}
+	if err := payment.SetStatus(transaction.StatusConfirmed); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+	if err := repo.Create(payment); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	live, err := repo.SumLivePaymentsByInvoiceID(invoiceID)
+	if err != nil {
+		t.Fatalf("sum: %v", err)
+	}
+	if live != 799.57 {
+		t.Fatalf("a confirmed payment must count: got %v", live)
+	}
+
+	if err := payment.Reverse(transaction.ReasonNeverHappened, "paguei a fatura errada", "bruno", time.Now()); err != nil {
+		t.Fatalf("reverse: %v", err)
+	}
+	if err := repo.ReverseMany([]*transaction.Transaction{payment}); err != nil {
+		t.Fatalf("persist reversal: %v", err)
+	}
+
+	live, err = repo.SumLivePaymentsByInvoiceID(invoiceID)
+	if err != nil {
+		t.Fatalf("sum after reversal: %v", err)
+	}
+	if live != 0 {
+		t.Fatalf("a reversed payment must stop counting: got %v", live)
+	}
+}

@@ -643,6 +643,33 @@ func (uc *RecalculateInvoiceAmountUseCase) Execute(invoiceID string) (*invoice.I
 	return inv, nil
 }
 
+// RestatePayments brings a bill's paid amount back in line with the payment entries
+// that still name it, and re-derives its status.
+//
+// It is deliberately separate from Execute, and deliberately works on a PAID bill:
+// Execute refuses one, because recomputing the TOTAL of a settled bill rewrites
+// history. Restating its PAYMENTS is the opposite — it is how a bill stops claiming
+// money that was reversed. Without it a reversed payment left the invoice PAID with a
+// phantom paid_amount, still counting against the card limit, and the guard on
+// Reopen() made that state unreachable through the API.
+func (uc *RecalculateInvoiceAmountUseCase) RestatePayments(invoiceID string) (*invoice.Invoice, error) {
+	inv, err := uc.invoiceRepo.FindByID(invoiceID)
+	if err != nil {
+		return nil, ErrInvoiceNotFound
+	}
+
+	total, err := uc.transactionRepo.SumLivePaymentsByInvoiceID(invoiceID)
+	if err != nil {
+		return nil, err
+	}
+
+	inv.RestatePayments(total)
+	if err := uc.invoiceRepo.Update(inv); err != nil {
+		return nil, err
+	}
+	return inv, nil
+}
+
 // UpdateInvoiceInput contains the parameters to update an invoice
 type UpdateInvoiceInput struct {
 	DueDate     *string `json:"dueDate"`

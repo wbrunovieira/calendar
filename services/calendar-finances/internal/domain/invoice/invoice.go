@@ -3,6 +3,7 @@ package invoice
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"time"
 
 	"github.com/google/uuid"
@@ -279,6 +280,29 @@ type Repository interface {
 	Update(invoice *Invoice) error
 	Delete(id string) error
 	FindOpenPastClosingDate(now time.Time) ([]*Invoice, error)
+}
+
+// RestatePayments sets what a bill has been paid to what its live payment entries
+// actually add up to, and re-derives the status from there.
+//
+// Pay() accumulates, which is right when money moves and wrong afterwards: reversing
+// a payment left paid_amount standing, so a bill that had just been un-paid still read
+// as PAID, still counted against the card limit, and — with the guard on Reopen — could
+// not be recovered through the API at all. Payment is a derived fact like the total;
+// this is the method that says so.
+func (i *Invoice) RestatePayments(total float64) {
+	if i == nil {
+		return
+	}
+	if total <= 0 {
+		i.PaidAmount = nil
+		i.PaidAt = nil
+	} else {
+		restated := math.Round(total*100) / 100
+		i.PaidAmount = &restated
+	}
+	i.RederiveStatus()
+	i.touch()
 }
 
 // RederiveStatus recomputes the status from Amount and PaidAmount as they already

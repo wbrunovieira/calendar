@@ -300,3 +300,5 @@ func (m *mockTransactionRepo) CancelStatus(txn *transaction.Transaction, occurre
 	txn.OccurredOn = occurredOn
 	return nil
 }
+
+func (m *mockTransactionRepo) SumLivePaymentsByInvoiceID(string) (float64, error) { return 0, nil }

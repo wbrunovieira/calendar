@@ -425,8 +425,14 @@ func (failingRecalculator) Refresh(string) (*RecalculateBalanceResult, error) {
 }
 
 type invoiceRecalcSpy struct {
-	called []string
-	err    error
+	called   []string
+	restated []string
+	err      error
+}
+
+func (s *invoiceRecalcSpy) RestatePayments(invoiceID string) (*invoice.Invoice, error) {
+	s.restated = append(s.restated, invoiceID)
+	return nil, s.err
 }
 
 func (s *invoiceRecalcSpy) Execute(invoiceID string) (*invoice.Invoice, error) {
@@ -554,5 +560,45 @@ func TestDeleteTransaction_CardBalanceDoesNotDependOnDeletionOrder(t *testing.T)
 
 	if purchaseFirst != paymentFirst {
 		t.Fatalf("the same two deletions must leave the same balance: %.2f vs %.2f", purchaseFirst, paymentFirst)
+	}
+}
+
+// Undoing a charge and undoing a payment are different repairs on the same bill.
+//
+// The payment leg carries paid_invoice_id, not invoice_id, so the recomputation that
+// follows a reversal never looked at it: reversing an invoice payment left the bill
+// PAID with a paid_amount nobody had paid, still counting against the card limit, and
+// the guard on Reopen() then made that state unreachable through the API.
+func TestReverseTransaction_ReversingAPaymentRestatesTheBillItPaid(t *testing.T) {
+	invoiceID := "inv-1"
+	payment := &transaction.Transaction{
+		ID: "pay-1", ProfileID: "p1", BankAccountID: "checking",
+		DestinationAccountID: strPtr("card"),
+		Type:                 transaction.TypeTransfer, Status: transaction.StatusConfirmed,
+		Amount: 799.57, Currency: "BRL", Description: "Pagamento fatura",
+		OccurredOn:    time.Date(2026, time.September, 3, 0, 0, 0, 0, time.UTC),
+		PaidInvoiceID: &invoiceID,
+	}
+
+	repo := &fakeTransactionRepo{created: []*transaction.Transaction{payment}}
+	accounts := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		"checking": {ID: "checking", ProfileID: "p1", Name: "Conta", Type: bankaccount.AccountTypeChecking, Currency: "BRL"},
+		"card":     {ID: "card", ProfileID: "p1", Name: "Cartao", Type: bankaccount.AccountTypeCreditCard, Currency: "BRL"},
+	}}
+	spy := &invoiceRecalcSpy{}
+	uc := NewDeleteTransactionUseCase(repo, accounts, nil)
+	uc.SetInvoiceRecalculator(spy)
+
+	if err := uc.ExecuteWithReason(ReverseTransactionInput{
+		ID: "pay-1", Reason: transaction.ReasonNeverHappened, By: "bruno",
+	}); err != nil {
+		t.Fatalf("reverse: %v", err)
+	}
+
+	if len(spy.restated) != 1 || spy.restated[0] != invoiceID {
+		t.Fatalf("the bill this payment settled was not restated: %v", spy.restated)
+	}
+	if len(spy.called) != 0 {
+		t.Errorf("a payment is not a charge on the bill; it must not recompute the total: %v", spy.called)
 	}
 }

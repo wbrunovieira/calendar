@@ -665,6 +665,23 @@ func (r *TransactionRepository) UpdateStatus(id string, status transaction.Statu
 	return nil
 }
 
+// SumLivePaymentsByInvoiceID totals the payments that still name this invoice.
+//
+// Only CONFIRMED counts: a planned payment has not moved money, and a reversed or
+// cancelled one has moved it back.
+func (r *TransactionRepository) SumLivePaymentsByInvoiceID(invoiceID string) (float64, error) {
+	var total sql.NullFloat64
+	err := r.db.QueryRow(`
+		SELECT COALESCE(SUM(amount), 0)
+		FROM finance.transactions
+		WHERE paid_invoice_id = $1 AND status = 'CONFIRMED'
+	`, invoiceID).Scan(&total)
+	if err != nil {
+		return 0, err
+	}
+	return total.Float64, nil
+}
+
 // CancelStatus persists a cancellation together with why and who.
 //
 // It exists because UpdateStatus writes status, date and notes and nothing else: a

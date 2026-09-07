@@ -339,3 +339,5 @@ func (f *fakeTxRepoForBudget) CancelStatus(txn *transaction.Transaction, occurre
 	txn.OccurredOn = occurredOn
 	return nil
 }
+
+func (f *fakeTxRepoForBudget) SumLivePaymentsByInvoiceID(string) (float64, error) { return 0, nil }
