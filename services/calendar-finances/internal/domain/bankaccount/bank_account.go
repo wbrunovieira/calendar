@@ -30,7 +30,12 @@ type BankAccount struct {
 	DueDay          *int     `json:"dueDay,omitempty"`
 	ClosingDay      *int     `json:"closingDay,omitempty"`
 	LinkedAccountID *string  `json:"linkedAccountId,omitempty"`
-	DisplayOrder    *int     `json:"displayOrder,omitempty"`
+	// ProviderAccountID is this account's id at the data provider (Pluggy, via Banco
+	// MCP). It is how an imported statement line finds the account it belongs to.
+	// Without it the only alternatives are matching by name or by balance, and
+	// matching by value is what once deleted a legitimate entry.
+	ProviderAccountID *string `json:"providerAccountId,omitempty"`
+	DisplayOrder      *int    `json:"displayOrder,omitempty"`
 
 	// Investment-specific fields
 	InvestmentType *InvestmentType `json:"investmentType,omitempty"` // Type of investment product

@@ -155,3 +155,8 @@ func TestUpcomingMaturities_PropagatesRepoError(t *testing.T) {
 		t.Fatal("expected error to propagate")
 	}
 }
+
+// No mapping means nothing, never a guess — the same answer the real repository gives.
+func (f *fakeMaturityRepo) FindByProviderAccountID(string) (*bankaccount.BankAccount, error) {
+	return nil, nil
+}

@@ -103,3 +103,8 @@ func (f *fakeBankAccountRepoForBalance) Delete(id string) error {
 func (f *fakeBankAccountRepoForBalance) UpdateDisplayOrders(updates []bankaccount.DisplayOrderUpdate) error {
 	return nil
 }
+
+// No mapping means nothing, never a guess — the same answer the real repository gives.
+func (f *fakeBankAccountRepoForBalance) FindByProviderAccountID(string) (*bankaccount.BankAccount, error) {
+	return nil, nil
+}

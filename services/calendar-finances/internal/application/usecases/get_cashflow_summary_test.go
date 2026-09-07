@@ -208,3 +208,8 @@ func TestGetCashflowSummary_ConstrainsTheQuery(t *testing.T) {
 		t.Error("expected the period end in the filter")
 	}
 }
+
+// No mapping means nothing, never a guess — the same answer the real repository gives.
+func (r *cashflowAccountRepo) FindByProviderAccountID(string) (*bankaccount.BankAccount, error) {
+	return nil, nil
+}

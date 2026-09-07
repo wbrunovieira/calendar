@@ -196,3 +196,8 @@ func TestSellPosition_InvalidInput(t *testing.T) {
 		t.Errorf("zero price error = %v, want ErrInvalidInput", err)
 	}
 }
+
+// No mapping means nothing, never a guess — the same answer the real repository gives.
+func (r *sellAccountRepo) FindByProviderAccountID(string) (*bankaccount.BankAccount, error) {
+	return nil, nil
+}
