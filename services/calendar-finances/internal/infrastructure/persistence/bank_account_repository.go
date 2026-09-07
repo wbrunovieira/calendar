@@ -24,10 +24,10 @@ func (r *BankAccountRepository) Create(account *bankaccount.BankAccount) error {
 			bank_name, bank_code, agency, account_number, account_digit, color, icon, description,
 			credit_limit, due_day, closing_day, linked_account_id, display_order,
 			investment_type, yield_type, yield_rate, maturity_date, broker,
-			number_of_quotas, quota_price,
+			number_of_quotas, quota_price, provider_account_id,
 			created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)
 	`
 	_, err := r.db.Exec(query,
 		account.ID, account.ProfileID, account.Name, account.Type,
@@ -36,7 +36,7 @@ func (r *BankAccountRepository) Create(account *bankaccount.BankAccount) error {
 		account.AccountDigit, account.Color, account.Icon, account.Description,
 		account.CreditLimit, account.DueDay, account.ClosingDay, account.LinkedAccountID, account.DisplayOrder,
 		account.InvestmentType, account.YieldType, account.YieldRate, account.MaturityDate, account.Broker,
-		account.NumberOfQuotas, account.QuotaPrice,
+		account.NumberOfQuotas, account.QuotaPrice, account.ProviderAccountID,
 		account.CreatedAt, account.UpdatedAt,
 	)
 	return err
@@ -48,7 +48,7 @@ func (r *BankAccountRepository) FindByID(id string) (*bankaccount.BankAccount, e
 			bank_name, bank_code, agency, account_number, account_digit, color, icon, description,
 			credit_limit, due_day, closing_day, linked_account_id, display_order,
 			investment_type, yield_type, yield_rate, maturity_date, broker,
-			number_of_quotas, quota_price,
+			number_of_quotas, quota_price, provider_account_id,
 			created_at, updated_at
 		FROM finance.bank_accounts
 		WHERE id = $1
@@ -61,7 +61,7 @@ func (r *BankAccountRepository) FindByID(id string) (*bankaccount.BankAccount, e
 		&account.AccountDigit, &account.Color, &account.Icon, &account.Description,
 		&account.CreditLimit, &account.DueDay, &account.ClosingDay, &account.LinkedAccountID, &account.DisplayOrder,
 		&account.InvestmentType, &account.YieldType, &account.YieldRate, &account.MaturityDate, &account.Broker,
-		&account.NumberOfQuotas, &account.QuotaPrice,
+		&account.NumberOfQuotas, &account.QuotaPrice, &account.ProviderAccountID,
 		&account.CreatedAt, &account.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -79,7 +79,7 @@ func (r *BankAccountRepository) FindByProfileID(profileID string) ([]*bankaccoun
 			bank_name, bank_code, agency, account_number, account_digit, color, icon, description,
 			credit_limit, due_day, closing_day, linked_account_id, display_order,
 			investment_type, yield_type, yield_rate, maturity_date, broker,
-			number_of_quotas, quota_price,
+			number_of_quotas, quota_price, provider_account_id,
 			created_at, updated_at
 		FROM finance.bank_accounts
 		WHERE profile_id = $1
@@ -101,7 +101,7 @@ func (r *BankAccountRepository) FindByProfileID(profileID string) ([]*bankaccoun
 			&account.AccountDigit, &account.Color, &account.Icon, &account.Description,
 			&account.CreditLimit, &account.DueDay, &account.ClosingDay, &account.LinkedAccountID, &account.DisplayOrder,
 			&account.InvestmentType, &account.YieldType, &account.YieldRate, &account.MaturityDate, &account.Broker,
-			&account.NumberOfQuotas, &account.QuotaPrice,
+			&account.NumberOfQuotas, &account.QuotaPrice, &account.ProviderAccountID,
 			&account.CreatedAt, &account.UpdatedAt,
 		)
 		if err != nil {
@@ -112,13 +112,56 @@ func (r *BankAccountRepository) FindByProfileID(profileID string) ([]*bankaccoun
 	return accounts, nil
 }
 
+// FindByProviderAccountID resolves the provider's account id to the account here.
+//
+// It answers nil when there is no mapping, and that is the useful answer: an import
+// that guessed an account would write one person's spending onto another statement,
+// and the mistake would only surface as a balance that stopped matching.
+func (r *BankAccountRepository) FindByProviderAccountID(providerAccountID string) (*bankaccount.BankAccount, error) {
+	if strings.TrimSpace(providerAccountID) == "" {
+		return nil, errors.New("providerAccountID is required")
+	}
+
+	query := `
+		SELECT id, profile_id, name, type, initial_balance, current_balance, currency, is_active,
+			bank_name, bank_code, agency, account_number, account_digit, color, icon, description,
+			credit_limit, due_day, closing_day, linked_account_id, display_order,
+			investment_type, yield_type, yield_rate, maturity_date, broker,
+			number_of_quotas, quota_price, provider_account_id,
+			created_at, updated_at
+		FROM finance.bank_accounts
+		WHERE provider_account_id = $1
+	`
+
+	account := &bankaccount.BankAccount{}
+	err := r.db.QueryRow(query, strings.TrimSpace(providerAccountID)).Scan(
+		&account.ID, &account.ProfileID, &account.Name, &account.Type,
+		&account.InitialBalance, &account.CurrentBalance, &account.Currency, &account.IsActive,
+		&account.BankName, &account.BankCode, &account.Agency, &account.AccountNumber,
+		&account.AccountDigit, &account.Color, &account.Icon, &account.Description,
+		&account.CreditLimit, &account.DueDay, &account.ClosingDay, &account.LinkedAccountID,
+		&account.DisplayOrder,
+		&account.InvestmentType, &account.YieldType, &account.YieldRate, &account.MaturityDate,
+		&account.Broker,
+		&account.NumberOfQuotas, &account.QuotaPrice, &account.ProviderAccountID,
+		&account.CreatedAt, &account.UpdatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return account, nil
+}
+
 func (r *BankAccountRepository) FindAll() ([]*bankaccount.BankAccount, error) {
 	query := `
 		SELECT id, profile_id, name, type, initial_balance, current_balance, currency, is_active,
 			bank_name, bank_code, agency, account_number, account_digit, color, icon, description,
 			credit_limit, due_day, closing_day, linked_account_id, display_order,
 			investment_type, yield_type, yield_rate, maturity_date, broker,
-			number_of_quotas, quota_price,
+			number_of_quotas, quota_price, provider_account_id,
 			created_at, updated_at
 		FROM finance.bank_accounts
 		ORDER BY COALESCE(display_order, 0) ASC, created_at DESC
@@ -139,7 +182,7 @@ func (r *BankAccountRepository) FindAll() ([]*bankaccount.BankAccount, error) {
 			&account.AccountDigit, &account.Color, &account.Icon, &account.Description,
 			&account.CreditLimit, &account.DueDay, &account.ClosingDay, &account.LinkedAccountID, &account.DisplayOrder,
 			&account.InvestmentType, &account.YieldType, &account.YieldRate, &account.MaturityDate, &account.Broker,
-			&account.NumberOfQuotas, &account.QuotaPrice,
+			&account.NumberOfQuotas, &account.QuotaPrice, &account.ProviderAccountID,
 			&account.CreatedAt, &account.UpdatedAt,
 		)
 		if err != nil {
@@ -159,6 +202,7 @@ func (r *BankAccountRepository) Update(account *bankaccount.BankAccount) error {
 			closing_day = $18, linked_account_id = $19, display_order = $20,
 			investment_type = $21, yield_type = $22, yield_rate = $23, maturity_date = $24, broker = $25,
 			number_of_quotas = $26, quota_price = $27,
+			provider_account_id = $30,
 			initial_balance = $29,
 			updated_at = $28
 		WHERE id = $1
@@ -172,6 +216,7 @@ func (r *BankAccountRepository) Update(account *bankaccount.BankAccount) error {
 		account.NumberOfQuotas, account.QuotaPrice,
 		account.UpdatedAt,
 		account.InitialBalance,
+		account.ProviderAccountID,
 	)
 	if err != nil {
 		return err

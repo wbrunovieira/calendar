@@ -224,3 +224,54 @@ func TestUpdateBankAccount_TheFormCannotSetTheBalance(t *testing.T) {
 		t.Errorf("the edit that WAS asked for must still happen, got %q", updated.Name)
 	}
 }
+
+// The mapping to the provider's account must survive an unrelated edit.
+//
+// This route is a full replace, so a field left out of the payload is normally gone.
+// For the mapping that would be silent damage: the next morning's import would answer
+// 404 for an account that worked yesterday, and nothing would say why. Omitting it
+// preserves it; sending an empty string unmaps it on purpose.
+func TestUpdateBankAccount_RenamingDoesNotUnmapTheProviderAccount(t *testing.T) {
+	acc := makeAccountWithCurrency("acc-1", "BRL")
+	mapped := "2c9d2ca0-6490-410a-9523-aba1a8fc45a5"
+	acc.ProviderAccountID = &mapped
+	repo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"acc-1": acc}}
+
+	updated, err := NewUpdateBankAccountUseCase(repo).Execute("acc-1", baseUpdateInput("Cartão Mercado Pago", "BRL"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if updated.ProviderAccountID == nil || *updated.ProviderAccountID != mapped {
+		t.Fatalf("the mapping was lost by a rename: %v", updated.ProviderAccountID)
+	}
+}
+
+func TestUpdateBankAccount_AnEmptyProviderAccountUnmapsOnPurpose(t *testing.T) {
+	acc := makeAccountWithCurrency("acc-1", "BRL")
+	mapped := "prov-1"
+	acc.ProviderAccountID = &mapped
+	repo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"acc-1": acc}}
+
+	empty := ""
+	input := baseUpdateInput("acc-1", "BRL")
+	input.ProviderAccountID = &empty
+
+	updated, _ := NewUpdateBankAccountUseCase(repo).Execute("acc-1", input)
+	if updated.ProviderAccountID != nil {
+		t.Errorf("an explicit empty string must unmap, got %v", *updated.ProviderAccountID)
+	}
+}
+
+func TestUpdateBankAccount_TheMappingCanBeSet(t *testing.T) {
+	acc := makeAccountWithCurrency("acc-1", "BRL")
+	repo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"acc-1": acc}}
+
+	provider := "74e75926-60f5-4755-a3f6-6d2451b2af8a"
+	input := baseUpdateInput("acc-1", "BRL")
+	input.ProviderAccountID = &provider
+
+	updated, _ := NewUpdateBankAccountUseCase(repo).Execute("acc-1", input)
+	if updated.ProviderAccountID == nil || *updated.ProviderAccountID != provider {
+		t.Fatalf("the mapping was not set: %v", updated.ProviderAccountID)
+	}
+}

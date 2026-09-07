@@ -29,6 +29,15 @@ const (
 	// — [opening, closing) is half-open, so opening a day late leaves a one-day gap
 	// that belongs to no invoice at all.
 	RebuildAlignOpening = "ALIGN_OPENING"
+	// RebuildTermsChanged: the cycle covers exactly the right days and only its due
+	// date differs from what the card's CURRENT configuration would produce.
+	//
+	// This is usually not damage at all. A canonical cycle is derived from the closing
+	// and due day the card has today, and those change: the Nubank Juridica card's due
+	// day was corrected from the 6th to the 3rd, which instantly made every older
+	// invoice look wrong. The bill was right for its time. Cycle boundaries are facts
+	// about when the bill actually closed, not a function of today's settings.
+	RebuildTermsChanged = "TERMS_CHANGED"
 	// RebuildOverlappingCycles: two invoices claim the same cycle. Naming it beats the
 	// bare flag it replaced, which dropped the second invoice out of the report
 	// entirely and left a reader seeing "nothing to repair".
@@ -55,6 +64,10 @@ type RebuildAction struct {
 	CanonicalDue     time.Time `json:"canonicalDue"`
 
 	TransactionsAffected int `json:"transactionsAffected"`
+	// Informational marks an action that reports and must never be applied. A cycle
+	// whose only difference is a due date reflects the card's terms as they were, and
+	// rewriting it would replace a historical fact with today's configuration.
+	Informational bool `json:"informational"`
 	// PurchasesAtRisk counts the live purchases that would change bills if this action
 	// were applied. Zero means the repair moves a boundary nobody is standing on.
 	PurchasesAtRisk  int    `json:"purchasesAtRisk"`
@@ -208,6 +221,15 @@ func (uc *RebuildInvoiceCyclesUseCase) Plan(bankAccountID string) (*RebuildPlan,
 			}
 			action.Kind = RebuildCreateMissing
 			action.Reason = "no invoice covers this cycle, so its purchases reach no bill"
+			// Creating the missing bill is harmless when its purchases belong to no
+			// invoice at all, and is a reallocation when they currently sit inside a
+			// neighbour that swallowed this cycle. Only the second needs a human, and
+			// telling them apart is the difference between a repair and a surprise.
+			action.PurchasesAtRisk = purchasesHeldByAnotherInvoice(purchases, cycle, existing)
+			action.RequiresApproval = action.PurchasesAtRisk > 0
+			if action.RequiresApproval {
+				plan.SafeToApplyUnattended = false
+			}
 			plan.Actions = append(plan.Actions, action)
 			continue
 		}
@@ -224,22 +246,44 @@ func (uc *RebuildInvoiceCyclesUseCase) Plan(bankAccountID string) (*RebuildPlan,
 		action.CurrentOpening = &current.OpeningDate
 		action.CurrentClosing = &current.ClosingDate
 		action.CurrentDue = &current.DueDate
-		action.PurchasesAtRisk = purchasesBetween(purchases, current.OpeningDate, cycle.OpeningDate)
 
-		if sameDay(current.ClosingDate, cycle.ClosingDate) && sameDay(current.DueDate, cycle.DueDate) {
+		// What is at risk is what would change bills, which is the symmetric difference
+		// of the two windows — not everything the cycle contains. Counting the whole
+		// cycle made a due date one day out read as "22 purchases at risk" and put
+		// every card in the database beyond automatic repair.
+		action.PurchasesAtRisk = purchasesMoving(purchases, current, cycle)
+
+		switch {
+		case sameDay(current.ClosingDate, cycle.ClosingDate) && sameDay(current.OpeningDate, cycle.OpeningDate):
+			action.Kind = RebuildTermsChanged
+			action.Informational = true
+			action.Reason = "the cycle covers the right days; only the due date differs from the card's current setting, which is what a change of terms looks like"
+		case sameDay(current.ClosingDate, cycle.ClosingDate) && sameDay(current.DueDate, cycle.DueDate) &&
+			withinDays(current.OpeningDate, cycle.OpeningDate, alignmentTolerance):
 			action.Kind = RebuildAlignOpening
 			action.Reason = "the cycle closes and falls due correctly; only its opening is off, leaving a gap no invoice covers"
-		} else {
+		default:
 			action.Kind = RebuildReshapeWindow
 			action.Reason = windowReason(current, cycle)
-			action.PurchasesAtRisk = action.TransactionsAffected
 		}
 
-		// Approval is about money moving between bills, not about the bill having been
-		// paid. Nudging a boundary nobody stands on changes no allocation, and
-		// demanding a human for it is how the flag stopped carrying information —
-		// every card in the database came back unsafe.
-		action.RequiresApproval = wasEverSettled(current) && action.PurchasesAtRisk > 0
+		// Moving a purchase to a different bill always needs a human, whether or not
+		// this system believes the bill was paid — because that belief is unreliable.
+		// Invoice payments were recorded as plain transfers for months, so bills that
+		// were genuinely settled still read as unpaid here. Gating on settlement alone
+		// would have let a fused invoice reallocate seven charges unattended.
+		//
+		// Rewriting the CLOSING or DUE date of a settled bill needs one too, even when
+		// nothing moves: those two say what was billed and when it was owed, and
+		// replacing them rewrites what the bill recorded. A reshape is exactly the case
+		// where one of them differs. An opening nudged by a day changes neither, so it
+		// does not — and saying otherwise here while the code did something narrower
+		// is the kind of comment that sends the next reader looking for a bug.
+		//
+		// An informational action needs neither, because it is never applied.
+		action.RequiresApproval = !action.Informational &&
+			(action.PurchasesAtRisk > 0 ||
+				(wasEverSettled(current) && action.Kind == RebuildReshapeWindow))
 		plan.Actions = append(plan.Actions, action)
 	}
 
@@ -374,16 +418,57 @@ func bestCycleFor(cycles []*invoice.Invoice, inv *invoice.Invoice) int {
 	return best
 }
 
-// purchasesBetween counts the live charges sitting in the span two candidate openings
-// disagree about — the ones that would change bills if the window moved.
-func purchasesBetween(purchases []*transactionPkg.Transaction, a, b time.Time) int {
-	from, to := a, b
-	if to.Before(from) {
-		from, to = to, from
+// alignmentTolerance is how far an opening may be out before the difference stops
+// being a boundary to tidy and becomes a cycle in the wrong place. A fused invoice
+// covering two months happens to close on the right day, and without this it was
+// reported as an "alignment" — with a reason describing a one-day nudge.
+const alignmentTolerance = 7 * 24 * time.Hour
+
+func withinDays(a, b time.Time, tolerance time.Duration) bool {
+	diff := a.Sub(b)
+	if diff < 0 {
+		diff = -diff
+	}
+	return diff <= tolerance
+}
+
+// purchasesHeldByAnotherInvoice counts the charges that would belong to this cycle and
+// currently sit inside some other invoice's window. They are the ones that change bills
+// when the missing cycle is created.
+func purchasesHeldByAnotherInvoice(
+	purchases []*transactionPkg.Transaction,
+	cycle *invoice.Invoice,
+	existing []*invoice.Invoice,
+) int {
+	n := 0
+	for _, txn := range purchases {
+		if txn.OccurredOn.Before(cycle.OpeningDate) || !txn.OccurredOn.Before(cycle.ClosingDate) {
+			continue
+		}
+		for _, inv := range existing {
+			if !txn.OccurredOn.Before(inv.OpeningDate) && txn.OccurredOn.Before(inv.ClosingDate) {
+				n++
+				break
+			}
+		}
+	}
+	return n
+}
+
+// purchasesMoving counts the live charges that would land on a different bill if the
+// window were replaced: those inside one window and outside the other, either way.
+//
+// A due date that moved changes nothing about which purchases belong, so it counts
+// zero — which is the difference between a report worth acting on and a wall of red.
+func purchasesMoving(purchases []*transactionPkg.Transaction, current, canonical *invoice.Invoice) int {
+	inWindow := func(at time.Time, from, to time.Time) bool {
+		return !at.Before(from) && at.Before(to)
 	}
 	n := 0
 	for _, txn := range purchases {
-		if !txn.OccurredOn.Before(from) && txn.OccurredOn.Before(to) {
+		a := inWindow(txn.OccurredOn, current.OpeningDate, current.ClosingDate)
+		b := inWindow(txn.OccurredOn, canonical.OpeningDate, canonical.ClosingDate)
+		if a != b {
 			n++
 		}
 	}

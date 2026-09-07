@@ -1,6 +1,7 @@
 package usecases
 
 import (
+	"strings"
 	"time"
 
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
@@ -28,22 +29,30 @@ type UpdateBankAccountInput struct {
 	// pointer because omitting it must preserve the stored value: only send it to
 	// correct a seed that was cadastrado wrong, since every later balance derives
 	// from it.
-	InitialBalance  *float64 `json:"initialBalance,omitempty"`
-	Currency        string   `json:"currency"`
-	IsActive        bool     `json:"isActive"`
-	BankName        *string  `json:"bankName,omitempty"`
-	BankCode        *string  `json:"bankCode,omitempty"`
-	Agency          *string  `json:"agency,omitempty"`
-	AccountNumber   *string  `json:"accountNumber,omitempty"`
-	AccountDigit    *string  `json:"accountDigit,omitempty"`
-	Color           *string  `json:"color,omitempty"`
-	Icon            *string  `json:"icon,omitempty"`
-	Description     *string  `json:"description,omitempty"`
-	CreditLimit     *float64 `json:"creditLimit,omitempty"`
-	DueDay          *int     `json:"dueDay,omitempty"`
-	ClosingDay      *int     `json:"closingDay,omitempty"`
-	LinkedAccountID *string  `json:"linkedAccountId,omitempty"`
-	DisplayOrder    *int     `json:"displayOrder,omitempty"`
+	InitialBalance *float64 `json:"initialBalance,omitempty"`
+	// ProviderAccountID maps this account to its id at the data provider, which is how
+	// an imported statement line finds where it belongs.
+	//
+	// A pointer, and omitting it PRESERVES what is stored — the same reason
+	// InitialBalance is one. This route is a full replace, and a mapping silently
+	// wiped by an unrelated edit would make the next import answer 404 for an account
+	// that was working yesterday. Send an empty string to unmap deliberately.
+	ProviderAccountID *string  `json:"providerAccountId,omitempty"`
+	Currency          string   `json:"currency"`
+	IsActive          bool     `json:"isActive"`
+	BankName          *string  `json:"bankName,omitempty"`
+	BankCode          *string  `json:"bankCode,omitempty"`
+	Agency            *string  `json:"agency,omitempty"`
+	AccountNumber     *string  `json:"accountNumber,omitempty"`
+	AccountDigit      *string  `json:"accountDigit,omitempty"`
+	Color             *string  `json:"color,omitempty"`
+	Icon              *string  `json:"icon,omitempty"`
+	Description       *string  `json:"description,omitempty"`
+	CreditLimit       *float64 `json:"creditLimit,omitempty"`
+	DueDay            *int     `json:"dueDay,omitempty"`
+	ClosingDay        *int     `json:"closingDay,omitempty"`
+	LinkedAccountID   *string  `json:"linkedAccountId,omitempty"`
+	DisplayOrder      *int     `json:"displayOrder,omitempty"`
 
 	// Investment-specific fields
 	InvestmentType *string    `json:"investmentType,omitempty"`
@@ -79,6 +88,13 @@ func (uc *UpdateBankAccountUseCase) Execute(id string, input UpdateBankAccountIn
 	if input.InitialBalance != nil {
 		account.CurrentBalance += *input.InitialBalance - account.InitialBalance
 		account.InitialBalance = *input.InitialBalance
+	}
+	if input.ProviderAccountID != nil {
+		if trimmed := strings.TrimSpace(*input.ProviderAccountID); trimmed == "" {
+			account.ProviderAccountID = nil
+		} else {
+			account.ProviderAccountID = &trimmed
+		}
 	}
 	if input.Currency == "" {
 		// keep existing currency

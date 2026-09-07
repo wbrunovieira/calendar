@@ -214,3 +214,8 @@ func TestCreateBankAccount_ExplicitDisplayOrder_IsPreserved(t *testing.T) {
 		t.Errorf("expected explicit DisplayOrder=42 to be preserved, got %v", result.DisplayOrder)
 	}
 }
+
+// No mapping means nothing, never a guess — the same answer the real repository gives.
+func (f *fakeBankAccountRepoForReorder) FindByProviderAccountID(string) (*bankaccount.BankAccount, error) {
+	return nil, nil
+}

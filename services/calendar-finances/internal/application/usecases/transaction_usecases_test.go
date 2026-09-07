@@ -4596,3 +4596,8 @@ func (f *fakeTransactionRepo) SumLivePaymentsByInvoiceID(invoiceID string) (floa
 	}
 	return total, nil
 }
+
+// No mapping means nothing, never a guess — the same answer the real repository gives.
+func (f *fakeAccountRepo) FindByProviderAccountID(string) (*bankaccount.BankAccount, error) {
+	return nil, nil
+}

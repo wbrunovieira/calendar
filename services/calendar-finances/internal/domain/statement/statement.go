@@ -26,6 +26,19 @@ const (
 	ProviderBinance Provider = "BINANCE"
 )
 
+// Valid reports whether this is a provider the system knows.
+//
+// It matters more than it looks: the uniqueness key is (account, provider, external
+// id), so a typo in the provider name does not fail — it creates a second namespace
+// and silently imports every line of the statement a second time.
+func (p Provider) Valid() bool {
+	switch p {
+	case ProviderPluggy, ProviderOFX, ProviderCSV, ProviderBinance:
+		return true
+	}
+	return false
+}
+
 // Status tracks a line through reconciliation. It describes the LINE, not the money:
 // the bank's word is a fact, and these say what we have done about it.
 // ProviderStatus is what the BANK says about the line's own lifecycle, as opposed to

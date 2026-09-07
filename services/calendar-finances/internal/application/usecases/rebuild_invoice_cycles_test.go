@@ -95,17 +95,21 @@ func TestRebuildPlan_AWindowBuiltOnTheWrongClosingDayIsReshaped(t *testing.T) {
 }
 
 // A plan that silently reshapes a settled bill is how a paid invoice loses the
-// purchases it was paid for. The planner still reports it — it just refuses to call
-// it routine.
-func TestRebuildPlan_ReshapingASettledBillNeedsAHumanToSayYes(t *testing.T) {
+// purchases it was paid for — but only when the reshape actually moves one. What
+// needs a human is money changing bills, not a boundary being tidied.
+func TestRebuildPlan_ReshapingASettledBillThatMovesMoneyNeedsAHumanToSayYes(t *testing.T) {
 	accounts, txns, invoices := rebuildFixture(t)
 	paid := 500.0
+	// Stored window runs a month late: it closes on 01/03 where the card closes 27/02.
 	invoices.list = []*invoice.Invoice{
 		{ID: "paid", BankAccountID: "card", Status: invoice.StatusPaid, Amount: 500, PaidAmount: &paid,
 			ReferenceDate: day(2026, time.March, 1),
-			OpeningDate:   day(2026, time.February, 2), ClosingDate: day(2026, time.March, 1), DueDate: day(2026, time.March, 8)},
+			OpeningDate:   day(2026, time.February, 2), ClosingDate: day(2026, time.March, 1),
+			DueDate: day(2026, time.March, 8)},
 	}
-	txns.created = []*transaction.Transaction{purchase("t1", day(2026, time.February, 15), 500)}
+	// This purchase sits inside the stored window and outside the canonical one, so
+	// replacing the window takes it off the bill that was paid for it.
+	txns.created = []*transaction.Transaction{purchase("t1", day(2026, time.February, 28), 500)}
 
 	plan, _ := NewRebuildInvoiceCyclesUseCase(accounts, txns, invoices).Plan("card")
 
@@ -113,11 +117,108 @@ func TestRebuildPlan_ReshapingASettledBillNeedsAHumanToSayYes(t *testing.T) {
 	if len(reshaped) != 1 {
 		t.Fatalf("expected one reshape, got %+v", plan.Actions)
 	}
+	if reshaped[0].PurchasesAtRisk != 1 {
+		t.Fatalf("the purchase that changes bills must be counted, got %d", reshaped[0].PurchasesAtRisk)
+	}
 	if !reshaped[0].RequiresApproval {
-		t.Error("moving the window of a settled bill is not a routine repair")
+		t.Error("taking a purchase off a settled bill is not a routine repair")
 	}
 	if plan.SafeToApplyUnattended {
-		t.Error("a plan containing a settled bill must not read as safe")
+		t.Error("a plan that moves money out of a paid bill must not read as safe")
+	}
+}
+
+// Reshaping a settled bill needs a human even when nothing moves.
+//
+// The window differs, so applying it would rewrite the date a paid bill closed or fell
+// due — replacing a historical fact with today's configuration. Against the real
+// database this was the difference between "safe to apply unattended" and not: two of
+// three cards flipped to safe while still carrying a fused invoice.
+func TestRebuildPlan_ReshapingASettledBillNeedsAHumanEvenIfNothingMoves(t *testing.T) {
+	accounts, txns, invoices := rebuildFixture(t)
+	paid := 500.0
+	invoices.list = []*invoice.Invoice{
+		{ID: "paid", BankAccountID: "card", Status: invoice.StatusPaid, Amount: 500, PaidAmount: &paid,
+			ReferenceDate: day(2026, time.March, 1),
+			OpeningDate:   day(2026, time.February, 2), ClosingDate: day(2026, time.March, 1),
+			DueDate: day(2026, time.March, 8)},
+	}
+	// Mid-February: inside both the stored window and the canonical one.
+	txns.created = []*transaction.Transaction{purchase("t1", day(2026, time.February, 15), 500)}
+
+	plan, _ := NewRebuildInvoiceCyclesUseCase(accounts, txns, invoices).Plan("card")
+
+	reshaped := plan.OfKind(RebuildReshapeWindow)
+	if len(reshaped) != 1 || reshaped[0].PurchasesAtRisk != 0 {
+		t.Fatalf("nothing changes bills here: %+v", plan.Actions)
+	}
+	if !reshaped[0].RequiresApproval {
+		t.Error("rewriting the dates a paid bill recorded is a decision for a human")
+	}
+	if plan.SafeToApplyUnattended {
+		t.Error("a plan that rewrites a settled bill must not read as safe")
+	}
+}
+
+// A fused invoice covering two months happens to close on the right day. Calling that
+// an "alignment" — with a reason describing a one-day nudge — is how it hid on a card
+// the plan declared safe.
+func TestRebuildPlan_AFusedInvoiceIsNotAnAlignment(t *testing.T) {
+	accounts, txns, invoices := rebuildFixture(t)
+	invoices.list = []*invoice.Invoice{
+		{ID: "fundida", BankAccountID: "card", Status: invoice.StatusClosed,
+			ReferenceDate: day(2026, time.August, 1),
+			// Closes and falls due correctly, but opens two months early.
+			OpeningDate: day(2026, time.June, 28), ClosingDate: day(2026, time.August, 27),
+			DueDate: day(2026, time.September, 3)},
+	}
+	txns.created = []*transaction.Transaction{
+		purchase("t1", day(2026, time.July, 10), 100),
+		purchase("t2", day(2026, time.August, 10), 100),
+	}
+
+	plan, _ := NewRebuildInvoiceCyclesUseCase(accounts, txns, invoices).Plan("card")
+
+	if len(plan.OfKind(RebuildAlignOpening)) != 0 {
+		t.Errorf("two months out is not a boundary to tidy: %+v", plan.Actions)
+	}
+	if len(plan.OfKind(RebuildReshapeWindow)) != 1 {
+		t.Fatalf("it is a cycle in the wrong place: %+v", plan.Actions)
+	}
+	if plan.SafeToApplyUnattended {
+		t.Error("a fused invoice must never read as safe to apply unattended")
+	}
+}
+
+// A due date that moved says the card's terms changed, not that the bill is wrong.
+//
+// Canonical cycles come from the closing and due day the card has TODAY. Correcting
+// the Nubank Juridica card's due day from the 6th to the 3rd instantly made every
+// older invoice differ — and every one of them was right for its time.
+func TestRebuildPlan_ADueDateFromOldTermsIsNotDamage(t *testing.T) {
+	accounts, txns, invoices := rebuildFixture(t) // card closes 27, due 3
+	invoices.list = []*invoice.Invoice{
+		{ID: "old-terms", BankAccountID: "card", Status: invoice.StatusClosed,
+			ReferenceDate: day(2026, time.August, 1),
+			OpeningDate:   day(2026, time.June, 27), ClosingDate: day(2026, time.July, 27),
+			DueDate: day(2026, time.August, 6)}, // due day was 6 back then
+	}
+	txns.created = []*transaction.Transaction{purchase("t1", day(2026, time.July, 10), 100)}
+
+	plan, _ := NewRebuildInvoiceCyclesUseCase(accounts, txns, invoices).Plan("card")
+
+	changed := plan.OfKind(RebuildTermsChanged)
+	if len(changed) != 1 {
+		t.Fatalf("expected the difference to be named a change of terms, got %+v", plan.Actions)
+	}
+	if changed[0].PurchasesAtRisk != 0 {
+		t.Errorf("a due date decides nothing about which purchases belong, got %d", changed[0].PurchasesAtRisk)
+	}
+	if len(plan.OfKind(RebuildReshapeWindow)) != 0 {
+		t.Error("the cycle covers exactly the right days; it is not in the wrong place")
+	}
+	if !plan.SafeToApplyUnattended {
+		t.Error("nothing here moves money")
 	}
 }
 
@@ -331,5 +432,58 @@ func TestRebuildPlan_TwoInvoicesOnOneCycleAreNamed(t *testing.T) {
 	}
 	if plan.SafeToApplyUnattended {
 		t.Error("a clash is not safe to resolve unattended")
+	}
+}
+
+// Creating a missing bill is harmless when its purchases belong to no invoice, and is
+// a reallocation when they currently sit inside the neighbour that swallowed the cycle.
+// Only the second needs a human — and it escaped the rule entirely, because the action
+// was appended before approval was ever decided.
+func TestRebuildPlan_CreatingACycleHeldByAnotherInvoiceNeedsApproval(t *testing.T) {
+	accounts, txns, invoices := rebuildFixture(t)
+	// One invoice swallowing two cycles; the July purchases live inside it today.
+	invoices.list = []*invoice.Invoice{
+		{ID: "fundida", BankAccountID: "card", Status: invoice.StatusClosed,
+			ReferenceDate: day(2026, time.August, 1),
+			OpeningDate:   day(2026, time.June, 28), ClosingDate: day(2026, time.August, 27),
+			DueDate: day(2026, time.September, 3)},
+	}
+	txns.created = []*transaction.Transaction{
+		purchase("t1", day(2026, time.July, 10), 100),
+		purchase("t2", day(2026, time.August, 10), 100),
+	}
+
+	plan, _ := NewRebuildInvoiceCyclesUseCase(accounts, txns, invoices).Plan("card")
+
+	created := plan.OfKind(RebuildCreateMissing)
+	if len(created) != 1 {
+		t.Fatalf("the swallowed cycle must be planned: %+v", plan.Actions)
+	}
+	if created[0].PurchasesAtRisk != 1 {
+		t.Errorf("the purchase living in the neighbour must be counted, got %d", created[0].PurchasesAtRisk)
+	}
+	if !created[0].RequiresApproval {
+		t.Error("taking a charge out of an existing bill is a decision for a human")
+	}
+}
+
+// The other half: a cycle whose purchases belong to no invoice at all. Creating it
+// takes nothing from anywhere, so nobody has to decide.
+func TestRebuildPlan_CreatingACycleNobodyCoversNeedsNoApproval(t *testing.T) {
+	accounts, txns, invoices := rebuildFixture(t)
+	invoices.list = nil
+	txns.created = []*transaction.Transaction{purchase("t1", day(2026, time.July, 10), 100)}
+
+	plan, _ := NewRebuildInvoiceCyclesUseCase(accounts, txns, invoices).Plan("card")
+
+	created := plan.OfKind(RebuildCreateMissing)
+	if len(created) != 1 || created[0].PurchasesAtRisk != 0 {
+		t.Fatalf("nothing is being taken from anywhere: %+v", plan.Actions)
+	}
+	if created[0].RequiresApproval {
+		t.Error("creating a bill for orphaned purchases is not a decision for a human")
+	}
+	if !plan.SafeToApplyUnattended {
+		t.Error("a plan that takes nothing from anywhere is safe")
 	}
 }

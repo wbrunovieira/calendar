@@ -216,3 +216,8 @@ func TestDetectTicker_FromAccountName(t *testing.T) {
 		})
 	}
 }
+
+// No mapping means nothing, never a guess — the same answer the real repository gives.
+func (m *mockAccountRepo) FindByProviderAccountID(string) (*bankaccount.BankAccount, error) {
+	return nil, nil
+}

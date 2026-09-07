@@ -312,6 +312,15 @@ func New(db *sql.DB) (*App, error) {
 	apiRouter.HandleFunc("/bank-accounts/{id}", bankAccountHandler.Delete).Methods("DELETE")
 	apiRouter.HandleFunc("/bank-accounts/{id}/recalculate-balance", bankAccountHandler.RecalculateBalance).Methods("POST")
 	apiRouter.HandleFunc("/bank-accounts/{id}/balance-adjustment", bankAccountHandler.ApplyBalanceAdjustment).Methods("POST")
+
+	// The statement comes in here. It records what the bank said and classifies
+	// nothing: importing is the half that cannot be wrong, and keeping it separate is
+	// what makes the other half safe to be careful about.
+	statementHandler := httpHandlers.NewStatementHandlers(
+		bankAccountRepo,
+		usecases.NewImportStatementUseCase(persistence.NewStatementRepository(db)),
+	)
+	apiRouter.HandleFunc("/statements/import", statementHandler.Import).Methods("POST")
 	apiRouter.HandleFunc("/bank-accounts/{id}/sell", bankAccountHandler.Sell).Methods("POST")
 	apiRouter.HandleFunc("/bank-accounts/{id}/credit-usage", bankAccountHandler.CreditUsage).Methods("GET")
 	apiRouter.HandleFunc("/bank-accounts/close-month", bankAccountHandler.CloseMonth).Methods("POST")

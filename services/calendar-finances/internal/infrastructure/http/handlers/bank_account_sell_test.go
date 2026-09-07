@@ -150,3 +150,8 @@ func (r *FakeTransactionRepository) ReverseMany(txns []*transaction.Transaction)
 	}
 	return nil
 }
+
+// No mapping means nothing, never a guess — the same answer the real repository gives.
+func (r *fakeSellAccountRepo) FindByProviderAccountID(string) (*bankaccount.BankAccount, error) {
+	return nil, nil
+}
