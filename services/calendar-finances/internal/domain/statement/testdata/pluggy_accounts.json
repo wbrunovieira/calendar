@@ -1,0 +1,50 @@
+{
+  "note": "Real Pluggy account payloads, one per type. Only the fields that describe the SHAPE keep their values; everything else is redacted. Allowlist, not denylist: redacting by exclusion is how an account number and two uuids slipped through the first attempt.",
+  "results": [
+    {
+      "id": "<redacted>",
+      "account_id": "<redacted>",
+      "type": "CREDIT",
+      "subtype": "CREDIT_CARD",
+      "name": "<redacted>",
+      "number": "<redacted>",
+      "balance": "<redacted>",
+      "currencyCode": "BRL",
+      "owner": "<redacted>",
+      "creditData": {
+        "level": "<redacted>",
+        "brand": "<redacted>",
+        "balanceDueDate": "<redacted>",
+        "availableCreditLimit": "<redacted>",
+        "creditLimit": "<redacted>",
+        "minimumPayment": "<redacted>",
+        "status": "<redacted>",
+        "usedAmount": "<redacted>"
+      },
+      "bank": "Nubank",
+      "connector_id": "612",
+      "item_id": "<redacted>"
+    },
+    {
+      "id": "<redacted>",
+      "account_id": "<redacted>",
+      "type": "BANK",
+      "subtype": "CHECKING_ACCOUNT",
+      "name": "<redacted>",
+      "number": "<redacted>",
+      "balance": "<redacted>",
+      "currencyCode": "BRL",
+      "owner": "<redacted>",
+      "taxNumber": "<redacted>",
+      "marketingName": "<redacted>",
+      "bankData": {
+        "transferNumber": "<redacted>",
+        "closingBalance": "<redacted>",
+        "automaticallyInvestedBalance": "<redacted>"
+      },
+      "bank": "Nubank",
+      "connector_id": "612",
+      "item_id": "<redacted>"
+    }
+  ]
+}

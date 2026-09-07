@@ -79,8 +79,7 @@ type Line struct {
 	Currency    string `json:"currency"`
 	// AmountAccountMinor is the same movement in the ACCOUNT's currency. Present only
 	// for foreign lines. Reconcile with this, never with AmountMinor.
-	AmountAccountMinor *int64   `json:"amountAccountMinor,omitempty"`
-	FXRate             *float64 `json:"fxRate,omitempty"`
+	AmountAccountMinor *int64 `json:"amountAccountMinor,omitempty"`
 
 	Description string `json:"description"`
 	// EndToEndID is the Pix network identifier, when there is one. It appears on BOTH
@@ -140,7 +139,6 @@ type CreateParams struct {
 	AmountMinor        int64
 	Currency           string
 	AmountAccountMinor *int64
-	FXRate             *float64
 	Description        string
 	EndToEndID         *string
 	ProviderStatus     ProviderStatus
@@ -199,7 +197,6 @@ func New(params CreateParams) (*Line, error) {
 		AmountMinor:        params.AmountMinor,
 		Currency:           currency,
 		AmountAccountMinor: params.AmountAccountMinor,
-		FXRate:             params.FXRate,
 		Description:        params.Description,
 		EndToEndID:         params.EndToEndID,
 		ProviderStatus:     providerStatus,
@@ -224,6 +221,16 @@ func (l *Line) InAccountCurrency() int64 {
 
 // IsForeign reports whether the line was charged in a currency other than the
 // account's, meaning InAccountCurrency carries a conversion.
+// FXRate is DERIVED, never stored. The provider sends only the two amounts, so a
+// stored rate would be a computed value written down — the exact pattern being removed
+// from the rest of this system. Returns 0 for a domestic line.
+func (l *Line) FXRate() float64 {
+	if l.AmountAccountMinor == nil || l.AmountMinor == 0 {
+		return 0
+	}
+	return float64(*l.AmountAccountMinor) / float64(l.AmountMinor)
+}
+
 // IsForeign compares currencies, not amounts: a conversion that happens to land at
 // exactly 1:1 is still a foreign charge.
 func (l *Line) IsForeign(accountCurrency string) bool {

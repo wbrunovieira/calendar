@@ -193,3 +193,45 @@ func TestMarkUnmatched_ClearsBothTheReferentAndAnyOrphanReason(t *testing.T) {
 		t.Error("the referent must be cleared too")
 	}
 }
+
+// The sign of `amount` means opposite things depending on the account, confirmed
+// against real payloads: on the card a DEBIT purchase arrives POSITIVE (40.00
+// Registrobr) while on the checking account a DEBIT arrives NEGATIVE (-119.94
+// invoice payment). Same field, inverted meaning.
+//
+// A matcher comparing signed values would invert every card-payment reconciliation.
+// The line stores one canonical sign — the effect on the holder's net worth — and the
+// provider's original stays in Raw.
+
+func TestNormalizedSign_CardPurchaseIsNegativeForTheHolder(t *testing.T) {
+	// A purchase increases what is owed: money leaves the holder.
+	got := NormalizeSign(4000, AccountKindCard, "DEBIT")
+	if got != -4000 {
+		t.Errorf("= %d, want -4000: a card purchase is money out", got)
+	}
+}
+
+func TestNormalizedSign_CardPaymentIsPositiveForTheHolder(t *testing.T) {
+	// Paying the bill reduces the debt. Pluggy sends it negative on the card.
+	got := NormalizeSign(-101818, AccountKindCard, "CREDIT")
+	if got != 101818 {
+		t.Errorf("= %d, want 101818: paying the bill pays debt down", got)
+	}
+}
+
+func TestNormalizedSign_CheckingKeepsTheProvidersSign(t *testing.T) {
+	// The checking account already speaks in the holder's terms.
+	if got := NormalizeSign(-11994, AccountKindChecking, "DEBIT"); got != -11994 {
+		t.Errorf("= %d, want -11994", got)
+	}
+	if got := NormalizeSign(15000, AccountKindChecking, "CREDIT"); got != 15000 {
+		t.Errorf("= %d, want 15000", got)
+	}
+}
+
+func TestNormalizedSign_UsesTheTypeWhenTheCardAmountIsUnsigned(t *testing.T) {
+	// Card lines arrive unsigned in practice, so the direction lives in `type`.
+	if got := NormalizeSign(10800, AccountKindCard, "DEBIT"); got != -10800 {
+		t.Errorf("= %d, want -10800", got)
+	}
+}

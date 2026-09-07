@@ -494,7 +494,9 @@ func RunMigrations(db *sql.DB) error {
 			amount_minor BIGINT NOT NULL,
 			currency CHAR(3) NOT NULL,
 			amount_account_minor BIGINT,
-			fx_rate NUMERIC(18,8),
+			-- No fx_rate column: the provider sends only the two amounts, so a stored
+			-- rate would be a derived value written down — the pattern being removed
+			-- from the rest of this system. It is computed on read.
 			description TEXT NOT NULL DEFAULT '',
 			end_to_end_id TEXT,
 			provider_status VARCHAR(10) NOT NULL DEFAULT 'POSTED'

@@ -214,3 +214,32 @@ func TestRederiveStatus_ReopensAPaidBillThatGrewAgain(t *testing.T) {
 		t.Errorf("status = %s, want %s: it owes 150 again", inv.Status, StatusPartiallyPaid)
 	}
 }
+
+// RederiveStatus sends a bill whose payment was reversed to CLOSED, a state that used
+// to be unreachable from PAID. Without a guard, PAID -> reverse payment -> CLOSED ->
+// Reopen() puts an old cycle back to OPEN and it starts accepting charges from a later
+// one — the merged-cycle failure, through a door opened by the fix for something else.
+func TestReopen_RefusesABillThatWasEverPaid(t *testing.T) {
+	inv := billOf(100)
+	if err := inv.Pay(100, day(3)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	inv.Status = StatusClosed // as RederiveStatus would leave it after a reversal
+
+	if err := inv.Reopen(); err == nil {
+		t.Error("a bill that was paid must not reopen: correct its transactions instead")
+	}
+}
+
+func TestReopen_StillWorksForABillClosedWithoutPayment(t *testing.T) {
+	// Auto-close running early is a real case and must stay fixable.
+	inv := billOf(100)
+	inv.Status = StatusClosed
+
+	if err := inv.Reopen(); err != nil {
+		t.Fatalf("a closed, never-paid bill must still reopen: %v", err)
+	}
+	if inv.Status != StatusOpen {
+		t.Errorf("status = %s, want OPEN", inv.Status)
+	}
+}

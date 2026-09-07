@@ -154,3 +154,63 @@ func TestFixture_NoEndToEndIdIsAvailable(t *testing.T) {
 		}
 	}
 }
+
+// A card transaction carries NO reference to the bill it belongs to.
+//
+// This was checked before writing any matcher, on the reviewer's point that if the id
+// on the transaction did not match the id on the bill, the new bill_id column was
+// wrong and it was better to find out now. The answer is stronger than that: there is
+// no id on the transaction at all. `creditCardMetadata` exists as a key and is null on
+// every row.
+//
+// So bill_id cannot be imported. It has to be DERIVED — a card line belongs to the
+// bill whose [opening, closing) window contains its booked date, which is the same
+// cycle logic the invoices already use. The column stays; the importer must not
+// pretend to fill it from the payload.
+func TestFixture_CardTransactionsCarryNoBillReference(t *testing.T) {
+	f := loadFixture(t)
+	raw, err := os.ReadFile("testdata/pluggy_transactions.json")
+	if err != nil {
+		t.Fatalf("reading the fixture: %v", err)
+	}
+	var probe struct {
+		Results []map[string]any `json:"results"`
+	}
+	_ = json.Unmarshal(raw, &probe)
+
+	for i, tx := range probe.Results {
+		for _, key := range []string{"billId", "bill_id", "invoiceId"} {
+			if v, ok := tx[key]; ok && v != nil {
+				t.Errorf("%s: the provider now exposes %s — import it instead of deriving the cycle", f.Results[i].ID, key)
+			}
+		}
+		if meta, ok := tx["creditCardMetadata"]; ok && meta != nil {
+			t.Logf("creditCardMetadata is populated now: %v — check whether it carries the bill", meta)
+		}
+	}
+}
+
+// Bills DO have their own id, so the join has a right-hand side. What is missing is
+// the reference from the line, not the target.
+func TestFixture_BillsHaveAnIdAndACycle(t *testing.T) {
+	raw, err := os.ReadFile("testdata/pluggy_bills.json")
+	if err != nil {
+		t.Fatalf("reading the bills fixture: %v", err)
+	}
+	var f struct {
+		Results []map[string]any `json:"results"`
+	}
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatalf("parsing: %v", err)
+	}
+	if len(f.Results) == 0 {
+		t.Fatal("the bills fixture is empty")
+	}
+	for _, b := range f.Results {
+		for _, key := range []string{"id", "billClosingDate", "dueDate", "totalAmount"} {
+			if b[key] == nil {
+				t.Errorf("a bill without %s cannot anchor a derived cycle", key)
+			}
+		}
+	}
+}

@@ -213,6 +213,15 @@ func (i *Invoice) Reopen() error {
 	if i.Status != StatusClosed {
 		return errors.New("can only reopen closed invoices")
 	}
+	// A bill that was ever paid must not reopen, even after its payment is reversed.
+	// RederiveStatus sends such a bill to CLOSED, which used to be unreachable from
+	// PAID — so without this guard the path PAID -> reverse payment -> CLOSED ->
+	// Reopen() puts an old cycle back to OPEN, and it starts accepting charges from a
+	// later one. That is the merged-cycle failure, through a door opened by the fix
+	// for something else.
+	if i.PaidAt != nil || (i.PaidAmount != nil && *i.PaidAmount > 0) {
+		return errors.New("a bill that was paid cannot be reopened; correct its transactions instead")
+	}
 	i.Status = StatusOpen
 	i.touch()
 	return nil

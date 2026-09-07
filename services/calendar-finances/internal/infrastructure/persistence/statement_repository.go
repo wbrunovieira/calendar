@@ -44,16 +44,15 @@ func (r *StatementRepository) UpsertMany(lines []*statement.Line) (int, int, err
 	stmt, err := tx.Prepare(`
 		INSERT INTO finance.bank_statement_lines
 			(id, account_id, provider, external_id, booked_date, value_date,
-			 amount_minor, currency, amount_account_minor, fx_rate,
+			 amount_minor, currency, amount_account_minor,
 			 description, end_to_end_id, provider_status, bill_id, raw, status, imported_at, last_seen_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW(),NOW(),NOW())
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,NOW(),NOW(),NOW())
 		ON CONFLICT (account_id, provider, external_id) DO UPDATE SET
 			booked_date = EXCLUDED.booked_date,
 			value_date = EXCLUDED.value_date,
 			amount_minor = EXCLUDED.amount_minor,
 			currency = EXCLUDED.currency,
 			amount_account_minor = EXCLUDED.amount_account_minor,
-			fx_rate = EXCLUDED.fx_rate,
 			description = EXCLUDED.description,
 			end_to_end_id = EXCLUDED.end_to_end_id,
 			provider_status = EXCLUDED.provider_status,
@@ -97,7 +96,7 @@ func (r *StatementRepository) UpsertMany(lines []*statement.Line) (int, int, err
 		var isNew bool
 		err := stmt.QueryRow(
 			l.ID, l.AccountID, string(l.Provider), l.ExternalID, l.BookedDate, l.ValueDate,
-			l.AmountMinor, l.Currency, l.AmountAccountMinor, l.FXRate,
+			l.AmountMinor, l.Currency, l.AmountAccountMinor,
 			l.Description, l.EndToEndID, string(l.ProviderStatus), l.BillID, []byte(l.Raw), string(l.Status),
 		).Scan(&storedID, &isNew)
 		if err != nil {
@@ -240,7 +239,7 @@ func (r *StatementRepository) Update(line *statement.Line) error {
 func (r *StatementRepository) query(clause string, args ...any) ([]*statement.Line, error) {
 	rows, err := r.db.Query(`
 		SELECT id, account_id, provider, external_id, booked_date, value_date,
-		       amount_minor, currency, amount_account_minor, fx_rate,
+		       amount_minor, currency, amount_account_minor,
 		       description, end_to_end_id, provider_status, bill_id, raw, status, ignored_reason,
 		       matched_transaction_id, imported_at, last_seen_at, updated_at
 		FROM finance.bank_statement_lines `+clause, args...)
@@ -255,7 +254,7 @@ func (r *StatementRepository) query(clause string, args ...any) ([]*statement.Li
 		var provider, status, providerStatus string
 		var raw []byte
 		if err := rows.Scan(&l.ID, &l.AccountID, &provider, &l.ExternalID, &l.BookedDate, &l.ValueDate,
-			&l.AmountMinor, &l.Currency, &l.AmountAccountMinor, &l.FXRate,
+			&l.AmountMinor, &l.Currency, &l.AmountAccountMinor,
 			&l.Description, &l.EndToEndID, &providerStatus, &l.BillID, &raw, &status, &l.IgnoredReason,
 			&l.MatchedTransactionID, &l.ImportedAt, &l.LastSeenAt, &l.UpdatedAt); err != nil {
 			return nil, err
