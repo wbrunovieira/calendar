@@ -15,7 +15,6 @@ func makeAccountWithCurrency(id, currency string) *bankaccount.BankAccount {
 		Name:           id,
 		Type:           bankaccount.AccountTypeChecking,
 		InitialBalance: 0,
-		CurrentBalance: 0,
 		Currency:       currency,
 		IsActive:       true,
 		CreatedAt:      now,
@@ -128,7 +127,6 @@ func TestUpdateBankAccount_NilInitialBalancePreservesExisting(t *testing.T) {
 
 	uc := NewUpdateBankAccountUseCase(repo)
 	input := baseUpdateInput("acc-1", "BRL")
-	input.CurrentBalance = 48.01
 	if _, err := uc.Execute("acc-1", input); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -155,7 +153,6 @@ func TestUpdateBankAccount_InitialBalanceShiftsCurrentBalance(t *testing.T) {
 	corrected := 3392.38
 	uc := NewUpdateBankAccountUseCase(repo)
 	input := baseUpdateInput("acc-1", "BRL")
-	input.CurrentBalance = 48.01
 	input.InitialBalance = &corrected
 
 	if _, err := uc.Execute("acc-1", input); err != nil {
@@ -184,7 +181,6 @@ func TestUpdateBankAccount_UnchangedInitialBalanceDoesNotShiftCurrentBalance(t *
 	same := 100.0
 	uc := NewUpdateBankAccountUseCase(repo)
 	input := baseUpdateInput("renamed", "BRL")
-	input.CurrentBalance = 250
 	input.InitialBalance = &same
 
 	if _, err := uc.Execute("acc-1", input); err != nil {
@@ -193,5 +189,38 @@ func TestUpdateBankAccount_UnchangedInitialBalanceDoesNotShiftCurrentBalance(t *
 
 	if got := repo.accounts["acc-1"].CurrentBalance; got != 250 {
 		t.Fatalf("expected current balance to stay at 250, got %v", got)
+	}
+}
+
+// The account form is not a way to set a balance.
+//
+// Until this test existed, PUT /bank-accounts/{id} assigned CurrentBalance straight
+// from the request body: any client could name a balance, and a body that simply
+// omitted the field set it to zero, because the field was a non-pointer float64.
+// Every guard built around the balance — Apply's mandatory reason and author, the
+// balance_adjustments trail, the invariant report — sat behind a door that the
+// cadastro endpoint left open.
+//
+// The balance is what the transactions say. Editing an account's name, colour or
+// closing day says nothing about its transactions, so it must not move the balance.
+func TestUpdateBankAccount_TheFormCannotSetTheBalance(t *testing.T) {
+	acc := makeAccountWithCurrency("acc-1", "BRL")
+	acc.CurrentBalance = 1125.06
+	repo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"acc-1": acc}}
+
+	input := baseUpdateInput("Nubank Juridica (renomeada)", "BRL")
+
+	updated, err := NewUpdateBankAccountUseCase(repo).Execute("acc-1", input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if updated.CurrentBalance != 1125.06 {
+		t.Errorf("renaming an account must not touch its balance, got %v", updated.CurrentBalance)
+	}
+	if got := repo.accounts["acc-1"].CurrentBalance; got != 1125.06 {
+		t.Errorf("stored balance moved to %v", got)
+	}
+	if updated.Name != "Nubank Juridica (renomeada)" {
+		t.Errorf("the edit that WAS asked for must still happen, got %q", updated.Name)
 	}
 }
