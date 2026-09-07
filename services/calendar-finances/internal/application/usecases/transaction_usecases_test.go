@@ -3624,14 +3624,12 @@ func TestUpdateTransaction_ConfirmedToPlanned_ReversesBalance(t *testing.T) {
 		OccurredOn:    now.Format("2006-01-02"),
 	})
 
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Balance: 800 + 200 (reverse confirmed expense) = 1000
-	acc := accountRepo.accounts[accountID]
-	if acc.CurrentBalance != 1000 {
-		t.Fatalf("expected balance 1000, got %.2f", acc.CurrentBalance)
+	// Moving a confirmed row back to planned undoes the money with no motive, no
+	// actor and no reversed_at, and the database CHECK demanding an audit trail
+	// never sees it. It is the same unaudited exit as cancelling a confirmed row,
+	// through a different door.
+	if err == nil {
+		t.Fatal("confirmed -> planned must be refused: undo a confirmed movement by reversing it")
 	}
 }
 

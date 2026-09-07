@@ -80,9 +80,29 @@ type Line struct {
 
 	Status        Status  `json:"status"`
 	IgnoredReason *string `json:"ignoredReason,omitempty"`
+	// MatchedTransactionID names WHAT this line was reconciled against. MATCHED
+	// without a referent is an assertion with nothing behind it: it cannot answer
+	// "matched to which entry", and it cannot notice when that entry is later
+	// reversed.
+	MatchedTransactionID *string `json:"matchedTransactionId,omitempty"`
 
 	ImportedAt time.Time `json:"importedAt"`
+	// LastSeenAt is bumped by every import covering this line's window, so a row the
+	// bank stopped reporting can be told apart from one nobody asked for.
+	LastSeenAt time.Time `json:"lastSeenAt"`
 	UpdatedAt  time.Time `json:"updatedAt"`
+}
+
+// Revision is one version of what the provider reported for a line. Append-only:
+// overwriting the payload destroys the proof that a change came from the bank.
+type Revision struct {
+	SeenAt             time.Time       `json:"seenAt"`
+	BookedDate         time.Time       `json:"bookedDate"`
+	AmountMinor        int64           `json:"amountMinor"`
+	Currency           string          `json:"currency"`
+	AmountAccountMinor *int64          `json:"amountAccountMinor,omitempty"`
+	Description        string          `json:"description"`
+	Raw                json.RawMessage `json:"raw"`
 }
 
 type CreateParams struct {
@@ -98,6 +118,11 @@ type CreateParams struct {
 	Description        string
 	EndToEndID         *string
 	Raw                json.RawMessage
+	// AccountCurrency lets New refuse a foreign line with no converted value. Without
+	// it, InAccountCurrency falls back to the face value and reconciles USD against
+	// BRL — the exact bug this type was shaped to prevent, with a comment claiming
+	// otherwise.
+	AccountCurrency string
 }
 
 func New(params CreateParams) (*Line, error) {
@@ -121,6 +146,15 @@ func New(params CreateParams) (*Line, error) {
 		return nil, errors.New("currency is required")
 	}
 
+	currency := strings.ToUpper(strings.TrimSpace(params.Currency))
+	accountCurrency := strings.ToUpper(strings.TrimSpace(params.AccountCurrency))
+	if accountCurrency == "" {
+		return nil, errors.New("accountCurrency is required to tell a foreign line from a domestic one")
+	}
+	if currency != accountCurrency && params.AmountAccountMinor == nil {
+		return nil, errors.New("a line charged in another currency needs its converted value: reconciling by face value is how USD was read as BRL")
+	}
+
 	now := time.Now()
 	return &Line{
 		ID:                 uuid.New().String(),
@@ -130,7 +164,7 @@ func New(params CreateParams) (*Line, error) {
 		BookedDate:         params.BookedDate,
 		ValueDate:          params.ValueDate,
 		AmountMinor:        params.AmountMinor,
-		Currency:           strings.ToUpper(params.Currency),
+		Currency:           currency,
 		AmountAccountMinor: params.AmountAccountMinor,
 		FXRate:             params.FXRate,
 		Description:        params.Description,
@@ -138,6 +172,7 @@ func New(params CreateParams) (*Line, error) {
 		Raw:                params.Raw,
 		Status:             StatusUnmatched,
 		ImportedAt:         now,
+		LastSeenAt:         now,
 		UpdatedAt:          now,
 	}, nil
 }
@@ -154,20 +189,34 @@ func (l *Line) InAccountCurrency() int64 {
 
 // IsForeign reports whether the line was charged in a currency other than the
 // account's, meaning InAccountCurrency carries a conversion.
-func (l *Line) IsForeign() bool {
-	return l.AmountAccountMinor != nil && *l.AmountAccountMinor != l.AmountMinor
+// IsForeign compares currencies, not amounts: a conversion that happens to land at
+// exactly 1:1 is still a foreign charge.
+func (l *Line) IsForeign(accountCurrency string) bool {
+	return !strings.EqualFold(l.Currency, accountCurrency)
 }
 
-func (l *Line) MarkMatched() {
+// MarkMatched records what this line was reconciled against. The transaction id is
+// required: a match with no referent cannot be verified, cannot be undone knowingly,
+// and cannot notice when the entry behind it is reversed.
+func (l *Line) MarkMatched(transactionID string) error {
+	if strings.TrimSpace(transactionID) == "" {
+		return errors.New("a match must name the transaction it was reconciled against")
+	}
 	l.Status = StatusMatched
+	l.MatchedTransactionID = &transactionID
 	l.IgnoredReason = nil
 	l.UpdatedAt = time.Now()
+	return nil
 }
 
 // MarkUnmatched undoes a match. Reconciliation only ever marks; it never destroys a
 // line, so a wrong match costs a correction and not evidence.
 func (l *Line) MarkUnmatched() {
 	l.Status = StatusUnmatched
+	l.MatchedTransactionID = nil
+	// Cleared for the same reason MarkMatched clears it: an orphan reason left on an
+	// unmatched line reads as a decision nobody made.
+	l.IgnoredReason = nil
 	l.UpdatedAt = time.Now()
 }
 
@@ -181,6 +230,7 @@ func (l *Line) MarkIgnored(reason string) error {
 	}
 	l.Status = StatusIgnored
 	l.IgnoredReason = &trimmed
+	l.MatchedTransactionID = nil
 	l.UpdatedAt = time.Now()
 	return nil
 }

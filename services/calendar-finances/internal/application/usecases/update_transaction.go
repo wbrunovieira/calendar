@@ -162,7 +162,11 @@ func (uc *UpdateTransactionUseCase) Execute(id string, input UpdateTransactionIn
 	existing.DestinationAccountID = destinationAccountID
 	existing.CategoryID = input.CategoryID
 	existing.Type = typeValue
-	existing.Status = status
+	// Through the domain, not by assignment: this endpoint was the path that brought
+	// a reversed row back to CONFIRMED and applied its balance a second time.
+	if err := existing.SetStatus(status); err != nil {
+		return nil, err
+	}
 	existing.Amount = input.Amount
 	existing.Currency = strings.ToUpper(strings.TrimSpace(input.Currency))
 	if existing.Currency == "" {

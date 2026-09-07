@@ -2,6 +2,7 @@ package persistence
 
 import (
 	"database/sql"
+	"strconv"
 	"strings"
 
 	"github.com/brunovieira/calendar-finances/internal/domain/statement"
@@ -35,13 +36,18 @@ func (r *StatementRepository) UpsertMany(lines []*statement.Line) (int, int, err
 	}
 	defer tx.Rollback()
 
+	// The bank's own fields are refreshed; the reconciliation status is not touched
+	// here EXCEPT when the money itself changed. A PENDING authorisation settling as
+	// POSTED routinely changes the amount — especially on foreign purchases, which is
+	// most of this card — and a match whose bank side moved is by definition
+	// unverified. Leaving it MATCHED asserts a check nobody performed.
 	stmt, err := tx.Prepare(`
 		INSERT INTO finance.bank_statement_lines
 			(id, account_id, provider, external_id, booked_date, value_date,
 			 amount_minor, currency, amount_account_minor, fx_rate,
-			 description, end_to_end_id, raw, status, imported_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW(),NOW())
-		ON CONFLICT (provider, external_id) DO UPDATE SET
+			 description, end_to_end_id, raw, status, imported_at, last_seen_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW(),NOW(),NOW())
+		ON CONFLICT (account_id, provider, external_id) DO UPDATE SET
 			booked_date = EXCLUDED.booked_date,
 			value_date = EXCLUDED.value_date,
 			amount_minor = EXCLUDED.amount_minor,
@@ -51,23 +57,52 @@ func (r *StatementRepository) UpsertMany(lines []*statement.Line) (int, int, err
 			description = EXCLUDED.description,
 			end_to_end_id = EXCLUDED.end_to_end_id,
 			raw = EXCLUDED.raw,
+			status = CASE
+				WHEN finance.bank_statement_lines.status = 'MATCHED'
+				 AND (finance.bank_statement_lines.amount_minor,
+				      finance.bank_statement_lines.amount_account_minor,
+				      finance.bank_statement_lines.booked_date)
+				     IS DISTINCT FROM
+				     (EXCLUDED.amount_minor, EXCLUDED.amount_account_minor, EXCLUDED.booked_date)
+				THEN 'UNMATCHED'
+				ELSE finance.bank_statement_lines.status
+			END,
+			last_seen_at = NOW(),
 			updated_at = NOW()
-		RETURNING (xmax = 0) AS inserted
+		RETURNING id, (xmax = 0) AS inserted
 	`)
 	if err != nil {
 		return 0, 0, err
 	}
 	defer stmt.Close()
 
+	// Every version the provider reported is appended, never replaced. Overwriting
+	// raw would destroy the evidence that a change came from the bank rather than
+	// from us — and the previous version is what explains a dropped match.
+	revision, err := tx.Prepare(`
+		INSERT INTO finance.bank_statement_line_revisions
+			(line_id, booked_date, amount_minor, currency, amount_account_minor, description, raw)
+		VALUES ($1,$2,$3,$4,$5,$6,$7)
+	`)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer revision.Close()
+
 	var inserted, updated int
 	for _, l := range lines {
+		var storedID string
 		var isNew bool
 		err := stmt.QueryRow(
 			l.ID, l.AccountID, string(l.Provider), l.ExternalID, l.BookedDate, l.ValueDate,
 			l.AmountMinor, l.Currency, l.AmountAccountMinor, l.FXRate,
 			l.Description, l.EndToEndID, []byte(l.Raw), string(l.Status),
-		).Scan(&isNew)
+		).Scan(&storedID, &isNew)
 		if err != nil {
+			return 0, 0, err
+		}
+		if _, err := revision.Exec(storedID, l.BookedDate, l.AmountMinor, l.Currency,
+			l.AmountAccountMinor, l.Description, []byte(l.Raw)); err != nil {
 			return 0, 0, err
 		}
 		if isNew {
@@ -81,6 +116,31 @@ func (r *StatementRepository) UpsertMany(lines []*statement.Line) (int, int, err
 		return 0, 0, err
 	}
 	return inserted, updated, nil
+}
+
+// Revisions returns every version the provider reported for a line, newest first.
+func (r *StatementRepository) Revisions(lineID string) ([]statement.Revision, error) {
+	rows, err := r.db.Query(`
+		SELECT seen_at, booked_date, amount_minor, currency, amount_account_minor, description, raw
+		FROM finance.bank_statement_line_revisions
+		WHERE line_id = $1 ORDER BY seen_at DESC`, lineID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []statement.Revision
+	for rows.Next() {
+		var rev statement.Revision
+		var raw []byte
+		if err := rows.Scan(&rev.SeenAt, &rev.BookedDate, &rev.AmountMinor, &rev.Currency,
+			&rev.AmountAccountMinor, &rev.Description, &raw); err != nil {
+			return nil, err
+		}
+		rev.Raw = raw
+		out = append(out, rev)
+	}
+	return out, rows.Err()
 }
 
 func (r *StatementRepository) FindByExternalID(provider statement.Provider, externalID string) (*statement.Line, error) {
@@ -99,7 +159,7 @@ func (r *StatementRepository) List(filter statement.ListFilter) ([]*statement.Li
 	args := []any{}
 	add := func(cond string, value any) {
 		args = append(args, value)
-		conditions = append(conditions, strings.Replace(cond, "?", "$"+itoa(len(args)), 1))
+		conditions = append(conditions, strings.Replace(cond, "?", "$"+strconv.Itoa(len(args)), 1))
 	}
 
 	if filter.AccountID != "" {
@@ -131,9 +191,9 @@ func (r *StatementRepository) List(filter statement.ListFilter) ([]*statement.Li
 func (r *StatementRepository) Update(line *statement.Line) error {
 	result, err := r.db.Exec(`
 		UPDATE finance.bank_statement_lines
-		SET status = $2, ignored_reason = $3, updated_at = NOW()
+		SET status = $2, ignored_reason = $3, matched_transaction_id = $4, updated_at = NOW()
 		WHERE id = $1
-	`, line.ID, string(line.Status), line.IgnoredReason)
+	`, line.ID, string(line.Status), line.IgnoredReason, line.MatchedTransactionID)
 	if err != nil {
 		return err
 	}
@@ -152,7 +212,7 @@ func (r *StatementRepository) query(clause string, args ...any) ([]*statement.Li
 		SELECT id, account_id, provider, external_id, booked_date, value_date,
 		       amount_minor, currency, amount_account_minor, fx_rate,
 		       description, end_to_end_id, raw, status, ignored_reason,
-		       imported_at, updated_at
+		       matched_transaction_id, imported_at, last_seen_at, updated_at
 		FROM finance.bank_statement_lines `+clause, args...)
 	if err != nil {
 		return nil, err
@@ -167,7 +227,7 @@ func (r *StatementRepository) query(clause string, args ...any) ([]*statement.Li
 		if err := rows.Scan(&l.ID, &l.AccountID, &provider, &l.ExternalID, &l.BookedDate, &l.ValueDate,
 			&l.AmountMinor, &l.Currency, &l.AmountAccountMinor, &l.FXRate,
 			&l.Description, &l.EndToEndID, &raw, &status, &l.IgnoredReason,
-			&l.ImportedAt, &l.UpdatedAt); err != nil {
+			&l.MatchedTransactionID, &l.ImportedAt, &l.LastSeenAt, &l.UpdatedAt); err != nil {
 			return nil, err
 		}
 		l.Provider = statement.Provider(provider)
@@ -176,11 +236,4 @@ func (r *StatementRepository) query(clause string, args ...any) ([]*statement.Li
 		lines = append(lines, l)
 	}
 	return lines, rows.Err()
-}
-
-func itoa(n int) string {
-	if n < 10 {
-		return string(rune('0' + n))
-	}
-	return itoa(n/10) + string(rune('0'+n%10))
 }

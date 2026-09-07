@@ -20,12 +20,14 @@ import (
 const (
 	stProfileID = "e2e00000-0000-0000-0000-0000000000a1"
 	stAccountID = "e2e00000-0000-0000-0000-0000000000a2"
+	stTxID      = "e2e00000-0000-0000-0000-0000000000a3"
 )
 
 func seedStatementAccount(t *testing.T, db *sql.DB) {
 	t.Helper()
 	t.Cleanup(func() {
 		db.Exec(`DELETE FROM finance.bank_statement_lines WHERE account_id = $1`, stAccountID)
+		db.Exec(`DELETE FROM finance.transactions WHERE id = $1`, stTxID)
 		db.Exec(`DELETE FROM finance.bank_accounts WHERE id = $1`, stAccountID)
 		db.Exec(`DELETE FROM finance.profiles WHERE id = $1`, stProfileID)
 	})
@@ -33,6 +35,12 @@ func seedStatementAccount(t *testing.T, db *sql.DB) {
 		VALUES ($1,$2,'E2E Extrato','BUSINESS') ON CONFLICT (id) DO NOTHING`, stProfileID, "e2e-statement")
 	exec(t, db, `INSERT INTO finance.bank_accounts (id, profile_id, name, type, initial_balance, current_balance, currency)
 		VALUES ($1,$2,'Conta Extrato','CHECKING',0,0,'BRL') ON CONFLICT (id) DO NOTHING`, stAccountID, stProfileID)
+	// A real entry to match against: the foreign key is the point — a match must name
+	// something that exists.
+	exec(t, db, `INSERT INTO finance.transactions
+		(id, profile_id, bank_account_id, type, status, amount, currency, description, occurred_on)
+		VALUES ($1,$2,$3,'EXPENSE','CONFIRMED',55.58,'BRL','Cloudflare','2026-07-11')
+		ON CONFLICT (id) DO NOTHING`, stTxID, stProfileID, stAccountID)
 }
 
 func lineFor(t *testing.T, externalID string, amountMinor int64, currency string, converted *int64) *statement.Line {
@@ -46,6 +54,7 @@ func lineFor(t *testing.T, externalID string, amountMinor int64, currency string
 		Currency:           currency,
 		AmountAccountMinor: converted,
 		Description:        "Anthropic* Claude Sub",
+		AccountCurrency:    "BRL",
 		Raw:                json.RawMessage(`{"id":"` + externalID + `","source":"test"}`),
 	})
 	if err != nil {
@@ -102,7 +111,9 @@ func TestE2E_ReimportRefreshesTheBankSideButKeepsReconciliationWork(t *testing.T
 	if err != nil {
 		t.Fatalf("reading back: %v", err)
 	}
-	stored.MarkMatched()
+	if err := stored.MarkMatched(stTxID); err != nil {
+		t.Fatalf("marking: %v", err)
+	}
 	if err := repo.Update(stored); err != nil {
 		t.Fatalf("marking matched: %v", err)
 	}
@@ -148,7 +159,7 @@ func TestE2E_ForeignLineKeepsBothAmounts(t *testing.T) {
 	if line.InAccountCurrency() != 57138 {
 		t.Errorf("reconciling value = %d, want 57138 — never the face value of a foreign line", line.InAccountCurrency())
 	}
-	if !line.IsForeign() {
+	if !line.IsForeign("BRL") {
 		t.Error("the line must know it was charged in another currency")
 	}
 	if len(line.Raw) == 0 {
@@ -192,5 +203,73 @@ func TestE2E_ListNarrowsByAccountDateAndStatus(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].ExternalID != "plg-6" {
 		t.Errorf("got %d lines, want only the July one", len(got))
+	}
+}
+
+func TestE2E_EveryVersionTheBankReportedIsKept(t *testing.T) {
+	// Overwriting raw destroys the evidence that a change came from the bank and not
+	// from us — and that evidence is the whole reason this table exists.
+	db := testDB(t)
+	seedStatementAccount(t, db)
+	repo := persistence.NewStatementRepository(db)
+
+	first := lineFor(t, "plg-rev", 5558, "BRL", nil)
+	if _, _, err := repo.UpsertMany([]*statement.Line{first}); err != nil {
+		t.Fatalf("first import: %v", err)
+	}
+	second := lineFor(t, "plg-rev", 6000, "BRL", nil)
+	second.Description = "valor reapresentado pelo banco"
+	if _, _, err := repo.UpsertMany([]*statement.Line{second}); err != nil {
+		t.Fatalf("second import: %v", err)
+	}
+
+	stored, err := repo.FindByExternalID(statement.ProviderPluggy, "plg-rev")
+	if err != nil {
+		t.Fatalf("reading back: %v", err)
+	}
+	revisions, err := repo.Revisions(stored.ID)
+	if err != nil {
+		t.Fatalf("reading revisions: %v", err)
+	}
+	if len(revisions) != 2 {
+		t.Fatalf("%d revisions kept, want 2 — what the bank said yesterday must survive", len(revisions))
+	}
+	if revisions[0].AmountMinor != 6000 || revisions[1].AmountMinor != 5558 {
+		t.Errorf("revisions out of order or lost: %d then %d", revisions[0].AmountMinor, revisions[1].AmountMinor)
+	}
+}
+
+func TestE2E_AMatchIsDroppedWhenTheBankSideChanges(t *testing.T) {
+	// PENDING settling as POSTED routinely changes the amount, especially on foreign
+	// purchases. A match whose bank side moved is by definition unverified: leaving it
+	// MATCHED asserts a check nobody performed.
+	db := testDB(t)
+	seedStatementAccount(t, db)
+	repo := persistence.NewStatementRepository(db)
+
+	if _, _, err := repo.UpsertMany([]*statement.Line{lineFor(t, "plg-drop", 5558, "BRL", nil)}); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	stored, _ := repo.FindByExternalID(statement.ProviderPluggy, "plg-drop")
+	if err := stored.MarkMatched(stTxID); err != nil {
+		t.Fatalf("marking: %v", err)
+	}
+	if err := repo.Update(stored); err != nil {
+		t.Fatalf("saving the match: %v", err)
+	}
+
+	// The bank now reports a different amount for the same line.
+	if _, _, err := repo.UpsertMany([]*statement.Line{lineFor(t, "plg-drop", 6000, "BRL", nil)}); err != nil {
+		t.Fatalf("re-import: %v", err)
+	}
+
+	after, _ := repo.FindByExternalID(statement.ProviderPluggy, "plg-drop")
+	if after.Status != statement.StatusUnmatched {
+		t.Errorf("status = %s, want UNMATCHED — the amount moved, so the match was never verified against this value", after.Status)
+	}
+	// And the reason is discoverable: the previous version is still on file.
+	revisions, _ := repo.Revisions(after.ID)
+	if len(revisions) < 2 {
+		t.Error("without the previous revision, a dropped match has no discoverable cause")
 	}
 }

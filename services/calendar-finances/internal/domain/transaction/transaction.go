@@ -236,21 +236,39 @@ func (t *Transaction) CanTransitionTo(next Status) error {
 		// Terminal. Undoing an undo is a new transaction, not a status change.
 		return ErrAlreadyReversed
 	case StatusCancelled:
-		return errors.New("a cancelled transaction cannot change status")
-	case StatusConfirmed:
-		if next == StatusConfirmed {
+		if next == StatusCancelled {
 			return nil
 		}
-		// A confirmed movement really happened; it is undone by reversal, which
-		// records why and by whom. CANCELLED would be a third, unaudited way out.
-		if next == StatusCancelled {
+		return errors.New("a cancelled transaction cannot change status")
+	case StatusConfirmed:
+		switch next {
+		case StatusConfirmed:
+			return nil
+		case StatusCancelled:
+			// A confirmed movement really happened; it is undone by reversal, which
+			// records why and by whom. CANCELLED would be an unaudited way out.
 			return errors.New("a confirmed transaction must be reversed, not cancelled")
+		case StatusPlanned:
+			// Same reason, different door. Moving a confirmed row back to planned
+			// undoes the money with no motive, no actor and no reversed_at, and the
+			// database CHECK that demands an audit trail never sees it.
+			return errors.New("a confirmed transaction must be reversed, not moved back to planned")
+		}
+	case StatusPlanned:
+		if next == StatusReversed {
+			// A planned row never moved money: undoing it is a cancellation. Two
+			// statuses meaning "does not count" with no rule for which is how a
+			// ledger gets a balance that differs depending on who wrote the query.
+			return errors.New("a planned transaction must be cancelled, not reversed")
 		}
 	}
 	return nil
 }
 
 func (t *Transaction) Confirm(occurredOn time.Time) error {
+	if t == nil {
+		return errors.New("no transaction")
+	}
 	if err := t.CanTransitionTo(StatusConfirmed); err != nil {
 		return err
 	}
@@ -281,8 +299,11 @@ func (t *Transaction) Cancel(reason ReversalReason, note, by string, at time.Tim
 	if err := t.CanTransitionTo(StatusCancelled); err != nil {
 		return err
 	}
-	if !reason.Valid() {
-		return errors.New("a valid reason is required")
+	// Only bookkeeping reasons: a planned row never moved money, so it cannot have
+	// been reversed by the issuer. Accepting those here would collapse two events
+	// into one enum again.
+	if !reason.IsCorrection() {
+		return errors.New("cancelling takes a bookkeeping reason, not an issuer reversal")
 	}
 	if by == "" {
 		return errors.New("the actor is required")
@@ -517,14 +538,6 @@ func (t *Transaction) Reverse(reason ReversalReason, note, by string, at time.Ti
 	if by == "" {
 		return errors.New("the reversal actor is required")
 	}
-	// A planned transaction never moved money; undoing it is a cancellation, not a
-	// reversal. Letting both produce REVERSED would leave two statuses meaning
-	// "does not count" with no written rule for which — and ambiguous status in a
-	// ledger becomes a balance that differs depending on who wrote the query.
-	if t.Status == StatusPlanned {
-		return errors.New("a planned transaction must be cancelled, not reversed")
-	}
-
 	t.Status = StatusReversed
 	t.ReversedAt = &at
 	t.ReversalReason = &reason
@@ -541,4 +554,32 @@ func (t *Transaction) Reverse(reason ReversalReason, note, by string, at time.Ti
 // fact happened (a real reversal by the issuer).
 func (t *Transaction) ReversalRetroacts() bool {
 	return t.ReversalReason != nil && t.ReversalReason.IsCorrection()
+}
+
+// SetStatus is the only way a caller outside this package may TRANSITION a status.
+//
+// Setting the initial status on a freshly built transaction is a different act and is
+// still done by assignment right after New() — those writes have no previous state to
+// violate. The gate that keeps this honest is mechanical:
+//
+//	grep -rn '\.Status = ' --include='*.go' internal/application internal/infrastructure
+//
+// every hit must sit within a few lines of a New(), or it is a transition that skipped
+// the rules. That check is what would have caught PUT /transactions/{id} writing
+// CONFIRMED over a reversed row. Direct
+// assignment is what let PUT /transactions/{id} and PUT /status bypass the transition
+// rules entirely: the rule lived in one place and two write paths never consulted it.
+//
+// Undoing a confirmed movement is refused here on purpose — it goes through Reverse,
+// which demands a motive and an actor.
+func (t *Transaction) SetStatus(next Status) error {
+	if t == nil {
+		return errors.New("no transaction")
+	}
+	if err := t.CanTransitionTo(next); err != nil {
+		return err
+	}
+	t.Status = next
+	t.touch()
+	return nil
 }

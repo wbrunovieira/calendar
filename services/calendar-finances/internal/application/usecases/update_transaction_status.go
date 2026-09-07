@@ -1,6 +1,8 @@
 package usecases
 
 import (
+	"errors"
+	"strings"
 	"time"
 
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
@@ -10,7 +12,14 @@ import (
 type UpdateTransactionStatusInput struct {
 	Status     string  `json:"status"`
 	OccurredOn *string `json:"occurredOn,omitempty"`
-	Reason     *string `json:"reason,omitempty"`
+	// Reason is free text kept as a note. It does not satisfy the audit requirement
+	// on its own: the classification below is what decides the accounting effect.
+	Reason *string `json:"reason,omitempty"`
+	// ReasonCode and Actor are required to cancel. Hardcoding them would fill the
+	// column in 100% of rows with the same value — a control that appears to operate
+	// while capturing nothing, which is the defect a NULL column has, disguised.
+	ReasonCode *string `json:"reasonCode,omitempty"`
+	Actor      *string `json:"actor,omitempty"`
 }
 
 type UpdateTransactionStatusUseCase struct {
@@ -56,14 +65,21 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 		if input.Reason != nil {
 			reason = *input.Reason
 		}
+		if input.ReasonCode == nil || input.Actor == nil {
+			return nil, errors.New("cancelling requires reasonCode and actor: a motive not captured now cannot be reconstructed later")
+		}
 		// A confirmed movement cannot be cancelled: it is reversed, which records the
-		// motive and the actor. Cancelling would be a third, unaudited way out.
-		if err := tx.Cancel(transaction.ReasonNeverHappened, reason, "api", time.Now()); err != nil {
+		// motive and the actor. Cancelling would be an unaudited way out.
+		if err := tx.Cancel(transaction.ReversalReason(strings.ToUpper(*input.ReasonCode)), reason, *input.Actor, time.Now()); err != nil {
 			return nil, err
 		}
 		occurredAt = tx.OccurredOn
 	case transaction.StatusPlanned:
-		tx.Status = transaction.StatusPlanned
+		// Goes through the domain: moving a confirmed row back to planned undoes the
+		// money with no motive and no actor, and the audit CHECK never sees it.
+		if err := tx.SetStatus(transaction.StatusPlanned); err != nil {
+			return nil, err
+		}
 		if input.OccurredOn != nil {
 			if occurredAt, err = parseDate(*input.OccurredOn); err != nil {
 				return nil, err
@@ -106,11 +122,15 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 			if linkedAcc, err := uc.accountRepo.FindByID(linkedTx.BankAccountID); err == nil && linkedAcc.Type != bankaccount.AccountTypeCreditCard {
 				_ = recalculateAccounts(uc.balanceRecalculator, linkedTx.BankAccountID)
 			}
-			linkedTx.Status = targetStatus
+			if err := linkedTx.SetStatus(targetStatus); err != nil {
+				return nil, err
+			}
 		}
 	}
 
-	tx.Status = targetStatus
+	if err := tx.SetStatus(targetStatus); err != nil {
+		return nil, err
+	}
 	return tx, nil
 }
 

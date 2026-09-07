@@ -28,6 +28,7 @@ func TestNew_KeepsWhatTheBankSaid(t *testing.T) {
 		AmountMinor:        10754,
 		Currency:           "USD",
 		AmountAccountMinor: func() *int64 { v := int64(57138); return &v }(),
+		AccountCurrency:    "BRL",
 		Raw:                raw,
 	})
 	if err != nil {
@@ -51,7 +52,7 @@ func TestNew_KeepsWhatTheBankSaid(t *testing.T) {
 func TestNew_RejectsALineWithoutCurrency(t *testing.T) {
 	_, err := New(CreateParams{
 		AccountID: "acc-1", Provider: ProviderPluggy, ExternalID: "x",
-		BookedDate: time.Now(), AmountMinor: 100,
+		BookedDate: time.Now(), AmountMinor: 100, AccountCurrency: "BRL",
 	})
 	if err == nil {
 		t.Error("no monetary column may exist without its currency beside it")
@@ -63,7 +64,7 @@ func TestNew_RejectsALineWithoutAProviderID(t *testing.T) {
 	// matched by amount, which is how a legitimate entry was deleted.
 	_, err := New(CreateParams{
 		AccountID: "acc-1", Provider: ProviderPluggy,
-		BookedDate: time.Now(), AmountMinor: 100, Currency: "BRL",
+		BookedDate: time.Now(), AmountMinor: 100, Currency: "BRL", AccountCurrency: "BRL",
 	})
 	if err == nil {
 		t.Error("a statement line without the provider's id cannot be reconciled safely")
@@ -73,7 +74,7 @@ func TestNew_RejectsALineWithoutAProviderID(t *testing.T) {
 func TestAmountInAccountCurrency_FallsBackToTheOriginalWhenSameCurrency(t *testing.T) {
 	line, err := New(CreateParams{
 		AccountID: "acc-1", Provider: ProviderPluggy, ExternalID: "y",
-		BookedDate: time.Now(), AmountMinor: 9990, Currency: "BRL",
+		BookedDate: time.Now(), AmountMinor: 9990, Currency: "BRL", AccountCurrency: "BRL",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -87,7 +88,7 @@ func TestInAccountCurrency_UsesTheConvertedValueForForeignLines(t *testing.T) {
 	converted := int64(57138)
 	line, _ := New(CreateParams{
 		AccountID: "acc-1", Provider: ProviderPluggy, ExternalID: "z",
-		BookedDate: time.Now(), AmountMinor: 10754, Currency: "USD",
+		BookedDate: time.Now(), AmountMinor: 10754, Currency: "USD", AccountCurrency: "BRL",
 		AmountAccountMinor: &converted,
 	})
 	if got := line.InAccountCurrency(); got != 57138 {
@@ -98,10 +99,12 @@ func TestInAccountCurrency_UsesTheConvertedValueForForeignLines(t *testing.T) {
 func TestMarkMatched_AndUnmatch(t *testing.T) {
 	line, _ := New(CreateParams{
 		AccountID: "acc-1", Provider: ProviderPluggy, ExternalID: "m",
-		BookedDate: time.Now(), AmountMinor: 100, Currency: "BRL",
+		BookedDate: time.Now(), AmountMinor: 100, Currency: "BRL", AccountCurrency: "BRL",
 	})
 
-	line.MarkMatched()
+	if err := line.MarkMatched("tx-1"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if line.Status != StatusMatched {
 		t.Errorf("status = %s, want MATCHED", line.Status)
 	}
@@ -116,7 +119,7 @@ func TestMarkIgnored_RequiresAReason(t *testing.T) {
 	// indistinguishable from a line nobody looked at.
 	line, _ := New(CreateParams{
 		AccountID: "acc-1", Provider: ProviderPluggy, ExternalID: "i",
-		BookedDate: time.Now(), AmountMinor: 100, Currency: "BRL",
+		BookedDate: time.Now(), AmountMinor: 100, Currency: "BRL", AccountCurrency: "BRL",
 	})
 	if err := line.MarkIgnored(""); err == nil {
 		t.Error("ignoring a statement line without a reason must be refused")
@@ -126,5 +129,67 @@ func TestMarkIgnored_RequiresAReason(t *testing.T) {
 	}
 	if line.Status != StatusIgnored || line.IgnoredReason == nil {
 		t.Error("the reason must survive alongside the status")
+	}
+}
+
+// Findings from the second review round.
+
+func TestNew_RefusesAForeignLineWithoutItsConvertedValue(t *testing.T) {
+	// Without this, InAccountCurrency falls back to the face value and reconciles USD
+	// against BRL — the exact bug the type was shaped to prevent, under a comment
+	// claiming otherwise.
+	_, err := New(CreateParams{
+		AccountID: "acc-1", Provider: ProviderPluggy, ExternalID: "usd",
+		BookedDate: time.Now(), AmountMinor: 10754, Currency: "USD", AccountCurrency: "BRL",
+	})
+	if err == nil {
+		t.Error("a foreign line with no converted value must be refused")
+	}
+}
+
+func TestIsForeign_ComparesCurrenciesNotAmounts(t *testing.T) {
+	// A conversion that happens to land at exactly 1:1 is still a foreign charge.
+	same := int64(1000)
+	line, err := New(CreateParams{
+		AccountID: "acc-1", Provider: ProviderPluggy, ExternalID: "par",
+		BookedDate: time.Now(), AmountMinor: 1000, Currency: "USD", AccountCurrency: "BRL",
+		AmountAccountMinor: &same,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !line.IsForeign("BRL") {
+		t.Error("a 1:1 conversion is still a foreign charge")
+	}
+}
+
+func TestMarkMatched_RequiresTheTransactionItMatched(t *testing.T) {
+	line, _ := New(CreateParams{
+		AccountID: "acc-1", Provider: ProviderPluggy, ExternalID: "ref",
+		BookedDate: time.Now(), AmountMinor: 100, Currency: "BRL", AccountCurrency: "BRL",
+	})
+	if err := line.MarkMatched(""); err == nil {
+		t.Error("MATCHED with no referent asserts a check with nothing behind it")
+	}
+	if err := line.MarkMatched("tx-9"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if line.MatchedTransactionID == nil || *line.MatchedTransactionID != "tx-9" {
+		t.Error("the match must name what it was reconciled against")
+	}
+}
+
+func TestMarkUnmatched_ClearsBothTheReferentAndAnyOrphanReason(t *testing.T) {
+	line, _ := New(CreateParams{
+		AccountID: "acc-1", Provider: ProviderPluggy, ExternalID: "clean",
+		BookedDate: time.Now(), AmountMinor: 100, Currency: "BRL", AccountCurrency: "BRL",
+	})
+	_ = line.MarkIgnored("par do rotativo")
+	line.MarkUnmatched()
+	if line.IgnoredReason != nil {
+		t.Error("an orphan reason on an unmatched line reads as a decision nobody made")
+	}
+	if line.MatchedTransactionID != nil {
+		t.Error("the referent must be cleared too")
 	}
 }

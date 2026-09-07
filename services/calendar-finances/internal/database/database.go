@@ -477,15 +477,69 @@ func RunMigrations(db *sql.DB) error {
 			status VARCHAR(12) NOT NULL DEFAULT 'UNMATCHED'
 				CHECK (status IN ('UNMATCHED','MATCHED','IGNORED')),
 			ignored_reason TEXT,
+			matched_transaction_id UUID REFERENCES finance.transactions(id),
+			-- A match must name what it was reconciled against, or it asserts a check
+			-- with nothing behind it.
+			CONSTRAINT statement_matched_has_reference
+				CHECK (status <> 'MATCHED' OR matched_transaction_id IS NOT NULL),
 			imported_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			-- last_seen_at is bumped on every import that covered this line's window.
+			-- Keeping the raw payload does not reveal that the bank STOPPED reporting
+			-- a row; the row simply stays and the disappearance is invisible.
+			last_seen_at TIMESTAMP NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
 			-- Idempotent import: the same window may be pulled any number of times.
-			CONSTRAINT uq_statement_provider_external UNIQUE (provider, external_id),
+			-- account_id belongs in the key: Pluggy ids are globally unique, but an
+			-- OFX FITID is unique only WITHIN an account by specification. Without it,
+			-- two statements could legitimately collide and the upsert would rewrite
+			-- one account's movement while it still claimed to belong to the other.
+			CONSTRAINT uq_statement_account_provider_external UNIQUE (account_id, provider, external_id),
 			-- An ignored line without a motive is indistinguishable from one nobody
 			-- looked at.
 			CONSTRAINT statement_ignored_has_reason
 				CHECK (status <> 'IGNORED' OR ignored_reason IS NOT NULL)
 		)`,
+		// Every version the provider ever reported, append-only. The main row is a
+		// projection of the latest; this is what makes "verbatim" true.
+		//
+		// Pluggy rewrites transactions, and overwriting raw on conflict destroys
+		// exactly the evidence that a change came from the bank and not from us. It
+		// is also what lets a match be dropped WITH a reason: without the previous
+		// version, a line that "went back to diverging" has no discoverable cause.
+		`CREATE TABLE IF NOT EXISTS finance.bank_statement_line_revisions (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			line_id UUID NOT NULL REFERENCES finance.bank_statement_lines(id) ON DELETE CASCADE,
+			seen_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			booked_date DATE NOT NULL,
+			amount_minor BIGINT NOT NULL,
+			currency CHAR(3) NOT NULL,
+			amount_account_minor BIGINT,
+			description TEXT NOT NULL DEFAULT '',
+			raw JSONB NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_statement_revisions_line ON finance.bank_statement_line_revisions(line_id, seen_at DESC)`,
+		// Incremental migration for databases that already have the first version of
+		// the table. CREATE TABLE IF NOT EXISTS is a no-op there and would leave the
+		// new columns missing — which is exactly how a schema change passes locally
+		// and fails on a database that has been around.
+		`ALTER TABLE finance.bank_statement_lines ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP NOT NULL DEFAULT NOW()`,
+		`ALTER TABLE finance.bank_statement_lines ADD COLUMN IF NOT EXISTS matched_transaction_id UUID REFERENCES finance.transactions(id)`,
+		`DO $$
+		BEGIN
+			-- account_id belongs in the uniqueness key: an OFX FITID is unique only
+			-- WITHIN an account, so two statements could legitimately collide and the
+			-- upsert would rewrite one account's movement under the other's id.
+			ALTER TABLE finance.bank_statement_lines DROP CONSTRAINT IF EXISTS uq_statement_provider_external;
+			IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_statement_account_provider_external') THEN
+				ALTER TABLE finance.bank_statement_lines
+					ADD CONSTRAINT uq_statement_account_provider_external UNIQUE (account_id, provider, external_id);
+			END IF;
+			IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'statement_matched_has_reference') THEN
+				ALTER TABLE finance.bank_statement_lines
+					ADD CONSTRAINT statement_matched_has_reference
+					CHECK (status <> 'MATCHED' OR matched_transaction_id IS NOT NULL);
+			END IF;
+		END $$`,
 		`CREATE INDEX IF NOT EXISTS idx_statement_account_date ON finance.bank_statement_lines(account_id, booked_date)`,
 		`CREATE INDEX IF NOT EXISTS idx_statement_status ON finance.bank_statement_lines(status) WHERE status = 'UNMATCHED'`,
 		// The Pix end-to-end id appears on BOTH sides of an internal transfer, which
