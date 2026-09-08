@@ -3,6 +3,7 @@ package usecases
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
@@ -31,6 +32,10 @@ type Matches interface {
 	// ClaimedOnAccount is scoped to one account on purpose: a transfer is a single row
 	// that appears on two statements, so it must be claimable once on each.
 	ClaimedOnAccount(transactionID, accountID string) (bool, error)
+	// Unmatch releases a match whose basis no longer holds. Without it the undo half
+	// of an append-only design is decoration: the match row outlives the fact it
+	// recorded, and the line it covers is never looked at again.
+	Unmatch(matchID, reason string) error
 }
 
 // MissingLine is a charge the bank made and the system does not have. It is the point
@@ -122,8 +127,10 @@ func (uc *ReconcileStatementUseCase) Execute(accountID string) (*ReconcileStatem
 		return nil, ErrBankAccountNotFound
 	}
 
-	unmatched := statement.StatusUnmatched
-	lines, err := uc.lines.List(statement.ListFilter{AccountID: accountID, Status: &unmatched})
+	// Every line, not only the unmatched ones. A match can stop being true after it
+	// was made — the entry behind it reversed, or the bank restated the line — and a
+	// line filtered out by its own status is a line nobody ever looks at again.
+	lines, err := uc.lines.List(statement.ListFilter{AccountID: accountID})
 	if err != nil {
 		return nil, fmt.Errorf("%w: listing statement lines: %v", ErrReconcileStorage, err)
 	}
@@ -146,8 +153,13 @@ func (uc *ReconcileStatementUseCase) Execute(accountID string) (*ReconcileStatem
 	// not both point at one entry, or the second charge silently looks accounted for.
 	claimed := map[string]bool{}
 
+	live := map[string]*transactionPkg.Transaction{}
+	for _, txn := range txns {
+		live[txn.ID] = txn
+	}
+
 	for _, line := range lines {
-		done, err := uc.alreadyMatched(line)
+		done, err := uc.stillReconciled(line, live)
 		if err != nil {
 			return nil, err
 		}
@@ -172,7 +184,8 @@ func (uc *ReconcileStatementUseCase) Execute(accountID string) (*ReconcileStatem
 			if err != nil {
 				return nil, err
 			}
-			if len(planned) == 1 {
+			switch {
+			case len(planned) == 1:
 				out.ReadyToConfirm = append(out.ReadyToConfirm, ReadyToConfirm{
 					LineID: line.ID, TransactionID: planned[0].ID, BookedDate: line.BookedDate,
 					AmountMinor: line.InAccountCurrency(), Description: line.Description,
@@ -182,6 +195,17 @@ func (uc *ReconcileStatementUseCase) Execute(accountID string) (*ReconcileStatem
 				// makes the other charge vanish from the report — the hole then shows
 				// up a day later with nothing pointing at why.
 				claimed[planned[0].ID] = true
+				continue
+			case len(planned) > 1:
+				// Several forecasts fit and the bank settled one of them. Reporting
+				// this as missing money would be false twice: the entries are right
+				// there, and whoever reads it goes hunting a charge that was never
+				// missing. Choosing between them is not this service's call.
+				out.Ambiguous = append(out.Ambiguous, AmbiguousLine{
+					LineID: line.ID, BookedDate: line.BookedDate,
+					AmountMinor: line.InAccountCurrency(), Description: line.Description,
+					CandidateIDs: idsOf(planned),
+				})
 				continue
 			}
 		}
@@ -212,34 +236,113 @@ func (uc *ReconcileStatementUseCase) Execute(accountID string) (*ReconcileStatem
 				AmountMinor: line.InAccountCurrency(), Description: line.Description,
 			})
 		default:
-			ids := make([]string, 0, len(candidates))
-			for _, c := range candidates {
-				ids = append(ids, c.ID)
-			}
 			out.Ambiguous = append(out.Ambiguous, AmbiguousLine{
 				LineID: line.ID, BookedDate: line.BookedDate,
 				AmountMinor: line.InAccountCurrency(), Description: line.Description,
-				CandidateIDs: ids,
+				CandidateIDs: idsOf(candidates),
 			})
 		}
 	}
 	return out, nil
 }
 
-// alreadyMatched answers whether this line is already reconciled — or refuses to
-// answer. Not knowing is not the same as "no": treating a database failure as "not
-// matched" makes the reconciler match it again.
-func (uc *ReconcileStatementUseCase) alreadyMatched(line *statement.Line) (bool, error) {
-	live, err := uc.matches.ByLine(line.ID)
+// stillReconciled answers whether this line is reconciled AND still rightly so — or
+// refuses to answer. Not knowing is not the same as "no": treating a database failure
+// as "not matched" makes the reconciler match it again.
+//
+// A match is a claim about two things that can both change after it was made. The
+// entry can be reversed, which takes its money back out of the balance; and the bank
+// can restate the line. Either way the claim is stale, and a stale claim is worse than
+// no claim: the line stops being examined, so the report keeps saying a charge is
+// accounted for by something that no longer accounts for anything.
+func (uc *ReconcileStatementUseCase) stillReconciled(
+	line *statement.Line,
+	live map[string]*transactionPkg.Transaction,
+) (bool, error) {
+	matches, err := uc.matches.ByLine(line.ID)
 	if err != nil {
 		return false, fmt.Errorf("checking whether line %s is already reconciled: %w", line.ID, err)
 	}
-	for _, m := range live {
-		if m.UnmatchedAt == nil {
-			return true, nil
+
+	standing := false
+	for _, m := range matches {
+		if m.UnmatchedAt != nil {
+			continue
+		}
+		reason, err := uc.staleReason(m, line, live)
+		if err != nil {
+			return false, err
+		}
+		if reason == "" {
+			standing = true
+			continue
+		}
+		if err := uc.matches.Unmatch(m.ID, reason); err != nil {
+			return false, fmt.Errorf("%w: releasing match %s on line %s: %v",
+				ErrReconcileStorage, m.ID, line.ID, err)
 		}
 	}
-	return false, nil
+
+	// The line's own status is a projection of the matches, so bring it back in step
+	// either way. It drifts when a match is written and this write is not — and a line
+	// stored MATCHED with nothing live behind it is invisible from then on.
+	want := statement.StatusUnmatched
+	if standing {
+		want = statement.StatusMatched
+	}
+	if line.Status != want && line.Status != statement.StatusIgnored {
+		if standing {
+			if err := line.MarkMatched(abs64(line.InAccountCurrency())); err != nil {
+				return false, fmt.Errorf("marking line %s matched: %w", line.ID, err)
+			}
+		} else {
+			line.MarkUnmatched()
+		}
+		if err := uc.lines.Update(line); err != nil {
+			return false, fmt.Errorf("%w: saving the status of line %s: %v",
+				ErrReconcileStorage, line.ID, err)
+		}
+	}
+	return standing, nil
+}
+
+func idsOf(txns []*transactionPkg.Transaction) []string {
+	ids := make([]string, 0, len(txns))
+	for _, t := range txns {
+		ids = append(ids, t.ID)
+	}
+	return ids
+}
+
+// staleReason names why a match no longer holds, or returns "" if it still does.
+func (uc *ReconcileStatementUseCase) staleReason(
+	m *statement.Match,
+	line *statement.Line,
+	live map[string]*transactionPkg.Transaction,
+) (string, error) {
+	txn, ok := live[m.TransactionID]
+	if !ok {
+		// Absent from this account's live entries. That is usually a reversal — the
+		// listing excludes reversed rows — but it can also be an entry moved to
+		// another account or profile, so ask directly rather than assume. Undoing a
+		// match that still stands would report money missing that is not.
+		found, err := uc.txns.GetByID(m.TransactionID)
+		if err != nil || found == nil {
+			return statement.UnmatchTransactionReversed, nil
+		}
+		txn = found
+	}
+	if txn.Status != transactionPkg.StatusConfirmed {
+		// A reversed or cancelled entry moved no money: balances derive from the
+		// confirmed rows, so the charge on this line is unaccounted for again.
+		return statement.UnmatchTransactionReversed, nil
+	}
+	if m.AmountMinor != abs64(line.InAccountCurrency()) {
+		// The bank restated what it charged. The match was made against a figure the
+		// bank no longer claims.
+		return statement.UnmatchBankSideChanged, nil
+	}
+	return "", nil
 }
 
 // candidatesFor returns the entries that could be this line: same account, same value
@@ -258,6 +361,14 @@ func (uc *ReconcileStatementUseCase) candidatesFor(
 			continue
 		}
 		if txn.Status != status {
+			continue
+		}
+		// The line side is guarded at construction — a foreign line without its
+		// converted figure is refused. The ledger side has no such guard, and an
+		// entry booked in another currency compared by face value matches a real
+		// charge 5.2 times its size. That mistake was made here by hand once, on
+		// five dollar charges, and cost R$ 1.117,03 to unwind.
+		if !strings.EqualFold(txn.Currency, account.Currency) {
 			continue
 		}
 		if signedMinorFor(txn, account) != line.InAccountCurrency() {

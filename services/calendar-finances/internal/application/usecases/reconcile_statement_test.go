@@ -22,10 +22,14 @@ func (f *fakeMatchRepo) Create(m *statement.Match) error {
 	f.matches = append(f.matches, m)
 	return nil
 }
+
+// Returns undone matches too, exactly as the real ByLine does. Filtering them here
+// made the caller's own UnmatchedAt check untestable — and an undone match read as a
+// live one is a line that never comes back.
 func (f *fakeMatchRepo) ByLine(lineID string) ([]*statement.Match, error) {
 	out := []*statement.Match{}
 	for _, m := range f.matches {
-		if m.LineID == lineID && m.UnmatchedAt == nil {
+		if m.LineID == lineID {
 			out = append(out, m)
 		}
 	}
@@ -48,7 +52,14 @@ func (f *fakeMatchRepo) ClaimedOnAccount(txID, accountID string) (bool, error) {
 	}
 	return false, nil
 }
-func (f *fakeMatchRepo) Unmatch(id, reason string) error { return nil }
+func (f *fakeMatchRepo) Unmatch(id, reason string) error {
+	for _, m := range f.matches {
+		if m.ID == id {
+			return m.Unmatch(reason, time.Now())
+		}
+	}
+	return errors.New("no such match")
+}
 
 func statementLine(t *testing.T, id, accountID string, minor int64, day int) *statement.Line {
 	t.Helper()
@@ -559,5 +570,184 @@ func TestReconcile_AFailedReadIsLabelledAsStorage(t *testing.T) {
 	_, err := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc")
 	if !errors.Is(err, ErrReconcileStorage) {
 		t.Fatalf("got %v, want it wrapped in ErrReconcileStorage", err)
+	}
+}
+
+// foreignLine is a card charge the bank printed in its original currency, with the
+// converted figure alongside. Reconciling against the face value compares dollars to
+// reais: US$ 107,54 against R$ 107,54, off by the exchange rate.
+func foreignLine(t *testing.T, id, accountID string, faceMinor, accountMinor int64, day int) *statement.Line {
+	t.Helper()
+	line, err := statement.New(statement.CreateParams{
+		AccountID: accountID, Provider: statement.ProviderPluggy, ExternalID: id,
+		BookedDate:         time.Date(2026, time.September, day, 0, 0, 0, 0, time.UTC),
+		AmountMinor:        faceMinor,
+		AmountAccountMinor: &accountMinor,
+		Currency:           "USD", AccountCurrency: "BRL",
+		Description: "Anthropic* Claude Sub",
+	})
+	if err != nil {
+		t.Fatalf("build line: %v", err)
+	}
+	line.ID = "line-" + id
+	return line
+}
+
+// The converted figure is the one that means anything on a BRL account. This is the
+// Anthropic charge: US$ 107,54 that cost R$ 580,00. Matching must find the R$ 580,00
+// entry — and comparing face values would instead go looking for R$ 107,54.
+func TestReconcile_AForeignLineIsMatchedByItsConvertedValue(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	lines.lines = []*statement.Line{foreignLine(t, "a", "acc", -10754, -58000, 5)}
+	txns.created = []*transaction.Transaction{systemCharge("tx1", "acc", 580, 5)}
+
+	out, err := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.Matched != 1 {
+		t.Fatalf("the converted value is the one that matches: %+v", out)
+	}
+}
+
+// The ledger side has no such guard. An entry booked in dollars on a BRL account would
+// otherwise match a real R$ 107,54 charge by face value alone — the reconciler
+// declaring an unrelated charge settled, at 5.2 times the wrong figure. That is not a
+// hypothetical: five dollar charges were once posted as if they were reais here.
+func TestReconcile_AnEntryInAnotherCurrencyIsNeverACandidate(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	lines.lines = []*statement.Line{statementLine(t, "a", "acc", -10754, 5)}
+	dollars := systemCharge("tx1", "acc", 107.54, 5)
+	dollars.Currency = "USD"
+	txns.created = []*transaction.Transaction{dollars}
+
+	out, err := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.Matched != 0 {
+		t.Fatalf("dollars matched a real charge: %+v", out)
+	}
+	if len(out.Missing) != 1 {
+		t.Fatalf("and the charge must still be reported: %+v", out)
+	}
+}
+
+// The bank restates a posted line — a foreign charge re-converted, a value corrected.
+// The import puts it back to unmatched, but the match row it was reconciled against is
+// still live. Skipping the line because a match exists makes it vanish: not matched,
+// not missing, not even counted, on every run from then on. The ledger says R$ 40 and
+// the bank now says R$ 90, and the report says nothing at all.
+func TestReconcile_ARestatedLineIsUnmatchedAndLookedAtAgain(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	line := statementLine(t, "a", "acc", -4000, 5)
+	lines.lines = []*statement.Line{line}
+	txns.created = []*transaction.Transaction{systemCharge("tx1", "acc", 40, 5)}
+
+	uc := NewReconcileStatementUseCase(lines, txns, matches, accounts)
+	if out, _ := uc.Execute("acc"); out.Matched != 1 {
+		t.Fatalf("setup: %+v", out)
+	}
+
+	// The bank changes its mind, and the import reflects it.
+	line.AmountMinor = -9000
+	line.MarkUnmatched()
+
+	out, err := uc.Execute("acc")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.Checked != 1 {
+		t.Fatalf("the restated line was not even looked at: %+v", out)
+	}
+	if len(out.Missing) != 1 || out.Missing[0].AmountMinor != -9000 {
+		t.Fatalf("the bank now charges 90,00 and nothing in the ledger covers it: %+v", out)
+	}
+	if matches.matches[0].UnmatchedAt == nil {
+		t.Error("the old match still stands against an amount the bank no longer claims")
+	}
+}
+
+// A reversed entry moved no money — balances derive from CONFIRMED rows. If its bank
+// line stays MATCHED, the line is never listed again and the reconciler keeps saying
+// the charge is accounted for. That is the phantom this feature exists to catch,
+// pointing the other way.
+func TestReconcile_AReversedEntryReleasesItsLine(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	lines.lines = []*statement.Line{statementLine(t, "a", "acc", -4000, 5)}
+	charge := systemCharge("tx1", "acc", 40, 5)
+	txns.created = []*transaction.Transaction{charge}
+
+	uc := NewReconcileStatementUseCase(lines, txns, matches, accounts)
+	if out, _ := uc.Execute("acc"); out.Matched != 1 {
+		t.Fatalf("setup: %+v", out)
+	}
+
+	// Reversed: the row is kept as history and stops counting.
+	charge.Status = transaction.StatusReversed
+
+	out, err := uc.Execute("acc")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(out.Missing) != 1 {
+		t.Fatalf("the bank charged 40,00 and the ledger no longer has it: %+v", out)
+	}
+	if matches.matches[0].UnmatchedAt == nil {
+		t.Error("the line is still reconciled against an entry that was undone")
+	}
+	if lines.lines[0].Status != statement.StatusUnmatched {
+		t.Errorf("the line is stored as %s", lines.lines[0].Status)
+	}
+}
+
+// A match that still stands must be left exactly where it is: not re-counted, not
+// re-created, and not undone. Re-matching on every run would multiply the rows and
+// re-counting would inflate the report.
+func TestReconcile_AMatchThatStillStandsIsLeftAlone(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	lines.lines = []*statement.Line{statementLine(t, "a", "acc", -4000, 5)}
+	txns.created = []*transaction.Transaction{systemCharge("tx1", "acc", 40, 5)}
+
+	uc := NewReconcileStatementUseCase(lines, txns, matches, accounts)
+	uc.Execute("acc")
+	out, err := uc.Execute("acc")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.Matched != 0 || out.Checked != 0 || len(out.Missing) != 0 {
+		t.Fatalf("a settled line gave the second run work to do: %+v", out)
+	}
+	if len(matches.matches) != 1 || matches.matches[0].UnmatchedAt != nil {
+		t.Fatalf("the standing match was disturbed: %+v", matches.matches)
+	}
+}
+
+// Two forecasts of the same value near the same date, and the bank paid one of them.
+// Calling that "money the system does not have" is false twice over: the entries are
+// sitting right there, and the report sends whoever reads it hunting a charge that was
+// never missing. Which of the two the bank settled is not this service's call.
+func TestReconcile_TwoForecastsThatFitAreAmbiguousNotMissing(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	lines.lines = []*statement.Line{statementLine(t, "a", "acc", -50000, 5)}
+	first, second := systemCharge("tx1", "acc", 500, 5), systemCharge("tx2", "acc", 500, 6)
+	first.Status, second.Status = transaction.StatusPlanned, transaction.StatusPlanned
+	txns.created = []*transaction.Transaction{first, second}
+
+	out, err := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(out.Missing) != 0 {
+		t.Fatalf("nothing is missing — both entries exist: %+v", out)
+	}
+	if len(out.Ambiguous) != 1 {
+		t.Fatalf("two forecasts fit and neither may be chosen: %+v", out)
+	}
+	if len(out.Ambiguous[0].CandidateIDs) != 2 {
+		t.Errorf("both candidates must be named: %+v", out.Ambiguous[0])
+	}
+	if len(matches.matches) != 0 {
+		t.Errorf("and nothing may be matched: %+v", matches.matches)
 	}
 }

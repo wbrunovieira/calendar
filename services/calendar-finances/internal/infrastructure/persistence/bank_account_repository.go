@@ -227,7 +227,7 @@ func (r *BankAccountRepository) Update(account *bankaccount.BankAccount) error {
 		return err
 	}
 	if rowsAffected == 0 {
-		return bankaccount.ErrNotFound
+		return bankaccount.ErrWriteAffectedNoRows
 	}
 
 	return nil
@@ -245,7 +245,7 @@ func (r *BankAccountRepository) Delete(id string) error {
 		return err
 	}
 	if rowsAffected == 0 {
-		return bankaccount.ErrNotFound
+		return bankaccount.ErrWriteAffectedNoRows
 	}
 
 	return nil

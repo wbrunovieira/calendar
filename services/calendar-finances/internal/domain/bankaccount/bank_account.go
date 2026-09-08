@@ -14,6 +14,13 @@ import (
 // database failure — opposite decisions for a cron deciding whether to retry.
 var ErrNotFound = errors.New("bank account not found")
 
+// ErrWriteAffectedNoRows is what a write that changed nothing means, and it is NOT
+// ErrNotFound. Handlers answer 400 for "you named an account that does not exist" —
+// correct for a read, wrong for a balance update, because the caller's request was
+// fine and this service failed. Sharing one value told n8n to stop retrying while a
+// transaction row sat written with a balance that never moved.
+var ErrWriteAffectedNoRows = errors.New("the bank account row was not there to write to")
+
 type BankAccount struct {
 	ID             string      `json:"id"`
 	ProfileID      string      `json:"profileId"`
