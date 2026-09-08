@@ -6,6 +6,8 @@ package handlers_test
 import (
 	"database/sql"
 	"encoding/json"
+	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
+	"github.com/google/uuid"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -93,12 +95,7 @@ func seedProfileAndAccount(t *testing.T, db *sql.DB) (profileID, accountID strin
 	`).Scan(&profileID); err != nil {
 		t.Fatalf("seeding profile: %v", err)
 	}
-	if err := db.QueryRow(`
-		INSERT INTO finance.bank_accounts (profile_id, name, type, initial_balance, current_balance, currency)
-		VALUES ($1, 'Conta E2E', 'CHECKING', 0, 0, 'BRL') RETURNING id
-	`, profileID).Scan(&accountID); err != nil {
-		t.Fatalf("seeding account: %v", err)
-	}
+	accountID = seedAccountThroughRepository(t, db, profileID, "Conta E2E", 0)
 
 	t.Cleanup(func() {
 		execSQL(t, db, `DELETE FROM finance.transactions WHERE profile_id = $1`, profileID)
@@ -241,4 +238,24 @@ func TestPendingRecurringsRoute_DropsOffOncePaid(t *testing.T) {
 	if items, _ := body["data"].([]any); len(items) != 0 {
 		t.Fatalf("expected nothing pending after payment, got %v", body["data"])
 	}
+}
+
+// seedAccountThroughRepository creates the account with the same statement production
+// uses, instead of an INSERT written for the test.
+//
+// The two used to differ, and the difference was invisible: a column duplicated in
+// BankAccountRepository.Create broke every POST /bank-accounts while this suite stayed
+// green, because nothing here ever called it. Seeding this way makes the e2e tests
+// cover the write path as a side effect of setting themselves up.
+func seedAccountThroughRepository(t *testing.T, db *sql.DB, profileID, name string, initial float64) string {
+	t.Helper()
+	id := uuid.NewString()
+	if err := persistence.NewBankAccountRepository(db).Create(&bankaccount.BankAccount{
+		ID: id, ProfileID: profileID, Name: name, Type: bankaccount.AccountTypeChecking,
+		InitialBalance: initial, CurrentBalance: initial, Currency: "BRL", IsActive: true,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("seeding account through the repository: %v", err)
+	}
+	return id
 }
