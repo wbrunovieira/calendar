@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/brunovieira/calendar-finances/internal/domain/statement"
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/persistence"
@@ -113,4 +114,112 @@ func reconcile(t *testing.T, db *sql.DB, accountID string) (int, string) {
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost,
 		"/api/v1/bank-accounts/"+accountID+"/statement/reconcile", strings.NewReader("{}")))
 	return rec.Code, rec.Body.String()
+}
+
+const (
+	payProfileID  = "e2e00000-0000-0000-0000-0000000000b1"
+	payCheckingID = "e2e00000-0000-0000-0000-0000000000b2"
+	payCardID     = "e2e00000-0000-0000-0000-0000000000b3"
+	payTxID       = "e2e00000-0000-0000-0000-0000000000b4"
+)
+
+// A card bill payment is ONE ledger row that the bank prints on TWO statements: it
+// leaves the checking account and lands on the card. Reconciling one side must not
+// consume it for the other, or whichever account runs second reports money missing
+// that is not missing — and this system exists to be believed when it says that.
+//
+// Against a real database on purpose: the account scope lives in a SQL JOIN, and a
+// fake agreeing with itself is what let the global version ship.
+func TestE2E_ABillPaymentReconcilesOnBothStatements(t *testing.T) {
+	db := testDB(t)
+	seedPaymentAccounts(t, db)
+
+	lines := persistence.NewStatementRepository(db)
+	if _, _, err := lines.UpsertMany([]*statement.Line{
+		paymentLine(t, "saida", payCheckingID, -101818),
+		paymentLine(t, "entrada", payCardID, 101818),
+	}); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+
+	// Order matters to the bug: the first account to run is the one that used to win.
+	_, checking := reconcile(t, db, payCheckingID)
+	_, card := reconcile(t, db, payCardID)
+
+	assertOneMatchNothingMissing(t, "conta corrente", checking)
+	assertOneMatchNothingMissing(t, "cartão", card)
+
+	var live int
+	if err := db.QueryRow(`
+		SELECT count(*) FROM finance.reconciliation_matches
+		WHERE transaction_id = $1 AND unmatched_at IS NULL`, payTxID).Scan(&live); err != nil {
+		t.Fatalf("count matches: %v", err)
+	}
+	if live != 2 {
+		t.Fatalf("the payment must be claimed once per statement, found %d", live)
+	}
+}
+
+func assertOneMatchNothingMissing(t *testing.T, side, body string) {
+	t.Helper()
+	var out struct {
+		Data struct {
+			Matched int `json:"matched"`
+			Missing []struct {
+				AmountMinor int64 `json:"amountMinor"`
+			} `json:"missing"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(body), &out); err != nil {
+		t.Fatalf("%s: decode: %v — %s", side, err, body)
+	}
+	if out.Data.Matched != 1 || len(out.Data.Missing) != 0 {
+		t.Fatalf("%s reported money missing that is not: %s", side, body)
+	}
+}
+
+func seedPaymentAccounts(t *testing.T, db *sql.DB) {
+	t.Helper()
+	t.Cleanup(func() {
+		db.Exec(`DELETE FROM finance.reconciliation_matches WHERE transaction_id = $1`, payTxID)
+		db.Exec(`DELETE FROM finance.bank_statement_lines WHERE account_id IN ($1,$2)`, payCheckingID, payCardID)
+		db.Exec(`DELETE FROM finance.transactions WHERE id = $1`, payTxID)
+		db.Exec(`DELETE FROM finance.bank_accounts WHERE id IN ($1,$2)`, payCheckingID, payCardID)
+		db.Exec(`DELETE FROM finance.profiles WHERE id = $1`, payProfileID)
+	})
+	exec(t, db, `INSERT INTO finance.profiles (id, calendar_id, name, type)
+		VALUES ($1,$2,'E2E Pagamento','BUSINESS') ON CONFLICT (id) DO NOTHING`, payProfileID, "e2e-bill-payment")
+
+	checking := checkingAccount(payProfileID, "Conta Pagadora", 0, 0)
+	checking.ID = payCheckingID
+	seedAccountThroughRepository(t, db, checking)
+
+	card := cardAccount(payProfileID, "Cartão Pago", 3650)
+	card.ID = payCardID
+	seedAccountThroughRepository(t, db, card)
+
+	exec(t, db, `INSERT INTO finance.transactions
+		(id, profile_id, bank_account_id, destination_account_id, type, status,
+		 amount, currency, description, occurred_on)
+		VALUES ($1,$2,$3,$4,'TRANSFER','CONFIRMED',1018.18,'BRL','Pagamento fatura','2026-09-03')
+		ON CONFLICT (id) DO NOTHING`, payTxID, payProfileID, payCheckingID, payCardID)
+}
+
+func paymentLine(t *testing.T, externalID, accountID string, amountMinor int64) *statement.Line {
+	t.Helper()
+	l, err := statement.New(statement.CreateParams{
+		AccountID:       accountID,
+		Provider:        statement.ProviderPluggy,
+		ExternalID:      externalID,
+		BookedDate:      time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC),
+		AmountMinor:     amountMinor,
+		Currency:        "BRL",
+		AccountCurrency: "BRL",
+		Description:     "Pagamento de fatura",
+		Raw:             json.RawMessage(`{"id":"` + externalID + `","source":"test"}`),
+	})
+	if err != nil {
+		t.Fatalf("building the line: %v", err)
+	}
+	return l
 }

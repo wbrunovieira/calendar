@@ -12,6 +12,10 @@ import (
 
 type fakeMatchRepo struct {
 	matches []*statement.Match
+	// stmt is how the fake resolves a match back to its account, the way the real
+	// query joins bank_statement_lines. Held as a pointer so it sees lines added
+	// after construction.
+	stmt *fakeStatementRepo
 }
 
 func (f *fakeMatchRepo) Create(m *statement.Match) error {
@@ -27,14 +31,22 @@ func (f *fakeMatchRepo) ByLine(lineID string) ([]*statement.Match, error) {
 	}
 	return out, nil
 }
-func (f *fakeMatchRepo) ByTransaction(txID string) ([]*statement.Match, error) {
-	out := []*statement.Match{}
+
+// Faithful to the real query: scoped to the account, via the line the match points at.
+// A global answer here is what let one transfer's two statement sides fight over the
+// single row that represents it.
+func (f *fakeMatchRepo) ClaimedOnAccount(txID, accountID string) (bool, error) {
 	for _, m := range f.matches {
-		if m.TransactionID == txID && m.UnmatchedAt == nil {
-			out = append(out, m)
+		if m.TransactionID != txID || m.UnmatchedAt != nil {
+			continue
+		}
+		for _, l := range f.stmt.lines {
+			if l.ID == m.LineID && l.AccountID == accountID {
+				return true, nil
+			}
 		}
 	}
-	return out, nil
+	return false, nil
 }
 func (f *fakeMatchRepo) Unmatch(id, reason string) error { return nil }
 
@@ -67,7 +79,8 @@ func reconcileFixture(t *testing.T) (*fakeStatementRepo, *fakeTransactionRepo, *
 	accounts := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
 		"acc": {ID: "acc", ProfileID: "p1", Name: "Conta", Type: bankaccount.AccountTypeChecking, Currency: "BRL"},
 	}}
-	return &fakeStatementRepo{}, &fakeTransactionRepo{}, &fakeMatchRepo{}, accounts
+	lines := &fakeStatementRepo{}
+	return lines, &fakeTransactionRepo{}, &fakeMatchRepo{stmt: lines}, accounts
 }
 
 // One line, one entry of the same value on the same account, a couple of days apart:
@@ -222,7 +235,8 @@ func cardFixture(t *testing.T) (*fakeStatementRepo, *fakeTransactionRepo, *fakeM
 	accounts := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
 		"card": {ID: "card", ProfileID: "p1", Name: "Cartao", Type: bankaccount.AccountTypeCreditCard, Currency: "BRL"},
 	}}
-	return &fakeStatementRepo{}, &fakeTransactionRepo{}, &fakeMatchRepo{}, accounts
+	lines := &fakeStatementRepo{}
+	return lines, &fakeTransactionRepo{}, &fakeMatchRepo{stmt: lines}, accounts
 }
 
 // A card statement speaks in debt and the ledger speaks in money. A purchase leaves,
@@ -355,11 +369,11 @@ type failingMatchRepo struct {
 	failByLine        bool
 }
 
-func (f *failingMatchRepo) ByTransaction(id string) ([]*statement.Match, error) {
+func (f *failingMatchRepo) ClaimedOnAccount(id, accountID string) (bool, error) {
 	if f.failByTransaction {
-		return nil, errors.New("database unavailable")
+		return false, errors.New("database unavailable")
 	}
-	return f.fakeMatchRepo.ByTransaction(id)
+	return f.fakeMatchRepo.ClaimedOnAccount(id, accountID)
 }
 
 func (f *failingMatchRepo) ByLine(id string) ([]*statement.Match, error) {
@@ -400,5 +414,102 @@ func TestReconcile_AFailureReadingTheLinesMatchesAlsoStops(t *testing.T) {
 
 	if _, err := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc"); err == nil {
 		t.Fatal("not knowing whether the line was already reconciled is not the same as it not being")
+	}
+}
+
+// The payment of a card bill must reconcile on BOTH statements.
+//
+// It is one row: the checking account is the origin and the card is the destination,
+// so it appears on the bank's statement for each. Claiming it globally means whichever
+// account is reconciled first wins and the other reports money missing that is not —
+// the exact phantom this code exists to prevent, and order-dependent, so the same data
+// gives different answers depending on the order of the calls.
+func TestReconcile_APaymentReconcilesOnBothStatements(t *testing.T) {
+	accounts := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		"corrente": {ID: "corrente", ProfileID: "p1", Name: "Conta", Type: bankaccount.AccountTypeChecking, Currency: "BRL"},
+		"cartao":   {ID: "cartao", ProfileID: "p1", Name: "Cartao", Type: bankaccount.AccountTypeCreditCard, Currency: "BRL"},
+	}}
+	lines := &fakeStatementRepo{}
+	txns := &fakeTransactionRepo{}
+	matches := &fakeMatchRepo{stmt: lines}
+
+	// The bank shows it on both: leaving the checking account, arriving on the card.
+	saida := statementLine(t, "saida", "corrente", -101818, 3)
+	entrada := statementLine(t, "entrada", "cartao", 101818, 3)
+	lines.lines = []*statement.Line{saida, entrada}
+
+	txns.created = []*transaction.Transaction{{
+		ID: "pay1", ProfileID: "p1", BankAccountID: "corrente",
+		DestinationAccountID: strPtr("cartao"),
+		Type:                 transaction.TypeTransfer, Status: transaction.StatusConfirmed,
+		Amount: 1018.18, Currency: "BRL", Description: "Pagamento fatura",
+		OccurredOn: time.Date(2026, time.September, 3, 0, 0, 0, 0, time.UTC),
+	}}
+
+	uc := NewReconcileStatementUseCase(lines, txns, matches, accounts)
+
+	corrente, err := uc.Execute("corrente")
+	if err != nil {
+		t.Fatalf("corrente: %v", err)
+	}
+	cartao, err := uc.Execute("cartao")
+	if err != nil {
+		t.Fatalf("cartao: %v", err)
+	}
+
+	if corrente.Matched != 1 || len(corrente.Missing) != 0 {
+		t.Errorf("checking side: %+v", corrente)
+	}
+	if cartao.Matched != 1 || len(cartao.Missing) != 0 {
+		t.Fatalf("card side reported money missing that is not: %+v", cartao)
+	}
+}
+
+// The same entry must still not be claimed twice on the SAME account: two lines of the
+// same value there are two charges, and letting both point at one entry makes the
+// second silently look accounted for.
+func TestReconcile_TheSameEntryIsStillClaimedOncePerAccount(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	lines.lines = []*statement.Line{
+		statementLine(t, "a", "acc", -4000, 5),
+		statementLine(t, "b", "acc", -4000, 6),
+	}
+	txns.created = []*transaction.Transaction{systemCharge("tx1", "acc", 40, 5)}
+
+	uc := NewReconcileStatementUseCase(lines, txns, matches, accounts)
+	uc.Execute("acc")
+	out, _ := uc.Execute("acc")
+
+	if out.Matched != 0 {
+		t.Errorf("the second run has nothing to match: %+v", out)
+	}
+	if len(matches.matches) != 1 {
+		t.Errorf("the entry was claimed %d times", len(matches.matches))
+	}
+}
+
+// One forecast cannot settle two real charges. Proposing it for both says "just
+// confirm this" twice, and confirming once makes the other charge vanish from the
+// report — the hole then appears a day later with nothing pointing at why.
+func TestReconcile_AForecastIsProposedForOneLineOnly(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	lines.lines = []*statement.Line{
+		statementLine(t, "a", "acc", -50000, 5),
+		statementLine(t, "b", "acc", -50000, 6),
+	}
+	txns.created = []*transaction.Transaction{{
+		ID: "previsto", ProfileID: "p1", BankAccountID: "acc",
+		Type: transaction.TypeExpense, Status: transaction.StatusPlanned,
+		Amount: 500, Currency: "BRL", Description: "previsto",
+		OccurredOn: time.Date(2026, time.September, 5, 0, 0, 0, 0, time.UTC),
+	}}
+
+	out, _ := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc")
+
+	if len(out.ReadyToConfirm) != 1 {
+		t.Fatalf("one forecast settles one charge: %+v", out.ReadyToConfirm)
+	}
+	if len(out.Missing) != 1 {
+		t.Fatalf("and the other charge is genuinely missing: %+v", out.Missing)
 	}
 }

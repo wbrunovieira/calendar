@@ -22,7 +22,9 @@ const dateTolerance = 2
 type Matches interface {
 	Create(m *statement.Match) error
 	ByLine(lineID string) ([]*statement.Match, error)
-	ByTransaction(transactionID string) ([]*statement.Match, error)
+	// ClaimedOnAccount is scoped to one account on purpose: a transfer is a single row
+	// that appears on two statements, so it must be claimable once on each.
+	ClaimedOnAccount(transactionID, accountID string) (bool, error)
 }
 
 // MissingLine is a charge the bank made and the system does not have. It is the point
@@ -162,6 +164,11 @@ func (uc *ReconcileStatementUseCase) Execute(accountID string) (*ReconcileStatem
 					LineID: line.ID, TransactionID: planned[0].ID, BookedDate: line.BookedDate,
 					AmountMinor: line.InAccountCurrency(), Description: line.Description,
 				})
+				// One forecast settles one charge. Without this, two lines of the same
+				// value both get told "just confirm this one", and confirming once
+				// makes the other charge vanish from the report — the hole then shows
+				// up a day later with nothing pointing at why.
+				claimed[planned[0].ID] = true
 				continue
 			}
 		}
@@ -237,7 +244,7 @@ func (uc *ReconcileStatementUseCase) candidatesFor(
 		if abs64(int64(daysBetween(txn.OccurredOn, line.BookedDate))) > dateTolerance {
 			continue
 		}
-		taken, err := uc.spokenFor(txn.ID)
+		taken, err := uc.spokenFor(txn.ID, account.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -249,23 +256,24 @@ func (uc *ReconcileStatementUseCase) candidatesFor(
 	return out, nil
 }
 
-// spokenFor answers whether another line already claims this entry — or refuses to.
+// spokenFor answers whether another line OF THIS ACCOUNT already claims this entry —
+// or refuses to answer.
 //
 // The unique index covers the PAIR (line, transaction), so it stops one line claiming
 // one entry twice and does nothing about two lines claiming the same entry. This check
 // is the only thing standing between a database hiccup and a second bank charge that
 // silently looks accounted for.
-func (uc *ReconcileStatementUseCase) spokenFor(transactionID string) (bool, error) {
-	live, err := uc.matches.ByTransaction(transactionID)
+//
+// The account scope is not a detail: a transfer between the owner's own accounts is a
+// single row that the bank prints on both statements, so a global claim made the two
+// sides fight over it.
+func (uc *ReconcileStatementUseCase) spokenFor(transactionID, accountID string) (bool, error) {
+	taken, err := uc.matches.ClaimedOnAccount(transactionID, accountID)
 	if err != nil {
-		return false, fmt.Errorf("checking whether entry %s is already claimed: %w", transactionID, err)
+		return false, fmt.Errorf("checking whether entry %s is already claimed on account %s: %w",
+			transactionID, accountID, err)
 	}
-	for _, m := range live {
-		if m.UnmatchedAt == nil {
-			return true, nil
-		}
-	}
-	return false, nil
+	return taken, nil
 }
 
 // signedMinorFor puts an entry in the same convention the statement lines use: money

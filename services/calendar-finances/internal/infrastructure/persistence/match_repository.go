@@ -54,6 +54,27 @@ func (r *MatchRepository) ByTransaction(transactionID string) ([]*statement.Matc
 	return r.query(`WHERE transaction_id = $1 ORDER BY matched_at`, transactionID)
 }
 
+// ClaimedOnAccount reports whether a LIVE match already links this entry to a line of
+// THIS account.
+//
+// Scoped on purpose. One transfer is a single row that appears on two statements — it
+// leaves the checking account and arrives on the card — so it must be claimable once
+// on each. Asking globally made whichever account reconciled first win, and the other
+// report money missing that was not: a phantom, and an order-dependent one.
+func (r *MatchRepository) ClaimedOnAccount(transactionID, accountID string) (bool, error) {
+	var exists bool
+	err := r.db.QueryRow(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM finance.reconciliation_matches m
+			JOIN finance.bank_statement_lines l ON l.id = m.line_id
+			WHERE m.transaction_id = $1
+			  AND l.account_id = $2
+			  AND m.unmatched_at IS NULL
+		)`, transactionID, accountID).Scan(&exists)
+	return exists, err
+}
+
 func (r *MatchRepository) query(clause string, args ...any) ([]*statement.Match, error) {
 	rows, err := r.db.Query(`
 		SELECT id, line_id, transaction_id, amount_minor, method, score,
