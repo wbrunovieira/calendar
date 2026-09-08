@@ -77,6 +77,14 @@ func (uc *SellPositionUseCase) Execute(accountID string, input SellPositionInput
 		return nil, ErrAccountNotLinked
 	}
 
+	// Checked BEFORE anything is mutated: SellQuotas decrements the position, and a
+	// refusal has to leave it exactly as it was. The proceeds land in the cash account,
+	// so they must be denominated there — a position priced in another currency would
+	// credit it at face value, off by the exchange rate.
+	if !strings.EqualFold(strings.TrimSpace(position.Currency), strings.TrimSpace(cashAccount.Currency)) {
+		return nil, ErrCurrencyMismatch
+	}
+
 	proceeds, err := position.SellQuotas(input.Quantity, input.UnitPrice)
 	if err != nil {
 		return nil, err

@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"os"
+	"sort"
 	"testing"
 	"time"
 
@@ -13,6 +14,11 @@ type fakeStatementRepo struct {
 	inserted int
 	updated  int
 	err      error
+	// updates records what was persisted. A no-op Update made "the line's status was
+	// saved" unprovable, and the reconciler duly never saved it.
+	updates   []*statement.Line
+	updateErr error
+	listErr   error
 }
 
 func (f *fakeStatementRepo) UpsertMany(lines []*statement.Line) (int, int, error) {
@@ -44,10 +50,67 @@ func (f *fakeStatementRepo) FindByExternalID(accountID string, provider statemen
 	}
 	return nil, nil
 }
-func (f *fakeStatementRepo) List(statement.ListFilter) ([]*statement.Line, error) {
-	return f.lines, nil
+
+// Honours the filter, because the two clauses the reconciler's safety rests on —
+// AccountID and Status — were both discarded here. No unit test could express a
+// two-account scenario, which is why a defect reporting one account's money as missing
+// from another went unseen.
+func (f *fakeStatementRepo) List(filter statement.ListFilter) ([]*statement.Line, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	out := []*statement.Line{}
+	for _, l := range f.lines {
+		if filter.AccountID != "" && l.AccountID != filter.AccountID {
+			continue
+		}
+		if filter.Status != nil && l.Status != *filter.Status {
+			continue
+		}
+		if filter.Provider != nil && l.Provider != *filter.Provider {
+			continue
+		}
+		if filter.ExternalID != nil && l.ExternalID != *filter.ExternalID {
+			continue
+		}
+		if filter.From != nil && l.BookedDate.Before(*filter.From) {
+			continue
+		}
+		if filter.To != nil && l.BookedDate.After(*filter.To) {
+			continue
+		}
+		out = append(out, l)
+	}
+	// The real query is ORDER BY booked_date, external_id. Insertion order let a test
+	// agree with a reconciler that would pick differently in production, on exactly
+	// the case — two charges of the same value — where the choice matters.
+	sort.SliceStable(out, func(i, j int) bool {
+		if !out[i].BookedDate.Equal(out[j].BookedDate) {
+			return out[i].BookedDate.Before(out[j].BookedDate)
+		}
+		return out[i].ExternalID < out[j].ExternalID
+	})
+	return out, nil
 }
-func (f *fakeStatementRepo) Update(*statement.Line) error { return nil }
+
+// Update records a SNAPSHOT, and writes only the two columns the real UPDATE writes.
+// Keeping the caller's pointer meant a later in-memory change rewrote history: an
+// assertion on a stored update read whatever the code did to the object afterwards,
+// so deleting the persist call entirely still passed.
+func (f *fakeStatementRepo) Update(l *statement.Line) error {
+	if f.updateErr != nil {
+		return f.updateErr
+	}
+	stored := *l
+	f.updates = append(f.updates, &stored)
+	for _, existing := range f.lines {
+		if existing.ID == l.ID {
+			existing.Status = l.Status
+			existing.IgnoredReason = l.IgnoredReason
+		}
+	}
+	return nil
+}
 
 func pluggyPayload(t *testing.T) []byte {
 	t.Helper()

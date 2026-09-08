@@ -2,11 +2,13 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/brunovieira/calendar-finances/internal/application/usecases"
+	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
 	"github.com/gorilla/mux"
 )
 
@@ -258,6 +260,14 @@ func (h *BankAccountHandlers) ApplyBalanceAdjustment(w http.ResponseWriter, r *h
 	if err != nil {
 		if err == usecases.ErrBankAccountNotFound {
 			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		// A write that changed no rows is this service failing, not a bad request.
+		// Falling through to 400 here told the caller to stop retrying an adjustment
+		// that never landed — the same defect the shared error value caused on the
+		// transaction routes, surviving on this one.
+		if errors.Is(err, bankaccount.ErrWriteAffectedNoRows) {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		// A missing reason or actor is a client error, not a server one: the message

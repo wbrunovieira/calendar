@@ -125,6 +125,11 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		return nil, ErrBankAccountMismatch
 	}
 
+	currency, err := resolveCurrency(input.Currency, account)
+	if err != nil {
+		return nil, err
+	}
+
 	typeValue, err := parseTransactionType(input.Type)
 	if err != nil {
 		return nil, err
@@ -144,6 +149,14 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		}
 		if destinationAccount.ID == account.ID {
 			return nil, ErrInvalidInput
+		}
+		// One row, one Amount — so both ends must speak the same currency. Wise is
+		// three accounts in ONE profile, so this is not a cross-profile concern: a
+		// BRL→EUR move credited the euro account with the reais figure, off by the
+		// exchange rate and plausible-looking. A conversion is an expense and an income
+		// at the rate the bank actually used, and this service does not know that rate.
+		if !strings.EqualFold(strings.TrimSpace(account.Currency), strings.TrimSpace(destinationAccount.Currency)) {
+			return nil, ErrCurrencyMismatch
 		}
 		isCrossProfile = destinationAccount.ProfileID != input.ProfileID
 		if isCrossProfile {
@@ -285,7 +298,7 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		InvoiceID:               invoiceID,
 		Type:                    effectiveType,
 		Amount:                  input.Amount,
-		Currency:                input.Currency,
+		Currency:                currency,
 		Description:             input.Description,
 		Notes:                   input.Notes,
 		CostCenter:              input.CostCenter,
@@ -321,13 +334,20 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 
 	// Cross-profile transfer: create paired INCOME transaction in destination profile
 	if isCrossProfile {
+		// One Amount cannot be both currencies. A real conversion is an EXPENSE and an
+		// INCOME at the rate the bank actually used, not a transfer — modelling it as
+		// one would credit the destination with a number that means nothing there.
+		destinationCurrency, err := resolveCurrency(currency, destinationAccount)
+		if err != nil {
+			return nil, err
+		}
 		destParams := transaction.CreateParams{
 			ProfileID:     destinationAccount.ProfileID,
 			BankAccountID: destinationAccount.ID,
 			CategoryID:    input.DestinationCategoryID,
 			Type:          transaction.TypeIncome,
 			Amount:        input.Amount,
-			Currency:      input.Currency,
+			Currency:      destinationCurrency,
 			Description:   input.Description,
 			Notes:         input.Notes,
 			OccurredOn:    occurredOn,
@@ -553,6 +573,26 @@ func isHistoricalDate(date time.Time) bool {
 // createInstallments creates multiple transactions for installment purchases.
 // Total amount is divided equally across installments, with any remainder
 // added to the first installment. Each installment is placed one month apart.
+// resolveCurrency answers what currency a row on this account is in.
+//
+// The account decides. Left empty it used to default to BRL wherever the money
+// actually sat, so a charge on the Wise EUR account was stored as reais and every
+// total and reconciliation on it was wrong by the exchange rate, invisibly — the same
+// shape as the five dollar charges that once entered this ledger as reais and cost
+// R$ 1.117,03 to unwind. An explicit disagreement is refused rather than converted:
+// this service does not know the rate the bank used.
+func resolveCurrency(requested string, account *bankaccount.BankAccount) (string, error) {
+	currency := strings.ToUpper(strings.TrimSpace(requested))
+	accountCurrency := strings.ToUpper(strings.TrimSpace(account.Currency))
+	switch {
+	case currency == "":
+		return accountCurrency, nil
+	case accountCurrency != "" && currency != accountCurrency:
+		return "", ErrCurrencyMismatch
+	}
+	return currency, nil
+}
+
 func (uc *CreateTransactionUseCase) createInstallments(
 	input CreateTransactionInput,
 	account *bankaccount.BankAccount,
@@ -637,6 +677,11 @@ func (uc *CreateTransactionUseCase) writeInstallments(
 	txnStatus transaction.Status,
 	firstTxn **transaction.Transaction,
 ) error {
+	currency, err := resolveCurrency(input.Currency, account)
+	if err != nil {
+		return err
+	}
+
 	effectiveType := typeValue
 
 	for i := 1; i <= total; i++ {
@@ -690,7 +735,7 @@ func (uc *CreateTransactionUseCase) writeInstallments(
 			InvoiceID:               invoiceID,
 			Type:                    effectiveType,
 			Amount:                  amount,
-			Currency:                input.Currency,
+			Currency:                currency,
 			Description:             description,
 			Notes:                   input.Notes,
 			CostCenter:              input.CostCenter,

@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"errors"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -68,7 +69,11 @@ func (f *fakeAccountRepo) FindByID(id string) (*bankaccount.BankAccount, error) 
 	if acc, ok := f.accounts[id]; ok {
 		return acc, nil
 	}
-	return nil, errors.New("not found")
+	// The repository's own value, not a look-alike. Returning a different error with
+	// the same text is what made errors.Is false everywhere and let a missing account
+	// travel as "the service failed" — the exact fiction this branch already fixed
+	// once, still alive in the fake that stands in for the fixed code.
+	return nil, bankaccount.ErrNotFound
 }
 
 type fakeCategoryRepo struct {
@@ -108,7 +113,8 @@ func (f *fakeCategoryRepo) GetDescendantIDs(id string) ([]string, error) {
 func strPtr(s string) *string { return &s }
 
 type fakeTransactionRepo struct {
-	created []*transaction.Transaction
+	created    []*transaction.Transaction
+	getByIDErr error
 }
 
 func (f *fakeTransactionRepo) Create(tx *transaction.Transaction) error {
@@ -117,16 +123,62 @@ func (f *fakeTransactionRepo) Create(tx *transaction.Transaction) error {
 }
 
 func (f *fakeTransactionRepo) GetByID(id string) (*transaction.Transaction, error) {
+	if f.getByIDErr != nil {
+		return nil, f.getByIDErr
+	}
 	for _, tx := range f.created {
 		if tx.ID == id {
 			return tx, nil
 		}
 	}
-	return nil, errors.New("not found")
+	// The repository's own signal. A look-alike error made "it was deleted"
+	// indistinguishable from "the database is down", which are opposite answers.
+	return nil, transaction.ErrNotFound
 }
 
+// List HONOURS the filter, because a fake that ignores it lies about the only thing
+// the caller is relying on.
+//
+// It returned everything for a long time, and that is how a reconciler shipped asking
+// for one account's entries while the real repository would have answered with a
+// narrower set: the payment leg of a card bill lives on the CHECKING account and only
+// points at the card, so it never appeared. The test passed anyway. That was the fifth
+// time in this codebase that a fake diverging from production hid a real defect.
 func (f *fakeTransactionRepo) List(filter transaction.ListFilter) ([]*transaction.Transaction, error) {
-	return f.created, nil
+	// The real List refuses an empty profile rather than returning every profile's
+	// entries. A fake that answers anyway lets a caller drop the profile filter and
+	// still pass — with another profile's money in the candidate set.
+	if strings.TrimSpace(filter.ProfileID) == "" {
+		return nil, errors.New("profileID is required")
+	}
+	out := []*transaction.Transaction{}
+	for _, tx := range f.created {
+		if tx.ProfileID != filter.ProfileID {
+			continue
+		}
+		if filter.BankAccountID != nil && *filter.BankAccountID != "" {
+			onAccount := tx.BankAccountID == *filter.BankAccountID
+			asDestination := filter.IncludeAsDestination &&
+				tx.DestinationAccountID != nil && *tx.DestinationAccountID == *filter.BankAccountID
+			if !onAccount && !asDestination {
+				continue
+			}
+		}
+		if !filter.IncludeReversed && tx.Status == transaction.StatusReversed {
+			continue
+		}
+		if filter.Status != nil && tx.Status != *filter.Status {
+			continue
+		}
+		out = append(out, tx)
+	}
+	// The real query is ORDER BY occurred_on DESC, created_at DESC. Order decides which
+	// candidate is named first when a line has several, and a fake in insertion order
+	// agrees with a reconciler that would answer differently in production.
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].OccurredOn.After(out[j].OccurredOn)
+	})
+	return out, nil
 }
 
 func (f *fakeTransactionRepo) Update(tx *transaction.Transaction) error {

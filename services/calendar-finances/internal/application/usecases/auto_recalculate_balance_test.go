@@ -1,6 +1,7 @@
 package usecases
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -585,5 +586,152 @@ func TestDeleteTransaction_ConfirmedTransfer_RecalculatesBothAccounts(t *testing
 	}
 	if !recalc.calledWith(testDest) {
 		t.Errorf("expected recalculate for destination %s, calls=%v", testDest, recalc.calls)
+	}
+}
+
+// An account holds one currency — Wise is three separate accounts for exactly that
+// reason. A row booked in another one is not a rate problem: R$ 107,54 and US$ 107,54
+// are indistinguishable in every total and every reconciliation, and five dollar
+// charges once entered this ledger as reais and cost R$ 1.117,03 to unwind. The empty
+// case is the dangerous one, because the default was BRL wherever the money sat.
+func TestCreateTransaction_TheCurrencyIsTheAccountsOrItIsRefused(t *testing.T) {
+	euro := checkingAccount(testProfile, testAccount, 0)
+	euro.Currency = "EUR"
+	base := CreateTransactionInput{
+		ProfileID: testProfile, BankAccountID: testAccount, CategoryID: confirmedStr(testCat),
+		Type: "EXPENSE", Amount: 40, Description: "Assinatura",
+		OccurredOn: time.Now().Format("2006-01-02"),
+	}
+
+	t.Run("an empty currency takes the account's, not BRL", func(t *testing.T) {
+		uc := baseCreateUC(map[string]*bankaccount.BankAccount{testAccount: euro}, &trackingRecalculator{})
+		input := base
+		input.Currency = ""
+		out, err := uc.Execute(input)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if out.Currency != "EUR" {
+			t.Errorf("stored as %s on a EUR account", out.Currency)
+		}
+	})
+
+	t.Run("a different currency is refused", func(t *testing.T) {
+		uc := baseCreateUC(map[string]*bankaccount.BankAccount{testAccount: euro}, &trackingRecalculator{})
+		input := base
+		input.Currency = "BRL"
+		if _, err := uc.Execute(input); !errors.Is(err, ErrCurrencyMismatch) {
+			t.Fatalf("got %v, want ErrCurrencyMismatch", err)
+		}
+	})
+}
+
+// Three currency defaults, three chances to write BRL onto an account that does not
+// hold reais. The main path is covered above; these two were not, and with
+// transaction.New still defaulting an empty currency to BRL, losing either one
+// silently reinstates the whole defect.
+func TestCreateTransaction_EveryPathTakesTheAccountsCurrency(t *testing.T) {
+	t.Run("each installment", func(t *testing.T) {
+		euro := checkingAccount(testProfile, testAccount, 0)
+		euro.Currency = "EUR"
+		repo := &fakeTransactionRepo{}
+		uc := NewCreateTransactionUseCase(
+			setupProfile(testProfile),
+			&fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{testAccount: euro}},
+			&fakeCategoryRepo{categories: map[string]*category.Category{testCat: expenseCat(testProfile, testCat)}},
+			repo, &fakeInvoiceRepo{}, &trackingRecalculator{}, nil,
+		)
+		total := 3
+		if _, err := uc.Execute(CreateTransactionInput{
+			ProfileID: testProfile, BankAccountID: testAccount, CategoryID: confirmedStr(testCat),
+			Type: "EXPENSE", Amount: 90, Description: "Curso em 3x",
+			OccurredOn: time.Now().Format("2006-01-02"), InstallmentTotal: &total,
+		}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(repo.created) != total {
+			t.Fatalf("expected %d installments, got %d", total, len(repo.created))
+		}
+		for _, tx := range repo.created {
+			if tx.Currency != "EUR" {
+				t.Errorf("installment %d stored as %s", tx.InstallmentNumber, tx.Currency)
+			}
+		}
+	})
+
+	t.Run("the destination leg of a cross-profile transfer", func(t *testing.T) {
+		source := checkingAccount(testProfile, testAccount, 1000)
+		source.Currency = "EUR"
+		dest := checkingAccount("profile-2", testDest, 0)
+		dest.Currency = "EUR"
+		repo := &fakeTransactionRepo{}
+		uc := NewCreateTransactionUseCase(
+			setupProfile(testProfile),
+			&fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{testAccount: source, testDest: dest}},
+			&fakeCategoryRepo{categories: map[string]*category.Category{
+				testCat:    expenseCat(testProfile, testCat),
+				testCatInc: incomeCat("profile-2", testCatInc),
+			}},
+			repo, &fakeInvoiceRepo{}, &trackingRecalculator{}, nil,
+		)
+		if _, err := uc.Execute(CreateTransactionInput{
+			ProfileID: testProfile, BankAccountID: testAccount, DestinationAccountID: confirmedStr(testDest),
+			CategoryID: confirmedStr(testCat), DestinationCategoryID: confirmedStr(testCatInc),
+			Type: "TRANSFER", Amount: 100, Description: "Aporte",
+			OccurredOn: time.Now().Format("2006-01-02"),
+		}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(repo.created) != 2 {
+			t.Fatalf("a cross-profile transfer is two rows, got %d", len(repo.created))
+		}
+		for _, tx := range repo.created {
+			if tx.Currency != "EUR" {
+				t.Errorf("leg on %s stored as %s", tx.BankAccountID, tx.Currency)
+			}
+		}
+	})
+}
+
+// A same-profile transfer is ONE row with ONE amount, and Wise is three accounts in
+// one profile. Moving 1.000 from the BRL account to the EUR one credited the euro
+// account with a flat 1.000 — off by the exchange rate, in the direction that looks
+// plausible. There is no honest single row for a conversion: it is an expense and an
+// income at the rate the bank actually used, and this service does not know that rate.
+func TestCreateTransaction_ATransferCannotCrossCurrencies(t *testing.T) {
+	reais := checkingAccount(testProfile, testAccount, 5000)
+	euros := checkingAccount(testProfile, testDest, 0)
+	euros.Currency = "EUR"
+	uc := NewCreateTransactionUseCase(
+		setupProfile(testProfile),
+		&fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{testAccount: reais, testDest: euros}},
+		&fakeCategoryRepo{categories: map[string]*category.Category{testCat: expenseCat(testProfile, testCat)}},
+		&fakeTransactionRepo{}, &fakeInvoiceRepo{}, &trackingRecalculator{}, nil,
+	)
+
+	_, err := uc.Execute(CreateTransactionInput{
+		ProfileID: testProfile, BankAccountID: testAccount, DestinationAccountID: confirmedStr(testDest),
+		Type: "TRANSFER", Amount: 1000, Currency: "BRL", Description: "Wise BRL -> EUR",
+		OccurredOn: time.Now().Format("2006-01-02"),
+	})
+	if !errors.Is(err, ErrCurrencyMismatch) {
+		t.Fatalf("got %v, want ErrCurrencyMismatch", err)
+	}
+}
+
+// The Binance sync builds its rows by hand, so neither the use case nor the domain
+// ever sees them. A USDT pair would put a USDT amount on the BRL exchange account,
+// summed into the balance at face value.
+func TestQuoteMatchesAccount_ARowIsNeverWrittenInAnotherCurrency(t *testing.T) {
+	exchange := &bankaccount.BankAccount{ID: "binance", Name: "Binance", Currency: "BRL"}
+
+	if err := quoteMatchesAccount("BRL", exchange); err != nil {
+		t.Fatalf("a BRL pair on a BRL account: %v", err)
+	}
+	if err := quoteMatchesAccount("brl", exchange); err != nil {
+		t.Errorf("the comparison must not care about case: %v", err)
+	}
+	if err := quoteMatchesAccount("USDT", exchange); !errors.Is(err, ErrCurrencyMismatch) {
+		t.Fatalf("a USDT pair was accepted onto a BRL account: %v", err)
 	}
 }

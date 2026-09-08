@@ -169,10 +169,31 @@ func (uc *SyncTradesUseCase) Execute(profileID string) (*SyncTradesResult, error
 	return result, nil
 }
 
+// quoteMatchesAccount refuses to write a trade priced in a currency the account does
+// not hold.
+//
+// These rows are built and stored directly, so nothing else checks. A USDT pair would
+// write a USDT amount onto the BRL exchange account, where it is summed into the
+// balance at face value — off by the exchange rate, and invisible in every total that
+// looks right. Labelling it BRL instead would be the same lie with better manners. The
+// caller logs and skips the trade, so the ledger says nothing rather than something
+// false, and the fix is to model the account the way Wise is modelled: one per
+// currency.
+func quoteMatchesAccount(quote string, exchange *bankaccount.BankAccount) error {
+	if strings.EqualFold(strings.TrimSpace(quote), strings.TrimSpace(exchange.Currency)) {
+		return nil
+	}
+	return fmt.Errorf("%w: trade priced in %s on the %s account %q",
+		ErrCurrencyMismatch, quote, exchange.Currency, exchange.Name)
+}
+
 func (uc *SyncTradesUseCase) recordBuy(
 	profileID string, exchange *bankaccount.BankAccount, subAccount *bankaccount.BankAccount,
 	asset, quote, externalID string, qty, price, total float64, occurredOn time.Time, strategy string,
 ) error {
+	if err := quoteMatchesAccount(quote, exchange); err != nil {
+		return err
+	}
 	// Create EXPENSE transaction on exchange account
 	tx := &transaction.Transaction{
 		ProfileID:     profileID,
@@ -238,6 +259,9 @@ func (uc *SyncTradesUseCase) recordSell(
 	profileID string, exchange *bankaccount.BankAccount, subAccount *bankaccount.BankAccount,
 	asset, quote, externalID string, qty, price, total float64, occurredOn time.Time, strategy string,
 ) error {
+	if err := quoteMatchesAccount(quote, exchange); err != nil {
+		return err
+	}
 	// Create INCOME transaction on exchange account
 	tx := &transaction.Transaction{
 		ProfileID:     profileID,

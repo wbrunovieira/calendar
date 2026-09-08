@@ -65,7 +65,7 @@ func (r *BankAccountRepository) FindByID(id string) (*bankaccount.BankAccount, e
 		&account.CreatedAt, &account.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
-		return nil, errors.New("bank account not found")
+		return nil, bankaccount.ErrNotFound
 	}
 	if err != nil {
 		return nil, err
@@ -227,7 +227,7 @@ func (r *BankAccountRepository) Update(account *bankaccount.BankAccount) error {
 		return err
 	}
 	if rowsAffected == 0 {
-		return errors.New("bank account not found")
+		return bankaccount.ErrWriteAffectedNoRows
 	}
 
 	return nil
@@ -245,7 +245,7 @@ func (r *BankAccountRepository) Delete(id string) error {
 		return err
 	}
 	if rowsAffected == 0 {
-		return errors.New("bank account not found")
+		return bankaccount.ErrWriteAffectedNoRows
 	}
 
 	return nil

@@ -4,6 +4,7 @@
 package persistence
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -131,5 +132,46 @@ func TestIntegration_AnAccountCanActuallyBeCreated(t *testing.T) {
 	}
 	if found.ProviderAccountID == nil || *found.ProviderAccountID != providerID {
 		t.Errorf("the mapping must survive creation, got %v", found.ProviderAccountID)
+	}
+}
+
+// A write that changed no rows is not "you asked for an account that does not exist".
+// The distinction decides an HTTP status: a caller that named a bad account should be
+// told 400 and stop, while a balance update that silently touched nothing is this
+// service failing and must surface as 5xx so n8n and the agents retry instead of
+// discarding the work. Sharing one error value between the two told the caller its
+// request was malformed while a transaction row sat written with a balance that never
+// moved.
+func TestIntegration_AWriteThatTouchedNoRowsIsNotAMissingAccount(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+
+	profileID, accountID := uuid.NewString(), uuid.NewString()
+	seedProfileAndAccount(t, db, profileID, accountID)
+	repo := NewBankAccountRepository(db)
+
+	account, err := repo.FindByID(accountID)
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	// The row is gone by the time the write lands — a concurrent delete, or a bug.
+	account.ID = uuid.NewString()
+
+	err = repo.Update(account)
+	if err == nil {
+		t.Fatal("updating a row that is not there reported success")
+	}
+	if errors.Is(err, bankaccount.ErrNotFound) {
+		t.Errorf("a failed write is reported as a missing account, which the handlers map to 400: %v", err)
+	}
+
+	if err := repo.Delete(uuid.NewString()); errors.Is(err, bankaccount.ErrNotFound) {
+		t.Errorf("same for delete: %v", err)
+	}
+
+	// And the read must keep answering "not found", because that one really is the
+	// caller naming something that does not exist.
+	if _, err := repo.FindByID(uuid.NewString()); !errors.Is(err, bankaccount.ErrNotFound) {
+		t.Errorf("FindByID on an unknown id: got %v, want ErrNotFound", err)
 	}
 }

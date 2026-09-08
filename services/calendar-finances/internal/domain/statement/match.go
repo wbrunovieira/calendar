@@ -39,7 +39,11 @@ const (
 	UnmatchManual              = "MANUAL"
 	UnmatchTransactionReversed = "TRANSACTION_REVERSED"
 	UnmatchBankSideChanged     = "BANK_SIDE_CHANGED"
-	UnmatchWrongMatch          = "WRONG_MATCH"
+	// UnmatchLedgerSideChanged covers the entry moving out from under the match
+	// without being reversed: corrected to another account, another amount, another
+	// date. The match was a claim about all three, so all three have to be re-asked.
+	UnmatchLedgerSideChanged = "LEDGER_SIDE_CHANGED"
+	UnmatchWrongMatch        = "WRONG_MATCH"
 )
 
 // ErrAlreadyUndone means the match was undone before. The first reason stands.
@@ -66,6 +70,17 @@ type Match struct {
 	UnmatchedAt     *time.Time `json:"unmatchedAt,omitempty"`
 	UnmatchedReason *string    `json:"unmatchedReason,omitempty"`
 }
+
+// ErrAlreadyClaimedOnAccount is what the database says when another run claimed this
+// entry on this account first. It is a race, not corruption: the other run's match
+// stands and covers the line, so the loser has nothing to report and nothing to fix.
+var ErrAlreadyClaimedOnAccount = errors.New("this entry is already claimed on this account")
+
+// ErrLineAlreadyMatched is the OTHER race, and it means the opposite thing. Here the
+// winner matched this same line to this same entry, so the line is covered and there
+// is nothing left to do. Collapsing the two into one answer loses the difference
+// between "somebody else did your work" and "the entry you wanted is gone".
+var ErrLineAlreadyMatched = errors.New("this line is already matched to this entry")
 
 func NewMatch(lineID, transactionID string, amountMinor int64, method Method, by string) (*Match, error) {
 	if strings.TrimSpace(lineID) == "" {

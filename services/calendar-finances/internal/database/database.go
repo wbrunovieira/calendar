@@ -941,5 +941,43 @@ func migrations() []string {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_balance_checkpoints_account_month
 			ON finance.balance_checkpoints (account_id, reference_month DESC)`,
+
+		// The reconciler asks "is this entry already claimed on THIS account?" and then
+		// writes. Between the two, a concurrent run — the morning cron overlapping a
+		// manual POST — asks the same question, gets the same answer, and both write.
+		// uq_matches_live_pair does not stop it: it covers (line, transaction), and a
+		// double claim uses two different lines. The second real bank charge then looks
+		// accounted for by an entry that already answered for the first.
+		//
+		// The account is denormalised onto the match so the database itself can refuse
+		// it. It is not a second source of truth: the INSERT reads it from the line, so
+		// no caller supplies it and it cannot disagree with the line it came from.
+		`ALTER TABLE finance.reconciliation_matches ADD COLUMN IF NOT EXISTS account_id UUID`,
+		`UPDATE finance.reconciliation_matches m
+			SET account_id = l.account_id
+			FROM finance.bank_statement_lines l
+			WHERE l.id = m.line_id AND m.account_id IS NULL`,
+		`ALTER TABLE finance.reconciliation_matches ALTER COLUMN account_id SET NOT NULL`,
+		// Any double claim already recorded has to be resolved before the index can
+		// exist, and a migration that fails on data fails at the worst possible time.
+		// The EARLIEST claim is kept, because it is the one everything since has been
+		// read against; the later ones are undone with their reason, not deleted, so
+		// whoever reconciles next can see it happened.
+		`UPDATE finance.reconciliation_matches m
+			SET unmatched_at = NOW(), unmatched_reason = 'DUPLICATE_LIVE_CLAIM'
+			WHERE m.unmatched_at IS NULL
+			  AND EXISTS (
+				SELECT 1 FROM finance.reconciliation_matches earlier
+				WHERE earlier.transaction_id = m.transaction_id
+				  AND earlier.account_id = m.account_id
+				  AND earlier.unmatched_at IS NULL
+				  AND (earlier.matched_at, earlier.id) < (m.matched_at, m.id)
+			  )`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_matches_live_txn_account
+			ON finance.reconciliation_matches(transaction_id, account_id) WHERE unmatched_at IS NULL`,
+		// Every other index here is partial on unmatched_at IS NULL, and revalidation
+		// reads the UNDONE rows too — so none of them applied and each line cost a
+		// sequential scan of the whole table, every run.
+		`CREATE INDEX IF NOT EXISTS idx_matches_line_all ON finance.reconciliation_matches(line_id)`,
 	}
 }

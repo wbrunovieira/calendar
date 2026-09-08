@@ -1,6 +1,7 @@
 package usecases
 
 import (
+	"errors"
 	"math"
 	"strings"
 	"testing"
@@ -200,4 +201,29 @@ func TestSellPosition_InvalidInput(t *testing.T) {
 // No mapping means nothing, never a guess — the same answer the real repository gives.
 func (r *sellAccountRepo) FindByProviderAccountID(string) (*bankaccount.BankAccount, error) {
 	return nil, nil
+}
+
+// The proceeds are credited to the linked cash account, so they have to be denominated
+// there: a position priced in dollars would credit a BRL account at face value, off by
+// the exchange rate. And the refusal must come BEFORE the sale is applied — a rejected
+// sale that already decremented the quotas destroys the position on the way out.
+func TestSellPosition_ACurrencyMismatchIsRefusedBeforeAnythingMoves(t *testing.T) {
+	pos, cash := linkedPosition(t, 120, 9.84, 182.04)
+	pos.Currency = "USD"
+	before := *pos.NumberOfQuotas
+	accRepo := newSellAccountRepo(pos, cash)
+	txRepo := &FakeTransactionRepository{}
+
+	_, err := NewSellPositionUseCase(accRepo, txRepo).Execute(pos.ID, SellPositionInput{
+		Quantity: 120, UnitPrice: 9.84, OccurredOn: "2026-09-08",
+	})
+	if !errors.Is(err, ErrCurrencyMismatch) {
+		t.Fatalf("got %v, want ErrCurrencyMismatch", err)
+	}
+	if got := *pos.NumberOfQuotas; got != before {
+		t.Errorf("a refused sale still took %v quotas off the position", before-got)
+	}
+	if len(txRepo.transactions) != 0 {
+		t.Errorf("a refused sale wrote %d transactions", len(txRepo.transactions))
+	}
 }

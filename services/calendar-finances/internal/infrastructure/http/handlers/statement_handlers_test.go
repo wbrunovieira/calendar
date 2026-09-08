@@ -48,7 +48,11 @@ func (r *recordingStatementRepo) List(statement.ListFilter) ([]*statement.Line, 
 func (r *recordingStatementRepo) Update(*statement.Line) error { return nil }
 
 func importHandler(accounts *importAccountRepo, lines *recordingStatementRepo) *StatementHandlers {
-	return NewStatementHandlers(accounts, usecases.NewImportStatementUseCase(lines))
+	return NewStatementHandlers(
+		accounts,
+		usecases.NewImportStatementUseCase(lines),
+		usecases.NewReconcileStatementUseCase(lines, nil, nil, accounts),
+	)
 }
 
 func postImport(t *testing.T, h *StatementHandlers, body string) *httptest.ResponseRecorder {

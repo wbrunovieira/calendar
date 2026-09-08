@@ -106,6 +106,7 @@ var wantRoutes = []string{
 	"GET /api/v1/bank-accounts/{id}/invoice-cycles/plan",
 	"POST /api/v1/bank-accounts/{id}/balance-adjustment",
 	"POST /api/v1/statements/import",
+	"POST /api/v1/bank-accounts/{id}/statement/reconcile",
 	"GET /api/v1/invoices",
 	"GET /api/v1/invoices/current",
 	"GET /api/v1/invoices/{id}",
