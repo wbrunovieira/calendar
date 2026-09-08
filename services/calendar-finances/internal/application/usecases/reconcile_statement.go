@@ -172,16 +172,18 @@ func (uc *ReconcileStatementUseCase) Execute(accountID string) (*ReconcileStatem
 		if done {
 			continue
 		}
+		// A line worth nothing has no money to account for. Banks print them, and a
+		// match must cover a positive amount, so trying to build one fails — and that
+		// failure used to abort the run and discard every finding already computed.
+		// Counted nowhere, because `checked` is published and has to add up: a line in
+		// no bucket is a line nobody is told about.
+		if line.InAccountCurrency() == 0 {
+			continue
+		}
 		out.Checked++
 
 		if !line.Matchable() {
 			out.Pending++
-			continue
-		}
-		// A line worth nothing has no money to account for. Banks print them, and a
-		// match must cover a positive amount, so trying to build one fails — and that
-		// failure used to abort the run and discard every finding already computed.
-		if line.InAccountCurrency() == 0 {
 			continue
 		}
 
@@ -254,19 +256,19 @@ func (uc *ReconcileStatementUseCase) classify(
 				return err
 			}
 			if err := uc.matches.Create(match); err != nil {
-				// The winner matched this same line to this same entry: the work is
-				// done, and there is nothing to report.
-				if errors.Is(err, statement.ErrLineAlreadyMatched) {
-					claimed[candidates[0].ID] = true
-					return nil
-				}
 				// The winner took the entry from another line. Ask again without it —
 				// this charge may still have no answer, and that is worth saying.
 				if errors.Is(err, statement.ErrAlreadyClaimedOnAccount) {
 					claimed[candidates[0].ID] = true
 					continue
 				}
-				return err
+				// The winner matched this same line to this same entry: the work is
+				// done. Counted all the same, because the report describes the
+				// statement and not this run's productivity — and a line in no bucket
+				// breaks the arithmetic the body publishes.
+				if !errors.Is(err, statement.ErrLineAlreadyMatched) {
+					return err
+				}
 			}
 			// The line has to say so itself. The match row is the evidence; this is
 			// what lets a later run skip the line without re-deriving the whole
@@ -336,6 +338,22 @@ func (uc *ReconcileStatementUseCase) stillReconciled(
 	// The line's own status is a projection of the matches, so bring it back in step
 	// either way. It drifts when a match is written and this write is not — and a line
 	// stored MATCHED with nothing live behind it is invisible from then on.
+	// A line the bank re-reports as pending cannot be marked matched — its amount and
+	// date still move — so the match has to go instead. Letting the domain's refusal
+	// escape aborted the whole account's run and discarded every finding with it.
+	if standing && !line.Matchable() {
+		for _, m := range matches {
+			if m.UnmatchedAt != nil {
+				continue
+			}
+			if err := uc.matches.Unmatch(m.ID, statement.UnmatchBankSideChanged); err != nil {
+				return false, fmt.Errorf("%w: releasing match %s on line %s: %v",
+					ErrReconcileStorage, m.ID, line.ID, err)
+			}
+		}
+		standing = false
+	}
+
 	want := statement.StatusUnmatched
 	if standing {
 		want = statement.StatusMatched
@@ -426,7 +444,11 @@ func (uc *ReconcileStatementUseCase) staleReason(
 // match refuses a second undo.
 func (uc *ReconcileStatementUseCase) labelForAbsent(transactionID string) (string, error) {
 	found, err := uc.txns.GetByID(transactionID)
-	if err != nil {
+	switch {
+	case errors.Is(err, transactionPkg.ErrNotFound):
+		// Deleted outright. An answer, not a failure.
+		return statement.UnmatchTransactionReversed, nil
+	case err != nil:
 		return "", fmt.Errorf("%w: reading entry %s to say why its match no longer holds: %v",
 			ErrReconcileStorage, transactionID, err)
 	}
@@ -496,14 +518,10 @@ func signedMinorFor(txn *transactionPkg.Transaction, account *bankaccount.BankAc
 	value := toMinor(txn.Amount)
 	leaving := txn.Type == transactionPkg.TypeExpense ||
 		(txn.Type == transactionPkg.TypeTransfer && txn.BankAccountID == account.ID)
-	if account.Type == bankaccount.AccountTypeCreditCard {
-		// On a card an expense increases the debt, which is money leaving the holder.
-		if txn.Type == transactionPkg.TypeIncome ||
-			(txn.Type == transactionPkg.TypeTransfer && txn.DestinationAccountID != nil && *txn.DestinationAccountID == account.ID) {
-			return value
-		}
-		return -value
-	}
+	// Cards need no special case: an expense increases the debt, which IS money leaving
+	// the holder, and a payment arriving reduces it. The branch that used to sit here
+	// returned the same value as this one in all four cases — an explanation of
+	// something that was never happening.
 	if leaving {
 		return -value
 	}

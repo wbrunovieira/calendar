@@ -1060,3 +1060,122 @@ func TestReconcile_LosingToTheSamePairIsWorkAlreadyDone(t *testing.T) {
 		t.Fatalf("the line is reconciled, by the other run: %+v", out)
 	}
 }
+
+// Pluggy rewrites transactions, including back to pending. A line matched while posted
+// that the bank re-reports as PENDING cannot be marked matched — the domain refuses,
+// rightly, because a pending amount still moves. Letting that refusal escape aborted
+// the whole account's run and threw away every finding already computed, including real
+// missing money, on every run from then on.
+func TestReconcile_ALineTheBankPutsBackToPendingDoesNotKillTheRun(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	line := statementLine(t, "a", "acc", -4000, 5)
+	other := statementLine(t, "b", "acc", -5390, 5)
+	lines.lines = []*statement.Line{line, other}
+	txns.created = []*transaction.Transaction{systemCharge("tx1", "acc", 40, 5)}
+
+	uc := NewReconcileStatementUseCase(lines, txns, matches, accounts)
+	if out, _ := uc.Execute("acc"); out.Matched != 1 {
+		t.Fatalf("setup: %+v", out)
+	}
+
+	// The bank re-reports it: still 40,00, still within tolerance, but not settled.
+	line.ProviderStatus = statement.ProviderStatusPending
+	line.MarkUnmatched()
+
+	out, err := uc.Execute("acc")
+	if err != nil {
+		t.Fatalf("one restated line killed the account's run: %v", err)
+	}
+	if out.Pending != 1 {
+		t.Errorf("the line is not settled and must be reported as pending: %+v", out)
+	}
+	// And the other charge, which really has no entry, must still be named.
+	if len(out.Missing) != 1 || out.Missing[0].AmountMinor != -5390 {
+		t.Fatalf("the real finding was discarded: %+v", out)
+	}
+}
+
+// checked is published in the response body, so it has to add up: a line that belongs
+// to no bucket is a line nobody is told about.
+func TestReconcile_EveryLineCheckedLandsInABucket(t *testing.T) {
+	assertAddsUp := func(t *testing.T, out *ReconcileStatementOutput) {
+		t.Helper()
+		total := out.Matched + len(out.Missing) + len(out.Ambiguous) + len(out.ReadyToConfirm) + out.Pending
+		if out.Checked != total {
+			t.Fatalf("checked=%d but the buckets hold %d: %+v", out.Checked, total, out)
+		}
+	}
+
+	t.Run("a line worth nothing", func(t *testing.T) {
+		lines, txns, matches, accounts := reconcileFixture(t)
+		lines.lines = []*statement.Line{
+			statementLine(t, "zero", "acc", 0, 5),
+			statementLine(t, "real", "acc", -5390, 5),
+		}
+		out, _ := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc")
+		assertAddsUp(t, out)
+	})
+
+	t.Run("another run matched this very line first", func(t *testing.T) {
+		lines, txns, matches, accounts := reconcileFixture(t)
+		lines.lines = []*statement.Line{statementLine(t, "a", "acc", -4000, 5)}
+		txns.created = []*transaction.Transaction{systemCharge("tx1", "acc", 40, 5)}
+		matches.createErr = statement.ErrLineAlreadyMatched
+
+		out, _ := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc")
+		assertAddsUp(t, out)
+	})
+}
+
+// A match is only ever written against a confirmed entry. Demoting one back to PLANNED
+// takes its money out of the balance just as a reversal does, so the charge on the line
+// is unaccounted for again.
+func TestReconcile_AnEntryDemotedToPlannedReleasesItsLine(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	lines.lines = []*statement.Line{statementLine(t, "a", "acc", -4000, 5)}
+	charge := systemCharge("tx1", "acc", 40, 5)
+	txns.created = []*transaction.Transaction{charge}
+
+	uc := NewReconcileStatementUseCase(lines, txns, matches, accounts)
+	if out, _ := uc.Execute("acc"); out.Matched != 1 {
+		t.Fatalf("setup: %+v", out)
+	}
+
+	charge.Status = transaction.StatusPlanned
+
+	out, err := uc.Execute("acc")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(out.ReadyToConfirm) != 1 {
+		t.Fatalf("the bank paid it and the ledger only forecasts it now: %+v", out)
+	}
+	if matches.matches[0].UnmatchedAt == nil {
+		t.Error("the match still stands on an entry that no longer counts")
+	}
+}
+
+// Deleting an entry is an ordinary thing to do, and the lookup that names the reason
+// then finds nothing. Treating that as a failed read returns 500 and discards the whole
+// account's findings; treating it as an answer releases the line, which is right — the
+// bank charged it and the ledger no longer has anything for it.
+func TestReconcile_ADeletedEntryReleasesItsLineWithoutFailing(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	lines.lines = []*statement.Line{statementLine(t, "a", "acc", -4000, 5)}
+	txns.created = []*transaction.Transaction{systemCharge("tx1", "acc", 40, 5)}
+
+	uc := NewReconcileStatementUseCase(lines, txns, matches, accounts)
+	if out, _ := uc.Execute("acc"); out.Matched != 1 {
+		t.Fatalf("setup: %+v", out)
+	}
+
+	txns.created = nil // deleted outright
+
+	out, err := uc.Execute("acc")
+	if err != nil {
+		t.Fatalf("a deleted entry is not a read failure: %v", err)
+	}
+	if len(out.Missing) != 1 {
+		t.Fatalf("the charge has nothing to answer for it now: %+v", out)
+	}
+}

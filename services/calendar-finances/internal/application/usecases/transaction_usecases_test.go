@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"errors"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -130,7 +131,9 @@ func (f *fakeTransactionRepo) GetByID(id string) (*transaction.Transaction, erro
 			return tx, nil
 		}
 	}
-	return nil, errors.New("not found")
+	// The repository's own signal. A look-alike error made "it was deleted"
+	// indistinguishable from "the database is down", which are opposite answers.
+	return nil, transaction.ErrNotFound
 }
 
 // List HONOURS the filter, because a fake that ignores it lies about the only thing
@@ -169,6 +172,12 @@ func (f *fakeTransactionRepo) List(filter transaction.ListFilter) ([]*transactio
 		}
 		out = append(out, tx)
 	}
+	// The real query is ORDER BY occurred_on DESC, created_at DESC. Order decides which
+	// candidate is named first when a line has several, and a fake in insertion order
+	// agrees with a reconciler that would answer differently in production.
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].OccurredOn.After(out[j].OccurredOn)
+	})
 	return out, nil
 }
 

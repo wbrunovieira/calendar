@@ -1,6 +1,7 @@
 package usecases
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -332,5 +333,51 @@ func TestUpdateTransaction_EditingAnAlreadyCancelledEntryStillWorks(t *testing.T
 		Amount: 25, Currency: "BRL", Description: "Contabo - VPS", OccurredOn: "2026-09-09",
 	}); err != nil {
 		t.Fatalf("correcting the description of a cancelled entry must work: %v", err)
+	}
+}
+
+// A full-replacement PUT with no currency in the body used to rewrite the row to BRL.
+// On a EUR account that silently multiplies every total by the exchange rate — and now
+// that reconciliation compares currencies, the row stops answering for its own bank
+// line, so a charge that is fully accounted for is reported as missing money.
+func TestUpdateTransaction_OmittingTheCurrencyKeepsTheAccountsOwn(t *testing.T) {
+	const accountID, txID = "acc-eur", "tx-eur"
+	account := &bankaccount.BankAccount{
+		ID: accountID, ProfileID: "p1", Name: "Wise (EUR)",
+		Type: bankaccount.AccountTypeChecking, Currency: "EUR", IsActive: true,
+	}
+	tx := &transaction.Transaction{
+		ID: txID, ProfileID: "p1", BankAccountID: accountID,
+		Type: transaction.TypeExpense, Status: transaction.StatusConfirmed,
+		Amount: 40, Currency: "EUR", Description: "Assinatura",
+		OccurredOn: time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC),
+	}
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{tx}}
+	uc := NewUpdateTransactionUseCase(
+		&fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{accountID: account}},
+		&fakeCategoryRepo{}, txRepo, &fakeInvoiceRepo{}, &noopBalanceRecalculator{},
+	)
+
+	if _, err := uc.Execute(txID, UpdateTransactionInput{
+		BankAccountID: accountID,
+		Type:          "EXPENSE",
+		Amount:        40,
+		Description:   "Assinatura mensal",
+		OccurredOn:    "2026-09-05",
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := txRepo.created[0].Currency; got != "EUR" {
+		t.Errorf("the row was rewritten to %s on a EUR account", got)
+	}
+
+	// And an explicit disagreement is refused rather than converted: this service does
+	// not know the rate the bank used.
+	_, err := uc.Execute(txID, UpdateTransactionInput{
+		BankAccountID: accountID, Type: "EXPENSE", Amount: 40,
+		Currency: "BRL", Description: "Assinatura", OccurredOn: "2026-09-05",
+	})
+	if !errors.Is(err, ErrCurrencyMismatch) {
+		t.Fatalf("got %v, want ErrCurrencyMismatch", err)
 	}
 }

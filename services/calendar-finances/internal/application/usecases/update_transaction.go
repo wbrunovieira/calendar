@@ -183,10 +183,15 @@ func (uc *UpdateTransactionUseCase) Execute(id string, input UpdateTransactionIn
 		return nil, err
 	}
 	existing.Amount = input.Amount
-	existing.Currency = strings.ToUpper(strings.TrimSpace(input.Currency))
-	if existing.Currency == "" {
-		existing.Currency = "BRL"
+	// The account decides, here too. This is a full replacement, so a body that omits
+	// the currency used to rewrite a EUR row to BRL — and now that reconciliation
+	// compares currencies, that edit turns a fully accounted charge into reported
+	// missing money on the next run.
+	currency, err := resolveCurrency(input.Currency, account)
+	if err != nil {
+		return nil, err
 	}
+	existing.Currency = currency
 	existing.Description = strings.TrimSpace(input.Description)
 	existing.Notes = input.Notes
 	existing.CostCenter = input.CostCenter
