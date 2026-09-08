@@ -975,5 +975,9 @@ func migrations() []string {
 			  )`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_matches_live_txn_account
 			ON finance.reconciliation_matches(transaction_id, account_id) WHERE unmatched_at IS NULL`,
+		// Every other index here is partial on unmatched_at IS NULL, and revalidation
+		// reads the UNDONE rows too — so none of them applied and each line cost a
+		// sequential scan of the whole table, every run.
+		`CREATE INDEX IF NOT EXISTS idx_matches_line_all ON finance.reconciliation_matches(line_id)`,
 	}
 }

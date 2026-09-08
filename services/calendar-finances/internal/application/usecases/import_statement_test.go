@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"os"
+	"sort"
 	"testing"
 	"time"
 
@@ -80,13 +81,34 @@ func (f *fakeStatementRepo) List(filter statement.ListFilter) ([]*statement.Line
 		}
 		out = append(out, l)
 	}
+	// The real query is ORDER BY booked_date, external_id. Insertion order let a test
+	// agree with a reconciler that would pick differently in production, on exactly
+	// the case — two charges of the same value — where the choice matters.
+	sort.SliceStable(out, func(i, j int) bool {
+		if !out[i].BookedDate.Equal(out[j].BookedDate) {
+			return out[i].BookedDate.Before(out[j].BookedDate)
+		}
+		return out[i].ExternalID < out[j].ExternalID
+	})
 	return out, nil
 }
+
+// Update records a SNAPSHOT, and writes only the two columns the real UPDATE writes.
+// Keeping the caller's pointer meant a later in-memory change rewrote history: an
+// assertion on a stored update read whatever the code did to the object afterwards,
+// so deleting the persist call entirely still passed.
 func (f *fakeStatementRepo) Update(l *statement.Line) error {
 	if f.updateErr != nil {
 		return f.updateErr
 	}
-	f.updates = append(f.updates, l)
+	stored := *l
+	f.updates = append(f.updates, &stored)
+	for _, existing := range f.lines {
+		if existing.ID == l.ID {
+			existing.Status = l.Status
+			existing.IgnoredReason = l.IgnoredReason
+		}
+	}
 	return nil
 }
 

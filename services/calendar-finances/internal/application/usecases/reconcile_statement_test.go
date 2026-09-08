@@ -19,12 +19,38 @@ type fakeMatchRepo struct {
 	createErr error
 }
 
+// Enforces both unique indexes, because a fake that accepts what the database refuses
+// makes the race untestable — and the race is the whole reason the indexes exist.
 func (f *fakeMatchRepo) Create(m *statement.Match) error {
 	if f.createErr != nil {
 		return f.createErr
 	}
+	for _, existing := range f.matches {
+		if existing.UnmatchedAt != nil {
+			continue
+		}
+		if existing.LineID == m.LineID && existing.TransactionID == m.TransactionID {
+			return statement.ErrLineAlreadyMatched
+		}
+		if existing.TransactionID == m.TransactionID &&
+			f.accountOf(existing.LineID) == f.accountOf(m.LineID) {
+			return statement.ErrAlreadyClaimedOnAccount
+		}
+	}
 	f.matches = append(f.matches, m)
 	return nil
+}
+
+func (f *fakeMatchRepo) accountOf(lineID string) string {
+	if f.stmt == nil {
+		return ""
+	}
+	for _, l := range f.stmt.lines {
+		if l.ID == lineID {
+			return l.AccountID
+		}
+	}
+	return ""
 }
 
 // Returns undone matches too, exactly as the real ByLine does. Filtering them here
@@ -700,8 +726,11 @@ func TestReconcile_AReversedEntryReleasesItsLine(t *testing.T) {
 	if matches.matches[0].UnmatchedAt == nil {
 		t.Error("the line is still reconciled against an entry that was undone")
 	}
-	if lines.lines[0].Status != statement.StatusUnmatched {
-		t.Errorf("the line is stored as %s", lines.lines[0].Status)
+	if len(lines.updates) == 0 {
+		t.Fatal("the release was never persisted: the next run reads the stored status")
+	}
+	if lines.updates[len(lines.updates)-1].Status != statement.StatusUnmatched {
+		t.Errorf("the line is stored as %s", lines.updates[len(lines.updates)-1].Status)
 	}
 }
 
@@ -753,28 +782,6 @@ func TestReconcile_TwoForecastsThatFitAreAmbiguousNotMissing(t *testing.T) {
 	}
 	if len(matches.matches) != 0 {
 		t.Errorf("and nothing may be matched: %+v", matches.matches)
-	}
-}
-
-// The database refuses the second claim when two runs race — the morning cron against
-// a manual POST. The loser has nothing to fix: the winner's match covers the line. It
-// must not be counted as matched here, and above all it must not be reported as money
-// missing, which is the one thing a reader would act on.
-func TestReconcile_LosingARaceIsNotAFailureAndNotMissingMoney(t *testing.T) {
-	lines, txns, matches, accounts := reconcileFixture(t)
-	lines.lines = []*statement.Line{statementLine(t, "a", "acc", -4000, 5)}
-	txns.created = []*transaction.Transaction{systemCharge("tx1", "acc", 40, 5)}
-	matches.createErr = statement.ErrAlreadyClaimedOnAccount
-
-	out, err := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc")
-	if err != nil {
-		t.Fatalf("losing a race is not an error: %v", err)
-	}
-	if out.Matched != 0 {
-		t.Errorf("this run matched nothing: %+v", out)
-	}
-	if len(out.Missing) != 0 {
-		t.Fatalf("the charge is reconciled, by the other run: %+v", out)
 	}
 }
 
@@ -885,5 +892,171 @@ func TestReconcile_AZeroValueLineDoesNotAbortTheRun(t *testing.T) {
 	}
 	if len(matches.matches) != 0 {
 		t.Errorf("nothing was owed on a line worth nothing: %+v", matches.matches)
+	}
+}
+
+// Revalidation has to ask the same question that made the match. Checking only "was
+// it reversed" leaves three ways for the ledger to move out from under a standing
+// match — and a line whose match still stands is never looked at again, so the
+// account reports clean while the money is somewhere else.
+func TestReconcile_TheLedgerMovingUnderAMatchReleasesTheLine(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		apply func(*transaction.Transaction)
+	}{
+		{"the entry is moved to another account", func(tx *transaction.Transaction) {
+			tx.BankAccountID = "outra"
+		}},
+		{"the entry's amount is corrected", func(tx *transaction.Transaction) {
+			tx.Amount = 45
+		}},
+		{"the entry's date is moved months away", func(tx *transaction.Transaction) {
+			tx.OccurredOn = time.Date(2026, time.December, 5, 0, 0, 0, 0, time.UTC)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lines, txns, matches, accounts := reconcileFixture(t)
+			accounts.accounts["outra"] = &bankaccount.BankAccount{
+				ID: "outra", ProfileID: "p1", Name: "Outra", Type: bankaccount.AccountTypeChecking, Currency: "BRL",
+			}
+			lines.lines = []*statement.Line{statementLine(t, "a", "acc", -4000, 5)}
+			charge := systemCharge("tx1", "acc", 40, 5)
+			txns.created = []*transaction.Transaction{charge}
+
+			uc := NewReconcileStatementUseCase(lines, txns, matches, accounts)
+			if out, _ := uc.Execute("acc"); out.Matched != 1 {
+				t.Fatalf("setup: %+v", out)
+			}
+
+			tc.apply(charge)
+
+			out, err := uc.Execute("acc")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(out.Missing) != 1 {
+				t.Fatalf("the bank charged 40,00 and nothing in the ledger covers it now: %+v", out)
+			}
+			if matches.matches[0].UnmatchedAt == nil {
+				t.Error("the match still stands on criteria that no longer hold")
+			}
+		})
+	}
+}
+
+// Not knowing is not the same as "it was reversed". A read that failed says nothing
+// about the entry, and recording TRANSACTION_REVERSED writes a reason that is simply
+// untrue — permanently, since a match refuses a second undo — while the report claims
+// money is missing, which is the one answer that gets acted on.
+func TestReconcile_AFailedLookupIsNotAReversal(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	lines.lines = []*statement.Line{statementLine(t, "a", "acc", -4000, 5)}
+	txns.created = []*transaction.Transaction{systemCharge("tx1", "acc", 40, 5)}
+
+	uc := NewReconcileStatementUseCase(lines, txns, matches, accounts)
+	if out, _ := uc.Execute("acc"); out.Matched != 1 {
+		t.Fatalf("setup: %+v", out)
+	}
+
+	txns.created = nil // gone from this account's live entries
+	txns.getByIDErr = errors.New("connection reset by peer")
+
+	_, err := uc.Execute("acc")
+	if err == nil {
+		t.Fatal("a failed read was treated as an answer")
+	}
+	if matches.matches[0].UnmatchedAt != nil {
+		t.Errorf("the match was undone on the strength of a failed read: %v", *matches.matches[0].UnmatchedReason)
+	}
+}
+
+// A line deliberately set aside is a decision someone made, with a reason the schema
+// requires. Reporting it as missing money on every run makes the report noise, and
+// matching it destroys both the status and the reason with nothing left to say a
+// decision was ever taken.
+func TestReconcile_AnIgnoredLineIsLeftAlone(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	ignored := statementLine(t, "a", "acc", -120000, 5)
+	if err := ignored.MarkIgnored("perna de rolagem, contabilizada do outro lado"); err != nil {
+		t.Fatalf("ignore: %v", err)
+	}
+	lines.lines = []*statement.Line{ignored}
+	txns.created = []*transaction.Transaction{systemCharge("tx1", "acc", 1200, 5)}
+
+	out, err := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(out.Missing) != 0 || out.Matched != 0 {
+		t.Fatalf("a line set aside on purpose was put back in the report: %+v", out)
+	}
+	if ignored.Status != statement.StatusIgnored || ignored.IgnoredReason == nil {
+		t.Fatalf("the decision and its reason were overwritten: status=%s reason=%v",
+			ignored.Status, ignored.IgnoredReason)
+	}
+}
+
+// A match a person undid — "WRONG_MATCH", say — must put the line back in the report.
+// Reading undone matches as live is how a line disappears for good after somebody
+// corrects a mistake, which is the opposite of what correcting it was for.
+func TestReconcile_AnUndoneMatchDoesNotHoldTheLine(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	lines.lines = []*statement.Line{statementLine(t, "a", "acc", -4000, 5)}
+	txns.created = []*transaction.Transaction{systemCharge("tx1", "acc", 40, 5)}
+
+	uc := NewReconcileStatementUseCase(lines, txns, matches, accounts)
+	if out, _ := uc.Execute("acc"); out.Matched != 1 {
+		t.Fatalf("setup: %+v", out)
+	}
+	if err := matches.Unmatch(matches.matches[0].ID, "WRONG_MATCH"); err != nil {
+		t.Fatalf("undo: %v", err)
+	}
+
+	out, err := uc.Execute("acc")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.Matched != 1 {
+		t.Fatalf("the line was not looked at again after its match was undone: %+v", out)
+	}
+}
+
+// Losing the race for an entry does not settle the line. The winner claimed the entry
+// from a DIFFERENT line of this account, so this charge is still unaccounted for, and
+// dropping it from every bucket makes it vanish from the report — the run's own
+// arithmetic (checked = matched + missing + ambiguous + ready + pending) stops adding
+// up, and nobody is told a thing.
+func TestReconcile_LosingTheEntryStillLeavesTheChargeToReport(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	lines.lines = []*statement.Line{statementLine(t, "a", "acc", -4000, 5)}
+	txns.created = []*transaction.Transaction{systemCharge("tx1", "acc", 40, 5)}
+	matches.createErr = statement.ErrAlreadyClaimedOnAccount
+
+	out, err := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc")
+	if err != nil {
+		t.Fatalf("losing a race is not an error: %v", err)
+	}
+	if len(out.Missing) != 1 {
+		t.Fatalf("the charge has no entry left to answer for it: %+v", out)
+	}
+	if out.Checked != out.Matched+len(out.Missing)+len(out.Ambiguous)+len(out.ReadyToConfirm)+out.Pending {
+		t.Errorf("a line fell out of the report: %+v", out)
+	}
+}
+
+// The other race means the opposite: the winner matched THIS line to THIS entry, so
+// the work is done and there is nothing to report.
+func TestReconcile_LosingToTheSamePairIsWorkAlreadyDone(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	lines.lines = []*statement.Line{statementLine(t, "a", "acc", -4000, 5)}
+	txns.created = []*transaction.Transaction{systemCharge("tx1", "acc", 40, 5)}
+	matches.createErr = statement.ErrLineAlreadyMatched
+
+	out, err := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc")
+	if err != nil {
+		t.Fatalf("losing a race is not an error: %v", err)
+	}
+	if len(out.Missing) != 0 {
+		t.Fatalf("the line is reconciled, by the other run: %+v", out)
 	}
 }

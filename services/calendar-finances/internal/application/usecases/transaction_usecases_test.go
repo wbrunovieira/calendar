@@ -112,7 +112,8 @@ func (f *fakeCategoryRepo) GetDescendantIDs(id string) ([]string, error) {
 func strPtr(s string) *string { return &s }
 
 type fakeTransactionRepo struct {
-	created []*transaction.Transaction
+	created    []*transaction.Transaction
+	getByIDErr error
 }
 
 func (f *fakeTransactionRepo) Create(tx *transaction.Transaction) error {
@@ -121,6 +122,9 @@ func (f *fakeTransactionRepo) Create(tx *transaction.Transaction) error {
 }
 
 func (f *fakeTransactionRepo) GetByID(id string) (*transaction.Transaction, error) {
+	if f.getByIDErr != nil {
+		return nil, f.getByIDErr
+	}
 	for _, tx := range f.created {
 		if tx.ID == id {
 			return tx, nil

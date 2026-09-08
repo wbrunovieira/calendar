@@ -1,6 +1,7 @@
 package usecases
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -586,4 +587,41 @@ func TestDeleteTransaction_ConfirmedTransfer_RecalculatesBothAccounts(t *testing
 	if !recalc.calledWith(testDest) {
 		t.Errorf("expected recalculate for destination %s, calls=%v", testDest, recalc.calls)
 	}
+}
+
+// An account holds one currency — Wise is three separate accounts for exactly that
+// reason. A row booked in another one is not a rate problem: R$ 107,54 and US$ 107,54
+// are indistinguishable in every total and every reconciliation, and five dollar
+// charges once entered this ledger as reais and cost R$ 1.117,03 to unwind. The empty
+// case is the dangerous one, because the default was BRL wherever the money sat.
+func TestCreateTransaction_TheCurrencyIsTheAccountsOrItIsRefused(t *testing.T) {
+	euro := checkingAccount(testProfile, testAccount, 0)
+	euro.Currency = "EUR"
+	base := CreateTransactionInput{
+		ProfileID: testProfile, BankAccountID: testAccount, CategoryID: confirmedStr(testCat),
+		Type: "EXPENSE", Amount: 40, Description: "Assinatura",
+		OccurredOn: time.Now().Format("2006-01-02"),
+	}
+
+	t.Run("an empty currency takes the account's, not BRL", func(t *testing.T) {
+		uc := baseCreateUC(map[string]*bankaccount.BankAccount{testAccount: euro}, &trackingRecalculator{})
+		input := base
+		input.Currency = ""
+		out, err := uc.Execute(input)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if out.Currency != "EUR" {
+			t.Errorf("stored as %s on a EUR account", out.Currency)
+		}
+	})
+
+	t.Run("a different currency is refused", func(t *testing.T) {
+		uc := baseCreateUC(map[string]*bankaccount.BankAccount{testAccount: euro}, &trackingRecalculator{})
+		input := base
+		input.Currency = "BRL"
+		if _, err := uc.Execute(input); !errors.Is(err, ErrCurrencyMismatch) {
+			t.Fatalf("got %v, want ErrCurrencyMismatch", err)
+		}
+	})
 }

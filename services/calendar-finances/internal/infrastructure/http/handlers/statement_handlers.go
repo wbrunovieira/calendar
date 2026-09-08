@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"errors"
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"net/http"
 	"strings"
@@ -133,7 +134,16 @@ func accountKindOf(account *bankaccount.BankAccount) statement.AccountKind {
 // an ambiguity, or a forecast the bank has now paid — so the cron can alert on the
 // status without parsing the body.
 func (h *StatementHandlers) Reconcile(w http.ResponseWriter, r *http.Request) {
-	result, err := h.reconcileUC.Execute(mux.Vars(r)["id"])
+	id := mux.Vars(r)["id"]
+	// Checked here so a typo is answered 400 and stops, instead of reaching the driver
+	// and coming back as a 500 the cron retries forever — with the SQL error text in
+	// the body.
+	if _, err := uuid.Parse(id); err != nil {
+		http.Error(w, "the account id must be a UUID", http.StatusBadRequest)
+		return
+	}
+
+	result, err := h.reconcileUC.Execute(id)
 	if err != nil {
 		// This route takes no body: the only thing the caller supplies is the account
 		// id. So there is no bad request to report — either the account is unknown or

@@ -291,3 +291,18 @@ func TestE2E_OneEntryCannotBeClaimedTwiceOnOneAccount(t *testing.T) {
 		t.Fatalf("claimed=%v err=%v", claimed, err)
 	}
 }
+
+// A typo in the path is the caller's mistake, and it has to say so: answered 500, the
+// cron retries it forever, and the driver's own message ends up in the response body.
+func TestE2E_ReconcileAnswers400ForAnIdThatIsNotAUUID(t *testing.T) {
+	db := testDB(t)
+
+	status, body := reconcile(t, db, "nao-e-uuid")
+
+	if status != http.StatusBadRequest {
+		t.Fatalf("got %d, want 400: %s", status, body)
+	}
+	if strings.Contains(body, "pq:") {
+		t.Errorf("the driver's error reached the caller: %s", body)
+	}
+}

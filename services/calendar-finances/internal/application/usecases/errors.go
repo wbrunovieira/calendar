@@ -37,4 +37,8 @@ var (
 	ErrPositionHasNoQuotas         = errors.New("account has no quotas to sell")
 	ErrCannotSellMoreThanHeld      = errors.New("cannot sell more quotas than held")
 	ErrAccountNotLinked            = errors.New("investment account is not linked to a cash account")
+	// An account holds one currency, and Wise is modelled as three accounts for
+	// exactly that reason. A row in another currency makes every total and every
+	// reconciliation on that account wrong by the exchange rate, invisibly.
+	ErrCurrencyMismatch = errors.New("the transaction currency must match the account currency")
 )

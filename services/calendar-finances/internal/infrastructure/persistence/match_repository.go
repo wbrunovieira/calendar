@@ -35,6 +35,13 @@ func (r *MatchRepository) Create(m *statement.Match) error {
 	`, m.ID, m.LineID, m.TransactionID, m.AmountMinor, string(m.Method), m.Score, m.MatchedBy, m.MatchedAt)
 	if err != nil {
 		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == uniqueViolation {
+			// Which index refused decides what the caller should do, so the two are
+			// not collapsed: the same pair means the work is already done, while the
+			// same entry from another line means the entry is gone and this line has
+			// to be looked at again.
+			if pqErr.Constraint == "uq_matches_live_pair" {
+				return statement.ErrLineAlreadyMatched
+			}
 			return statement.ErrAlreadyClaimedOnAccount
 		}
 		return err

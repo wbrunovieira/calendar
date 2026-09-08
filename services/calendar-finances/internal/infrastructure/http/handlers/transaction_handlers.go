@@ -377,6 +377,7 @@ func mapTransactionError(err error) int {
 		usecases.ErrTransactionNotFound:
 		return http.StatusNotFound
 	case usecases.ErrBankAccountNotFound, usecases.ErrBankAccountMismatch, usecases.ErrDestinationRequired,
+		usecases.ErrCurrencyMismatch,
 		usecases.ErrInvalidInput, usecases.ErrInvalidTransactionType,
 		usecases.ErrInsufficientBalance, usecases.ErrCreditLimitExceeded:
 		return http.StatusBadRequest
