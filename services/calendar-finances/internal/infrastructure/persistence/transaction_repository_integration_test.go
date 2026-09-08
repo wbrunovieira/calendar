@@ -5,6 +5,7 @@ package persistence
 
 import (
 	"database/sql"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -192,5 +193,21 @@ func TestTransactionRepository_List_FilterByDateRange_Integration(t *testing.T) 
 		if tx.OccurredOn.Month() != time.February {
 			t.Errorf("Expected transaction in February, got %v", tx.OccurredOn)
 		}
+	}
+}
+
+// "There is no such row" and "the read failed" call for opposite answers: the
+// reconciler releases a match for the first and refuses to guess for the second. The
+// mapping lives in scanTransaction; nothing pinned it at this boundary, and the
+// reconciler now depends on it — a deleted entry must not abort a whole account's run.
+func TestIntegration_GetByIDNamesTheMissingRow(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+
+	repo := NewTransactionRepository(db)
+	_, err := repo.GetByID(uuid.NewString())
+
+	if !errors.Is(err, transaction.ErrNotFound) {
+		t.Fatalf("got %v, want transaction.ErrNotFound", err)
 	}
 }

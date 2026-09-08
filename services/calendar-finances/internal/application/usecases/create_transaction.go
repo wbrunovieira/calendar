@@ -150,6 +150,14 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		if destinationAccount.ID == account.ID {
 			return nil, ErrInvalidInput
 		}
+		// One row, one Amount — so both ends must speak the same currency. Wise is
+		// three accounts in ONE profile, so this is not a cross-profile concern: a
+		// BRL→EUR move credited the euro account with the reais figure, off by the
+		// exchange rate and plausible-looking. A conversion is an expense and an income
+		// at the rate the bank actually used, and this service does not know that rate.
+		if !strings.EqualFold(strings.TrimSpace(account.Currency), strings.TrimSpace(destinationAccount.Currency)) {
+			return nil, ErrCurrencyMismatch
+		}
 		isCrossProfile = destinationAccount.ProfileID != input.ProfileID
 		if isCrossProfile {
 			// Cross-profile transfer: requires destination category

@@ -692,3 +692,46 @@ func TestCreateTransaction_EveryPathTakesTheAccountsCurrency(t *testing.T) {
 		}
 	})
 }
+
+// A same-profile transfer is ONE row with ONE amount, and Wise is three accounts in
+// one profile. Moving 1.000 from the BRL account to the EUR one credited the euro
+// account with a flat 1.000 — off by the exchange rate, in the direction that looks
+// plausible. There is no honest single row for a conversion: it is an expense and an
+// income at the rate the bank actually used, and this service does not know that rate.
+func TestCreateTransaction_ATransferCannotCrossCurrencies(t *testing.T) {
+	reais := checkingAccount(testProfile, testAccount, 5000)
+	euros := checkingAccount(testProfile, testDest, 0)
+	euros.Currency = "EUR"
+	uc := NewCreateTransactionUseCase(
+		setupProfile(testProfile),
+		&fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{testAccount: reais, testDest: euros}},
+		&fakeCategoryRepo{categories: map[string]*category.Category{testCat: expenseCat(testProfile, testCat)}},
+		&fakeTransactionRepo{}, &fakeInvoiceRepo{}, &trackingRecalculator{}, nil,
+	)
+
+	_, err := uc.Execute(CreateTransactionInput{
+		ProfileID: testProfile, BankAccountID: testAccount, DestinationAccountID: confirmedStr(testDest),
+		Type: "TRANSFER", Amount: 1000, Currency: "BRL", Description: "Wise BRL -> EUR",
+		OccurredOn: time.Now().Format("2006-01-02"),
+	})
+	if !errors.Is(err, ErrCurrencyMismatch) {
+		t.Fatalf("got %v, want ErrCurrencyMismatch", err)
+	}
+}
+
+// The Binance sync builds its rows by hand, so neither the use case nor the domain
+// ever sees them. A USDT pair would put a USDT amount on the BRL exchange account,
+// summed into the balance at face value.
+func TestQuoteMatchesAccount_ARowIsNeverWrittenInAnotherCurrency(t *testing.T) {
+	exchange := &bankaccount.BankAccount{ID: "binance", Name: "Binance", Currency: "BRL"}
+
+	if err := quoteMatchesAccount("BRL", exchange); err != nil {
+		t.Fatalf("a BRL pair on a BRL account: %v", err)
+	}
+	if err := quoteMatchesAccount("brl", exchange); err != nil {
+		t.Errorf("the comparison must not care about case: %v", err)
+	}
+	if err := quoteMatchesAccount("USDT", exchange); !errors.Is(err, ErrCurrencyMismatch) {
+		t.Fatalf("a USDT pair was accepted onto a BRL account: %v", err)
+	}
+}

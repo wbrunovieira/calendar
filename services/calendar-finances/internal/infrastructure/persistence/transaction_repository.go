@@ -159,12 +159,6 @@ func (r *TransactionRepository) GetByID(id string) (*transaction.Transaction, er
 
 	row := r.db.QueryRow(query, id)
 	tx, err := scanTransaction(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		// Named, so callers can tell "there is no such row" from "the read failed".
-		// Collapsed into one error, a deleted entry looked exactly like a database
-		// that was down — and those call for opposite answers.
-		return nil, transaction.ErrNotFound
-	}
 	if err != nil {
 		return nil, err
 	}

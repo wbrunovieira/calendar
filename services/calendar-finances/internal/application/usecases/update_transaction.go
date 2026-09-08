@@ -114,6 +114,11 @@ func (uc *UpdateTransactionUseCase) Execute(id string, input UpdateTransactionIn
 		if destination.ProfileID != existing.ProfileID {
 			return nil, ErrBankAccountMismatch
 		}
+		// One row, one Amount: editing a transfer to point at an account in another
+		// currency would credit it with a number that means nothing there.
+		if !strings.EqualFold(strings.TrimSpace(account.Currency), strings.TrimSpace(destination.Currency)) {
+			return nil, ErrCurrencyMismatch
+		}
 		destinationAccountID = &destination.ID
 	}
 

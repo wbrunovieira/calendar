@@ -82,6 +82,13 @@ func (uc *SellPositionUseCase) Execute(accountID string, input SellPositionInput
 		return nil, err
 	}
 
+	// The proceeds land in the cash account, so they have to be denominated there. A
+	// position priced in another currency would credit it at face value, off by the
+	// exchange rate — the same shape as the transfer above.
+	if !strings.EqualFold(strings.TrimSpace(position.Currency), strings.TrimSpace(cashAccount.Currency)) {
+		return nil, ErrCurrencyMismatch
+	}
+
 	txn, err := transaction.New(transaction.CreateParams{
 		ProfileID:            position.ProfileID,
 		BankAccountID:        position.ID,

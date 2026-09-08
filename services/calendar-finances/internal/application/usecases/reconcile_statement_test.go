@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"errors"
+	"sort"
 	"testing"
 	"time"
 
@@ -21,6 +22,9 @@ type fakeMatchRepo struct {
 
 // Enforces both unique indexes, because a fake that accepts what the database refuses
 // makes the race untestable — and the race is the whole reason the indexes exist.
+// Stores a COPY, the way a row is a row. Handing back the caller's pointer let an
+// UPDATE appear to reach into objects the caller was still holding — something no
+// database can do — and hid a defect where the same match was undone twice.
 func (f *fakeMatchRepo) Create(m *statement.Match) error {
 	if f.createErr != nil {
 		return f.createErr
@@ -37,7 +41,8 @@ func (f *fakeMatchRepo) Create(m *statement.Match) error {
 			return statement.ErrAlreadyClaimedOnAccount
 		}
 	}
-	f.matches = append(f.matches, m)
+	stored := *m
+	f.matches = append(f.matches, &stored)
 	return nil
 }
 
@@ -60,9 +65,14 @@ func (f *fakeMatchRepo) ByLine(lineID string) ([]*statement.Match, error) {
 	out := []*statement.Match{}
 	for _, m := range f.matches {
 		if m.LineID == lineID {
-			out = append(out, m)
+			// A copy per read, ordered by matched_at as the real query is. Sharing the
+			// stored row meant a later Unmatch silently updated a slice the caller had
+			// already taken, so a stale read could never happen in a test.
+			row := *m
+			out = append(out, &row)
 		}
 	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].MatchedAt.Before(out[j].MatchedAt) })
 	return out, nil
 }
 
@@ -82,13 +92,20 @@ func (f *fakeMatchRepo) ClaimedOnAccount(txID, accountID string) (bool, error) {
 	}
 	return false, nil
 }
+
+// Behaves like the UPDATE: it touches the stored row, never the caller's object, and
+// an undo that changes nothing answers ErrNotFound rather than ErrAlreadyUndone.
 func (f *fakeMatchRepo) Unmatch(id, reason string) error {
 	for _, m := range f.matches {
-		if m.ID == id {
-			return m.Unmatch(reason, time.Now())
+		if m.ID != id {
+			continue
 		}
+		if m.UnmatchedAt != nil {
+			return statement.ErrNotFound
+		}
+		return m.Unmatch(reason, time.Now())
 	}
-	return errors.New("no such match")
+	return statement.ErrNotFound
 }
 
 func statementLine(t *testing.T, id, accountID string, minor int64, day int) *statement.Line {
@@ -694,7 +711,10 @@ func TestReconcile_ARestatedLineIsUnmatchedAndLookedAtAgain(t *testing.T) {
 		t.Fatalf("the bank now charges 90,00 and nothing in the ledger covers it: %+v", out)
 	}
 	if matches.matches[0].UnmatchedAt == nil {
-		t.Error("the old match still stands against an amount the bank no longer claims")
+		t.Fatal("the old match still stands against an amount the bank no longer claims")
+	}
+	if got := *matches.matches[0].UnmatchedReason; got != statement.UnmatchBankSideChanged {
+		t.Errorf("released as %q, want %q — the bank moved, not the ledger", got, statement.UnmatchBankSideChanged)
 	}
 }
 
@@ -724,7 +744,12 @@ func TestReconcile_AReversedEntryReleasesItsLine(t *testing.T) {
 		t.Fatalf("the bank charged 40,00 and the ledger no longer has it: %+v", out)
 	}
 	if matches.matches[0].UnmatchedAt == nil {
-		t.Error("the line is still reconciled against an entry that was undone")
+		t.Fatal("the line is still reconciled against an entry that was undone")
+	}
+	// The reason is the audit trail, and it is permanent: a match refuses a second
+	// undo, so the first word written is the only one anybody will ever read.
+	if got := *matches.matches[0].UnmatchedReason; got != statement.UnmatchTransactionReversed {
+		t.Errorf("released as %q, want %q", got, statement.UnmatchTransactionReversed)
 	}
 	if len(lines.updates) == 0 {
 		t.Fatal("the release was never persisted: the next run reads the stored status")
@@ -1116,6 +1141,18 @@ func TestReconcile_EveryLineCheckedLandsInABucket(t *testing.T) {
 		assertAddsUp(t, out)
 	})
 
+	t.Run("a line the bank has not settled", func(t *testing.T) {
+		lines, txns, matches, accounts := reconcileFixture(t)
+		pending := statementLine(t, "pend", "acc", -4000, 5)
+		pending.ProviderStatus = statement.ProviderStatusPending
+		lines.lines = []*statement.Line{pending, statementLine(t, "real", "acc", -5390, 5)}
+		out, _ := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc")
+		if out.Pending != 1 {
+			t.Fatalf("expected one pending line: %+v", out)
+		}
+		assertAddsUp(t, out)
+	})
+
 	t.Run("another run matched this very line first", func(t *testing.T) {
 		lines, txns, matches, accounts := reconcileFixture(t)
 		lines.lines = []*statement.Line{statementLine(t, "a", "acc", -4000, 5)}
@@ -1177,5 +1214,51 @@ func TestReconcile_ADeletedEntryReleasesItsLineWithoutFailing(t *testing.T) {
 	}
 	if len(out.Missing) != 1 {
 		t.Fatalf("the charge has nothing to answer for it now: %+v", out)
+	}
+}
+
+// A line can carry several matches — the model is N:N on purpose, so a payment can
+// cover many purchases. If one of them is already released and the bank then puts the
+// line back to pending, releasing "all the live ones" must not try the one just
+// undone: the database changed no rows, says so, and that answer used to come back as
+// a failure that discarded the whole account's findings.
+func TestReconcile_ReleasingTwiceIsNotAFailure(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	line := statementLine(t, "a", "acc", -4000, 5)
+	lines.lines = []*statement.Line{line, statementLine(t, "b", "acc", -5390, 5)}
+	charge := systemCharge("tx1", "acc", 40, 5)
+	txns.created = []*transaction.Transaction{charge}
+
+	uc := NewReconcileStatementUseCase(lines, txns, matches, accounts)
+	if out, _ := uc.Execute("acc"); out.Matched != 1 {
+		t.Fatalf("setup: %+v", out)
+	}
+
+	// A second match on the same line, of the kind a manual or partial-coverage route
+	// would write, and which is already stale.
+	second, err := statement.NewMatch(line.ID, "tx2", 4000, statement.MethodManual, "bruno")
+	if err != nil {
+		t.Fatalf("build match: %v", err)
+	}
+	second.MatchedAt = second.MatchedAt.Add(time.Second)
+	if err := matches.Create(second); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// The bank re-reports the line as pending: every live match has to go.
+	line.ProviderStatus = statement.ProviderStatusPending
+	line.MarkUnmatched()
+
+	out, err := uc.Execute("acc")
+	if err != nil {
+		t.Fatalf("the account's run was discarded: %v", err)
+	}
+	for _, m := range matches.matches {
+		if m.LineID == line.ID && m.UnmatchedAt == nil {
+			t.Errorf("match %s still stands on a line the bank has not settled", m.ID)
+		}
+	}
+	if len(out.Missing) != 1 {
+		t.Fatalf("the other charge must still be reported: %+v", out)
 	}
 }

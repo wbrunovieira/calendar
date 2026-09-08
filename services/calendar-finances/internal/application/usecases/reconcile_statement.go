@@ -316,7 +316,11 @@ func (uc *ReconcileStatementUseCase) stillReconciled(
 		return false, fmt.Errorf("checking whether line %s is already reconciled: %w", line.ID, err)
 	}
 
-	standing := false
+	// Which matches still stand, decided before anything is written. A line may carry
+	// several — the model is N:N so a payment can cover many purchases — and the
+	// decision for one must not depend on what was done to another.
+	stale := map[string]string{}
+	var stillStanding []*statement.Match
 	for _, m := range matches {
 		if m.UnmatchedAt != nil {
 			continue
@@ -326,7 +330,28 @@ func (uc *ReconcileStatementUseCase) stillReconciled(
 			return false, err
 		}
 		if reason == "" {
-			standing = true
+			stillStanding = append(stillStanding, m)
+			continue
+		}
+		stale[m.ID] = reason
+	}
+
+	// A line the bank re-reports as pending cannot be marked matched — its amount and
+	// date still move — so the rest have to go too. Letting the domain's refusal escape
+	// aborted the whole account's run and discarded every finding with it.
+	if len(stillStanding) > 0 && !line.Matchable() {
+		for _, m := range stillStanding {
+			stale[m.ID] = statement.UnmatchBankSideChanged
+		}
+		stillStanding = nil
+	}
+
+	// One release per match, whatever put it on the list. Releasing the same row twice
+	// changes no rows the second time, and the database says so — an answer that came
+	// back as a failure and threw the account's findings away.
+	for _, m := range matches {
+		reason, ok := stale[m.ID]
+		if !ok {
 			continue
 		}
 		if err := uc.matches.Unmatch(m.ID, reason); err != nil {
@@ -334,25 +359,11 @@ func (uc *ReconcileStatementUseCase) stillReconciled(
 				ErrReconcileStorage, m.ID, line.ID, err)
 		}
 	}
+	standing := len(stillStanding) > 0
 
 	// The line's own status is a projection of the matches, so bring it back in step
 	// either way. It drifts when a match is written and this write is not — and a line
 	// stored MATCHED with nothing live behind it is invisible from then on.
-	// A line the bank re-reports as pending cannot be marked matched — its amount and
-	// date still move — so the match has to go instead. Letting the domain's refusal
-	// escape aborted the whole account's run and discarded every finding with it.
-	if standing && !line.Matchable() {
-		for _, m := range matches {
-			if m.UnmatchedAt != nil {
-				continue
-			}
-			if err := uc.matches.Unmatch(m.ID, statement.UnmatchBankSideChanged); err != nil {
-				return false, fmt.Errorf("%w: releasing match %s on line %s: %v",
-					ErrReconcileStorage, m.ID, line.ID, err)
-			}
-		}
-		standing = false
-	}
 
 	want := statement.StatusUnmatched
 	if standing {
