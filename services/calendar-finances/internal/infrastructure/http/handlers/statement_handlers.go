@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
+
 	"errors"
+	"github.com/gorilla/mux"
 	"net/http"
 	"strings"
 
@@ -13,12 +15,17 @@ import (
 
 // StatementHandlers is the door the statement comes in through.
 type StatementHandlers struct {
-	accounts bankaccount.Repository
-	importUC *usecases.ImportStatementUseCase
+	accounts    bankaccount.Repository
+	importUC    *usecases.ImportStatementUseCase
+	reconcileUC *usecases.ReconcileStatementUseCase
 }
 
-func NewStatementHandlers(accounts bankaccount.Repository, importUC *usecases.ImportStatementUseCase) *StatementHandlers {
-	return &StatementHandlers{accounts: accounts, importUC: importUC}
+func NewStatementHandlers(
+	accounts bankaccount.Repository,
+	importUC *usecases.ImportStatementUseCase,
+	reconcileUC *usecases.ReconcileStatementUseCase,
+) *StatementHandlers {
+	return &StatementHandlers{accounts: accounts, importUC: importUC, reconcileUC: reconcileUC}
 }
 
 type importStatementBody struct {
@@ -113,4 +120,27 @@ func accountKindOf(account *bankaccount.BankAccount) statement.AccountKind {
 		return statement.AccountKindCard
 	}
 	return statement.AccountKindChecking
+}
+
+// Reconcile handles POST /api/v1/bank-accounts/{id}/statement/reconcile.
+//
+// It links the bank's lines to the entries the system already has, and names the ones
+// it will not link. The answer worth reading is `missing`: a charge the bank made that
+// the ledger does not have. `ambiguous` is the second: more than one entry fits, and
+// choosing between them is not this service's call.
+//
+// 200 when everything lined up, 409 when there is something to look at — so the cron
+// can alert on the status without parsing the body.
+func (h *StatementHandlers) Reconcile(w http.ResponseWriter, r *http.Request) {
+	result, err := h.reconcileUC.Execute(mux.Vars(r)["id"])
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if len(result.Missing) > 0 || len(result.Ambiguous) > 0 {
+		w.WriteHeader(http.StatusConflict)
+	}
+	json.NewEncoder(w).Encode(map[string]any{"data": result})
 }

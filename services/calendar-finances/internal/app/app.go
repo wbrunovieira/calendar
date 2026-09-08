@@ -316,11 +316,16 @@ func New(db *sql.DB) (*App, error) {
 	// The statement comes in here. It records what the bank said and classifies
 	// nothing: importing is the half that cannot be wrong, and keeping it separate is
 	// what makes the other half safe to be careful about.
+	statementRepo := persistence.NewStatementRepository(db)
 	statementHandler := httpHandlers.NewStatementHandlers(
 		bankAccountRepo,
-		usecases.NewImportStatementUseCase(persistence.NewStatementRepository(db)),
+		usecases.NewImportStatementUseCase(statementRepo),
+		usecases.NewReconcileStatementUseCase(
+			statementRepo, transactionRepo, persistence.NewMatchRepository(db), bankAccountRepo,
+		),
 	)
 	apiRouter.HandleFunc("/statements/import", statementHandler.Import).Methods("POST")
+	apiRouter.HandleFunc("/bank-accounts/{id}/statement/reconcile", statementHandler.Reconcile).Methods("POST")
 	apiRouter.HandleFunc("/bank-accounts/{id}/sell", bankAccountHandler.Sell).Methods("POST")
 	apiRouter.HandleFunc("/bank-accounts/{id}/credit-usage", bankAccountHandler.CreditUsage).Methods("GET")
 	apiRouter.HandleFunc("/bank-accounts/close-month", bankAccountHandler.CloseMonth).Methods("POST")
