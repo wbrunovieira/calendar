@@ -105,14 +105,7 @@ func seedForDelete(t *testing.T, db *sql.DB) (profileID string) {
 
 func seedAccountFor(t *testing.T, db *sql.DB, profileID, name string, initial float64) string {
 	t.Helper()
-	var id string
-	if err := db.QueryRow(`
-		INSERT INTO finance.bank_accounts (profile_id, name, type, initial_balance, current_balance, currency)
-		VALUES ($1, $2, 'CHECKING', $3, $3, 'BRL') RETURNING id
-	`, profileID, name, initial).Scan(&id); err != nil {
-		t.Fatalf("seeding account: %v", err)
-	}
-	return id
+	return seedAccountThroughRepository(t, db, checkingAccount(profileID, name, initial, initial))
 }
 
 func balanceOf(t *testing.T, db *sql.DB, accountID string) float64 {

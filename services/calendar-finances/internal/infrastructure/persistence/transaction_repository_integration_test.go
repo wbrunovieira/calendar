@@ -12,6 +12,7 @@ import (
 	"github.com/brunovieira/calendar-finances/internal/database"
 	"github.com/google/uuid"
 
+	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
 	_ "github.com/lib/pq"
 )
@@ -43,7 +44,22 @@ func getTestDB(t *testing.T) *sql.DB {
 // seedProfileAndAccount creates the rows the transactions below point at. Every
 // id column in this schema is a uuid and every foreign key is enforced, so a
 // test cannot invent "account-1" and expect an insert to land.
+// seedProfileAndAccount creates the rows through the REPOSITORY, not with raw SQL.
+//
+// It used to INSERT directly, and the cost of that was concrete: BankAccountRepository
+// .Create was never executed by any test, so a column duplicated in its INSERT list
+// broke every POST /bank-accounts while the whole suite stayed green. Seeding this way
+// turns roughly every integration test into coverage of the write path, for free.
+//
+// The profile has no repository of its own yet, so it stays as SQL — and that is the
+// remaining hole, not an oversight.
 func seedProfileAndAccount(t *testing.T, db *sql.DB, profileID, accountID string) {
+	t.Helper()
+	seedProfile(t, db, profileID)
+	seedAccount(t, db, profileID, accountID, "Conta Integration", bankaccount.AccountTypeChecking)
+}
+
+func seedProfile(t *testing.T, db *sql.DB, profileID string) {
 	t.Helper()
 	if _, err := db.Exec(`
 		INSERT INTO finance.profiles (id, calendar_id, name, type)
@@ -51,11 +67,24 @@ func seedProfileAndAccount(t *testing.T, db *sql.DB, profileID, accountID string
 		ON CONFLICT (id) DO NOTHING`, profileID, "integration-"+profileID); err != nil {
 		t.Fatalf("seed profile: %v", err)
 	}
-	if _, err := db.Exec(`
-		INSERT INTO finance.bank_accounts (id, profile_id, name, type)
-		VALUES ($1, $2, 'Conta Integration', 'CHECKING')
-		ON CONFLICT (id) DO NOTHING`, accountID, profileID); err != nil {
-		t.Fatalf("seed account: %v", err)
+}
+
+// seedAccount goes through BankAccountRepository.Create, so the statement that writes
+// an account in production is the one the tests exercise.
+func seedAccount(t *testing.T, db *sql.DB, profileID, accountID, name string, kind bankaccount.AccountType) {
+	t.Helper()
+	// Returns early when the row is already there, the way ON CONFLICT DO NOTHING did:
+	// a run interrupted halfway must not make every later run fail on a duplicate key.
+	existing, err := NewBankAccountRepository(db).FindByID(accountID)
+	if err == nil && existing != nil {
+		return
+	}
+	if err := NewBankAccountRepository(db).Create(&bankaccount.BankAccount{
+		ID: accountID, ProfileID: profileID, Name: name, Type: kind,
+		Currency: "BRL", IsActive: true,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("seed account through the repository: %v", err)
 	}
 }
 

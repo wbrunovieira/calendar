@@ -5,7 +5,9 @@ package handlers_test
 
 import (
 	"database/sql"
+	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
 	"testing"
+	"time"
 
 	"github.com/brunovieira/calendar-finances/internal/application/usecases"
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
@@ -41,8 +43,9 @@ func seedReversal(t *testing.T, db *sql.DB) {
 	// 1055.58 and the single confirmed expense of 55.58 brings it to 1000. Seeding an
 	// opening of 0 with a balance of 1000 describes money that no transaction explains,
 	// and the derived balance would rightly disagree.
-	exec(t, db, `INSERT INTO finance.bank_accounts (id, profile_id, name, type, initial_balance, current_balance, currency)
-		VALUES ($1,$2,'Conta E2E','CHECKING',1055.58,1000,'BRL') ON CONFLICT (id) DO NOTHING`, revAccountID, revProfileID)
+	acc := checkingAccount(revProfileID, "Conta E2E", 1055.58, 1000)
+	acc.ID = revAccountID
+	seedAccountThroughRepository(t, db, acc)
 	exec(t, db, `INSERT INTO finance.categories (id, profile_id, name, type) VALUES ($1,$2,'Servidores','EXPENSE')
 		ON CONFLICT (id) DO NOTHING`, revCategoryID, revProfileID)
 	exec(t, db, `INSERT INTO finance.transactions
@@ -163,10 +166,11 @@ func TestE2E_ReversedPurchaseLeavesTheInvoice(t *testing.T) {
 
 	const invoiceID = "e1e00000-0000-0000-0000-000000000009"
 	t.Cleanup(func() { db.Exec(`DELETE FROM finance.credit_card_invoices WHERE id = $1`, invoiceID) })
-	exec(t, db, `INSERT INTO finance.credit_card_invoices
-		(id, bank_account_id, reference_date, opening_date, closing_date, due_date, amount, status)
-		VALUES ($1,$2,'2026-07-01','2026-06-27','2026-07-27','2026-08-03',55.58,'CLOSED')
-		ON CONFLICT (id) DO NOTHING`, invoiceID, revAccountID)
+	seedInvoiceThroughRepository(t, db, &invoice.Invoice{
+		ID: invoiceID, BankAccountID: revAccountID, Amount: 55.58, Status: invoice.StatusClosed,
+		ReferenceDate: time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC), OpeningDate: time.Date(2026, time.June, 27, 0, 0, 0, 0, time.UTC),
+		ClosingDate: time.Date(2026, time.July, 27, 0, 0, 0, 0, time.UTC), DueDate: time.Date(2026, time.August, 3, 0, 0, 0, 0, time.UTC),
+	})
 	exec(t, db, `UPDATE finance.transactions SET invoice_id = $1 WHERE id = $2`, invoiceID, revTxID)
 
 	txRepo := persistence.NewTransactionRepository(db)

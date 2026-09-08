@@ -5,7 +5,10 @@ package persistence
 
 import (
 	"database/sql"
+	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
+	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
 	"testing"
+	"time"
 
 	"github.com/brunovieira/calendar-finances/internal/database"
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
@@ -50,19 +53,19 @@ func invoiceSumSeed(t *testing.T, db *sql.DB) {
 		invoiceSumProfileID, "invoice-sum-e2e"); err != nil {
 		t.Fatalf("seed profile: %v", err)
 	}
-	if _, err := db.Exec(`
-		INSERT INTO finance.bank_accounts (id, profile_id, name, type, closing_day, due_day)
-		VALUES ($1, $2, 'Cartão E2E', 'CREDIT_CARD', 5, 15)`,
-		invoiceSumCardID, invoiceSumProfileID); err != nil {
-		t.Fatalf("seed card: %v", err)
+	closingDay, dueDay := 5, 15
+	if err := NewBankAccountRepository(db).Create(&bankaccount.BankAccount{
+		ID: invoiceSumCardID, ProfileID: invoiceSumProfileID, Name: "Cartão E2E",
+		Type: bankaccount.AccountTypeCreditCard, ClosingDay: &closingDay, DueDay: &dueDay,
+		Currency: "BRL", IsActive: true, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("seed card through the repository: %v", err)
 	}
-	if _, err := db.Exec(`
-		INSERT INTO finance.credit_card_invoices
-			(id, bank_account_id, reference_date, opening_date, closing_date, due_date, amount, status)
-		VALUES ($1, $2, '2026-03-01', '2026-02-06', '2026-03-05', '2026-03-15', 0, 'OPEN')`,
-		invoiceSumInvoiceID, invoiceSumCardID); err != nil {
-		t.Fatalf("seed invoice: %v", err)
-	}
+	seedInvoiceThroughRepository(t, db, &invoice.Invoice{
+		ID: invoiceSumInvoiceID, BankAccountID: invoiceSumCardID, Amount: 0, Status: invoice.StatusOpen,
+		ReferenceDate: time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC), OpeningDate: time.Date(2026, time.February, 6, 0, 0, 0, 0, time.UTC),
+		ClosingDate: time.Date(2026, time.March, 5, 0, 0, 0, 0, time.UTC), DueDate: time.Date(2026, time.March, 15, 0, 0, 0, 0, time.UTC),
+	})
 }
 
 func invoiceSumCharge(t *testing.T, db *sql.DB, txType, status string, amount float64, description string) {

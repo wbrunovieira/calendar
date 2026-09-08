@@ -3,8 +3,12 @@
 package database
 
 import (
+	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
+	"github.com/brunovieira/calendar-finances/internal/infrastructure/persistence"
+	"github.com/google/uuid"
 	"os"
 	"testing"
+	"time"
 )
 
 // TestMigrations_ExternalIDUnique garante o guard-rail no banco contra
@@ -42,12 +46,13 @@ func TestMigrations_ExternalIDUnique(t *testing.T) {
 		t.Fatalf("failed to insert profile: %v", err)
 	}
 
-	var accountID string
-	if err := db.QueryRow(
-		"INSERT INTO finance.bank_accounts (profile_id, name, type) VALUES ($1, 'test-uq-acc', 'CHECKING') RETURNING id",
-		profileID,
-	).Scan(&accountID); err != nil {
-		t.Fatalf("failed to insert account: %v", err)
+	accountID := uuid.NewString()
+	if err := persistence.NewBankAccountRepository(db).Create(&bankaccount.BankAccount{
+		ID: accountID, ProfileID: profileID, Name: "test-uq-acc",
+		Type: bankaccount.AccountTypeChecking, Currency: "BRL", IsActive: true,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("seed account through the repository: %v", err)
 	}
 
 	insert := func() error {

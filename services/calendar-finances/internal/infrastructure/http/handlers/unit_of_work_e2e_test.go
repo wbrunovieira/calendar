@@ -6,6 +6,8 @@ package handlers_test
 import (
 	"database/sql"
 	"errors"
+	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
+	"github.com/google/uuid"
 	"testing"
 	"time"
 
@@ -35,8 +37,9 @@ func seedUnitOfWork(t *testing.T, db *sql.DB) {
 	})
 	exec(t, db, `INSERT INTO finance.profiles (id, calendar_id, name, type)
 		VALUES ($1,$2,'E2E UoW','BUSINESS') ON CONFLICT (id) DO NOTHING`, uowProfileID, "e2e-uow")
-	exec(t, db, `INSERT INTO finance.bank_accounts (id, profile_id, name, type, initial_balance, current_balance, currency)
-		VALUES ($1,$2,'Conta UoW','CHECKING',0,0,'BRL') ON CONFLICT (id) DO NOTHING`, uowAccountID, uowProfileID)
+	acc := checkingAccount(uowProfileID, "Conta UoW", 0, 0)
+	acc.ID = uowAccountID
+	seedAccountThroughRepository(t, db, acc)
 }
 
 func uowTransaction(n int) *transaction.Transaction {
@@ -162,14 +165,15 @@ func TestE2E_InvoicePaymentIsAllOrNothing(t *testing.T) {
 		db.Exec(`DELETE FROM finance.credit_card_invoices WHERE id = $1`, invoiceID)
 		db.Exec(`DELETE FROM finance.bank_accounts WHERE id = $1`, cardID)
 	})
-	exec(t, db, `INSERT INTO finance.bank_accounts
-		(id, profile_id, name, type, initial_balance, current_balance, currency, closing_day, due_day, linked_account_id)
-		VALUES ($1,$2,'Cartao UoW','CREDIT_CARD',0,-500,'BRL',27,3,$3) ON CONFLICT (id) DO NOTHING`,
-		cardID, uowProfileID, uowAccountID)
-	exec(t, db, `INSERT INTO finance.credit_card_invoices
-		(id, bank_account_id, reference_date, opening_date, closing_date, due_date, amount, status)
-		VALUES ($1,$2,'2026-09-01','2026-07-27','2026-08-27','2026-09-03',500,'CLOSED')
-		ON CONFLICT (id) DO NOTHING`, invoiceID, cardID)
+	card := cardAccount(uowProfileID, "Cartao UoW", 0)
+	linked := uowAccountID
+	card.ID, card.CurrentBalance, card.CreditLimit, card.LinkedAccountID = cardID, -500, nil, &linked
+	seedAccountThroughRepository(t, db, card)
+	seedInvoiceThroughRepository(t, db, &invoice.Invoice{
+		ID: invoiceID, BankAccountID: cardID, Amount: 500, Status: invoice.StatusClosed,
+		ReferenceDate: time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC), OpeningDate: time.Date(2026, time.July, 27, 0, 0, 0, 0, time.UTC),
+		ClosingDate: time.Date(2026, time.August, 27, 0, 0, 0, 0, time.UTC), DueDate: time.Date(2026, time.September, 3, 0, 0, 0, 0, time.UTC),
+	})
 
 	countAll := func() (invoiceStatus string, txCount int) {
 		db.QueryRow(`SELECT status FROM finance.credit_card_invoices WHERE id = $1`, invoiceID).Scan(&invoiceStatus)
@@ -227,14 +231,15 @@ func TestE2E_PaymentLegNamesTheInvoiceItPaid(t *testing.T) {
 		db.Exec(`DELETE FROM finance.credit_card_invoices WHERE id = $1`, invoiceID)
 		db.Exec(`DELETE FROM finance.bank_accounts WHERE id = $1`, cardID)
 	})
-	exec(t, db, `INSERT INTO finance.bank_accounts
-		(id, profile_id, name, type, initial_balance, current_balance, currency, closing_day, due_day, linked_account_id)
-		VALUES ($1,$2,'Cartao Vinculo','CREDIT_CARD',0,-500,'BRL',27,3,$3) ON CONFLICT (id) DO NOTHING`,
-		cardID, uowProfileID, uowAccountID)
-	exec(t, db, `INSERT INTO finance.credit_card_invoices
-		(id, bank_account_id, reference_date, opening_date, closing_date, due_date, amount, status)
-		VALUES ($1,$2,'2026-09-01','2026-07-27','2026-08-27','2026-09-03',500,'CLOSED')
-		ON CONFLICT (id) DO NOTHING`, invoiceID, cardID)
+	linkedTo := uowAccountID
+	vinculo := cardAccount(uowProfileID, "Cartao Vinculo", 0)
+	vinculo.ID, vinculo.CurrentBalance, vinculo.CreditLimit, vinculo.LinkedAccountID = cardID, -500, nil, &linkedTo
+	seedAccountThroughRepository(t, db, vinculo)
+	seedInvoiceThroughRepository(t, db, &invoice.Invoice{
+		ID: invoiceID, BankAccountID: cardID, Amount: 500, Status: invoice.StatusClosed,
+		ReferenceDate: time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC), OpeningDate: time.Date(2026, time.July, 27, 0, 0, 0, 0, time.UTC),
+		ClosingDate: time.Date(2026, time.August, 27, 0, 0, 0, 0, time.UTC), DueDate: time.Date(2026, time.September, 3, 0, 0, 0, 0, time.UTC),
+	})
 
 	accountRepo := persistence.NewBankAccountRepository(db)
 	txRepo := persistence.NewTransactionRepository(db)
@@ -255,4 +260,32 @@ func TestE2E_PaymentLegNamesTheInvoiceItPaid(t *testing.T) {
 	if linked != 1 {
 		t.Errorf("%d payment legs name the invoice, want 1 — otherwise the only way to find them is matching amount and date", linked)
 	}
+}
+
+// seedInvoiceThroughRepository creates the bill with the same statement production
+// uses. An INSERT written for the test leaves InvoiceRepository.Create — a central
+// money path — with no coverage at all.
+//
+// It matters more for invoices than for accounts: a balance is compared against the
+// bank every day, and soon automatically. A bill is compared against nothing.
+func seedInvoiceThroughRepository(t *testing.T, db *sql.DB, inv *invoice.Invoice) string {
+	t.Helper()
+	if inv.ID == "" {
+		inv.ID = uuid.NewString()
+	}
+	if inv.CreatedAt.IsZero() {
+		inv.CreatedAt = time.Now()
+	}
+	inv.UpdatedAt = time.Now()
+	repo := persistence.NewInvoiceRepository(db)
+	// Returns early when the bill is already there, the way the ON CONFLICT DO NOTHING
+	// it replaced did: a run interrupted halfway must not make every later run fail on
+	// a duplicate key.
+	if existing, err := repo.FindByID(inv.ID); err == nil && existing != nil {
+		return inv.ID
+	}
+	if err := repo.Create(inv); err != nil {
+		t.Fatalf("seeding invoice through the repository: %v", err)
+	}
+	return inv.ID
 }

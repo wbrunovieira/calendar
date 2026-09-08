@@ -6,10 +6,13 @@ package app_test
 import (
 	"database/sql"
 	"encoding/json"
+	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
+	"github.com/brunovieira/calendar-finances/internal/infrastructure/persistence"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/brunovieira/calendar-finances/internal/app"
 	"github.com/brunovieira/calendar-finances/internal/application/usecases"
@@ -82,11 +85,12 @@ func invariantsSeed(t *testing.T, db *sql.DB, initial, income, storedBalance flo
 		VALUES ($1, $2, 'Invariants E2E', 'PERSONAL')`, invariantsProfileID, "invariants-e2e"); err != nil {
 		t.Fatalf("seed profile: %v", err)
 	}
-	if _, err := db.Exec(`
-		INSERT INTO finance.bank_accounts (id, profile_id, name, type, initial_balance, current_balance)
-		VALUES ($1, $2, 'Conta E2E', 'CHECKING', $3, $4)`,
-		invariantsAccountID, invariantsProfileID, initial, storedBalance); err != nil {
-		t.Fatalf("seed account: %v", err)
+	if err := persistence.NewBankAccountRepository(db).Create(&bankaccount.BankAccount{
+		ID: invariantsAccountID, ProfileID: invariantsProfileID, Name: "Conta E2E",
+		Type: bankaccount.AccountTypeChecking, InitialBalance: initial, CurrentBalance: storedBalance,
+		Currency: "BRL", IsActive: true, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("seed account through the repository: %v", err)
 	}
 	if _, err := db.Exec(`
 		INSERT INTO finance.transactions (profile_id, bank_account_id, type, status, amount, description, occurred_on)
@@ -246,18 +250,26 @@ func TestInvariantsRoute_ReportsAStaleInvoiceTotalWithoutFailingTheCheck(t *test
 	const cardID = "3a1f0000-0000-4000-8000-000000000003"
 	const invoiceID = "3a1f0000-0000-4000-8000-000000000004"
 
-	if _, err := db.Exec(`
-		INSERT INTO finance.bank_accounts (id, profile_id, name, type, closing_day, due_day, current_balance)
-		VALUES ($1, $2, 'Cartão E2E', 'CREDIT_CARD', 5, 15, 0)`,
-		cardID, invariantsProfileID); err != nil {
-		t.Fatalf("seed card: %v", err)
+	closingDay, dueDay := 5, 15
+	if err := persistence.NewBankAccountRepository(db).Create(&bankaccount.BankAccount{
+		ID: cardID, ProfileID: invariantsProfileID, Name: "Cartão E2E",
+		Type: bankaccount.AccountTypeCreditCard, ClosingDay: &closingDay, DueDay: &dueDay,
+		Currency: "BRL", IsActive: true, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("seed card through the repository: %v", err)
 	}
-	if _, err := db.Exec(`
-		INSERT INTO finance.credit_card_invoices
-			(id, bank_account_id, reference_date, opening_date, closing_date, due_date, amount, status)
-		VALUES ($1, $2, '2026-03-01', '2026-02-06', '2026-03-05', '2026-03-15', 0, 'PAID')`,
-		invoiceID, cardID); err != nil {
-		t.Fatalf("seed invoice: %v", err)
+	// Through the repository, so the statement production uses to write a bill is the
+	// one this suite exercises. Seeding it with SQL leaves InvoiceRepository.Create
+	// with no coverage, and a bill is compared against nothing the way a balance is
+	// compared against the bank.
+	inv := &invoice.Invoice{
+		ID: invoiceID, BankAccountID: cardID, Amount: 0, Status: invoice.StatusPaid,
+		ReferenceDate: time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC), OpeningDate: time.Date(2026, time.February, 6, 0, 0, 0, 0, time.UTC),
+		ClosingDate: time.Date(2026, time.March, 5, 0, 0, 0, 0, time.UTC), DueDate: time.Date(2026, time.March, 15, 0, 0, 0, 0, time.UTC),
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := persistence.NewInvoiceRepository(db).Create(inv); err != nil {
+		t.Fatalf("seed invoice through the repository: %v", err)
 	}
 	if _, err := db.Exec(`
 		INSERT INTO finance.transactions

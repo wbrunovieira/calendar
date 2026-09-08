@@ -6,6 +6,9 @@ package handlers_test
 import (
 	"database/sql"
 	"encoding/json"
+	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
+	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
+	"github.com/google/uuid"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -93,12 +96,7 @@ func seedProfileAndAccount(t *testing.T, db *sql.DB) (profileID, accountID strin
 	`).Scan(&profileID); err != nil {
 		t.Fatalf("seeding profile: %v", err)
 	}
-	if err := db.QueryRow(`
-		INSERT INTO finance.bank_accounts (profile_id, name, type, initial_balance, current_balance, currency)
-		VALUES ($1, 'Conta E2E', 'CHECKING', 0, 0, 'BRL') RETURNING id
-	`, profileID).Scan(&accountID); err != nil {
-		t.Fatalf("seeding account: %v", err)
-	}
+	accountID = seedAccountThroughRepository(t, db, checkingAccount(profileID, "Conta E2E", 0, 0))
 
 	t.Cleanup(func() {
 		execSQL(t, db, `DELETE FROM finance.transactions WHERE profile_id = $1`, profileID)
@@ -145,19 +143,13 @@ func TestCashflowSummaryRoute_DropsInvoicePayments(t *testing.T) {
 	profileID, accountID := seedProfileAndAccount(t, db)
 
 	var cardID string
-	if err := db.QueryRow(`
-		INSERT INTO finance.bank_accounts (profile_id, name, type, initial_balance, current_balance, currency, credit_limit, closing_day, due_day)
-		VALUES ($1, 'Cartao E2E', 'CREDIT_CARD', 0, 0, 'BRL', 1000, 27, 3) RETURNING id
-	`, profileID).Scan(&cardID); err != nil {
-		t.Fatalf("seeding card: %v", err)
-	}
+	cardID = seedAccountThroughRepository(t, db, cardAccount(profileID, "Cartao E2E", 1000))
 	var invoiceID string
-	if err := db.QueryRow(`
-		INSERT INTO finance.credit_card_invoices (bank_account_id, reference_date, opening_date, closing_date, due_date, amount, status)
-		VALUES ($1, '2026-09-27', '2026-08-27', '2026-09-27', '2026-10-03', 0, 'OPEN') RETURNING id
-	`, cardID).Scan(&invoiceID); err != nil {
-		t.Fatalf("seeding invoice: %v", err)
-	}
+	invoiceID = seedInvoiceThroughRepository(t, db, &invoice.Invoice{
+		BankAccountID: cardID, Amount: 0, Status: invoice.StatusOpen,
+		ReferenceDate: time.Date(2026, time.September, 27, 0, 0, 0, 0, time.UTC), OpeningDate: time.Date(2026, time.August, 27, 0, 0, 0, 0, time.UTC),
+		ClosingDate: time.Date(2026, time.September, 27, 0, 0, 0, 0, time.UTC), DueDate: time.Date(2026, time.October, 3, 0, 0, 0, 0, time.UTC),
+	})
 
 	execSQL(t, db, `
 		INSERT INTO finance.transactions (profile_id, bank_account_id, invoice_id, type, status, amount, currency, description, occurred_on)
@@ -240,5 +232,51 @@ func TestPendingRecurringsRoute_DropsOffOncePaid(t *testing.T) {
 	}
 	if items, _ := body["data"].([]any); len(items) != 0 {
 		t.Fatalf("expected nothing pending after payment, got %v", body["data"])
+	}
+}
+
+// seedAccountThroughRepository creates the account with the same statement production
+// uses, instead of an INSERT written for the test.
+//
+// The two used to differ, and the difference was invisible: a column duplicated in
+// BankAccountRepository.Create broke every POST /bank-accounts while this suite stayed
+// green, because nothing here ever called it.
+//
+// It returns early when the row is already there, which is what the ON CONFLICT DO
+// NOTHING it replaced did. Without that, a run interrupted halfway leaves rows behind
+// and every later run fails on a duplicate key — turning a self-healing helper into a
+// hard stop against a dirty local database.
+func seedAccountThroughRepository(t *testing.T, db *sql.DB, acc *bankaccount.BankAccount) string {
+	t.Helper()
+	if acc.ID == "" {
+		acc.ID = uuid.NewString()
+	}
+	repo := persistence.NewBankAccountRepository(db)
+	if existing, err := repo.FindByID(acc.ID); err == nil && existing != nil {
+		return acc.ID
+	}
+	if acc.Currency == "" {
+		acc.Currency = "BRL"
+	}
+	acc.IsActive = true
+	acc.CreatedAt, acc.UpdatedAt = time.Now(), time.Now()
+	if err := repo.Create(acc); err != nil {
+		t.Fatalf("seeding account through the repository: %v", err)
+	}
+	return acc.ID
+}
+
+func checkingAccount(profileID, name string, initial, current float64) *bankaccount.BankAccount {
+	return &bankaccount.BankAccount{
+		ProfileID: profileID, Name: name, Type: bankaccount.AccountTypeChecking,
+		InitialBalance: initial, CurrentBalance: current,
+	}
+}
+
+func cardAccount(profileID, name string, limit float64) *bankaccount.BankAccount {
+	closing, due := 27, 3
+	return &bankaccount.BankAccount{
+		ProfileID: profileID, Name: name, Type: bankaccount.AccountTypeCreditCard,
+		CreditLimit: &limit, ClosingDay: &closing, DueDay: &due,
 	}
 }

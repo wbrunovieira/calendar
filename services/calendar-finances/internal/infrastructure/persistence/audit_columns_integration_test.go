@@ -4,6 +4,8 @@
 package persistence
 
 import (
+	"database/sql"
+	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
 	"testing"
 	"time"
 
@@ -31,14 +33,11 @@ func TestIntegration_ThePaymentLinkSurvivesARoundTrip(t *testing.T) {
 	profileID, accountID := uuid.NewString(), uuid.NewString()
 	seedProfileAndAccount(t, db, profileID, accountID)
 
-	invoiceID := uuid.NewString()
-	if _, err := db.Exec(`
-		INSERT INTO finance.credit_card_invoices
-			(id, bank_account_id, reference_date, opening_date, closing_date, due_date, amount, status)
-		VALUES ($1, $2, '2026-09-01', '2026-07-27', '2026-08-27', '2026-09-03', 799.57, 'CLOSED')`,
-		invoiceID, accountID); err != nil {
-		t.Fatalf("seed invoice: %v", err)
-	}
+	invoiceID := seedInvoiceThroughRepository(t, db, &invoice.Invoice{
+		BankAccountID: accountID, Amount: 799.57, Status: invoice.StatusClosed,
+		ReferenceDate: time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC), OpeningDate: time.Date(2026, time.July, 27, 0, 0, 0, 0, time.UTC),
+		ClosingDate: time.Date(2026, time.August, 27, 0, 0, 0, 0, time.UTC), DueDate: time.Date(2026, time.September, 3, 0, 0, 0, 0, time.UTC),
+	})
 
 	repo := NewTransactionRepository(db)
 	txn, err := transaction.New(transaction.CreateParams{
@@ -263,16 +262,13 @@ func TestIntegration_ReversingAPaymentUnsettlesTheBill(t *testing.T) {
 	profileID, accountID := uuid.NewString(), uuid.NewString()
 	seedProfileAndAccount(t, db, profileID, accountID)
 
-	invoiceID := uuid.NewString()
-	if _, err := db.Exec(`
-		INSERT INTO finance.credit_card_invoices
-			(id, bank_account_id, reference_date, opening_date, closing_date, due_date,
-			 amount, paid_amount, paid_at, status)
-		VALUES ($1, $2, '2026-09-01', '2026-07-27', '2026-08-27', '2026-09-03',
-			799.57, 799.57, '2026-09-03', 'PAID')`,
-		invoiceID, accountID); err != nil {
-		t.Fatalf("seed invoice: %v", err)
-	}
+	paidAmount, paidAt := 799.57, time.Date(2026, time.September, 3, 0, 0, 0, 0, time.UTC)
+	invoiceID := seedInvoiceThroughRepository(t, db, &invoice.Invoice{
+		BankAccountID: accountID, Amount: 799.57, Status: invoice.StatusPaid,
+		PaidAmount: &paidAmount, PaidAt: &paidAt,
+		ReferenceDate: time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC), OpeningDate: time.Date(2026, time.July, 27, 0, 0, 0, 0, time.UTC),
+		ClosingDate: time.Date(2026, time.August, 27, 0, 0, 0, 0, time.UTC), DueDate: time.Date(2026, time.September, 3, 0, 0, 0, 0, time.UTC),
+	})
 
 	repo := NewTransactionRepository(db)
 	payment, err := transaction.New(transaction.CreateParams{
@@ -314,4 +310,33 @@ func TestIntegration_ReversingAPaymentUnsettlesTheBill(t *testing.T) {
 	if live != 0 {
 		t.Fatalf("a reversed payment must stop counting: got %v", live)
 	}
+}
+
+// seedInvoiceThroughRepository creates the bill with the same statement production
+// uses. Seeding it with an INSERT written for the test leaves InvoiceRepository.Create
+// — a central money path — with no coverage at all, which is how a duplicated column
+// in the account repository broke every account creation while the suite stayed green.
+//
+// It matters more for invoices than for accounts: a balance is compared against the
+// bank every day, and soon automatically. A bill is compared against nothing.
+func seedInvoiceThroughRepository(t *testing.T, db *sql.DB, inv *invoice.Invoice) string {
+	t.Helper()
+	if inv.ID == "" {
+		inv.ID = uuid.NewString()
+	}
+	if inv.CreatedAt.IsZero() {
+		inv.CreatedAt = time.Now()
+	}
+	inv.UpdatedAt = time.Now()
+	repo := NewInvoiceRepository(db)
+	// Returns early when the bill is already there, the way the ON CONFLICT DO NOTHING
+	// it replaced did: a run interrupted halfway must not make every later run fail on
+	// a duplicate key.
+	if existing, err := repo.FindByID(inv.ID); err == nil && existing != nil {
+		return inv.ID
+	}
+	if err := repo.Create(inv); err != nil {
+		t.Fatalf("seeding invoice through the repository: %v", err)
+	}
+	return inv.ID
 }
