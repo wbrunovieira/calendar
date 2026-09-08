@@ -278,3 +278,72 @@ func TestReconcile_CentsAreComparedExactly(t *testing.T) {
 		t.Errorf("matched %s — one cent apart is a different charge", matches.matches[0].TransactionID)
 	}
 }
+
+// A planned entry the bank has now paid is not a match — it is a nudge.
+//
+// Matching it would assert that a forecast is a fact. Ignoring it would leave the
+// money looking missing while the entry sits there waiting. Naming it separately is
+// the only honest answer, and it is what closes the loop for entries posted ahead of
+// time: the CRM records an expected payment as PLANNED, the bank says it arrived, and
+// this is the signal to confirm it.
+func TestReconcile_APlannedEntryThatArrivedIsReadyToConfirm(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	lines.lines = []*statement.Line{statementLine(t, "a", "acc", 125000, 5)}
+
+	expected := &transaction.Transaction{
+		ID: "tx1", ProfileID: "p1", BankAccountID: "acc",
+		Type: transaction.TypeIncome, Status: transaction.StatusPlanned,
+		Amount: 1250, Currency: "BRL", Description: "Gomez Studio - parcela 1/2",
+		OccurredOn: time.Date(2026, time.September, 5, 0, 0, 0, 0, time.UTC),
+	}
+	txns.created = []*transaction.Transaction{expected}
+
+	out, err := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if out.Matched != 0 {
+		t.Error("a forecast is not a fact; it must not be matched")
+	}
+	if len(out.Missing) != 0 {
+		t.Error("and the money is not missing either — the entry is right there")
+	}
+	if len(out.ReadyToConfirm) != 1 {
+		t.Fatalf("it must be named as ready to confirm: %+v", out)
+	}
+	if out.ReadyToConfirm[0].TransactionID != "tx1" {
+		t.Errorf("pointed at %s", out.ReadyToConfirm[0].TransactionID)
+	}
+	if out.ReadyToConfirm[0].AmountMinor != 125000 {
+		t.Errorf("got %d", out.ReadyToConfirm[0].AmountMinor)
+	}
+}
+
+// A confirmed entry beats a planned one for the same line: the money already moved and
+// the forecast is stale. Proposing both would ask a human to choose between a fact and
+// a guess.
+func TestReconcile_AConfirmedEntryWinsOverAPlannedOne(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	lines.lines = []*statement.Line{statementLine(t, "a", "acc", 125000, 5)}
+	txns.created = []*transaction.Transaction{
+		{ID: "planejado", ProfileID: "p1", BankAccountID: "acc", Type: transaction.TypeIncome,
+			Status: transaction.StatusPlanned, Amount: 1250, Currency: "BRL", Description: "previsto",
+			OccurredOn: time.Date(2026, time.September, 5, 0, 0, 0, 0, time.UTC)},
+		{ID: "real", ProfileID: "p1", BankAccountID: "acc", Type: transaction.TypeIncome,
+			Status: transaction.StatusConfirmed, Amount: 1250, Currency: "BRL", Description: "recebido",
+			OccurredOn: time.Date(2026, time.September, 5, 0, 0, 0, 0, time.UTC)},
+	}
+
+	out, _ := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc")
+
+	if out.Matched != 1 {
+		t.Fatalf("the confirmed entry is the match: %+v", out)
+	}
+	if matches.matches[0].TransactionID != "real" {
+		t.Errorf("matched %s", matches.matches[0].TransactionID)
+	}
+	if len(out.ReadyToConfirm) != 0 {
+		t.Error("the stale forecast must not also be proposed")
+	}
+}

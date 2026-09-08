@@ -129,8 +129,9 @@ func accountKindOf(account *bankaccount.BankAccount) statement.AccountKind {
 // the ledger does not have. `ambiguous` is the second: more than one entry fits, and
 // choosing between them is not this service's call.
 //
-// 200 when everything lined up, 409 when there is something to look at — so the cron
-// can alert on the status without parsing the body.
+// 200 when everything lined up, 409 when there is something to do — missing money,
+// an ambiguity, or a forecast the bank has now paid — so the cron can alert on the
+// status without parsing the body.
 func (h *StatementHandlers) Reconcile(w http.ResponseWriter, r *http.Request) {
 	result, err := h.reconcileUC.Execute(mux.Vars(r)["id"])
 	if err != nil {
@@ -139,7 +140,7 @@ func (h *StatementHandlers) Reconcile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if len(result.Missing) > 0 || len(result.Ambiguous) > 0 {
+	if len(result.Missing) > 0 || len(result.Ambiguous) > 0 || len(result.ReadyToConfirm) > 0 {
 		w.WriteHeader(http.StatusConflict)
 	}
 	json.NewEncoder(w).Encode(map[string]any{"data": result})

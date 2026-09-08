@@ -44,6 +44,20 @@ type AmbiguousLine struct {
 	CandidateIDs []string  `json:"candidateIds"`
 }
 
+// ReadyToConfirm is a planned entry the bank has now paid.
+//
+// It is neither matched nor missing: matching would assert that a forecast is a fact,
+// and calling it missing would ignore the entry sitting right there. It is the signal
+// to confirm — which is how an entry posted ahead of time, by the CRM or by a
+// recurrence, learns that the money actually arrived.
+type ReadyToConfirm struct {
+	LineID        string    `json:"lineId"`
+	TransactionID string    `json:"transactionId"`
+	BookedDate    time.Time `json:"bookedDate"`
+	AmountMinor   int64     `json:"amountMinor"`
+	Description   string    `json:"description"`
+}
+
 // ReconcileStatementOutput separates the three answers a line can get, because they
 // need three different things done about them.
 type ReconcileStatementOutput struct {
@@ -51,6 +65,9 @@ type ReconcileStatementOutput struct {
 	Matched   int             `json:"matched"`
 	Missing   []MissingLine   `json:"missing"`
 	Ambiguous []AmbiguousLine `json:"ambiguous"`
+	// ReadyToConfirm is a fourth answer, not a kind of match: the bank paid something
+	// the ledger only forecast.
+	ReadyToConfirm []ReadyToConfirm `json:"readyToConfirm"`
 	// Pending counts lines the bank has not settled. They are neither matched nor
 	// missing: a pending authorisation still changes amount and date when it posts, so
 	// matching one asserts a check the next sync invalidates.
@@ -106,7 +123,9 @@ func (uc *ReconcileStatementUseCase) Execute(accountID string) (*ReconcileStatem
 		return nil, err
 	}
 
-	out := &ReconcileStatementOutput{Missing: []MissingLine{}, Ambiguous: []AmbiguousLine{}}
+	out := &ReconcileStatementOutput{
+		Missing: []MissingLine{}, Ambiguous: []AmbiguousLine{}, ReadyToConfirm: []ReadyToConfirm{},
+	}
 	// Claimed within this run as well as across runs: two lines of the same value must
 	// not both point at one entry, or the second charge silently looks accounted for.
 	claimed := map[string]bool{}
@@ -122,7 +141,18 @@ func (uc *ReconcileStatementUseCase) Execute(accountID string) (*ReconcileStatem
 			continue
 		}
 
-		candidates := uc.candidatesFor(line, account, txns, claimed)
+		candidates := uc.candidatesFor(line, account, txns, claimed, transactionPkg.StatusConfirmed)
+		if len(candidates) == 0 {
+			// Nothing confirmed fits. A forecast might — and if one does, the answer is
+			// not "missing", it is "confirm this".
+			if planned := uc.candidatesFor(line, account, txns, claimed, transactionPkg.StatusPlanned); len(planned) == 1 {
+				out.ReadyToConfirm = append(out.ReadyToConfirm, ReadyToConfirm{
+					LineID: line.ID, TransactionID: planned[0].ID, BookedDate: line.BookedDate,
+					AmountMinor: line.InAccountCurrency(), Description: line.Description,
+				})
+				continue
+			}
+		}
 		switch len(candidates) {
 		case 1:
 			match, err := statement.NewMatch(line.ID, candidates[0].ID, abs64(line.InAccountCurrency()),
@@ -175,6 +205,7 @@ func (uc *ReconcileStatementUseCase) candidatesFor(
 	account *bankaccount.BankAccount,
 	txns []*transactionPkg.Transaction,
 	claimed map[string]bool,
+	status transactionPkg.Status,
 ) []*transactionPkg.Transaction {
 	out := []*transactionPkg.Transaction{}
 
@@ -182,7 +213,7 @@ func (uc *ReconcileStatementUseCase) candidatesFor(
 		if claimed[txn.ID] {
 			continue
 		}
-		if txn.Status != transactionPkg.StatusConfirmed {
+		if txn.Status != status {
 			continue
 		}
 		if signedMinorFor(txn, account) != line.InAccountCurrency() {
