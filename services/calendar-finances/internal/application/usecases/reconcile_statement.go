@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
@@ -131,7 +132,11 @@ func (uc *ReconcileStatementUseCase) Execute(accountID string) (*ReconcileStatem
 	claimed := map[string]bool{}
 
 	for _, line := range lines {
-		if uc.alreadyMatched(line) {
+		done, err := uc.alreadyMatched(line)
+		if err != nil {
+			return nil, err
+		}
+		if done {
 			continue
 		}
 		out.Checked++
@@ -141,11 +146,18 @@ func (uc *ReconcileStatementUseCase) Execute(accountID string) (*ReconcileStatem
 			continue
 		}
 
-		candidates := uc.candidatesFor(line, account, txns, claimed, transactionPkg.StatusConfirmed)
+		candidates, err := uc.candidatesFor(line, account, txns, claimed, transactionPkg.StatusConfirmed)
+		if err != nil {
+			return nil, err
+		}
 		if len(candidates) == 0 {
 			// Nothing confirmed fits. A forecast might — and if one does, the answer is
 			// not "missing", it is "confirm this".
-			if planned := uc.candidatesFor(line, account, txns, claimed, transactionPkg.StatusPlanned); len(planned) == 1 {
+			planned, err := uc.candidatesFor(line, account, txns, claimed, transactionPkg.StatusPlanned)
+			if err != nil {
+				return nil, err
+			}
+			if len(planned) == 1 {
 				out.ReadyToConfirm = append(out.ReadyToConfirm, ReadyToConfirm{
 					LineID: line.ID, TransactionID: planned[0].ID, BookedDate: line.BookedDate,
 					AmountMinor: line.InAccountCurrency(), Description: line.Description,
@@ -185,17 +197,20 @@ func (uc *ReconcileStatementUseCase) Execute(accountID string) (*ReconcileStatem
 	return out, nil
 }
 
-func (uc *ReconcileStatementUseCase) alreadyMatched(line *statement.Line) bool {
+// alreadyMatched answers whether this line is already reconciled — or refuses to
+// answer. Not knowing is not the same as "no": treating a database failure as "not
+// matched" makes the reconciler match it again.
+func (uc *ReconcileStatementUseCase) alreadyMatched(line *statement.Line) (bool, error) {
 	live, err := uc.matches.ByLine(line.ID)
 	if err != nil {
-		return false
+		return false, fmt.Errorf("checking whether line %s is already reconciled: %w", line.ID, err)
 	}
 	for _, m := range live {
 		if m.UnmatchedAt == nil {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 // candidatesFor returns the entries that could be this line: same account, same value
@@ -206,7 +221,7 @@ func (uc *ReconcileStatementUseCase) candidatesFor(
 	txns []*transactionPkg.Transaction,
 	claimed map[string]bool,
 	status transactionPkg.Status,
-) []*transactionPkg.Transaction {
+) ([]*transactionPkg.Transaction, error) {
 	out := []*transactionPkg.Transaction{}
 
 	for _, txn := range txns {
@@ -222,25 +237,35 @@ func (uc *ReconcileStatementUseCase) candidatesFor(
 		if abs64(int64(daysBetween(txn.OccurredOn, line.BookedDate))) > dateTolerance {
 			continue
 		}
-		if uc.spokenFor(txn.ID) {
+		taken, err := uc.spokenFor(txn.ID)
+		if err != nil {
+			return nil, err
+		}
+		if taken {
 			continue
 		}
 		out = append(out, txn)
 	}
-	return out
+	return out, nil
 }
 
-func (uc *ReconcileStatementUseCase) spokenFor(transactionID string) bool {
+// spokenFor answers whether another line already claims this entry — or refuses to.
+//
+// The unique index covers the PAIR (line, transaction), so it stops one line claiming
+// one entry twice and does nothing about two lines claiming the same entry. This check
+// is the only thing standing between a database hiccup and a second bank charge that
+// silently looks accounted for.
+func (uc *ReconcileStatementUseCase) spokenFor(transactionID string) (bool, error) {
 	live, err := uc.matches.ByTransaction(transactionID)
 	if err != nil {
-		return false
+		return false, fmt.Errorf("checking whether entry %s is already claimed: %w", transactionID, err)
 	}
 	for _, m := range live {
 		if m.UnmatchedAt == nil {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 // signedMinorFor puts an entry in the same convention the statement lines use: money

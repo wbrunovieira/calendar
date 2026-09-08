@@ -1,6 +1,7 @@
 package usecases
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -345,5 +346,59 @@ func TestReconcile_AConfirmedEntryWinsOverAPlannedOne(t *testing.T) {
 	}
 	if len(out.ReadyToConfirm) != 0 {
 		t.Error("the stale forecast must not also be proposed")
+	}
+}
+
+type failingMatchRepo struct {
+	fakeMatchRepo
+	failByTransaction bool
+	failByLine        bool
+}
+
+func (f *failingMatchRepo) ByTransaction(id string) ([]*statement.Match, error) {
+	if f.failByTransaction {
+		return nil, errors.New("database unavailable")
+	}
+	return f.fakeMatchRepo.ByTransaction(id)
+}
+
+func (f *failingMatchRepo) ByLine(id string) ([]*statement.Match, error) {
+	if f.failByLine {
+		return nil, errors.New("database unavailable")
+	}
+	return f.fakeMatchRepo.ByLine(id)
+}
+
+// A database that cannot answer "is this entry already spoken for?" must stop the run,
+// not answer no.
+//
+// The unique index guards the PAIR (line, transaction), so it catches one line claiming
+// one entry twice — and does nothing about two different lines claiming the same entry.
+// That second case is the one that matters: the second bank charge would silently look
+// accounted for, which is the failure this whole design exists to prevent. Swallowing
+// the error made a database hiccup produce exactly it.
+func TestReconcile_ADatabaseFailureStopsTheRunInsteadOfGuessing(t *testing.T) {
+	lines, txns, _, accounts := reconcileFixture(t)
+	matches := &failingMatchRepo{failByTransaction: true}
+	lines.lines = []*statement.Line{statementLine(t, "a", "acc", -4000, 5)}
+	txns.created = []*transaction.Transaction{systemCharge("tx1", "acc", 40, 5)}
+
+	_, err := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc")
+	if err == nil {
+		t.Fatal("a reconciler that cannot check must refuse to match, not match anyway")
+	}
+	if len(matches.matches) != 0 {
+		t.Error("and must record nothing")
+	}
+}
+
+func TestReconcile_AFailureReadingTheLinesMatchesAlsoStops(t *testing.T) {
+	lines, txns, _, accounts := reconcileFixture(t)
+	matches := &failingMatchRepo{failByLine: true}
+	lines.lines = []*statement.Line{statementLine(t, "a", "acc", -4000, 5)}
+	txns.created = []*transaction.Transaction{systemCharge("tx1", "acc", 40, 5)}
+
+	if _, err := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc"); err == nil {
+		t.Fatal("not knowing whether the line was already reconciled is not the same as it not being")
 	}
 }
