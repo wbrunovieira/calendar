@@ -37,8 +37,9 @@ func seedUnitOfWork(t *testing.T, db *sql.DB) {
 	})
 	exec(t, db, `INSERT INTO finance.profiles (id, calendar_id, name, type)
 		VALUES ($1,$2,'E2E UoW','BUSINESS') ON CONFLICT (id) DO NOTHING`, uowProfileID, "e2e-uow")
-	exec(t, db, `INSERT INTO finance.bank_accounts (id, profile_id, name, type, initial_balance, current_balance, currency)
-		VALUES ($1,$2,'Conta UoW','CHECKING',0,0,'BRL') ON CONFLICT (id) DO NOTHING`, uowAccountID, uowProfileID)
+	acc := checkingAccount(uowProfileID, "Conta UoW", 0, 0)
+	acc.ID = uowAccountID
+	seedAccountThroughRepository(t, db, acc)
 }
 
 func uowTransaction(n int) *transaction.Transaction {
@@ -164,10 +165,10 @@ func TestE2E_InvoicePaymentIsAllOrNothing(t *testing.T) {
 		db.Exec(`DELETE FROM finance.credit_card_invoices WHERE id = $1`, invoiceID)
 		db.Exec(`DELETE FROM finance.bank_accounts WHERE id = $1`, cardID)
 	})
-	exec(t, db, `INSERT INTO finance.bank_accounts
-		(id, profile_id, name, type, initial_balance, current_balance, currency, closing_day, due_day, linked_account_id)
-		VALUES ($1,$2,'Cartao UoW','CREDIT_CARD',0,-500,'BRL',27,3,$3) ON CONFLICT (id) DO NOTHING`,
-		cardID, uowProfileID, uowAccountID)
+	card := cardAccount(uowProfileID, "Cartao UoW", 0)
+	linked := uowAccountID
+	card.ID, card.CurrentBalance, card.CreditLimit, card.LinkedAccountID = cardID, -500, nil, &linked
+	seedAccountThroughRepository(t, db, card)
 	seedInvoiceThroughRepository(t, db, &invoice.Invoice{
 		ID: invoiceID, BankAccountID: cardID, Amount: 500, Status: invoice.StatusClosed,
 		ReferenceDate: time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC), OpeningDate: time.Date(2026, time.July, 27, 0, 0, 0, 0, time.UTC),
@@ -230,10 +231,10 @@ func TestE2E_PaymentLegNamesTheInvoiceItPaid(t *testing.T) {
 		db.Exec(`DELETE FROM finance.credit_card_invoices WHERE id = $1`, invoiceID)
 		db.Exec(`DELETE FROM finance.bank_accounts WHERE id = $1`, cardID)
 	})
-	exec(t, db, `INSERT INTO finance.bank_accounts
-		(id, profile_id, name, type, initial_balance, current_balance, currency, closing_day, due_day, linked_account_id)
-		VALUES ($1,$2,'Cartao Vinculo','CREDIT_CARD',0,-500,'BRL',27,3,$3) ON CONFLICT (id) DO NOTHING`,
-		cardID, uowProfileID, uowAccountID)
+	linkedTo := uowAccountID
+	vinculo := cardAccount(uowProfileID, "Cartao Vinculo", 0)
+	vinculo.ID, vinculo.CurrentBalance, vinculo.CreditLimit, vinculo.LinkedAccountID = cardID, -500, nil, &linkedTo
+	seedAccountThroughRepository(t, db, vinculo)
 	seedInvoiceThroughRepository(t, db, &invoice.Invoice{
 		ID: invoiceID, BankAccountID: cardID, Amount: 500, Status: invoice.StatusClosed,
 		ReferenceDate: time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC), OpeningDate: time.Date(2026, time.July, 27, 0, 0, 0, 0, time.UTC),
@@ -276,7 +277,14 @@ func seedInvoiceThroughRepository(t *testing.T, db *sql.DB, inv *invoice.Invoice
 		inv.CreatedAt = time.Now()
 	}
 	inv.UpdatedAt = time.Now()
-	if err := persistence.NewInvoiceRepository(db).Create(inv); err != nil {
+	repo := persistence.NewInvoiceRepository(db)
+	// Returns early when the bill is already there, the way the ON CONFLICT DO NOTHING
+	// it replaced did: a run interrupted halfway must not make every later run fail on
+	// a duplicate key.
+	if existing, err := repo.FindByID(inv.ID); err == nil && existing != nil {
+		return inv.ID
+	}
+	if err := repo.Create(inv); err != nil {
 		t.Fatalf("seeding invoice through the repository: %v", err)
 	}
 	return inv.ID

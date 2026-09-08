@@ -36,8 +36,9 @@ func seedDrifted(t *testing.T, db *sql.DB) {
 	exec(t, db, `INSERT INTO finance.profiles (id, calendar_id, name, type)
 		VALUES ($1,$2,'E2E Ajuste','BUSINESS') ON CONFLICT (id) DO NOTHING`, adjProfileID, "e2e-adjust")
 	// Stored balance says 1000; no transaction justifies it. Drift of exactly 1000.
-	exec(t, db, `INSERT INTO finance.bank_accounts (id, profile_id, name, type, initial_balance, current_balance, currency)
-		VALUES ($1,$2,'Conta Deriva','CHECKING',0,1000,'BRL') ON CONFLICT (id) DO NOTHING`, adjAccountID, adjProfileID)
+	acc := checkingAccount(adjProfileID, "Conta Deriva", 0, 1000)
+	acc.ID = adjAccountID
+	seedAccountThroughRepository(t, db, acc)
 }
 
 func TestE2E_RecalculateIsReadOnlyByDefault(t *testing.T) {

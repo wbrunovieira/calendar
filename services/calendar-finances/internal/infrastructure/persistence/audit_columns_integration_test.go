@@ -328,7 +328,14 @@ func seedInvoiceThroughRepository(t *testing.T, db *sql.DB, inv *invoice.Invoice
 		inv.CreatedAt = time.Now()
 	}
 	inv.UpdatedAt = time.Now()
-	if err := NewInvoiceRepository(db).Create(inv); err != nil {
+	repo := NewInvoiceRepository(db)
+	// Returns early when the bill is already there, the way the ON CONFLICT DO NOTHING
+	// it replaced did: a run interrupted halfway must not make every later run fail on
+	// a duplicate key.
+	if existing, err := repo.FindByID(inv.ID); err == nil && existing != nil {
+		return inv.ID
+	}
+	if err := repo.Create(inv); err != nil {
 		t.Fatalf("seeding invoice through the repository: %v", err)
 	}
 	return inv.ID

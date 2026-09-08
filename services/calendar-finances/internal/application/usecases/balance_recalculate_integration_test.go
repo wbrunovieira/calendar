@@ -68,13 +68,9 @@ func integrationSeedProfile(t *testing.T, db *sql.DB, id string) {
 
 func integrationSeedAccount(t *testing.T, db *sql.DB, acc *bankaccount.BankAccount) {
 	t.Helper()
-	_, err := db.Exec(`
-		INSERT INTO finance.bank_accounts (
-			id, profile_id, name, type, initial_balance, current_balance, currency,
-			is_active, created_at, updated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,true,now(),now())
-	`, acc.ID, acc.ProfileID, acc.Name, acc.Type,
-		acc.InitialBalance, acc.CurrentBalance, acc.Currency)
+	acc.IsActive = true
+	acc.CreatedAt, acc.UpdatedAt = time.Now(), time.Now()
+	err := persistence.NewBankAccountRepository(db).Create(acc)
 	if err != nil {
 		t.Fatalf("seed account %s: %v", acc.ID, err)
 	}

@@ -73,6 +73,8 @@ func seedProfile(t *testing.T, db *sql.DB, profileID string) {
 // an account in production is the one the tests exercise.
 func seedAccount(t *testing.T, db *sql.DB, profileID, accountID, name string, kind bankaccount.AccountType) {
 	t.Helper()
+	// Returns early when the row is already there, the way ON CONFLICT DO NOTHING did:
+	// a run interrupted halfway must not make every later run fail on a duplicate key.
 	existing, err := NewBankAccountRepository(db).FindByID(accountID)
 	if err == nil && existing != nil {
 		return

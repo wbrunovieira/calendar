@@ -21,12 +21,7 @@ func seedCard(t *testing.T, db *sql.DB, limit float64) (profileID, cardID string
 	`).Scan(&profileID); err != nil {
 		t.Fatalf("seeding profile: %v", err)
 	}
-	if err := db.QueryRow(`
-		INSERT INTO finance.bank_accounts (profile_id, name, type, initial_balance, current_balance, currency, credit_limit, closing_day, due_day)
-		VALUES ($1, 'Cartao E2E', 'CREDIT_CARD', 0, 0, 'BRL', $2, 27, 3) RETURNING id
-	`, profileID, limit).Scan(&cardID); err != nil {
-		t.Fatalf("seeding card: %v", err)
-	}
+	cardID = seedAccountThroughRepository(t, db, cardAccount(profileID, "Cartao E2E", limit))
 
 	t.Cleanup(func() {
 		exec(t, db, `DELETE FROM finance.transactions WHERE profile_id = $1`, profileID)
@@ -65,8 +60,8 @@ func TestCreditUsageRoute_SumsWhatIsOwedAcrossUnpaidInvoices(t *testing.T) {
 	db := testDB(t)
 
 	profileID, cardID := seedCard(t, db, 400)
-	closed := seedInvoice(t, db, cardID, "CLOSED", "2026-08-27", "2026-09-03")
-	open := seedInvoice(t, db, cardID, "OPEN", "2026-09-27", "2026-10-03")
+	closed := seedInvoice(t, db, cardID, "CLOSED", "2026-07-27", "2026-08-27", "2026-09-03")
+	open := seedInvoice(t, db, cardID, "OPEN", "2026-08-27", "2026-09-27", "2026-10-03")
 	seedCharge(t, db, profileID, cardID, closed, 253.48)
 	seedCharge(t, db, profileID, cardID, open, 126.75)
 
@@ -90,7 +85,7 @@ func TestCreditUsageRoute_CountsTheRemainderOfAPartiallyPaidBill(t *testing.T) {
 	db := testDB(t)
 
 	profileID, cardID := seedCard(t, db, 400)
-	bill := seedInvoice(t, db, cardID, "PAID", "2026-08-27", "2026-09-03")
+	bill := seedInvoice(t, db, cardID, "PAID", "2026-07-27", "2026-08-27", "2026-09-03")
 	seedCharge(t, db, profileID, cardID, bill, 361.74)
 	exec(t, db, `UPDATE finance.credit_card_invoices SET paid_amount = 60 WHERE id = $1`, bill)
 
@@ -110,12 +105,7 @@ func TestCreditUsageRoute_RejectsAnAccountThatIsNotACard(t *testing.T) {
 
 	profileID, _ := seedCard(t, db, 400)
 	var checkingID string
-	if err := db.QueryRow(`
-		INSERT INTO finance.bank_accounts (profile_id, name, type, initial_balance, current_balance, currency)
-		VALUES ($1, 'Conta E2E', 'CHECKING', 0, 0, 'BRL') RETURNING id
-	`, profileID).Scan(&checkingID); err != nil {
-		t.Fatalf("seeding checking: %v", err)
-	}
+	checkingID = seedAccountThroughRepository(t, db, checkingAccount(profileID, "Conta E2E", 0, 0))
 
 	status, _ := get(t, router(t, db), "/api/v1/bank-accounts/"+checkingID+"/credit-usage")
 	if status != http.StatusBadRequest {
@@ -123,13 +113,20 @@ func TestCreditUsageRoute_RejectsAnAccountThatIsNotACard(t *testing.T) {
 	}
 }
 
-func seedInvoice(t *testing.T, db *sql.DB, cardID, status, closing, due string) string {
+// seedInvoice takes the opening date instead of deriving it.
+//
+// The SQL this replaced used Postgres's `- interval '1 month'`, and Go's AddDate is
+// not the same function: Postgres clamps to the end of the month, Go overflows. The
+// 31st of March goes back to 28 February in one and forward to 3 March in the other.
+// Every fixture here closes on the 27th, so the difference is invisible today — and on
+// a credit card an opening three days late leaves a window no invoice covers, which
+// would pass green. Stating the date beats computing it with the wrong arithmetic.
+func seedInvoice(t *testing.T, db *sql.DB, cardID, status, opening, closing, due string) string {
 	t.Helper()
-	closingDate, dueDate := mustDate(t, closing), mustDate(t, due)
 	return seedInvoiceThroughRepository(t, db, &invoice.Invoice{
 		BankAccountID: cardID, Amount: 0, Status: invoice.Status(status),
-		ReferenceDate: closingDate, OpeningDate: closingDate.AddDate(0, -1, 0),
-		ClosingDate: closingDate, DueDate: dueDate,
+		ReferenceDate: mustDate(t, closing), OpeningDate: mustDate(t, opening),
+		ClosingDate: mustDate(t, closing), DueDate: mustDate(t, due),
 	})
 }
 

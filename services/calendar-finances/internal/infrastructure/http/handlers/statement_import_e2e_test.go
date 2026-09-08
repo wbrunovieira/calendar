@@ -35,8 +35,9 @@ func seedStatementAccount(t *testing.T, db *sql.DB) {
 	})
 	exec(t, db, `INSERT INTO finance.profiles (id, calendar_id, name, type)
 		VALUES ($1,$2,'E2E Extrato','BUSINESS') ON CONFLICT (id) DO NOTHING`, stProfileID, "e2e-statement")
-	exec(t, db, `INSERT INTO finance.bank_accounts (id, profile_id, name, type, initial_balance, current_balance, currency)
-		VALUES ($1,$2,'Conta Extrato','CHECKING',0,0,'BRL') ON CONFLICT (id) DO NOTHING`, stAccountID, stProfileID)
+	acc := checkingAccount(stProfileID, "Conta Extrato", 0, 0)
+	acc.ID = stAccountID
+	seedAccountThroughRepository(t, db, acc)
 	// A real entry to match against: the foreign key is the point — a match must name
 	// something that exists.
 	exec(t, db, `INSERT INTO finance.transactions

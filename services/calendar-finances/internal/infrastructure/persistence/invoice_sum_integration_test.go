@@ -5,6 +5,7 @@ package persistence
 
 import (
 	"database/sql"
+	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
 	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
 	"testing"
 	"time"
@@ -52,11 +53,13 @@ func invoiceSumSeed(t *testing.T, db *sql.DB) {
 		invoiceSumProfileID, "invoice-sum-e2e"); err != nil {
 		t.Fatalf("seed profile: %v", err)
 	}
-	if _, err := db.Exec(`
-		INSERT INTO finance.bank_accounts (id, profile_id, name, type, closing_day, due_day)
-		VALUES ($1, $2, 'Cartão E2E', 'CREDIT_CARD', 5, 15)`,
-		invoiceSumCardID, invoiceSumProfileID); err != nil {
-		t.Fatalf("seed card: %v", err)
+	closingDay, dueDay := 5, 15
+	if err := NewBankAccountRepository(db).Create(&bankaccount.BankAccount{
+		ID: invoiceSumCardID, ProfileID: invoiceSumProfileID, Name: "Cartão E2E",
+		Type: bankaccount.AccountTypeCreditCard, ClosingDay: &closingDay, DueDay: &dueDay,
+		Currency: "BRL", IsActive: true, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("seed card through the repository: %v", err)
 	}
 	seedInvoiceThroughRepository(t, db, &invoice.Invoice{
 		ID: invoiceSumInvoiceID, BankAccountID: invoiceSumCardID, Amount: 0, Status: invoice.StatusOpen,

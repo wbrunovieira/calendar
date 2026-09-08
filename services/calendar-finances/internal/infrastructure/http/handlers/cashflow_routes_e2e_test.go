@@ -96,7 +96,7 @@ func seedProfileAndAccount(t *testing.T, db *sql.DB) (profileID, accountID strin
 	`).Scan(&profileID); err != nil {
 		t.Fatalf("seeding profile: %v", err)
 	}
-	accountID = seedAccountThroughRepository(t, db, profileID, "Conta E2E", 0)
+	accountID = seedAccountThroughRepository(t, db, checkingAccount(profileID, "Conta E2E", 0, 0))
 
 	t.Cleanup(func() {
 		execSQL(t, db, `DELETE FROM finance.transactions WHERE profile_id = $1`, profileID)
@@ -143,12 +143,7 @@ func TestCashflowSummaryRoute_DropsInvoicePayments(t *testing.T) {
 	profileID, accountID := seedProfileAndAccount(t, db)
 
 	var cardID string
-	if err := db.QueryRow(`
-		INSERT INTO finance.bank_accounts (profile_id, name, type, initial_balance, current_balance, currency, credit_limit, closing_day, due_day)
-		VALUES ($1, 'Cartao E2E', 'CREDIT_CARD', 0, 0, 'BRL', 1000, 27, 3) RETURNING id
-	`, profileID).Scan(&cardID); err != nil {
-		t.Fatalf("seeding card: %v", err)
-	}
+	cardID = seedAccountThroughRepository(t, db, cardAccount(profileID, "Cartao E2E", 1000))
 	var invoiceID string
 	invoiceID = seedInvoiceThroughRepository(t, db, &invoice.Invoice{
 		BankAccountID: cardID, Amount: 0, Status: invoice.StatusOpen,
@@ -245,17 +240,43 @@ func TestPendingRecurringsRoute_DropsOffOncePaid(t *testing.T) {
 //
 // The two used to differ, and the difference was invisible: a column duplicated in
 // BankAccountRepository.Create broke every POST /bank-accounts while this suite stayed
-// green, because nothing here ever called it. Seeding this way makes the e2e tests
-// cover the write path as a side effect of setting themselves up.
-func seedAccountThroughRepository(t *testing.T, db *sql.DB, profileID, name string, initial float64) string {
+// green, because nothing here ever called it.
+//
+// It returns early when the row is already there, which is what the ON CONFLICT DO
+// NOTHING it replaced did. Without that, a run interrupted halfway leaves rows behind
+// and every later run fails on a duplicate key — turning a self-healing helper into a
+// hard stop against a dirty local database.
+func seedAccountThroughRepository(t *testing.T, db *sql.DB, acc *bankaccount.BankAccount) string {
 	t.Helper()
-	id := uuid.NewString()
-	if err := persistence.NewBankAccountRepository(db).Create(&bankaccount.BankAccount{
-		ID: id, ProfileID: profileID, Name: name, Type: bankaccount.AccountTypeChecking,
-		InitialBalance: initial, CurrentBalance: initial, Currency: "BRL", IsActive: true,
-		CreatedAt: time.Now(), UpdatedAt: time.Now(),
-	}); err != nil {
+	if acc.ID == "" {
+		acc.ID = uuid.NewString()
+	}
+	repo := persistence.NewBankAccountRepository(db)
+	if existing, err := repo.FindByID(acc.ID); err == nil && existing != nil {
+		return acc.ID
+	}
+	if acc.Currency == "" {
+		acc.Currency = "BRL"
+	}
+	acc.IsActive = true
+	acc.CreatedAt, acc.UpdatedAt = time.Now(), time.Now()
+	if err := repo.Create(acc); err != nil {
 		t.Fatalf("seeding account through the repository: %v", err)
 	}
-	return id
+	return acc.ID
+}
+
+func checkingAccount(profileID, name string, initial, current float64) *bankaccount.BankAccount {
+	return &bankaccount.BankAccount{
+		ProfileID: profileID, Name: name, Type: bankaccount.AccountTypeChecking,
+		InitialBalance: initial, CurrentBalance: current,
+	}
+}
+
+func cardAccount(profileID, name string, limit float64) *bankaccount.BankAccount {
+	closing, due := 27, 3
+	return &bankaccount.BankAccount{
+		ProfileID: profileID, Name: name, Type: bankaccount.AccountTypeCreditCard,
+		CreditLimit: &limit, ClosingDay: &closing, DueDay: &due,
+	}
 }

@@ -105,7 +105,7 @@ func seedForDelete(t *testing.T, db *sql.DB) (profileID string) {
 
 func seedAccountFor(t *testing.T, db *sql.DB, profileID, name string, initial float64) string {
 	t.Helper()
-	return seedAccountThroughRepository(t, db, profileID, name, initial)
+	return seedAccountThroughRepository(t, db, checkingAccount(profileID, name, initial, initial))
 }
 
 func balanceOf(t *testing.T, db *sql.DB, accountID string) float64 {

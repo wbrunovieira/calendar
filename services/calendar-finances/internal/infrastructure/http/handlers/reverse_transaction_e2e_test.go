@@ -43,8 +43,9 @@ func seedReversal(t *testing.T, db *sql.DB) {
 	// 1055.58 and the single confirmed expense of 55.58 brings it to 1000. Seeding an
 	// opening of 0 with a balance of 1000 describes money that no transaction explains,
 	// and the derived balance would rightly disagree.
-	exec(t, db, `INSERT INTO finance.bank_accounts (id, profile_id, name, type, initial_balance, current_balance, currency)
-		VALUES ($1,$2,'Conta E2E','CHECKING',1055.58,1000,'BRL') ON CONFLICT (id) DO NOTHING`, revAccountID, revProfileID)
+	acc := checkingAccount(revProfileID, "Conta E2E", 1055.58, 1000)
+	acc.ID = revAccountID
+	seedAccountThroughRepository(t, db, acc)
 	exec(t, db, `INSERT INTO finance.categories (id, profile_id, name, type) VALUES ($1,$2,'Servidores','EXPENSE')
 		ON CONFLICT (id) DO NOTHING`, revCategoryID, revProfileID)
 	exec(t, db, `INSERT INTO finance.transactions
