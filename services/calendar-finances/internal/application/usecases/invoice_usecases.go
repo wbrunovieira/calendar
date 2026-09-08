@@ -927,6 +927,14 @@ func (uc *PayInvoiceUseCaseV2) pay(input PayInvoiceInput) (*invoice.Invoice, err
 	// card. Recording it as EXPENSE + INCOME polluted the monthly cashflow everywhere.
 	if creditCard.LinkedAccountID != nil && *creditCard.LinkedAccountID != "" {
 		if linkedAccount, lerr := uc.accountRepo.FindByID(*creditCard.LinkedAccountID); lerr == nil {
+			// One Amount, credited to the card and debited from the funding account, so
+			// both ends must speak the same currency. Paying a EUR card from a BRL
+			// account credited the card €500 for R$500 — off by the exchange rate, in
+			// the direction that looks plausible, and the leg would then be reported
+			// missing on the card's own statement forever.
+			if !strings.EqualFold(strings.TrimSpace(linkedAccount.Currency), strings.TrimSpace(creditCard.Currency)) {
+				return nil, ErrCurrencyMismatch
+			}
 			cardID := creditCard.ID
 			transferTx, terr := transactionPkg.New(transactionPkg.CreateParams{
 				ProfileID:            linkedAccount.ProfileID,

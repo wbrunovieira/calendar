@@ -381,3 +381,39 @@ func TestUpdateTransaction_OmittingTheCurrencyKeepsTheAccountsOwn(t *testing.T) 
 		t.Fatalf("got %v, want ErrCurrencyMismatch", err)
 	}
 }
+
+// Wise is three accounts in ONE profile, so pointing a transfer at another of them
+// passes the profile check and lands here. One row carries one Amount: repointing a
+// R$1.000 transfer at the euro account would credit it with 1.000 euros.
+func TestUpdateTransaction_ATransferCannotBeRepointedAcrossCurrencies(t *testing.T) {
+	const reaisID, eurosID, txID = "wise-brl", "wise-eur", "tx-1"
+	reais := &bankaccount.BankAccount{
+		ID: reaisID, ProfileID: "p1", Name: "Wise (BRL)",
+		Type: bankaccount.AccountTypeChecking, Currency: "BRL", IsActive: true,
+	}
+	euros := &bankaccount.BankAccount{
+		ID: eurosID, ProfileID: "p1", Name: "Wise (EUR)",
+		Type: bankaccount.AccountTypeChecking, Currency: "EUR", IsActive: true,
+	}
+	tx := &transaction.Transaction{
+		ID: txID, ProfileID: "p1", BankAccountID: reaisID,
+		Type: transaction.TypeExpense, Status: transaction.StatusConfirmed,
+		Amount: 1000, Currency: "BRL", Description: "Saque",
+		OccurredOn: time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC),
+	}
+	uc := NewUpdateTransactionUseCase(
+		&fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{reaisID: reais, eurosID: euros}},
+		&fakeCategoryRepo{}, &fakeTransactionRepo{created: []*transaction.Transaction{tx}},
+		&fakeInvoiceRepo{}, &noopBalanceRecalculator{},
+	)
+
+	dest := eurosID
+	_, err := uc.Execute(txID, UpdateTransactionInput{
+		BankAccountID: reaisID, DestinationAccountID: &dest,
+		Type: "TRANSFER", Amount: 1000, Currency: "BRL",
+		Description: "Wise BRL -> EUR", OccurredOn: "2026-09-05",
+	})
+	if !errors.Is(err, ErrCurrencyMismatch) {
+		t.Fatalf("got %v, want ErrCurrencyMismatch", err)
+	}
+}

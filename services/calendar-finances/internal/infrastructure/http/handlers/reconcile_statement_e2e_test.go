@@ -306,3 +306,65 @@ func TestE2E_ReconcileAnswers400ForAnIdThatIsNotAUUID(t *testing.T) {
 		t.Errorf("the driver's error reached the caller: %s", body)
 	}
 }
+
+// Three contracts the reconciler's answers rest on, none of which any test pinned, and
+// each of which turns a real charge into a phantom if it changes.
+//
+// The constraint name is the sharpest: the two unique indexes mean OPPOSITE things —
+// the same pair is "another run did your work" (report nothing), while the same entry
+// from another line is "the entry is gone" (report the charge). Read the wrong one and
+// every same-pair race turns a settled bill payment into reported missing money.
+func TestE2E_TheClaimContractsTheReportRestsOn(t *testing.T) {
+	db := testDB(t)
+	seedStatementAccount(t, db)
+
+	lines := persistence.NewStatementRepository(db)
+	first := lineFor(t, "uma", -5558, "BRL", nil)
+	second := lineFor(t, "outra", -5558, "BRL", nil)
+	if _, _, err := lines.UpsertMany([]*statement.Line{first, second}); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	matches := persistence.NewMatchRepository(db)
+
+	claim := func(t *testing.T, lineID string) *statement.Match {
+		t.Helper()
+		m, err := statement.NewMatch(lineID, stTxID, 5558, statement.MethodDeterministic, "reconciler")
+		if err != nil {
+			t.Fatalf("build match: %v", err)
+		}
+		return m
+	}
+
+	live := claim(t, first.ID)
+	if err := matches.Create(live); err != nil {
+		t.Fatalf("first claim: %v", err)
+	}
+
+	// The SAME line and entry: the work is already done.
+	if err := matches.Create(claim(t, first.ID)); !errors.Is(err, statement.ErrLineAlreadyMatched) {
+		t.Fatalf("same pair: got %v, want ErrLineAlreadyMatched", err)
+	}
+	// ANOTHER line, same entry, same account: the entry is gone.
+	if err := matches.Create(claim(t, second.ID)); !errors.Is(err, statement.ErrAlreadyClaimedOnAccount) {
+		t.Fatalf("other line: got %v, want ErrAlreadyClaimedOnAccount", err)
+	}
+
+	// A RELEASED claim must stop holding the entry, or the line it should now answer
+	// for is reported missing on every run, permanently.
+	if err := matches.Unmatch(live.ID, statement.UnmatchTransactionReversed); err != nil {
+		t.Fatalf("unmatch: %v", err)
+	}
+	claimed, err := matches.ClaimedOnAccount(stTxID, stAccountID)
+	if err != nil {
+		t.Fatalf("claimed: %v", err)
+	}
+	if claimed {
+		t.Error("a released claim still holds the entry")
+	}
+
+	// And releasing again changed no rows — an answer, which the reconciler relies on
+	// being distinguishable from a write that failed.
+	if err := matches.Unmatch(live.ID, statement.UnmatchBankSideChanged); !errors.Is(err, statement.ErrNotFound) {
+		t.Fatalf("second release: got %v, want statement.ErrNotFound", err)
+	}
+}

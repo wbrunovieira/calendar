@@ -1262,3 +1262,46 @@ func TestReconcile_ReleasingTwiceIsNotAFailure(t *testing.T) {
 		t.Fatalf("the other charge must still be reported: %+v", out)
 	}
 }
+
+// An entry claimed by an EARLIER run must stop being a candidate, or a line with one
+// real answer is reported ambiguous — two charges of the same value, one already
+// reconciled, and the reconciler says it cannot choose between them. The database
+// refuses the duplicate write either way, so nothing here is caught by the constraint;
+// this is about what the report says.
+func TestReconcile_AnEntryClaimedByAnEarlierRunIsNotOfferedAgain(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	lines.lines = []*statement.Line{statementLine(t, "a", "acc", -4000, 5)}
+	txns.created = []*transaction.Transaction{
+		systemCharge("tx1", "acc", 40, 5),
+		systemCharge("tx2", "acc", 40, 6),
+	}
+
+	uc := NewReconcileStatementUseCase(lines, txns, matches, accounts)
+	// First run: two candidates for one line, so it must refuse to choose.
+	if out, _ := uc.Execute("acc"); len(out.Ambiguous) != 1 {
+		t.Fatalf("setup: %+v", out)
+	}
+
+	// A person resolves it by matching tx1 to that line.
+	resolved, err := statement.NewMatch(lines.lines[0].ID, "tx1", 4000, statement.MethodManual, "bruno")
+	if err != nil {
+		t.Fatalf("build match: %v", err)
+	}
+	if err := matches.Create(resolved); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// A second line of the same value arrives, and tx1 is spoken for.
+	lines.lines = append(lines.lines, statementLine(t, "b", "acc", -4000, 6))
+
+	out, err := uc.Execute("acc")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(out.Ambiguous) != 0 {
+		t.Fatalf("only tx2 is free, so there is nothing to choose between: %+v", out)
+	}
+	if out.Matched != 1 {
+		t.Fatalf("the new line should have matched tx2: %+v", out)
+	}
+}
