@@ -5,7 +5,9 @@ package persistence
 
 import (
 	"database/sql"
+	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
 	"testing"
+	"time"
 
 	"github.com/brunovieira/calendar-finances/internal/database"
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
@@ -56,13 +58,11 @@ func invoiceSumSeed(t *testing.T, db *sql.DB) {
 		invoiceSumCardID, invoiceSumProfileID); err != nil {
 		t.Fatalf("seed card: %v", err)
 	}
-	if _, err := db.Exec(`
-		INSERT INTO finance.credit_card_invoices
-			(id, bank_account_id, reference_date, opening_date, closing_date, due_date, amount, status)
-		VALUES ($1, $2, '2026-03-01', '2026-02-06', '2026-03-05', '2026-03-15', 0, 'OPEN')`,
-		invoiceSumInvoiceID, invoiceSumCardID); err != nil {
-		t.Fatalf("seed invoice: %v", err)
-	}
+	seedInvoiceThroughRepository(t, db, &invoice.Invoice{
+		ID: invoiceSumInvoiceID, BankAccountID: invoiceSumCardID, Amount: 0, Status: invoice.StatusOpen,
+		ReferenceDate: time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC), OpeningDate: time.Date(2026, time.February, 6, 0, 0, 0, 0, time.UTC),
+		ClosingDate: time.Date(2026, time.March, 5, 0, 0, 0, 0, time.UTC), DueDate: time.Date(2026, time.March, 15, 0, 0, 0, 0, time.UTC),
+	})
 }
 
 func invoiceSumCharge(t *testing.T, db *sql.DB, txType, status string, amount float64, description string) {

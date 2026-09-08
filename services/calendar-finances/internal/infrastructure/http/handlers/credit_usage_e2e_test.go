@@ -5,8 +5,10 @@ package handlers_test
 
 import (
 	"database/sql"
+	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
 	"net/http"
 	"testing"
+	"time"
 )
 
 // seedCard creates a profile and a credit card, and returns the card's id. Everything
@@ -123,16 +125,21 @@ func TestCreditUsageRoute_RejectsAnAccountThatIsNotACard(t *testing.T) {
 
 func seedInvoice(t *testing.T, db *sql.DB, cardID, status, closing, due string) string {
 	t.Helper()
-	var id string
-	if err := db.QueryRow(`
-		INSERT INTO finance.credit_card_invoices
-			(bank_account_id, reference_date, opening_date, closing_date, due_date, amount, status)
-		VALUES ($1, $2::date, ($2::date - interval '1 month'), $2::date, $3::date, 0, $4)
-		RETURNING id
-	`, cardID, closing, due, status).Scan(&id); err != nil {
-		t.Fatalf("seeding invoice: %v", err)
+	closingDate, dueDate := mustDate(t, closing), mustDate(t, due)
+	return seedInvoiceThroughRepository(t, db, &invoice.Invoice{
+		BankAccountID: cardID, Amount: 0, Status: invoice.Status(status),
+		ReferenceDate: closingDate, OpeningDate: closingDate.AddDate(0, -1, 0),
+		ClosingDate: closingDate, DueDate: dueDate,
+	})
+}
+
+func mustDate(t *testing.T, value string) time.Time {
+	t.Helper()
+	parsed, err := time.Parse("2006-01-02", value)
+	if err != nil {
+		t.Fatalf("bad date %q in the test fixture: %v", value, err)
 	}
-	return id
+	return parsed
 }
 
 func seedCharge(t *testing.T, db *sql.DB, profileID, cardID, invoiceID string, amount float64) {

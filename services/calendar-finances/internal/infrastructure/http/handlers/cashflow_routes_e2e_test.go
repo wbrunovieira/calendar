@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
+	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
 	"github.com/google/uuid"
 	"net/http"
 	"net/http/httptest"
@@ -149,12 +150,11 @@ func TestCashflowSummaryRoute_DropsInvoicePayments(t *testing.T) {
 		t.Fatalf("seeding card: %v", err)
 	}
 	var invoiceID string
-	if err := db.QueryRow(`
-		INSERT INTO finance.credit_card_invoices (bank_account_id, reference_date, opening_date, closing_date, due_date, amount, status)
-		VALUES ($1, '2026-09-27', '2026-08-27', '2026-09-27', '2026-10-03', 0, 'OPEN') RETURNING id
-	`, cardID).Scan(&invoiceID); err != nil {
-		t.Fatalf("seeding invoice: %v", err)
-	}
+	invoiceID = seedInvoiceThroughRepository(t, db, &invoice.Invoice{
+		BankAccountID: cardID, Amount: 0, Status: invoice.StatusOpen,
+		ReferenceDate: time.Date(2026, time.September, 27, 0, 0, 0, 0, time.UTC), OpeningDate: time.Date(2026, time.August, 27, 0, 0, 0, 0, time.UTC),
+		ClosingDate: time.Date(2026, time.September, 27, 0, 0, 0, 0, time.UTC), DueDate: time.Date(2026, time.October, 3, 0, 0, 0, 0, time.UTC),
+	})
 
 	execSQL(t, db, `
 		INSERT INTO finance.transactions (profile_id, bank_account_id, invoice_id, type, status, amount, currency, description, occurred_on)
