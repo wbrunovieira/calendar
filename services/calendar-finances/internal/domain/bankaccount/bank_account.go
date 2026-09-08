@@ -7,6 +7,13 @@ import (
 	"github.com/google/uuid"
 )
 
+// ErrNotFound is the one value that means "no such account".
+//
+// Every layer used to mint its own errors.New with this same text, so errors.Is was
+// always false and a missing account reached the caller indistinguishable from a
+// database failure — opposite decisions for a cron deciding whether to retry.
+var ErrNotFound = errors.New("bank account not found")
+
 type BankAccount struct {
 	ID             string      `json:"id"`
 	ProfileID      string      `json:"profileId"`

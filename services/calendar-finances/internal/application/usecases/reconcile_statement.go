@@ -18,6 +18,12 @@ import (
 // card by hand, every single difference over three months was this and nothing else.
 const dateTolerance = 2
 
+// ErrReconcileStorage marks a failure to READ what the reconciler needs, as opposed to
+// anything wrong with the request. The morning cron decides whether to retry from the
+// status code, and a database that blinked deserves a retry where a bad request does
+// not.
+var ErrReconcileStorage = errors.New("could not read what the reconciliation needs")
+
 // Matches is what the reconciler needs from the match repository.
 type Matches interface {
 	Create(m *statement.Match) error
@@ -102,17 +108,24 @@ func NewReconcileStatementUseCase(
 
 func (uc *ReconcileStatementUseCase) Execute(accountID string) (*ReconcileStatementOutput, error) {
 	account, err := uc.accounts.FindByID(accountID)
-	if err != nil {
-		return nil, err
+	if errors.Is(err, ErrBankAccountNotFound) {
+		return nil, ErrBankAccountNotFound
 	}
+	if err != nil {
+		return nil, fmt.Errorf("%w: reading account %s: %v", ErrReconcileStorage, accountID, err)
+	}
+	// Belt and braces: a repository that answers (nil, nil) means the same thing.
 	if account == nil {
-		return nil, errors.New("bank account not found")
+		// The sentinel, not a bare string: the caller is a cron that decides whether
+		// to retry from the status code, and "this account does not exist" and "the
+		// database is down" call for opposite decisions.
+		return nil, ErrBankAccountNotFound
 	}
 
 	unmatched := statement.StatusUnmatched
 	lines, err := uc.lines.List(statement.ListFilter{AccountID: accountID, Status: &unmatched})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: listing statement lines: %v", ErrReconcileStorage, err)
 	}
 
 	id := accountID
@@ -123,7 +136,7 @@ func (uc *ReconcileStatementUseCase) Execute(accountID string) (*ReconcileStatem
 		ProfileID: account.ProfileID, BankAccountID: &id, IncludeAsDestination: true,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: listing transactions: %v", ErrReconcileStorage, err)
 	}
 
 	out := &ReconcileStatementOutput{
@@ -181,6 +194,15 @@ func (uc *ReconcileStatementUseCase) Execute(accountID string) (*ReconcileStatem
 			}
 			if err := uc.matches.Create(match); err != nil {
 				return nil, err
+			}
+			// The line has to say so itself. The match row is the evidence; this is
+			// what lets a later run skip the line without re-deriving the whole
+			// history, and what anything reading the line alone will believe.
+			if err := line.MarkMatched(abs64(line.InAccountCurrency())); err != nil {
+				return nil, fmt.Errorf("marking line %s matched: %w", line.ID, err)
+			}
+			if err := uc.lines.Update(line); err != nil {
+				return nil, fmt.Errorf("saving the matched status of line %s: %w", line.ID, err)
 			}
 			claimed[candidates[0].ID] = true
 			out.Matched++

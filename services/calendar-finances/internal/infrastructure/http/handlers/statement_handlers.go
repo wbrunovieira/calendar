@@ -135,7 +135,15 @@ func accountKindOf(account *bankaccount.BankAccount) statement.AccountKind {
 func (h *StatementHandlers) Reconcile(w http.ResponseWriter, r *http.Request) {
 	result, err := h.reconcileUC.Execute(mux.Vars(r)["id"])
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		// This route takes no body: the only thing the caller supplies is the account
+		// id. So there is no bad request to report — either the account is unknown or
+		// this service failed, and saying 400 for the second told the cron to stop
+		// retrying something a retry would have fixed.
+		status := http.StatusInternalServerError
+		if errors.Is(err, usecases.ErrBankAccountNotFound) {
+			status = http.StatusNotFound
+		}
+		http.Error(w, err.Error(), status)
 		return
 	}
 

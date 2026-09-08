@@ -513,3 +513,51 @@ func TestReconcile_AForecastIsProposedForOneLineOnly(t *testing.T) {
 		t.Fatalf("and the other charge is genuinely missing: %+v", out.Missing)
 	}
 }
+
+// A matched line must SAY it is matched, in storage. Leaving every line UNMATCHED
+// forever means each run re-examines the whole history, and anything reading the
+// line's own status — a listing, a screen, a later query — is told the opposite of
+// what happened.
+func TestReconcile_AMatchedLineIsSavedAsMatched(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	lines.lines = []*statement.Line{statementLine(t, "a", "acc", -4000, 5)}
+	txns.created = []*transaction.Transaction{systemCharge("tx1", "acc", 40, 6)}
+
+	if _, err := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(lines.updates) != 1 {
+		t.Fatalf("the line's status was never persisted: %d updates", len(lines.updates))
+	}
+	if lines.updates[0].Status != statement.StatusMatched {
+		t.Errorf("saved as %s, want MATCHED", lines.updates[0].Status)
+	}
+}
+
+// If the match is recorded and saving the line's status fails, the run must say so.
+// Reporting success there leaves the two halves disagreeing with nobody told.
+func TestReconcile_AFailureToSaveTheLineStatusIsReported(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	lines.lines = []*statement.Line{statementLine(t, "a", "acc", -4000, 5)}
+	txns.created = []*transaction.Transaction{systemCharge("tx1", "acc", 40, 6)}
+	lines.updateErr = errors.New("database unavailable")
+
+	_, err := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc")
+	if err == nil {
+		t.Fatal("the line status could not be saved and the run reported success")
+	}
+}
+
+// A database that blinked is not a bad request. The morning cron reads the status code
+// to decide whether to retry, so the failure has to arrive labelled as this service's
+// problem and not the caller's.
+func TestReconcile_AFailedReadIsLabelledAsStorage(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	lines.listErr = errors.New("connection reset")
+
+	_, err := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc")
+	if !errors.Is(err, ErrReconcileStorage) {
+		t.Fatalf("got %v, want it wrapped in ErrReconcileStorage", err)
+	}
+}

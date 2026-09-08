@@ -13,6 +13,11 @@ type fakeStatementRepo struct {
 	inserted int
 	updated  int
 	err      error
+	// updates records what was persisted. A no-op Update made "the line's status was
+	// saved" unprovable, and the reconciler duly never saved it.
+	updates   []*statement.Line
+	updateErr error
+	listErr   error
 }
 
 func (f *fakeStatementRepo) UpsertMany(lines []*statement.Line) (int, int, error) {
@@ -50,6 +55,9 @@ func (f *fakeStatementRepo) FindByExternalID(accountID string, provider statemen
 // two-account scenario, which is why a defect reporting one account's money as missing
 // from another went unseen.
 func (f *fakeStatementRepo) List(filter statement.ListFilter) ([]*statement.Line, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
 	out := []*statement.Line{}
 	for _, l := range f.lines {
 		if filter.AccountID != "" && l.AccountID != filter.AccountID {
@@ -74,7 +82,13 @@ func (f *fakeStatementRepo) List(filter statement.ListFilter) ([]*statement.Line
 	}
 	return out, nil
 }
-func (f *fakeStatementRepo) Update(*statement.Line) error { return nil }
+func (f *fakeStatementRepo) Update(l *statement.Line) error {
+	if f.updateErr != nil {
+		return f.updateErr
+	}
+	f.updates = append(f.updates, l)
+	return nil
+}
 
 func pluggyPayload(t *testing.T) []byte {
 	t.Helper()

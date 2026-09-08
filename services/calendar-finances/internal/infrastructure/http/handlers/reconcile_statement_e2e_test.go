@@ -158,6 +158,19 @@ func TestE2E_ABillPaymentReconcilesOnBothStatements(t *testing.T) {
 	if live != 2 {
 		t.Fatalf("the payment must be claimed once per statement, found %d", live)
 	}
+
+	// And both lines must say so in storage, or the next run walks the whole history
+	// again to rediscover what it already knows.
+	var unmatched int
+	if err := db.QueryRow(`
+		SELECT count(*) FROM finance.bank_statement_lines
+		WHERE account_id IN ($1,$2) AND status <> 'MATCHED'`,
+		payCheckingID, payCardID).Scan(&unmatched); err != nil {
+		t.Fatalf("count lines: %v", err)
+	}
+	if unmatched != 0 {
+		t.Fatalf("%d reconciled lines are still stored as unmatched", unmatched)
+	}
 }
 
 func assertOneMatchNothingMissing(t *testing.T, side, body string) {
@@ -222,4 +235,17 @@ func paymentLine(t *testing.T, externalID, accountID string, amountMinor int64) 
 		t.Fatalf("building the line: %v", err)
 	}
 	return l
+}
+
+// An account that does not exist is not a malformed request, and a database that is
+// down is not one either. The cron reads the status to decide whether to retry: 400
+// tells it to give up and fix its payload, which is wrong for both.
+func TestE2E_ReconcileAnswers404ForAnAccountThatDoesNotExist(t *testing.T) {
+	db := testDB(t)
+
+	status, body := reconcile(t, db, "e2e00000-0000-0000-0000-0000000000ff")
+
+	if status != http.StatusNotFound {
+		t.Fatalf("got %d, want 404: %s", status, body)
+	}
 }

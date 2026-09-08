@@ -1,22 +1,29 @@
 package usecases
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
+)
 
 var (
-	ErrProfileAlreadyExists        = errors.New("profile already exists for this calendar")
-	ErrProfileNotFound             = errors.New("profile not found")
-	ErrInvalidInput                = errors.New("invalid input")
-	ErrCategoryNotFound            = errors.New("category not found")
-	ErrCostCenterNotFound          = errors.New("cost center not found")
-	ErrTransactionNotFound         = errors.New("transaction not found")
-	ErrBankAccountMismatch         = errors.New("bank account does not belong to profile")
-	ErrDestinationRequired         = errors.New("destination account is required for transfer")
-	ErrInvalidTransactionType      = errors.New("invalid transaction type")
-	ErrInsufficientBalance         = errors.New("insufficient balance to complete transaction")
-	ErrCreditLimitExceeded         = errors.New("credit limit exceeded for this transaction")
-	ErrRecurringNotFound           = errors.New("recurring transaction not found")
-	ErrBudgetTargetNotFound        = errors.New("budget target not found")
-	ErrBankAccountNotFound         = errors.New("bank account not found")
+	ErrProfileAlreadyExists   = errors.New("profile already exists for this calendar")
+	ErrProfileNotFound        = errors.New("profile not found")
+	ErrInvalidInput           = errors.New("invalid input")
+	ErrCategoryNotFound       = errors.New("category not found")
+	ErrCostCenterNotFound     = errors.New("cost center not found")
+	ErrTransactionNotFound    = errors.New("transaction not found")
+	ErrBankAccountMismatch    = errors.New("bank account does not belong to profile")
+	ErrDestinationRequired    = errors.New("destination account is required for transfer")
+	ErrInvalidTransactionType = errors.New("invalid transaction type")
+	ErrInsufficientBalance    = errors.New("insufficient balance to complete transaction")
+	ErrCreditLimitExceeded    = errors.New("credit limit exceeded for this transaction")
+	ErrRecurringNotFound      = errors.New("recurring transaction not found")
+	ErrBudgetTargetNotFound   = errors.New("budget target not found")
+	// The domain's value, not a copy of its text: the repository returns this one, so
+	// a handler comparing against it now recognises a missing account instead of
+	// reporting the service broken.
+	ErrBankAccountNotFound         = bankaccount.ErrNotFound
 	ErrInvoiceNotFound             = errors.New("invoice not found")
 	ErrInvoiceNotOpen              = errors.New("invoice is not open")
 	ErrInvoiceAlreadyPaid          = errors.New("invoice is already paid")
