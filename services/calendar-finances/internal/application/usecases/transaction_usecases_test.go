@@ -68,7 +68,11 @@ func (f *fakeAccountRepo) FindByID(id string) (*bankaccount.BankAccount, error) 
 	if acc, ok := f.accounts[id]; ok {
 		return acc, nil
 	}
-	return nil, errors.New("not found")
+	// The repository's own value, not a look-alike. Returning a different error with
+	// the same text is what made errors.Is false everywhere and let a missing account
+	// travel as "the service failed" — the exact fiction this branch already fixed
+	// once, still alive in the fake that stands in for the fixed code.
+	return nil, bankaccount.ErrNotFound
 }
 
 type fakeCategoryRepo struct {
@@ -134,9 +138,15 @@ func (f *fakeTransactionRepo) GetByID(id string) (*transaction.Transaction, erro
 // points at the card, so it never appeared. The test passed anyway. That was the fifth
 // time in this codebase that a fake diverging from production hid a real defect.
 func (f *fakeTransactionRepo) List(filter transaction.ListFilter) ([]*transaction.Transaction, error) {
+	// The real List refuses an empty profile rather than returning every profile's
+	// entries. A fake that answers anyway lets a caller drop the profile filter and
+	// still pass — with another profile's money in the candidate set.
+	if strings.TrimSpace(filter.ProfileID) == "" {
+		return nil, errors.New("profileID is required")
+	}
 	out := []*transaction.Transaction{}
 	for _, tx := range f.created {
-		if filter.ProfileID != "" && tx.ProfileID != filter.ProfileID {
+		if tx.ProfileID != filter.ProfileID {
 			continue
 		}
 		if filter.BankAccountID != nil && *filter.BankAccountID != "" {

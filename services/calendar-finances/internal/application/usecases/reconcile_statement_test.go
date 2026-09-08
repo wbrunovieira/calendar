@@ -15,10 +15,14 @@ type fakeMatchRepo struct {
 	// stmt is how the fake resolves a match back to its account, the way the real
 	// query joins bank_statement_lines. Held as a pointer so it sees lines added
 	// after construction.
-	stmt *fakeStatementRepo
+	stmt      *fakeStatementRepo
+	createErr error
 }
 
 func (f *fakeMatchRepo) Create(m *statement.Match) error {
+	if f.createErr != nil {
+		return f.createErr
+	}
 	f.matches = append(f.matches, m)
 	return nil
 }
@@ -749,5 +753,137 @@ func TestReconcile_TwoForecastsThatFitAreAmbiguousNotMissing(t *testing.T) {
 	}
 	if len(matches.matches) != 0 {
 		t.Errorf("and nothing may be matched: %+v", matches.matches)
+	}
+}
+
+// The database refuses the second claim when two runs race — the morning cron against
+// a manual POST. The loser has nothing to fix: the winner's match covers the line. It
+// must not be counted as matched here, and above all it must not be reported as money
+// missing, which is the one thing a reader would act on.
+func TestReconcile_LosingARaceIsNotAFailureAndNotMissingMoney(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	lines.lines = []*statement.Line{statementLine(t, "a", "acc", -4000, 5)}
+	txns.created = []*transaction.Transaction{systemCharge("tx1", "acc", 40, 5)}
+	matches.createErr = statement.ErrAlreadyClaimedOnAccount
+
+	out, err := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc")
+	if err != nil {
+		t.Fatalf("losing a race is not an error: %v", err)
+	}
+	if out.Matched != 0 {
+		t.Errorf("this run matched nothing: %+v", out)
+	}
+	if len(out.Missing) != 0 {
+		t.Fatalf("the charge is reconciled, by the other run: %+v", out)
+	}
+}
+
+// The tolerance is two days, and the boundary is the whole point of it: wide enough to
+// absorb purchase date against posting date, narrow enough that two different charges
+// of the same value in the same week do not become each other. Nothing pinned the
+// edge, so widening it to 5 or 10 would have passed silently.
+func TestReconcile_TheDateToleranceHasAnEdge(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		day       int
+		wantMatch bool
+	}{
+		{"two days apart is the same movement", 7, true},
+		{"three days apart is not", 8, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lines, txns, matches, accounts := reconcileFixture(t)
+			lines.lines = []*statement.Line{statementLine(t, "a", "acc", -4000, 5)}
+			txns.created = []*transaction.Transaction{systemCharge("tx1", "acc", 40, tc.day)}
+
+			out, _ := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc")
+			if (out.Matched == 1) != tc.wantMatch {
+				t.Fatalf("matched=%d, want match=%v", out.Matched, tc.wantMatch)
+			}
+		})
+	}
+}
+
+// Money is compared in cents, and the conversion has to round rather than truncate:
+// 1.15 is 114.99999999999999 in float64, so dropping the rounding turns R$ 1,15 into
+// 114 cents and the entry stops matching the line the bank sent.
+func TestReconcile_CentsAreRoundedNotTruncated(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	lines.lines = []*statement.Line{statementLine(t, "a", "acc", -115, 5)}
+	txns.created = []*transaction.Transaction{systemCharge("tx1", "acc", 1.15, 5)}
+
+	out, _ := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc")
+	if out.Matched != 1 {
+		t.Fatalf("R$ 1,15 did not match 115 cents: %+v", out)
+	}
+}
+
+// One account cannot hold two profiles, but the query says so and nothing tested it.
+// Dropping the profile filter would put the other profile's entries in the candidate
+// set — personal money answering for a company charge.
+func TestReconcile_AnotherProfilesEntryIsNeverACandidate(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	lines.lines = []*statement.Line{statementLine(t, "a", "acc", -4000, 5)}
+	other := systemCharge("tx1", "acc", 40, 5)
+	other.ProfileID = "p2"
+	txns.created = []*transaction.Transaction{other}
+
+	out, _ := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc")
+	if out.Matched != 0 || len(out.Missing) != 1 {
+		t.Fatalf("another profile's entry answered for this charge: %+v", out)
+	}
+}
+
+// Money ARRIVING in a checking account is positive, and it is the destination leg of a
+// transfer that says so. Without the account check in signedMinorFor, a transfer would
+// be read as leaving whichever account was asking.
+func TestReconcile_MoneyArrivingByTransferIsPositive(t *testing.T) {
+	accounts := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		"origem":  {ID: "origem", ProfileID: "p1", Name: "Origem", Type: bankaccount.AccountTypeChecking, Currency: "BRL"},
+		"destino": {ID: "destino", ProfileID: "p1", Name: "Destino", Type: bankaccount.AccountTypeChecking, Currency: "BRL"},
+	}}
+	lines := &fakeStatementRepo{}
+	txns := &fakeTransactionRepo{}
+	matches := &fakeMatchRepo{stmt: lines}
+
+	lines.lines = []*statement.Line{statementLine(t, "entrada", "destino", 117000, 5)}
+	txns.created = []*transaction.Transaction{{
+		ID: "tx1", ProfileID: "p1", BankAccountID: "origem",
+		DestinationAccountID: strPtr("destino"),
+		Type:                 transaction.TypeTransfer, Status: transaction.StatusConfirmed,
+		Amount: 1170, Currency: "BRL", Description: "Dinheiro retirado",
+		OccurredOn: time.Date(2026, time.September, 5, 0, 0, 0, 0, time.UTC),
+	}}
+
+	out, err := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("destino")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.Matched != 1 {
+		t.Fatalf("money arriving was not recognised: %+v", out)
+	}
+}
+
+// Banks print informational lines worth nothing at all. A match has to cover a
+// positive amount, so building one for a zero line fails — and that failure used to
+// abort the whole run, throwing away every finding already computed. One meaningless
+// line must not cost the reconciliation.
+func TestReconcile_AZeroValueLineDoesNotAbortTheRun(t *testing.T) {
+	lines, txns, matches, accounts := reconcileFixture(t)
+	zero := statementLine(t, "zero", "acc", 0, 5)
+	lines.lines = []*statement.Line{zero, statementLine(t, "real", "acc", -5390, 5)}
+	// A legacy zero-amount entry is what turns the zero line into a candidate pair,
+	// and building a match for it is what fails.
+	txns.created = []*transaction.Transaction{systemCharge("tx0", "acc", 0, 5)}
+
+	out, err := NewReconcileStatementUseCase(lines, txns, matches, accounts).Execute("acc")
+	if err != nil {
+		t.Fatalf("one meaningless line killed the run: %v", err)
+	}
+	if len(out.Missing) != 1 || out.Missing[0].AmountMinor != -5390 {
+		t.Fatalf("the real charge must still be reported: %+v", out)
+	}
+	if len(matches.matches) != 0 {
+		t.Errorf("nothing was owed on a line worth nothing: %+v", matches.matches)
 	}
 }

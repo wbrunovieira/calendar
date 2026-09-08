@@ -6,6 +6,7 @@ package handlers_test
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"github.com/brunovieira/calendar-finances/internal/application/usecases"
 	httpHandlers "github.com/brunovieira/calendar-finances/internal/infrastructure/http/handlers"
 	"github.com/gorilla/mux"
@@ -247,5 +248,46 @@ func TestE2E_ReconcileAnswers404ForAnAccountThatDoesNotExist(t *testing.T) {
 
 	if status != http.StatusNotFound {
 		t.Fatalf("got %d, want 404: %s", status, body)
+	}
+}
+
+// The reconciler asks "is this entry claimed here?" and then writes. Between the two,
+// the morning cron overlapping a manual run asks the same question, gets the same
+// answer, and both write — and the second real bank charge silently looks accounted
+// for by an entry that already answered for the first. No amount of care in Go closes
+// that window; the database has to refuse it.
+func TestE2E_OneEntryCannotBeClaimedTwiceOnOneAccount(t *testing.T) {
+	db := testDB(t)
+	seedStatementAccount(t, db)
+
+	lines := persistence.NewStatementRepository(db)
+	first := lineFor(t, "primeira", -5558, "BRL", nil)
+	second := lineFor(t, "segunda", -5558, "BRL", nil)
+	if _, _, err := lines.UpsertMany([]*statement.Line{first, second}); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+
+	matches := persistence.NewMatchRepository(db)
+	one, err := statement.NewMatch(first.ID, stTxID, 5558, statement.MethodDeterministic, "reconciler")
+	if err != nil {
+		t.Fatalf("build match: %v", err)
+	}
+	if err := matches.Create(one); err != nil {
+		t.Fatalf("first claim: %v", err)
+	}
+
+	two, err := statement.NewMatch(second.ID, stTxID, 5558, statement.MethodDeterministic, "reconciler")
+	if err != nil {
+		t.Fatalf("build match: %v", err)
+	}
+	err = matches.Create(two)
+	if !errors.Is(err, statement.ErrAlreadyClaimedOnAccount) {
+		t.Fatalf("the same entry was claimed by a second line on the same account: %v", err)
+	}
+
+	// And the transfer case must still work: one entry, two accounts, one claim each.
+	claimed, err := matches.ClaimedOnAccount(stTxID, stAccountID)
+	if err != nil || !claimed {
+		t.Fatalf("claimed=%v err=%v", claimed, err)
 	}
 }

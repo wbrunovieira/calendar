@@ -67,6 +67,11 @@ type Match struct {
 	UnmatchedReason *string    `json:"unmatchedReason,omitempty"`
 }
 
+// ErrAlreadyClaimedOnAccount is what the database says when another run claimed this
+// entry on this account first. It is a race, not corruption: the other run's match
+// stands and covers the line, so the loser has nothing to report and nothing to fix.
+var ErrAlreadyClaimedOnAccount = errors.New("this entry is already claimed on this account")
+
 func NewMatch(lineID, transactionID string, amountMinor int64, method Method, by string) (*Match, error) {
 	if strings.TrimSpace(lineID) == "" {
 		return nil, errors.New("a match needs the statement line")

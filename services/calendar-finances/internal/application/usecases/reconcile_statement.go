@@ -172,6 +172,12 @@ func (uc *ReconcileStatementUseCase) Execute(accountID string) (*ReconcileStatem
 			out.Pending++
 			continue
 		}
+		// A line worth nothing has no money to account for. Banks print them, and a
+		// match must cover a positive amount, so trying to build one fails — and that
+		// failure used to abort the run and discard every finding already computed.
+		if line.InAccountCurrency() == 0 {
+			continue
+		}
 
 		candidates, err := uc.candidatesFor(line, account, txns, claimed, transactionPkg.StatusConfirmed)
 		if err != nil {
@@ -217,6 +223,14 @@ func (uc *ReconcileStatementUseCase) Execute(accountID string) (*ReconcileStatem
 				return nil, err
 			}
 			if err := uc.matches.Create(match); err != nil {
+				// Another run claimed this entry on this account between our check and
+				// our write. Its match covers the line, so there is nothing to fix and
+				// nothing to report — and reporting missing money would be the one
+				// answer a reader would act on.
+				if errors.Is(err, statement.ErrAlreadyClaimedOnAccount) {
+					claimed[candidates[0].ID] = true
+					continue
+				}
 				return nil, err
 			}
 			// The line has to say so itself. The match row is the evidence; this is
