@@ -96,7 +96,12 @@ func (uc *ReconcileStatementUseCase) Execute(accountID string) (*ReconcileStatem
 	}
 
 	id := accountID
-	txns, err := uc.txns.List(transactionPkg.ListFilter{ProfileID: account.ProfileID, BankAccountID: &id})
+	// IncludeAsDestination, or the payment of a card bill is invisible here: it lives
+	// on the CHECKING account and only points at the card. That is the one movement
+	// appearing on two statements at once, so it is the one most in need of matching.
+	txns, err := uc.txns.List(transactionPkg.ListFilter{
+		ProfileID: account.ProfileID, BankAccountID: &id, IncludeAsDestination: true,
+	})
 	if err != nil {
 		return nil, err
 	}

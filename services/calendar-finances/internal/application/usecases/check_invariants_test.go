@@ -40,8 +40,26 @@ func (f *invariantTxRepo) SumByInvoiceID(invoiceID string) (float64, error) {
 
 // The embedded interface is nil, so every method the check calls has to exist here or
 // the test panics instead of failing — which is a fine signal, but only once.
-func (f *invariantTxRepo) List(transaction.ListFilter) ([]*transaction.Transaction, error) {
-	return f.installments, nil
+// Honours the two filters the invariants actually depend on. Returning everything
+// regardless would make the reversed-instalment test pass without proving that the
+// real repository would have returned that row — and it only does when asked.
+func (f *invariantTxRepo) List(filter transaction.ListFilter) ([]*transaction.Transaction, error) {
+	out := []*transaction.Transaction{}
+	for _, tx := range f.installments {
+		if !filter.IncludeReversed && tx.Status == transaction.StatusReversed {
+			continue
+		}
+		if filter.BankAccountID != nil && *filter.BankAccountID != "" {
+			onAccount := tx.BankAccountID == *filter.BankAccountID
+			asDestination := filter.IncludeAsDestination &&
+				tx.DestinationAccountID != nil && *tx.DestinationAccountID == *filter.BankAccountID
+			if !onAccount && !asDestination {
+				continue
+			}
+		}
+		out = append(out, tx)
+	}
+	return out, nil
 }
 
 type invariantInvoiceRepo struct {

@@ -125,8 +125,37 @@ func (f *fakeTransactionRepo) GetByID(id string) (*transaction.Transaction, erro
 	return nil, errors.New("not found")
 }
 
+// List HONOURS the filter, because a fake that ignores it lies about the only thing
+// the caller is relying on.
+//
+// It returned everything for a long time, and that is how a reconciler shipped asking
+// for one account's entries while the real repository would have answered with a
+// narrower set: the payment leg of a card bill lives on the CHECKING account and only
+// points at the card, so it never appeared. The test passed anyway. That was the fifth
+// time in this codebase that a fake diverging from production hid a real defect.
 func (f *fakeTransactionRepo) List(filter transaction.ListFilter) ([]*transaction.Transaction, error) {
-	return f.created, nil
+	out := []*transaction.Transaction{}
+	for _, tx := range f.created {
+		if filter.ProfileID != "" && tx.ProfileID != filter.ProfileID {
+			continue
+		}
+		if filter.BankAccountID != nil && *filter.BankAccountID != "" {
+			onAccount := tx.BankAccountID == *filter.BankAccountID
+			asDestination := filter.IncludeAsDestination &&
+				tx.DestinationAccountID != nil && *tx.DestinationAccountID == *filter.BankAccountID
+			if !onAccount && !asDestination {
+				continue
+			}
+		}
+		if !filter.IncludeReversed && tx.Status == transaction.StatusReversed {
+			continue
+		}
+		if filter.Status != nil && tx.Status != *filter.Status {
+			continue
+		}
+		out = append(out, tx)
+	}
+	return out, nil
 }
 
 func (f *fakeTransactionRepo) Update(tx *transaction.Transaction) error {
