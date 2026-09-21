@@ -60,10 +60,21 @@ func walkCategoryChain(catByID map[string]*category.Category, categoryID *string
 // isNonConsumptionCategory: transfers between own accounts, loans, investments and
 // owner capital (aporte) are not operational money - excluded from revenue/expense.
 func isNonConsumptionCategory(catByID map[string]*category.Category, categoryID *string) bool {
+	// The CLASSIFICATION decides first. Capital the owner put in is not a sale, and a
+	// pass-through is not revenue nor cost — neither belongs in a P&L, and deciding that
+	// by the word in the category name breaks the day somebody renames one.
+	switch category.ClassificationDRE(dreClassification(catByID, categoryID)) {
+	case category.DRECapital, category.DREPassThrough:
+		return true
+	}
+
 	return walkCategoryChain(catByID, categoryID, func(c *category.Category) bool {
 		if c.Type == category.TypeTransfer {
 			return true
 		}
+		// The name is the fallback, and only until the categories are classified: 105 of
+		// 113 still carry no classification, so dropping this now would let real capital
+		// contributions back into the faturamento.
 		lower := strings.ToLower(c.Name)
 		return strings.HasPrefix(lower, "aporte") || nonConsumptionCategoryNames[lower]
 	})

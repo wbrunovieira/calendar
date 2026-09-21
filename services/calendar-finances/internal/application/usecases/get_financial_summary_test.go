@@ -165,3 +165,70 @@ func TestAnalyzeFinancialSummary_DRELines(t *testing.T) {
 		t.Errorf("dre must start with REVENUE: %+v", out.Dre)
 	}
 }
+
+// A repasse is money that enters and leaves at the same value with no margin: the client
+// pays the domain, the WB pays the registrar. Counting it as revenue inflates the
+// faturamento by money that was never the company's — and fator R, pricing and every
+// "how much did I sell" answer are read off that number.
+func TestAnalyzeFinancialSummary_APassThroughIsNotRevenue(t *testing.T) {
+	dre := func(s string) *category.ClassificationDRE { v := category.ClassificationDRE(s); return &v }
+	periods := []string{"2026-05"}
+	categories := []*category.Category{
+		{ID: "rec", Name: "Receitas", Type: category.TypeIncome, ClassificationDRE: dre("REVENUE")},
+		{ID: "serv", Name: "Projetos", Type: category.TypeIncome, ParentID: sp("rec")},
+		// Both legs of the pass-through, each under the tree it naturally belongs to.
+		{ID: "repasse", Name: "Repasse de Dominio", Type: category.TypeIncome, ParentID: sp("rec"),
+			ClassificationDRE: dre("PASS_THROUGH")},
+		{ID: "custorep", Name: "Dominio", Type: category.TypeExpense, ClassificationDRE: dre("PASS_THROUGH")},
+	}
+	txs := []*transaction.Transaction{
+		incTx(350, "serv", "mp", 2026, time.May),
+		incTx(40, "repasse", "mp", 2026, time.May),
+		expTx(40, "registro.br", "custorep", "mp", 2026, time.May),
+	}
+
+	out := analyzeFinancialSummary(txs, categories, nil, periods)
+
+	got := map[string]float64{}
+	for _, l := range out.Dre {
+		got[l.Classification] = l.Total
+	}
+	if got["REVENUE"] != 350 {
+		t.Errorf("faturamento = %.2f, want 350 — o repasse de 40 entrou na receita", got["REVENUE"])
+	}
+	if got["OUTROS"] != 0 {
+		t.Errorf("a perna de custo do repasse virou despesa: %.2f", got["OUTROS"])
+	}
+	if got["PASS_THROUGH"] != 0 {
+		t.Errorf("o repasse nao deve virar linha do DRE: %.2f", got["PASS_THROUGH"])
+	}
+}
+
+// The owner putting his own money in is not a sale. It was excluded by matching the word
+// "aporte" in the category name, which is the kind of rule that breaks the day somebody
+// renames a category — so the classification has to be what decides.
+func TestAnalyzeFinancialSummary_CapitalIsExcludedByClassificationNotByName(t *testing.T) {
+	dre := func(s string) *category.ClassificationDRE { v := category.ClassificationDRE(s); return &v }
+	periods := []string{"2026-05"}
+	categories := []*category.Category{
+		{ID: "rec", Name: "Receitas", Type: category.TypeIncome, ClassificationDRE: dre("REVENUE")},
+		{ID: "serv", Name: "Projetos", Type: category.TypeIncome, ParentID: sp("rec")},
+		// Deliberately NOT called "Aporte ...": only the classification says what it is.
+		{ID: "cap", Name: "Entrada do socio", Type: category.TypeIncome, ParentID: sp("rec"),
+			ClassificationDRE: dre("CAPITAL")},
+	}
+	txs := []*transaction.Transaction{
+		incTx(350, "serv", "mp", 2026, time.May),
+		incTx(2674, "cap", "mp", 2026, time.May),
+	}
+
+	out := analyzeFinancialSummary(txs, categories, nil, periods)
+
+	got := map[string]float64{}
+	for _, l := range out.Dre {
+		got[l.Classification] = l.Total
+	}
+	if got["REVENUE"] != 350 {
+		t.Errorf("faturamento = %.2f, want 350 — o aporte de capital entrou na receita", got["REVENUE"])
+	}
+}
