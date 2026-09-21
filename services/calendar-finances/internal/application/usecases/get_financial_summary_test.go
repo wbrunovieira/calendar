@@ -232,3 +232,25 @@ func TestAnalyzeFinancialSummary_CapitalIsExcludedByClassificationNotByName(t *t
 		t.Errorf("faturamento = %.2f, want 350 — o aporte de capital entrou na receita", got["REVENUE"])
 	}
 }
+
+// The production shape: "Repasse de Dominio" is a CHILD of "Receitas", which is classified
+// REVENUE. The nearest classified ancestor wins, so the child's own PASS_THROUGH has to be
+// what counts — otherwise the classification is decorative and the parent decides.
+func TestAnalyzeFinancialSummary_TheChildsClassificationBeatsTheParents(t *testing.T) {
+	dre := func(s string) *category.ClassificationDRE { v := category.ClassificationDRE(s); return &v }
+	periods := []string{"2026-05"}
+	categories := []*category.Category{
+		{ID: "rec", Name: "Receitas", Type: category.TypeIncome, ClassificationDRE: dre("REVENUE")},
+		{ID: "repasse", Name: "Repasse de Dominio", Type: category.TypeIncome, ParentID: sp("rec"),
+			ClassificationDRE: dre("PASS_THROUGH")},
+	}
+	txs := []*transaction.Transaction{incTx(40, "repasse", "mp", 2026, time.May)}
+
+	out := analyzeFinancialSummary(txs, categories, nil, periods)
+
+	for _, l := range out.Dre {
+		if l.Classification == "REVENUE" && l.Total != 0 {
+			t.Errorf("o pai REVENUE venceu o filho PASS_THROUGH: %.2f entrou no faturamento", l.Total)
+		}
+	}
+}

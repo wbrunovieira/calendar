@@ -979,5 +979,18 @@ func migrations() []string {
 		// reads the UNDONE rows too — so none of them applied and each line cost a
 		// sequential scan of the whole table, every run.
 		`CREATE INDEX IF NOT EXISTS idx_matches_line_all ON finance.reconciliation_matches(line_id)`,
+
+		// PASS_THROUGH joins the DRE classification: money that enters and leaves at the
+		// same value with no margin is neither revenue nor cost. The CHECK has to learn
+		// the value too — a new enum the database refuses is a runtime failure, not a
+		// feature, and it would only show up the first time somebody classified a
+		// category.
+		`DO $$
+		BEGIN
+			ALTER TABLE finance.categories DROP CONSTRAINT IF EXISTS categories_classification_dre_check;
+			ALTER TABLE finance.categories ADD CONSTRAINT categories_classification_dre_check
+				CHECK (classification_dre IN ('REVENUE','TAX','FIXED_COST','VARIABLE_COST',
+					'PROLABORE','MARKETING','FINANCIAL','ASSET','CAPITAL','PASS_THROUGH'));
+		END $$`,
 	}
 }
