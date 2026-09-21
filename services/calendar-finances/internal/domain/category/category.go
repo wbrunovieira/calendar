@@ -32,6 +32,13 @@ const (
 	DREFinancial    ClassificationDRE = "FINANCIAL"     // Rendimentos, juros, IOF
 	DREAsset        ClassificationDRE = "ASSET"         // Compra de ativo permanente
 	DRECapital      ClassificationDRE = "CAPITAL"       // Aporte de capital
+	// DREPassThrough is money that enters and leaves at the same value with no margin —
+	// the client pays for the domain, the company pays the registrar. It is neither
+	// revenue nor cost: counting it as revenue inflates the faturamento by money that
+	// was never the company's, and fator R, pricing and every "how much did I sell"
+	// answer are read off that number. Whether it is taxable is the accountant's call,
+	// not this field's.
+	DREPassThrough ClassificationDRE = "PASS_THROUGH"
 )
 
 // Category defines a spending or income bucket scoped to a financial profile.
@@ -165,7 +172,7 @@ func validateClassificationDRE(c *ClassificationDRE) error {
 	}
 	switch *c {
 	case DRERevenue, DRETax, DREFixedCost, DREVariableCost,
-		DREProlabore, DREMarketing, DREFinancial, DREAsset, DRECapital:
+		DREProlabore, DREMarketing, DREFinancial, DREAsset, DRECapital, DREPassThrough:
 		return nil
 	default:
 		return fmt.Errorf("invalid classificationDRE: %s", *c)
