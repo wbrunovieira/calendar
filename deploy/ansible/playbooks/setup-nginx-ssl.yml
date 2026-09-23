@@ -104,6 +104,13 @@
             listen 80;
             server_name calendar-finances.wbdigitalsolutions.com;
 
+            # The CRM reaches /api/v1/contracts/sync over the Docker bridge, direct
+            # to the container — it never needs the public name. Closing it here
+            # means a leaked or brute-forced webhook secret is not enough on its own.
+            location /api/v1/contracts/ {
+                deny all;
+            }
+
             location / {
                 proxy_pass http://127.0.0.1:3335;
                 proxy_http_version 1.1;

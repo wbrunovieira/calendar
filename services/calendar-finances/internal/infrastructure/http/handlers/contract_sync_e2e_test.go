@@ -217,6 +217,66 @@ func TestContractSyncEndToEnd(t *testing.T) {
 		}
 	})
 
+	t.Run("an offset-bearing stamp still orders correctly", func(t *testing.T) {
+		// The CRM emits ISO strings; whether they carry Z or a local offset is a
+		// formatting choice on its side, and the ledger must order by INSTANT either
+		// way. A plain TIMESTAMP column drops the offset, so "15:00-03:00" stored as
+		// 15:00 and read back as 15:00Z — three hours early — and a genuinely older
+		// delivery then beat a newer one. This is that sequence, end to end.
+		win := payload("deal-e2e-tz", "won", "2026-09-23T15:00:00-03:00", "420.00") // 18:00Z
+		if code, body := postSync(t, r, syncSecret, win); code != http.StatusOK {
+			t.Fatalf("code = %d body = %v", code, body)
+		}
+
+		older := payload("deal-e2e-tz", "open", "2026-09-23T17:00:00Z", "350.00") // an hour BEFORE
+		code, body := postSync(t, r, syncSecret, older)
+		if code != http.StatusOK {
+			t.Fatalf("code = %d body = %v", code, body)
+		}
+		if got := outcome(t, body); got != "stale" {
+			t.Fatalf("outcome = %q, want stale", got)
+		}
+
+		var status string
+		var total int64
+		db.QueryRow(`SELECT status, total_minor FROM finance.contracts
+			WHERE source='wb-crm' AND external_id='deal-e2e-tz'`).Scan(&status, &total)
+		if status != "WON" || total != 42000 {
+			t.Fatalf("status=%s total=%d; an older delivery undid the win", status, total)
+		}
+	})
+
+	t.Run("a redelivery with an offset stamp is still recognised as stale", func(t *testing.T) {
+		// The other half of the same defect: with the instant shifted, the stored
+		// value is always behind the incoming one, so nothing is EVER stale and the
+		// endpoint rewrites the row on every single delivery.
+		same := payload("deal-e2e-tz2", "open", "2026-09-23T09:00:00-03:00", "100.00")
+		if code, _ := postSync(t, r, syncSecret, same); code != http.StatusOK {
+			t.Fatal("first delivery failed")
+		}
+		for i := 0; i < 2; i++ {
+			code, body := postSync(t, r, syncSecret, same)
+			if code != http.StatusOK {
+				t.Fatalf("code = %d", code)
+			}
+			if got := outcome(t, body); got != "stale" {
+				t.Fatalf("redelivery %d: outcome = %q, want stale", i+1, got)
+			}
+		}
+	})
+
+	t.Run("a currency the column cannot hold is 400, not 500", func(t *testing.T) {
+		body := `{"source":"wb-crm",
+			"deal":{"id":"deal-e2e-ccy","title":"Proposta","totalValue":null,
+			        "currency":"DOLLAR","status":"open","closedAt":null,
+			        "updatedAt":"2026-09-23T12:00:00Z"},
+			"organization":{"id":"org-e2e-1","name":"Refrigeracao Garrido"}}`
+		code, _ := postSync(t, r, syncSecret, body)
+		if code != http.StatusBadRequest {
+			t.Fatalf("code = %d, want 400 — 500 tells the sender to retry a payload that can never work", code)
+		}
+	})
+
 	t.Run("a deal with no value yet is stored without inventing a zero", func(t *testing.T) {
 		code, body := postSync(t, r, syncSecret, payload("deal-e2e-3", "open", "2026-09-23T12:00:00Z", "null"))
 		if code != http.StatusOK {

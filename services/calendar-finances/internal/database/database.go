@@ -991,12 +991,21 @@ func migrations() []string {
 			external_id VARCHAR(255) NOT NULL,
 			title TEXT NOT NULL,
 			total_minor BIGINT,
-			currency CHAR(3),
+			-- VARCHAR and not CHAR: CHAR(3) pads, so a two-letter code stores as "BR "
+			-- and reads back different from what was sent, reporting a currency change
+			-- on every delivery forever.
+			currency VARCHAR(3),
 			status VARCHAR(10) NOT NULL CHECK (status IN ('OPEN','WON','LOST')),
-			closed_at TIMESTAMP,
-			remote_updated_at TIMESTAMP NOT NULL,
-			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-			updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			-- TIMESTAMPTZ, and this is load-bearing rather than stylistic. A plain
+			-- TIMESTAMP keeps the wall clock and DISCARDS the sender's offset, so
+			-- "15:00-03:00" stores as 15:00 and reads back as 15:00Z — three hours
+			-- earlier than the instant that was sent. The ordering rule then lets a
+			-- genuinely older delivery overwrite newer state, which is the exact
+			-- failure remote_updated_at exists to prevent.
+			closed_at TIMESTAMPTZ,
+			remote_updated_at TIMESTAMPTZ NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			CONSTRAINT contracts_total_nonnegative CHECK (total_minor IS NULL OR total_minor >= 0),
 			CONSTRAINT contracts_valued_needs_currency CHECK (total_minor IS NULL OR currency IS NOT NULL)
 		)`,
@@ -1007,5 +1016,16 @@ func migrations() []string {
 			ON finance.contracts(source, external_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_contracts_profile ON finance.contracts(profile_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_contracts_cost_center ON finance.contracts(cost_center_id)`,
+		// CREATE TABLE IF NOT EXISTS does nothing to a table that already exists, so
+		// any database that ran the first version of the migration above still has the
+		// offset-dropping columns. Converting is a no-op once the type is already
+		// right. The existing rows are read as UTC because that is what the old code
+		// effectively stored them as.
+		`ALTER TABLE finance.contracts
+			ALTER COLUMN remote_updated_at TYPE TIMESTAMPTZ USING remote_updated_at AT TIME ZONE 'UTC',
+			ALTER COLUMN closed_at         TYPE TIMESTAMPTZ USING closed_at AT TIME ZONE 'UTC',
+			ALTER COLUMN created_at        TYPE TIMESTAMPTZ USING created_at AT TIME ZONE 'UTC',
+			ALTER COLUMN updated_at        TYPE TIMESTAMPTZ USING updated_at AT TIME ZONE 'UTC'`,
+		`ALTER TABLE finance.contracts ALTER COLUMN currency TYPE VARCHAR(3)`,
 	}
 }

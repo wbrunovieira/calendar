@@ -14,7 +14,5 @@ type Repository interface {
 	// for absence and nothing else, so a caller can tell an unknown deal from a
 	// database that is down.
 	FindByExternalRef(source, externalID string) (*Contract, error)
-	FindByID(id string) (*Contract, error)
-	ListByProfile(profileID string) ([]*Contract, error)
 	Update(c *Contract) error
 }

@@ -62,35 +62,10 @@ func (r *ContractRepository) Update(c *contract.Contract) error {
 	return nil
 }
 
-func (r *ContractRepository) FindByID(id string) (*contract.Contract, error) {
-	return scanContract(r.db.QueryRow(
-		`SELECT `+contractColumns+` FROM finance.contracts WHERE id = $1`, id))
-}
-
 func (r *ContractRepository) FindByExternalRef(source, externalID string) (*contract.Contract, error) {
 	return scanContract(r.db.QueryRow(
 		`SELECT `+contractColumns+` FROM finance.contracts
 		 WHERE source = $1 AND external_id = $2`, source, externalID))
-}
-
-func (r *ContractRepository) ListByProfile(profileID string) ([]*contract.Contract, error) {
-	rows, err := r.db.Query(
-		`SELECT `+contractColumns+` FROM finance.contracts
-		 WHERE profile_id = $1 ORDER BY remote_updated_at DESC`, profileID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	contracts := []*contract.Contract{}
-	for rows.Next() {
-		c, err := scanContract(rows)
-		if err != nil {
-			return nil, err
-		}
-		contracts = append(contracts, c)
-	}
-	return contracts, rows.Err()
 }
 
 type contractScanner interface {

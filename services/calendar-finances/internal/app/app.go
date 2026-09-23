@@ -421,7 +421,14 @@ func New(db *sql.DB) (*App, error) {
 	log.Printf("contract sync: deals from the CRM are filed under profile %s", crmProfileID)
 	syncContractUC := usecases.NewSyncContractUseCase(contractRepo, costCenterRepo, crmProfileID)
 	contractHandler := httpHandlers.NewContractHandlers(syncContractUC)
-	apiRouter.Handle("/contracts/sync",
+	// Registered on the ROOT router, not on apiRouter, so the secret check runs
+	// before anything else does. The idempotency middleware on apiRouter reads the
+	// body and WRITES a claim row before the handler is reached — an unauthenticated
+	// caller was making the server store and delete a row per request, could probe
+	// which keys exist, and could be answered with a raw database error by a
+	// middleware sitting in front of a handler that refuses to leak exactly that.
+	// This endpoint needs no idempotency middleware anyway: deal.id is its key.
+	router.Handle("/api/v1/contracts/sync",
 		middleware.RequireWebhookSecret(os.Getenv("CRM_SYNC_WEBHOOK_SECRET"),
 			http.HandlerFunc(contractHandler.Sync))).Methods("POST")
 

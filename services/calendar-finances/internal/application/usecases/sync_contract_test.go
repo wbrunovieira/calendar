@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"errors"
+	"math"
 	"testing"
 	"time"
 
@@ -94,6 +95,25 @@ func (f *fakeCostCenterRepo) Create(c *costcenter.CostCenter) error {
 	}
 	if f.centers == nil {
 		f.centers = map[string]*costcenter.CostCenter{}
+	}
+	// uq_cost_centers_external refuses a second client for the same external
+	// reference. The fake used to accept it, which is why losing that race — a real
+	// 1-in-24 event under concurrent first deliveries — was invisible here.
+	if c.ExternalID != nil {
+		for _, existing := range f.centers {
+			if existing.ProfileID == c.ProfileID && existing.ExternalSrc == c.ExternalSrc &&
+				existing.ExternalID != nil && *existing.ExternalID == *c.ExternalID {
+				return costcenter.ErrDuplicate
+			}
+		}
+	}
+	// raceWinner is another delivery creating the same client BETWEEN our read and
+	// our insert.
+	if f.raceWinner != nil {
+		winner := f.raceWinner
+		f.raceWinner = nil
+		f.centers[winner.ID] = winner
+		return costcenter.ErrDuplicate
 	}
 	f.centers[c.ID] = c
 	return nil
@@ -486,5 +506,148 @@ func TestSyncClassifiesOurOwnFailuresAsOurs(t *testing.T) {
 				t.Fatalf("our failure was blamed on the sender: %v", err)
 			}
 		})
+	}
+}
+
+// A deal moved to another organization in the CRM has to be re-filed here, and the
+// move has to appear in the changes. Leaving it under the previous client files one
+// company's revenue under another's, and nothing says so.
+func TestSyncRefilesADealThatChangedClient(t *testing.T) {
+	f := newSyncFixture()
+	first, err := f.uc.Execute(baseInput())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	moved := baseInput()
+	moved.Organization = SyncContractOrganization{ID: "org-2", Name: "Outro Cliente"}
+	moved.Deal.Status = "won"
+	moved.Deal.UpdatedAt = baseInput().Deal.UpdatedAt.Add(time.Hour)
+
+	out, err := f.uc.Execute(moved)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.CostCenterID == first.CostCenterID {
+		t.Fatal("the contract is still filed under the previous client")
+	}
+	var reported bool
+	for _, c := range out.Changes {
+		if c.Field == "costCenterId" && c.From == first.CostCenterID && c.To == out.CostCenterID {
+			reported = true
+		}
+	}
+	if !reported {
+		t.Fatalf("the client changed without being reported: %+v", out.Changes)
+	}
+	if stored := f.contracts.byRef[refKey("wb-crm", "deal-1")]; stored.CostCenterID != out.CostCenterID {
+		t.Fatal("the move was reported but not stored")
+	}
+}
+
+// "Dropped without writing" has to mean the client too. Resolving it before the
+// staleness check left a cost center behind for a delivery that was then discarded.
+func TestSyncStaleDeliveryCreatesNoClient(t *testing.T) {
+	f := newSyncFixture()
+	newer := baseInput()
+	newer.Deal.UpdatedAt = baseInput().Deal.UpdatedAt.Add(time.Hour)
+	if _, err := f.uc.Execute(newer); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	clientsAfterFirst := len(f.centers.centers)
+
+	late := baseInput() // older stamp, and naming a different organization
+	late.Organization = SyncContractOrganization{ID: "org-2", Name: "Cliente que nao deveria nascer"}
+
+	out, err := f.uc.Execute(late)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.Outcome != SyncStale {
+		t.Fatalf("outcome = %q, want stale", out.Outcome)
+	}
+	if len(f.centers.centers) != clientsAfterFirst {
+		t.Fatalf("%d clients, was %d: a dropped delivery still wrote",
+			len(f.centers.centers), clientsAfterFirst)
+	}
+}
+
+// Two first deliveries for the same brand new organization race on the client
+// insert exactly as they do on the contract insert. The loser must read the
+// winner's client, not answer 500 and make the sender burn a retry.
+func TestSyncRecoversWhenAConcurrentDeliveryCreatesTheClientFirst(t *testing.T) {
+	f := newSyncFixture()
+
+	orgID := "org-1"
+	winner, err := costcenter.NewCostCenter(costcenter.CreateParams{
+		ProfileID: syncProfile, Name: "Refrigeracao Garrido", Type: costcenter.TypeClient,
+		ExternalID: &orgID, ExternalSrc: "wb-crm",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.centers.raceWinner = winner
+
+	out, err := f.uc.Execute(baseInput())
+	if err != nil {
+		t.Fatalf("losing the client insert race failed the caller: %v", err)
+	}
+	if out.CostCenterID != winner.ID {
+		t.Fatalf("costCenterID = %q, want the winner's %q", out.CostCenterID, winner.ID)
+	}
+	if len(f.centers.centers) != 1 {
+		t.Fatalf("%d clients; the race produced a twin", len(f.centers.centers))
+	}
+}
+
+// A currency the column cannot hold is the sender's fault, not an outage. Before
+// this it reached Postgres, came back as a driver error, and was answered 500 —
+// which the documented protocol tells the CRM to retry forever.
+func TestSyncRejectsACurrencyThatIsNotACode(t *testing.T) {
+	for _, bad := range []string{"DOLLAR", "BR", "R$"} {
+		f := newSyncFixture()
+		in := baseInput()
+		in.Deal.Currency = bad
+		in.Deal.TotalValue = nil // the old check only ran when there was a value
+
+		_, err := f.uc.Execute(in)
+		if err == nil {
+			t.Fatalf("currency %q was accepted", bad)
+		}
+		if !errors.Is(err, ErrInvalidContractSync) {
+			t.Fatalf("currency %q: err = %v, want ErrInvalidContractSync", bad, err)
+		}
+		if f.contracts.creates != 0 || len(f.centers.centers) != 0 {
+			t.Fatalf("currency %q: a rejected delivery still wrote", bad)
+		}
+	}
+}
+
+// toMinor SATURATES rather than overflowing: 1e17 comes back as MaxInt64 and would
+// store silently as a number nobody sent. Nothing bounded the value before, so an
+// absurd payload became an absurd contract instead of a rejection.
+func TestSyncRejectsAValueThatCannotBeRepresented(t *testing.T) {
+	for _, bad := range []float64{1e17, 1e12, math.Inf(1), math.NaN()} {
+		f := newSyncFixture()
+		in := baseInput()
+		in.Deal.TotalValue = &bad
+
+		_, err := f.uc.Execute(in)
+		if err == nil {
+			t.Fatalf("totalValue %v was accepted", bad)
+		}
+		if !errors.Is(err, ErrInvalidContractSync) {
+			t.Fatalf("totalValue %v: err = %v, want ErrInvalidContractSync", bad, err)
+		}
+		if f.contracts.creates != 0 {
+			t.Fatalf("totalValue %v: a rejected delivery still wrote", bad)
+		}
+	}
+	// The bound must not reject real money.
+	f := newSyncFixture()
+	in := baseInput()
+	in.Deal.TotalValue = money(1_000_000.00)
+	if _, err := f.uc.Execute(in); err != nil {
+		t.Fatalf("a million reais was rejected: %v", err)
 	}
 }

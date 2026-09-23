@@ -258,3 +258,87 @@ func TestApplyRejectsStateItCannotStore(t *testing.T) {
 		t.Fatal("an empty title was accepted on update but rejected on create")
 	}
 }
+
+// A change that is reported but not stored is the worst of both: the report says it
+// happened, the row says it did not, and the next delivery reports it again forever.
+func TestApplyStoresEveryFieldItReports(t *testing.T) {
+	c, _ := New(validParams())
+	closed := time.Date(2026, 9, 23, 15, 0, 0, 0, time.UTC)
+
+	changes, err := c.Apply(RemoteState{
+		Title:      "Site institucional v2",
+		TotalMinor: minor(42000),
+		Currency:   "USD",
+		Status:     StatusWon,
+		ClosedAt:   &closed,
+		UpdatedAt:  c.RemoteUpdatedAt.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	stored := map[string]string{
+		"title": c.Title, "totalValue": formatMinor(c.TotalMinor),
+		"currency": c.Currency, "status": string(c.Status),
+	}
+	for _, ch := range changes {
+		if got, ok := stored[ch.Field]; ok && got != ch.To {
+			t.Fatalf("%s was reported as %q but stored as %q", ch.Field, ch.To, got)
+		}
+	}
+	if len(changes) != 4 {
+		t.Fatalf("changes = %+v, want all four fields", changes)
+	}
+}
+
+// A deal reassigned to another client in the CRM has to follow here, and the move
+// has to be visible. Silently keeping the old client files one company's revenue
+// under another's.
+func TestRefileMovesTheContractAndSaysSo(t *testing.T) {
+	c, _ := New(validParams())
+
+	moved := c.Refile("cc-2")
+	if moved == nil {
+		t.Fatal("the move was not reported")
+	}
+	if moved.Field != "costCenterId" || moved.From != "cc-1" || moved.To != "cc-2" {
+		t.Fatalf("change = %+v", *moved)
+	}
+	if c.CostCenterID != "cc-2" {
+		t.Fatalf("costCenterID = %q, want cc-2", c.CostCenterID)
+	}
+}
+
+func TestRefileToTheSameClientIsNotAChange(t *testing.T) {
+	c, _ := New(validParams())
+	for _, id := range []string{"cc-1", "  cc-1  ", ""} {
+		if moved := c.Refile(id); moved != nil {
+			t.Fatalf("Refile(%q) reported a change: %+v", id, *moved)
+		}
+		if c.CostCenterID != "cc-1" {
+			t.Fatalf("Refile(%q) moved the contract to %q", id, c.CostCenterID)
+		}
+	}
+}
+
+// The currency used to be checked only when there was a value to denominate, so a
+// valueless deal could carry "DOLLAR" — accepted here, refused by a 3-character
+// column, and answered 500: a payload that can never work, reported as our outage,
+// which tells the sender to retry it forever.
+func TestValidateRemoteChecksTheCurrencyEvenWithNoValue(t *testing.T) {
+	base := RemoteState{
+		Title: "Proposta", Status: StatusOpen,
+		UpdatedAt: time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC),
+	}
+	for _, bad := range []string{"DOLLAR", "BR", "R$", "brl1"} {
+		r := base
+		r.Currency = bad
+		if err := ValidateRemote(r); err == nil {
+			t.Fatalf("currency %q was accepted with no value to denominate", bad)
+		}
+	}
+	// Absent is still fine: a deal with neither value nor currency is legitimate.
+	if err := ValidateRemote(base); err != nil {
+		t.Fatalf("a deal with no value and no currency was rejected: %v", err)
+	}
+}

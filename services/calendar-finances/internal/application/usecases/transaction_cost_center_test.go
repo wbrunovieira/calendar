@@ -22,6 +22,8 @@ type fakeCostCenterRepo struct {
 	readErr error
 	// createErr stands in for a write that the database refused.
 	createErr error
+	// raceWinner is a concurrent delivery winning the insert for the same client.
+	raceWinner *costcenter.CostCenter
 }
 
 func (f *fakeCostCenterRepo) FindByID(id string) (*costcenter.CostCenter, error) {

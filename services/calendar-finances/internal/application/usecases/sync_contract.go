@@ -3,6 +3,7 @@ package usecases
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -127,19 +128,34 @@ func (uc *SyncContractUseCase) Execute(input SyncContractInput) (*SyncContractOu
 		return nil, invalidSync("%s", err)
 	}
 
-	centerID, err := uc.resolveCostCenter(source, orgID, orgName)
-	if err != nil {
-		return nil, err
-	}
-
 	existing, err := uc.contracts.FindByExternalRef(source, dealID)
 	switch {
 	case err == nil:
-		return uc.applyTo(existing, remote)
+		// Staleness is decided BEFORE anything is written, the client included. A
+		// delivery that is dropped must leave nothing behind, and resolving the
+		// client first meant a late redelivery naming another organization created
+		// a cost center that the dropped contract then never referenced.
+		if existing.IsStale(remote.UpdatedAt) {
+			return &SyncContractOutput{
+				ContractID:   existing.ID,
+				CostCenterID: existing.CostCenterID,
+				Outcome:      SyncStale,
+			}, nil
+		}
+		centerID, err := uc.resolveCostCenter(source, orgID, orgName)
+		if err != nil {
+			return nil, err
+		}
+		return uc.applyTo(existing, centerID, remote)
 	case errors.Is(err, contract.ErrNotFound):
 		// fall through to create
 	default:
 		return nil, fmt.Errorf("reading the mirrored contract: %w", err)
+	}
+
+	centerID, err := uc.resolveCostCenter(source, orgID, orgName)
+	if err != nil {
+		return nil, err
 	}
 
 	created, err := contract.New(contract.CreateParams{
@@ -169,25 +185,36 @@ func (uc *SyncContractUseCase) Execute(input SyncContractInput) (*SyncContractOu
 		if readErr != nil {
 			return nil, fmt.Errorf("re-reading the contract after losing the insert race: %w", readErr)
 		}
-		return uc.applyTo(winner, remote)
+		if winner.IsStale(remote.UpdatedAt) {
+			return &SyncContractOutput{
+				ContractID: winner.ID, CostCenterID: winner.CostCenterID, Outcome: SyncStale,
+			}, nil
+		}
+		return uc.applyTo(winner, centerID, remote)
 	default:
 		return nil, fmt.Errorf("creating the mirrored contract: %w", err)
 	}
 }
 
-func (uc *SyncContractUseCase) applyTo(existing *contract.Contract, remote contract.RemoteState) (*SyncContractOutput, error) {
-	out := &SyncContractOutput{ContractID: existing.ID, CostCenterID: existing.CostCenterID}
+func (uc *SyncContractUseCase) applyTo(existing *contract.Contract, centerID string, remote contract.RemoteState) (*SyncContractOutput, error) {
+	out := &SyncContractOutput{ContractID: existing.ID}
 
 	changes, err := existing.Apply(remote)
 	if errors.Is(err, contract.ErrStale) {
 		// Expected traffic, not a failure: the sender retries, and retries arrive out
 		// of order. Answering an error here would make it retry harder.
+		out.CostCenterID = existing.CostCenterID
 		out.Outcome = SyncStale
 		return out, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	if moved := existing.Refile(centerID); moved != nil {
+		changes = append(changes, *moved)
+	}
+	out.CostCenterID = existing.CostCenterID
+
 	if err := uc.contracts.Update(existing); err != nil {
 		return nil, fmt.Errorf("updating the mirrored contract: %w", err)
 	}
@@ -230,18 +257,43 @@ func (uc *SyncContractUseCase) resolveCostCenter(source, orgID, orgName string) 
 	if err != nil {
 		return "", err
 	}
-	if err := uc.costCenters.Create(created); err != nil {
+
+	switch err := uc.costCenters.Create(created); {
+	case err == nil:
+		return created.ID, nil
+	case errors.Is(err, costcenter.ErrDuplicate):
+		// The first two deliveries for a brand new organization race here just as
+		// they do on the contract insert, and the unique index settles it. Without
+		// this the loser answered 500 and the sender burned a retry on a delivery
+		// that was perfectly good.
+		winner, readErr := uc.costCenters.FindByExternalRef(uc.profileID, source, orgID)
+		if readErr != nil {
+			return "", fmt.Errorf("re-reading the client after losing the insert race: %w", readErr)
+		}
+		return winner.ID, nil
+	default:
 		return "", fmt.Errorf("creating the client: %w", err)
 	}
-	return created.ID, nil
 }
+
+// maxContractValue bounds what a deal may be worth. It is absurdly generous for
+// this company on purpose: the point is not to police pricing but to stop a
+// nonsense float from reaching toMinor, which SATURATES rather than overflowing —
+// 1e17 comes out as MaxInt64 and stores silently as a number nobody sent.
+const maxContractValue = 1e11
 
 func totalMinor(value *float64) (*int64, error) {
 	if value == nil {
 		return nil, nil
 	}
+	if math.IsNaN(*value) || math.IsInf(*value, 0) {
+		return nil, invalidSync("deal.totalValue is not a number")
+	}
 	if *value < 0 {
 		return nil, invalidSync("deal.totalValue cannot be negative")
+	}
+	if *value > maxContractValue {
+		return nil, invalidSync("deal.totalValue %v is out of range", *value)
 	}
 	m := toMinor(*value)
 	return &m, nil

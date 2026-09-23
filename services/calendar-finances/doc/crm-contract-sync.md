@@ -2,8 +2,16 @@
 
 `POST /api/v1/contracts/sync` mirrors a deal decided in the CRM into the ledger.
 
-It is a **server-to-server** route. It is not published through Nginx and it is not
-part of the dashboard API.
+It is a **server-to-server** route and not part of the dashboard API.
+
+**On reachability, stated accurately.** `calendar-finances` as a whole *is* proxied
+publicly — `calendar-finances.wbdigitalsolutions.com` forwards `location /` to the
+container, with no path exclusions. An earlier version of this document claimed the
+sync route was "never published through Nginx"; that was wrong, and the shared
+secret was the only thing standing in front of it on the open internet. The Nginx
+configs now `deny all` on `/api/v1/contracts/`, in both the local config and the
+production playbook. The CRM is unaffected: it reaches the container over the Docker
+bridge, which never passes through Nginx.
 
 ## What it is, and what it is deliberately not
 
@@ -100,6 +108,18 @@ the part that actually links the two systems — never changes.
 |---|---|
 | `CRM_SYNC_WEBHOOK_SECRET` | The shared secret. **Unset means the route answers 503 and stores nothing** — it fails closed. Distinct from `CRM_WEBHOOK_SECRET`, which is what `agents` uses to call *into* the CRM: opposite direction, different trust relationship. |
 | `FINANCE_BUSINESS_PROFILE_ID` | The profile deals are filed under. Defaults to WB Digital Solutions and is logged at startup. Deliberately **not** taken from the payload: the sender has no idea which ledger profile it is feeding, and letting it name one would let a webhook write into any profile. |
+
+## Timestamps
+
+`remote_updated_at` and `closed_at` are `TIMESTAMPTZ`, and that is load-bearing
+rather than stylistic. A plain `TIMESTAMP` keeps the wall clock and **discards the
+offset**: a stamp of `15:00-03:00` stores as `15:00` and reads back as `15:00Z`,
+three hours before the instant that was sent. Two things break at once — a
+genuinely older delivery beats a newer one (the exact failure the ordering rule
+exists to prevent), and the stored value is permanently behind the incoming one, so
+nothing is ever recognised as stale and every delivery rewrites the row.
+
+Send whatever ISO form is convenient; ordering is by instant.
 
 ## Still to build
 

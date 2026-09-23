@@ -161,6 +161,23 @@ func (c *Contract) Apply(r RemoteState) ([]Change, error) {
 	return changes, nil
 }
 
+// Refile moves the contract to another client and reports the move.
+//
+// A deal reassigned to a different organization in the CRM has to follow here. The
+// alternative is worse than it sounds: the contract stays filed under the previous
+// client, so one company's revenue is attributed to another's, and nothing in the
+// change list says it happened.
+func (c *Contract) Refile(costCenterID string) *Change {
+	id := strings.TrimSpace(costCenterID)
+	if id == "" || id == c.CostCenterID {
+		return nil
+	}
+	moved := &Change{"costCenterId", c.CostCenterID, id}
+	c.CostCenterID = id
+	c.UpdatedAt = time.Now()
+	return moved
+}
+
 // ParseStatus reads the sender's spelling. The CRM writes lowercase; accepting it
 // here keeps the translation in one place instead of at every call site.
 func ParseStatus(raw string) (Status, error) {
@@ -192,15 +209,33 @@ func ValidateRemote(r RemoteState) error {
 	if r.UpdatedAt.IsZero() {
 		return errors.New("remote updatedAt is required: without it deliveries cannot be ordered")
 	}
-	if r.TotalMinor != nil {
-		if *r.TotalMinor < 0 {
-			return errors.New("total value cannot be negative")
-		}
-		if len(normaliseCurrency(r.Currency)) != 3 {
-			return errors.New("a valued contract needs a 3-letter currency")
-		}
+	if r.TotalMinor != nil && *r.TotalMinor < 0 {
+		return errors.New("total value cannot be negative")
+	}
+	// The currency is checked whether or not there is a value to denominate. It used
+	// to be checked only alongside a value, which let "DOLLAR" reach a CHAR(3) column
+	// and come back as a database error — a payload that can never work, answered
+	// with 500, which tells the sender to retry it forever.
+	currency := normaliseCurrency(r.Currency)
+	switch {
+	case currency == "" && r.TotalMinor != nil:
+		return errors.New("a valued contract needs a 3-letter currency")
+	case currency != "" && !isCurrencyCode(currency):
+		return fmt.Errorf("currency %q is not a 3-letter code", r.Currency)
 	}
 	return nil
+}
+
+func isCurrencyCode(c string) bool {
+	if len(c) != 3 {
+		return false
+	}
+	for _, r := range c {
+		if r < 'A' || r > 'Z' {
+			return false
+		}
+	}
+	return true
 }
 
 func validate(profileID, costCenterID, source, externalID, title string,
