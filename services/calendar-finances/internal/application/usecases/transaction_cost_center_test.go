@@ -16,13 +16,26 @@ import (
 type fakeCostCenterRepo struct {
 	costcenter.Repository
 	centers map[string]*costcenter.CostCenter
+	// readErr stands in for a database that is down. It is separate from absence
+	// on purpose: the two used to be the same anonymous error here, which made
+	// this fake agree with a caller that confused them.
+	readErr error
+	// createErr stands in for a write that the database refused.
+	createErr error
+	// raceWinner is a concurrent delivery winning the insert for the same client.
+	raceWinner *costcenter.CostCenter
 }
 
 func (f *fakeCostCenterRepo) FindByID(id string) (*costcenter.CostCenter, error) {
+	if f.readErr != nil {
+		return nil, f.readErr
+	}
 	if c, ok := f.centers[id]; ok {
 		return c, nil
 	}
-	return nil, errors.New("not found")
+	// The SQL repository answers absence with this sentinel; a fake that answered
+	// anything else would let a caller pass here and fail in production.
+	return nil, costcenter.ErrNotFound
 }
 
 type costCenterFixture struct {
@@ -150,5 +163,22 @@ func TestCreateTransaction_WithoutACostCenterStillWorks(t *testing.T) {
 	}
 	if f.txRepo.created[0].CostCenterID != nil {
 		t.Error("a cost center appeared out of nowhere")
+	}
+}
+
+// A database outage is not a wrong cost center id. Before this, every error from
+// the repository was flattened into ErrCostCenterNotFound, so a failed read told
+// the caller their input was invalid — a 400 for a problem entirely on our side,
+// and one that a retry would have fixed.
+func TestCreateTransactionSeparatesAFailedReadFromAMissingCostCenter(t *testing.T) {
+	f := newCostCenterFixture(t)
+	f.useCase.costCenterRepo.(*fakeCostCenterRepo).readErr = errors.New("dial tcp: connection refused")
+
+	err := f.income(t, &f.clientID)
+	if err == nil {
+		t.Fatal("a failed read was accepted")
+	}
+	if errors.Is(err, ErrCostCenterNotFound) {
+		t.Fatal("a failed read was reported as a missing cost center")
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"log"
+	"net/http"
 	"os"
 
 	"github.com/brunovieira/calendar-finances/internal/application/usecases"
@@ -37,6 +38,12 @@ type App struct {
 }
 
 // New wires the whole API against db. It performs no I/O, so tests can build the
+// defaultCRMProfileID is WB Digital Solutions, the only business profile and the one
+// the CRM sells for. Overridable with FINANCE_BUSINESS_PROFILE_ID, and logged at
+// startup so a wrong value is visible rather than silently filing another company's
+// revenue under it.
+const defaultCRMProfileID = "268b1f32-fe80-4293-9d03-87f1c63317b9"
+
 // real router — the one main.go serves — without a database.
 func New(db *sql.DB) (*App, error) {
 	if db == nil {
@@ -401,6 +408,29 @@ func New(db *sql.DB) (*App, error) {
 	apiRouter.HandleFunc("/cost-centers/{id}", costCenterHandler.Get).Methods("GET")
 	apiRouter.HandleFunc("/cost-centers/{id}", costCenterHandler.Update).Methods("PUT")
 	apiRouter.HandleFunc("/cost-centers/{id}", costCenterHandler.Delete).Methods("DELETE")
+
+	// Contract sync: the CRM mirrors a deal here whenever its value, currency or
+	// status changes. Guarded by a shared secret and never published through Nginx —
+	// it is a server-to-server route, and this API has been left publicly writable
+	// once before.
+	contractRepo := persistence.NewContractRepository(db)
+	crmProfileID := os.Getenv("FINANCE_BUSINESS_PROFILE_ID")
+	if crmProfileID == "" {
+		crmProfileID = defaultCRMProfileID
+	}
+	log.Printf("contract sync: deals from the CRM are filed under profile %s", crmProfileID)
+	syncContractUC := usecases.NewSyncContractUseCase(contractRepo, costCenterRepo, crmProfileID)
+	contractHandler := httpHandlers.NewContractHandlers(syncContractUC)
+	// Registered on the ROOT router, not on apiRouter, so the secret check runs
+	// before anything else does. The idempotency middleware on apiRouter reads the
+	// body and WRITES a claim row before the handler is reached — an unauthenticated
+	// caller was making the server store and delete a row per request, could probe
+	// which keys exist, and could be answered with a raw database error by a
+	// middleware sitting in front of a handler that refuses to leak exactly that.
+	// This endpoint needs no idempotency middleware anyway: deal.id is its key.
+	router.Handle("/api/v1/contracts/sync",
+		middleware.RequireWebhookSecret(os.Getenv("CRM_SYNC_WEBHOOK_SECRET"),
+			http.HandlerFunc(contractHandler.Sync))).Methods("POST")
 
 	// Marketing Campaign routes (campanhas de marketing)
 	apiRouter.HandleFunc("/marketing-campaigns", campaignHandler.List).Methods("GET")

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/lib/pq"
+
 	"github.com/brunovieira/calendar-finances/internal/domain/costcenter"
 )
 
@@ -28,6 +30,13 @@ func (r *CostCenterRepository) Create(c *costcenter.CostCenter) error {
 		c.ExternalID, nullableSource(c.ExternalSrc),
 		c.IsActive, c.CreatedAt, c.UpdatedAt,
 	)
+	// uq_cost_centers_external refuses a second cost center for the same external
+	// reference. Losing that race is recoverable, and the caller can only recover if
+	// it can tell this apart from any other write failure.
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) && pqErr.Code == uniqueViolation {
+		return costcenter.ErrDuplicate
+	}
 	return err
 }
 
@@ -109,7 +118,7 @@ func scanCostCenter(s costCenterScanner) (*costcenter.CostCenter, error) {
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, errors.New("cost center not found")
+			return nil, costcenter.ErrNotFound
 		}
 		return nil, err
 	}

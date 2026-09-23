@@ -58,6 +58,8 @@ services:
     environment:
       - PORT=3335
       - DATABASE_URL=postgres://${DB_USER:-calendar}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-calendar_db}?sslmode=disable
+      - FINANCE_BUSINESS_PROFILE_ID=${FINANCE_BUSINESS_PROFILE_ID:-}
+      - CRM_SYNC_WEBHOOK_SECRET=${CRM_SYNC_WEBHOOK_SECRET:-}
     depends_on:
       postgres:
         condition: service_healthy

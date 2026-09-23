@@ -137,6 +137,9 @@ var wantRoutes = []string{
 	"POST /api/v1/categories",
 	"POST /api/v1/company-assets",
 	"POST /api/v1/cost-centers",
+	// Server-to-server only: guarded by a shared secret and never published through
+	// Nginx. Listed here so removing that guard shows up as a deliberate change.
+	"POST /api/v1/contracts/sync",
 	"POST /api/v1/crypto/purchases",
 	"POST /api/v1/crypto/sync",
 	"POST /api/v1/crypto/sync-trades",
