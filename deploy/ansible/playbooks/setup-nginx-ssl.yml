@@ -97,6 +97,13 @@
         }
         EOF
 
+    # WARNING: this REWRITES the vhost, and the live one on the server carries two
+    # things this template does not — the Authelia includes (added afterwards by
+    # setup-authelia.yml) and the certbot TLS block. Running this playbook alone
+    # therefore drops the API back to unauthenticated HTTP until BOTH
+    # setup-authelia.yml and certbot have run again. Run them together, in that
+    # order, or not at all. setup-authelia.yml re-injects on any file that no
+    # longer mentions authelia, so the pair converges; a single run does not.
     - name: Create Nginx config for calendar-finances API
       raw: |
         cat > /etc/nginx/sites-available/calendar-finances.wbdigitalsolutions.com.conf << 'EOF'

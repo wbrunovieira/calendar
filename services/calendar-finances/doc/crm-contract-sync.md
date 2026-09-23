@@ -4,14 +4,21 @@
 
 It is a **server-to-server** route and not part of the dashboard API.
 
-**On reachability, stated accurately.** `calendar-finances` as a whole *is* proxied
-publicly — `calendar-finances.wbdigitalsolutions.com` forwards `location /` to the
-container, with no path exclusions. An earlier version of this document claimed the
-sync route was "never published through Nginx"; that was wrong, and the shared
-secret was the only thing standing in front of it on the open internet. The Nginx
-configs now `deny all` on `/api/v1/contracts/`, in both the local config and the
-production playbook. The CRM is unaffected: it reaches the container over the Docker
-bridge, which never passes through Nginx.
+**On reachability, stated accurately — measured, not assumed.** An earlier version
+of this document claimed the route was "never published through Nginx". That is
+false: `calendar-finances.wbdigitalsolutions.com` proxies `location /` straight to
+the container.
+
+What actually guards it today is Authelia. The live vhost includes
+`authelia-authrequest.conf` on `location /`, and an unauthenticated
+`POST /api/v1/contracts/sync` against the public name answers **302** to the login
+gate — measured on the server, not inferred from the playbook, which had drifted
+and does not contain that include.
+
+On top of that the configs now `deny all` on `/api/v1/contracts/`, so the route is
+closed at the edge even if the Authelia include is ever lost. The CRM is unaffected
+either way: it reaches the container over the Docker bridge and never passes through
+Nginx at all.
 
 ## What it is, and what it is deliberately not
 
