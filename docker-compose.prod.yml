@@ -61,8 +61,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # crm-finance-bridge carries ONE thing: the CRM calling POST /contracts/sync.
+    # It exists instead of putting the CRM backend on calendar-network because that
+    # network holds 13 containers — calendar-postgres with the whole ledger, the
+    # three Langfuse datastores, and Authelia, the auth server. Joining it would
+    # grant reach to all of them to use one HTTP port. Do not "simplify" this back
+    # into calendar-network.
     networks:
       - calendar-network
+      - crm-finance-bridge
     restart: unless-stopped
     deploy:
       resources:
@@ -514,3 +521,8 @@ volumes:
 networks:
   calendar-network:
     driver: bridge
+  # Created once on the host: docker network create crm-finance-bridge
+  # external, so a compose that runs before it exists fails loudly rather than
+  # silently building a second, unconnected network of the same name.
+  crm-finance-bridge:
+    external: true
