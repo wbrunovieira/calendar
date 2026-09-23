@@ -1,6 +1,7 @@
 package usecases
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -183,8 +184,14 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 	// another's client, so it is checked the same way a category is.
 	if input.CostCenterID != nil {
 		center, err := uc.costCenterRepo.FindByID(*input.CostCenterID)
-		if err != nil {
+		if errors.Is(err, costcenter.ErrNotFound) {
 			return nil, ErrCostCenterNotFound
+		}
+		if err != nil {
+			// A failed read is not a missing cost center. Reporting it as one would
+			// answer a database outage with 400 and tell the caller their input was
+			// wrong when it was not.
+			return nil, err
 		}
 		if center.ProfileID != input.ProfileID {
 			return nil, ErrCostCenterNotFound

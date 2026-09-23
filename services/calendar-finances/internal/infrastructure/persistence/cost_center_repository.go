@@ -109,7 +109,7 @@ func scanCostCenter(s costCenterScanner) (*costcenter.CostCenter, error) {
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, errors.New("cost center not found")
+			return nil, costcenter.ErrNotFound
 		}
 		return nil, err
 	}

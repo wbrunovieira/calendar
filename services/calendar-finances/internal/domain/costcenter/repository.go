@@ -1,5 +1,13 @@
 package costcenter
 
+import "errors"
+
+// ErrNotFound means the cost center is absent, and ONLY that. It exists so a
+// caller can tell absence from a failed read: without the distinction, a database
+// outage looks exactly like "no such client", and a sync would answer it by
+// creating a duplicate.
+var ErrNotFound = errors.New("cost center not found")
+
 // Repository defines persistence operations for CostCenter
 type Repository interface {
 	Create(c *CostCenter) error
