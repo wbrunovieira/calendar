@@ -988,6 +988,11 @@ func (uc *PayInvoiceUseCaseV2) pay(input PayInvoiceInput) (*invoice.Invoice, err
 		Currency:      creditCard.Currency,
 		Description:   "Pagamento fatura " + creditCard.Name,
 		OccurredOn:    paidAt,
+		// PaidInvoiceID is what separates a payment from a credit on the bill. Without
+		// it this row is indistinguishable from an estorno, and anything that files
+		// card credits into their invoice would file a payment there too — turning a
+		// settled bill into a smaller one instead of a paid one.
+		PaidInvoiceID: &inv.ID,
 	})
 	if err == nil {
 		cardCredit.Status = transactionPkg.StatusConfirmed
