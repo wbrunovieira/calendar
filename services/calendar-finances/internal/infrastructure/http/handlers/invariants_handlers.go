@@ -10,6 +10,7 @@ import (
 )
 
 type InvariantsHandlers struct {
+	reattachUC     *usecases.ReattachOrphanInvoiceLinesUseCase
 	checkUseCase   *usecases.CheckInvariantsUseCase
 	rebuildUseCase *usecases.RebuildInvoiceCyclesUseCase
 }
@@ -17,8 +18,27 @@ type InvariantsHandlers struct {
 func NewInvariantsHandlers(
 	checkUC *usecases.CheckInvariantsUseCase,
 	rebuildUC *usecases.RebuildInvoiceCyclesUseCase,
+	reattachUC *usecases.ReattachOrphanInvoiceLinesUseCase,
 ) *InvariantsHandlers {
-	return &InvariantsHandlers{checkUseCase: checkUC, rebuildUseCase: rebuildUC}
+	return &InvariantsHandlers{checkUseCase: checkUC, rebuildUseCase: rebuildUC, reattachUC: reattachUC}
+}
+
+// ReattachOrphanInvoiceLines handles
+// POST /api/v1/bank-accounts/{id}/invoice-cycles/reattach.
+//
+// DRY RUN BY DEFAULT. It walks real money, so it reports what it would do and
+// writes nothing unless ?apply=true is passed. The report is the same either way,
+// which is what makes the dry run worth reading.
+func (h *InvariantsHandlers) ReattachOrphanInvoiceLines(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+	apply := r.URL.Query().Get("apply") == "true"
+
+	report, err := h.reattachUC.Execute(id, apply)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	respondJSON(w, map[string]any{"data": report})
 }
 
 // Check handles GET /api/v1/health/invariants.
