@@ -742,7 +742,7 @@ func (uc *CreateTransactionUseCase) writeInstallments(
 
 		// Handle credit card invoice assignment
 		var invoiceID *string
-		if account.Type == bankaccount.AccountTypeCreditCard && typeValue == transaction.TypeExpense {
+		if account.Type == bankaccount.AccountTypeCreditCard && isInvoiceLine(typeValue) {
 			if account.ClosingDay != nil && account.DueDay != nil {
 				inv, err := uc.getOrCreateInvoiceForDate(account, installmentDate)
 				if err != nil {

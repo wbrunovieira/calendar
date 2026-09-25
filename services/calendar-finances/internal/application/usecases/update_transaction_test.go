@@ -417,3 +417,71 @@ func TestUpdateTransaction_ATransferCannotBeRepointedAcrossCurrencies(t *testing
 		t.Fatalf("got %v, want ErrCurrencyMismatch", err)
 	}
 }
+
+// Editing a credit on a card must not throw away the bill it belongs to.
+//
+// The reassignment ran only for EXPENSE, and every other case fell into the branch
+// that sets InvoiceID to nil. So correcting the date of an estorno DETACHED it — the
+// credit vanished from the bill and the bill silently grew back by that amount. It is
+// the same defect as the one on the create path, on the one code path a repair would
+// have to go through.
+func TestUpdateTransaction_MovingACardCreditKeepsItOnTheRightBill(t *testing.T) {
+	profileID := "profile-1"
+	cardID := "mp-card"
+	txID := "tx-estorno"
+
+	card := creditCardAccountWith(profileID, cardID, 9, 14)
+
+	// Sits on the bill that closes 09/03, and moves to a date on the NEXT bill.
+	original := time.Date(2026, 3, 5, 0, 0, 0, 0, time.UTC)
+	credit := expenseOnCard(profileID, txID, cardID, original)
+	credit.Type = transaction.TypeIncome
+	credit.Amount = 139.93
+	credit.Description = "Credito concedido Mercado Pago"
+
+	marchID := "inv-march"
+	march := &invoice.Invoice{
+		ID: marchID, BankAccountID: cardID,
+		OpeningDate:   time.Date(2026, 2, 10, 0, 0, 0, 0, time.UTC),
+		ClosingDate:   time.Date(2026, 3, 9, 0, 0, 0, 0, time.UTC),
+		ReferenceDate: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+		Status:        invoice.StatusOpen,
+	}
+	credit.InvoiceID = &marchID
+
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{credit}}
+	invRepo := &fakeInvoiceRepo{invoices: map[string]*invoice.Invoice{marchID: march}}
+	uc := NewUpdateTransactionUseCase(
+		&fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{cardID: card}},
+		&fakeCategoryRepo{}, txRepo, invRepo, &noopBalanceRecalculator{},
+	)
+
+	_, err := uc.Execute(txID, UpdateTransactionInput{
+		BankAccountID: cardID,
+		Type:          "INCOME",
+		Amount:        139.93,
+		Currency:      "BRL",
+		Description:   "Credito concedido Mercado Pago",
+		OccurredOn:    "2026-03-20",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	updated := txRepo.created[0]
+	if updated.InvoiceID == nil {
+		t.Fatal("the credit was detached from every bill: it now reduces nothing")
+	}
+	if *updated.InvoiceID == marchID {
+		t.Fatal("the credit moved to a date outside the March cycle but stayed on the March bill")
+	}
+	inv, err := invRepo.FindByID(*updated.InvoiceID)
+	if err != nil {
+		t.Fatalf("the credit points at an invoice that does not exist: %v", err)
+	}
+	if !inv.ContainsDate(updated.OccurredOn) {
+		t.Fatalf("credit dated %s landed on the bill covering %s..%s",
+			updated.OccurredOn.Format("2006-01-02"),
+			inv.OpeningDate.Format("2006-01-02"), inv.ClosingDate.Format("2006-01-02"))
+	}
+}

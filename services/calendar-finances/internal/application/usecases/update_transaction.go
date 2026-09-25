@@ -213,7 +213,7 @@ func (uc *UpdateTransactionUseCase) Execute(id string, input UpdateTransactionIn
 
 	// Reassign invoice when bank account or date changes for credit card transactions
 	if existing.BankAccountID != oldAccountID || !existing.OccurredOn.Equal(oldOccurredOn) {
-		if account.Type == bankaccount.AccountTypeCreditCard && typeValue == transaction.TypeExpense {
+		if account.Type == bankaccount.AccountTypeCreditCard && isInvoiceLine(typeValue) {
 			if account.ClosingDay != nil && account.DueDay != nil {
 				inv, invErr := getOrCreateInvoiceForDate(uc.invoiceRepo, account, occurredOn)
 				if invErr != nil {
