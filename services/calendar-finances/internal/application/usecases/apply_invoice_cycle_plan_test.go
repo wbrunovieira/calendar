@@ -197,3 +197,139 @@ func TestApplyCycles_RefusesAnAccountThatIsNotACard(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNotACreditCard", err)
 	}
 }
+
+// One action failing must not abandon the others.
+//
+// On the real card it did: creating the missing August cycle collided with
+// uq_invoice_account_reference — the obvious label was already held by a legacy row —
+// and the error took the whole run down. Seven windows had already been reshaped, so
+// the card was left half-repaired AND the report of what had been done was lost:
+// state changed, no record of which change.
+func TestApplyCycles_OneFailureDoesNotAbandonTheRest(t *testing.T) {
+	const cardID, profileID = "card", "wb"
+	card := creditCardAccountWith(profileID, cardID, 27, 3)
+
+	shifted := &invoice.Invoice{
+		ID: "inv-shifted", BankAccountID: cardID,
+		OpeningDate:   day(2026, 1, 2),
+		ClosingDate:   day(2026, 2, 1),
+		DueDate:       day(2026, 2, 3),
+		ReferenceDate: day(2026, 1, 1),
+		Status:        invoice.StatusOpen,
+	}
+	// A second shifted cycle whose reshape will fail on the write.
+	doomed := &invoice.Invoice{
+		ID: "inv-doomed", BankAccountID: cardID,
+		OpeningDate:   day(2026, 2, 2),
+		ClosingDate:   day(2026, 3, 1),
+		DueDate:       day(2026, 3, 3),
+		ReferenceDate: day(2026, 2, 1),
+		Status:        invoice.StatusOpen,
+	}
+	invRepo := &failOnInvoiceRepo{
+		fakeInvoiceRepo: fakeInvoiceRepo{invoices: map[string]*invoice.Invoice{
+			shifted.ID: shifted, doomed.ID: doomed,
+		}},
+		failUpdateOf: doomed.ID,
+	}
+	uc := NewApplyInvoiceCyclePlanUseCase(
+		&fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{cardID: card}},
+		&fakeTransactionRepo{}, invRepo,
+	)
+
+	report, err := uc.Execute(cardID, []string{"2026-01-01", "2026-02-01"})
+	if err != nil {
+		t.Fatalf("one failing action aborted the whole run: %v", err)
+	}
+	if report.Reshaped != 1 {
+		t.Fatalf("reshaped = %d, want 1: the healthy action was abandoned", report.Reshaped)
+	}
+	if len(report.Failed) != 1 {
+		t.Fatalf("failed = %+v, want exactly the one that could not be written", report.Failed)
+	}
+	if report.Failed[0].ReferenceDate != "2026-02-01" {
+		t.Fatalf("failed action = %+v, want the doomed cycle", report.Failed[0])
+	}
+	if !invRepo.invoices["inv-shifted"].ClosingDate.Equal(day(2026, 1, 27)) {
+		t.Fatal("the healthy window was not reshaped")
+	}
+}
+
+// failOnInvoiceRepo refuses to write one specific invoice, so a partial failure can
+// be exercised without a database.
+type failOnInvoiceRepo struct {
+	fakeInvoiceRepo
+	failUpdateOf string
+}
+
+func (f *failOnInvoiceRepo) Update(inv *invoice.Invoice) error {
+	if inv.ID == f.failUpdateOf {
+		return errors.New("pq: could not write this row")
+	}
+	return f.fakeInvoiceRepo.Update(inv)
+}
+
+// The reference date is a LABEL, not the cycle. On a card with legacy cycles the
+// obvious label is already held by a row covering different dates, and creating the
+// missing invoice directly hits uq_invoice_account_reference.
+//
+// This is exactly what happened on the real card: the August cycle had no invoice,
+// its label was taken, and the collision aborted a run that had already reshaped
+// seven windows.
+func TestApplyCycles_CreatesTheMissingCycleEvenWhenItsLabelIsTaken(t *testing.T) {
+	const cardID, profileID = "card", "wb"
+	card := creditCardAccountWith(profileID, cardID, 27, 3)
+
+	// Holds the label 2026-08 while covering the cycle BEFORE it.
+	squatter := &invoice.Invoice{
+		ID: "inv-squatter", BankAccountID: cardID,
+		OpeningDate:   day(2026, 6, 27),
+		ClosingDate:   day(2026, 7, 27),
+		DueDate:       day(2026, 8, 6),
+		ReferenceDate: day(2026, 8, 1),
+		Status:        invoice.StatusPaid,
+	}
+	invRepo := &fakeInvoiceRepo{invoices: map[string]*invoice.Invoice{squatter.ID: squatter}}
+
+	// A purchase inside the cycle that has no invoice at all.
+	orphan := &transaction.Transaction{
+		ID: "orphan", ProfileID: profileID, BankAccountID: cardID,
+		Type: transaction.TypeExpense, Status: transaction.StatusConfirmed,
+		Amount: 50, Currency: "BRL", Description: "Contabo",
+		OccurredOn: day(2026, 8, 10),
+	}
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{orphan}}
+
+	uc := NewApplyInvoiceCyclePlanUseCase(
+		&fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{cardID: card}},
+		txRepo, invRepo,
+	)
+
+	plan, err := NewRebuildInvoiceCyclesUseCase(
+		&fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{cardID: card}},
+		txRepo, invRepo).Plan(cardID)
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	var missing string
+	for _, a := range plan.Actions {
+		if a.Kind == RebuildCreateMissing {
+			missing = a.ReferenceDate.Format("2006-01-02")
+		}
+	}
+	if missing == "" {
+		t.Fatal("fixture no longer produces a CREATE_MISSING action")
+	}
+
+	report, err := uc.Execute(cardID, []string{missing})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report.Created != 1 {
+		t.Fatalf("created = %d, failed = %+v: the label collision was not recovered",
+			report.Created, report.Failed)
+	}
+	if !squatter.ReferenceDate.Equal(day(2026, 8, 1)) {
+		t.Fatal("the existing invoice's label was taken from it")
+	}
+}
