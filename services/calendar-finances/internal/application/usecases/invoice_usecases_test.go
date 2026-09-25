@@ -581,8 +581,18 @@ func TestCheckingAccountTransaction_NoInvoice(t *testing.T) {
 	}
 }
 
-// Test: Income transaction on credit card should not have invoice
-func TestCreditCardIncomeTransaction_NoInvoice(t *testing.T) {
+// A credit on a credit card DOES belong to the bill of its cycle.
+//
+// This test used to assert the opposite, with no reasoning beyond "income should not
+// affect invoice" — and its own example was an "Estorno", which is precisely the case
+// that must reduce the bill. It was an assumption written down, and production proved
+// it wrong: 13 credits across three cards, R$ 5.191,43, sat outside every invoice, so
+// each bill that had one read higher than the bank's forever. The March 2026 bill on
+// the Mercado Pago card said 2.023,46 against the bank's 1.883,53 for exactly this
+// reason.
+//
+// The scenario is kept identical on purpose, so the change of mind is legible.
+func TestCreditCardIncomeTransaction_JoinsTheInvoice(t *testing.T) {
 	f := newTestFixtures()
 
 	// Add income category
@@ -617,9 +627,18 @@ func TestCreditCardIncomeTransaction_NoInvoice(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Income transactions should NOT affect invoice
-	if tx.InvoiceID != nil {
-		t.Error("expected income transaction on credit card to have no invoice ID")
+	// The credit has to land on the bill it belongs to, or it never reduces it.
+	if tx.InvoiceID == nil {
+		t.Fatal("the estorno joined no invoice: the bill stays inflated by its amount, permanently")
+	}
+	inv, err := f.invoiceRepo.FindByID(*tx.InvoiceID)
+	if err != nil {
+		t.Fatalf("the invoice the credit points at does not exist: %v", err)
+	}
+	if !inv.ContainsDate(tx.OccurredOn) {
+		t.Fatalf("credit dated %s landed on the bill covering %s..%s",
+			tx.OccurredOn.Format("2006-01-02"),
+			inv.OpeningDate.Format("2006-01-02"), inv.ClosingDate.Format("2006-01-02"))
 	}
 }
 

@@ -277,15 +277,26 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		effectiveType = transaction.TypeExpense
 	}
 
-	// Handle credit card invoice assignment for expense transactions.
+	// Handle credit card invoice assignment.
 	//
 	// This has to test the EFFECTIVE type, not the requested one. A cross-profile
 	// transfer paid with a card is stored as an expense on that card — it is owed to
 	// the issuer like any purchase — so testing the requested type left those charges
 	// outside every invoice, present on the card and missing from its bill.
+	//
+	// INCOME counts too, and for the same reason. A credit on a card — an estorno, a
+	// refund, a credit the issuer granted — is a line of the bill it falls in, and at
+	// the bank it REDUCES what is owed. Linking only expenses left every credit
+	// outside every invoice, so each bill that had one stayed inflated by exactly that
+	// amount, permanently and silently. The sum already reads INCOME as negative; all
+	// that was missing was the link.
+	//
+	// Invoice PAYMENTS are not lines of a bill and do not reach here: they carry
+	// PaidInvoiceID, are written by the pay-invoice use case, and this input cannot
+	// even express one.
 	var invoiceID *string
 	var inv *invoice.Invoice
-	if account.Type == bankaccount.AccountTypeCreditCard && effectiveType == transaction.TypeExpense {
+	if account.Type == bankaccount.AccountTypeCreditCard && isInvoiceLine(effectiveType) {
 		if account.ClosingDay != nil && account.DueDay != nil {
 			inv, err = uc.getOrCreateInvoiceForDate(account, occurredOn)
 			if err != nil {
@@ -459,6 +470,14 @@ func (uc *CreateTransactionUseCase) updateAccountBalance(account *bankaccount.Ba
 	}
 	account.UpdatedAt = time.Now()
 	return uc.accountRepo.Update(account)
+}
+
+// isInvoiceLine reports whether a movement on a card belongs to the bill of its
+// cycle. Both directions do: a purchase adds to what is owed, a credit subtracts
+// from it. A transfer does not — the card side of one is already stored as an
+// expense by then, so it arrives here as such.
+func isInvoiceLine(t transaction.Type) bool {
+	return t == transaction.TypeExpense || t == transaction.TypeIncome
 }
 
 // getOrCreateInvoiceForDate gets or creates the appropriate invoice for a transaction date.
