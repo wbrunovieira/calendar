@@ -22,8 +22,11 @@ type ReattachReport struct {
 	NoInvoiceForDate int `json:"noInvoiceForDate"`
 	// SkippedPayments counts invoice payments, which are not lines of a bill. Filing
 	// one into the bill would turn a settled bill into a smaller one.
-	SkippedPayments int             `json:"skippedPayments"`
-	Lines           []ReattachedRow `json:"lines"`
+	SkippedPayments int `json:"skippedPayments"`
+	// NotSelected counts lines the dry run found that the caller did not name. On a
+	// dry run everything lands here, which is the point: the report is the menu.
+	NotSelected int             `json:"notSelected"`
+	Lines       []ReattachedRow `json:"lines"`
 	// Recalculated names the bills whose stored total was refreshed after the
 	// attach. Only OPEN bills are refreshed here.
 	Recalculated []string `json:"recalculated,omitempty"`
@@ -80,8 +83,26 @@ func NewReattachOrphanInvoiceLinesUseCase(
 	}
 }
 
-// Execute reports what belongs where, and writes only when apply is true.
-func (uc *ReattachOrphanInvoiceLinesUseCase) Execute(bankAccountID string, apply bool) (*ReattachReport, error) {
+// Execute reports what belongs where, and writes only the rows it was explicitly
+// told to write.
+//
+// APPLY REQUIRES AN EXPLICIT LIST, and that is the whole safety model. The tool
+// cannot tell a legacy invoice payment from a credit: a payment is supposed to carry
+// PaidInvoiceID, and the six payments already in this database carry nothing, because
+// they predate that field being written. Left to decide on its own, the tool would
+// file them into their bills and turn settled bills into smaller ones — the exact
+// damage its own guard exists to prevent, waved through by data that cannot answer.
+//
+// So the dry run enumerates, a person reads it, and apply names the rows. A repair
+// that walks real money should not be allowed to guess.
+func (uc *ReattachOrphanInvoiceLinesUseCase) Execute(bankAccountID string, apply bool, only []string) (*ReattachReport, error) {
+	selected := map[string]bool{}
+	for _, id := range only {
+		selected[id] = true
+	}
+	if apply && len(selected) == 0 {
+		return nil, errors.New("apply needs an explicit list of transaction ids: run the dry run, read it, then name the rows")
+	}
 	account, err := uc.accountRepo.FindByID(bankAccountID)
 	if err != nil {
 		return nil, fmt.Errorf("reading the account: %w", err)
@@ -142,9 +163,19 @@ func (uc *ReattachOrphanInvoiceLinesUseCase) Execute(bankAccountID string, apply
 			continue
 		}
 
-		report.Attached++
 		row.InvoiceID = inv.ID
+		if apply && !selected[txn.ID] {
+			report.NotSelected++
+			row.Outcome = "not selected by the caller"
+			report.Lines = append(report.Lines, row)
+			continue
+		}
+
+		report.Attached++
 		row.Outcome = "attached"
+		if !apply {
+			row.Outcome = "would attach"
+		}
 		report.Lines = append(report.Lines, row)
 
 		if apply {

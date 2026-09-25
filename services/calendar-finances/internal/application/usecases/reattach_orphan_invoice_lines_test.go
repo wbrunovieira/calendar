@@ -10,6 +10,16 @@ import (
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
 )
 
+// allIDs names every row the fixture holds, which is what a caller does after
+// reading a dry run.
+func allIDs(repo *fakeTransactionRepo) []string {
+	ids := make([]string, 0, len(repo.created))
+	for _, t := range repo.created {
+		ids = append(ids, t.ID)
+	}
+	return ids
+}
+
 func orphanFixture(t *testing.T) (*ReattachOrphanInvoiceLinesUseCase, *fakeTransactionRepo, *fakeInvoiceRepo, string) {
 	t.Helper()
 	const cardID, profileID = "card", "personal"
@@ -45,7 +55,7 @@ func orphanFixture(t *testing.T) (*ReattachOrphanInvoiceLinesUseCase, *fakeTrans
 func TestReattach_AttachesAnOrphanCreditToItsCycle(t *testing.T) {
 	uc, txRepo, _, cardID := orphanFixture(t)
 
-	report, err := uc.Execute(cardID, true)
+	report, err := uc.Execute(cardID, true, allIDs(txRepo))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -66,7 +76,7 @@ func TestReattach_AttachesAnOrphanCreditToItsCycle(t *testing.T) {
 func TestReattach_DryRunWritesNothing(t *testing.T) {
 	uc, txRepo, _, cardID := orphanFixture(t)
 
-	report, err := uc.Execute(cardID, false)
+	report, err := uc.Execute(cardID, false, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -85,12 +95,12 @@ func TestReattach_DryRunWritesNothing(t *testing.T) {
 // idempotent cannot be re-run after a partial failure, which is exactly when it
 // needs to be.
 func TestReattach_IsIdempotent(t *testing.T) {
-	uc, _, _, cardID := orphanFixture(t)
+	uc, txRepo, _, cardID := orphanFixture(t)
 
-	if _, err := uc.Execute(cardID, true); err != nil {
+	if _, err := uc.Execute(cardID, true, allIDs(txRepo)); err != nil {
 		t.Fatalf("first run: %v", err)
 	}
-	second, err := uc.Execute(cardID, true)
+	second, err := uc.Execute(cardID, true, allIDs(txRepo))
 	if err != nil {
 		t.Fatalf("second run: %v", err)
 	}
@@ -112,7 +122,7 @@ func TestReattach_NeverTouchesAnInvoicePayment(t *testing.T) {
 		PaidInvoiceID: &paid,
 	})
 
-	report, err := uc.Execute(cardID, true)
+	report, err := uc.Execute(cardID, true, allIDs(txRepo))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -132,7 +142,7 @@ func TestReattach_ReportsWhatHasNoBillInsteadOfCreatingOne(t *testing.T) {
 	uc, txRepo, invRepo, cardID := orphanFixture(t)
 	txRepo.created[0].OccurredOn = time.Date(2025, 11, 20, 0, 0, 0, 0, time.UTC)
 
-	report, err := uc.Execute(cardID, true)
+	report, err := uc.Execute(cardID, true, allIDs(txRepo))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -155,7 +165,7 @@ func TestReattach_IgnoresRowsThatDoNotCount(t *testing.T) {
 			OccurredOn:  time.Date(2026, 2, 27, 0, 0, 0, 0, time.UTC),
 		})
 	}
-	report, err := uc.Execute(cardID, true)
+	report, err := uc.Execute(cardID, true, allIDs(txRepo))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -172,7 +182,7 @@ func TestReattach_RefusesAnAccountThatIsNotACard(t *testing.T) {
 		}},
 		&fakeTransactionRepo{}, &fakeInvoiceRepo{},
 	)
-	if _, err := uc.Execute("checking", true); err == nil {
+	if _, err := uc.Execute("checking", true, []string{"x"}); err == nil {
 		t.Fatal("a checking account has no bills; running this on one is a mistake worth refusing")
 	}
 }
@@ -182,7 +192,7 @@ func TestReattach_ReportsAFailedReadInsteadOfClaimingNothingToDo(t *testing.T) {
 		&fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{}},
 		&fakeTransactionRepo{}, &fakeInvoiceRepo{},
 	)
-	_, err := uc.Execute("nao-existe", true)
+	_, err := uc.Execute("nao-existe", true, []string{"x"})
 	if err == nil {
 		t.Fatal("a missing account was reported as a clean run")
 	}
@@ -194,12 +204,12 @@ func TestReattach_ReportsAFailedReadInsteadOfClaimingNothingToDo(t *testing.T) {
 // Attaching a line changes what the bill is worth, and the STORED total is the
 // number anyone actually reads. An OPEN bill is refreshed in place.
 func TestReattach_RefreshesTheStoredTotalOfAnOpenBill(t *testing.T) {
-	uc, _, invRepo, cardID := orphanFixture(t)
+	uc, txRepo, invRepo, cardID := orphanFixture(t)
 	march := invRepo.invoices["inv-march"]
 	march.Status = invoice.StatusOpen
 	march.Amount = 0 // stale: the credit was never counted
 
-	report, err := uc.Execute(cardID, true)
+	report, err := uc.Execute(cardID, true, allIDs(txRepo))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -215,12 +225,12 @@ func TestReattach_RefreshesTheStoredTotalOfAnOpenBill(t *testing.T) {
 // rewrites history, and the recalculation refuses it on purpose — so the repair
 // surfaces the gap with both numbers and leaves the decision to a person.
 func TestReattach_ReportsASettledBillInsteadOfRewritingIt(t *testing.T) {
-	uc, _, invRepo, cardID := orphanFixture(t)
+	uc, txRepo, invRepo, cardID := orphanFixture(t)
 	march := invRepo.invoices["inv-march"]
 	march.Status = invoice.StatusPaid
 	march.Amount = 2023.46
 
-	report, err := uc.Execute(cardID, true)
+	report, err := uc.Execute(cardID, true, allIDs(txRepo))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -243,17 +253,60 @@ func TestReattach_ReportsASettledBillInsteadOfRewritingIt(t *testing.T) {
 // other failure is a failure, and must reach the caller — reporting it as a stale
 // total would announce a clean repair over a broken one.
 func TestReattach_PropagatesARefreshFailureThatIsNotASettledBill(t *testing.T) {
-	uc, _, invRepo, cardID := orphanFixture(t)
+	uc, txRepo, invRepo, cardID := orphanFixture(t)
+	_ = txRepo
 	invRepo.invoices["inv-march"].Status = invoice.StatusOpen
 	// Readable but not writable: the refresh fails on the WRITE, so the fallback
 	// path that reports a settled bill would otherwise succeed and hide it.
 	invRepo.updateErr = errors.New("dial tcp: connection refused")
 
-	_, err := uc.Execute(cardID, true)
+	_, err := uc.Execute(cardID, true, allIDs(txRepo))
 	if err == nil {
 		t.Fatal("a failed refresh was reported as a successful repair")
 	}
 	if errors.Is(err, ErrInvoiceAlreadyPaid) {
 		t.Fatal("an unrelated failure was classified as a settled bill")
+	}
+}
+
+// Applying without naming rows is refused. The tool cannot tell a LEGACY invoice
+// payment from a credit — a payment is supposed to carry PaidInvoiceID, and the six
+// already in this database carry nothing, because they predate the field being
+// written. Deciding on its own, it would file them into their bills and turn settled
+// bills into smaller ones: the exact damage its own guard exists to prevent, waved
+// through by data that cannot answer.
+func TestReattach_ApplyRefusesToDecideOnItsOwn(t *testing.T) {
+	uc, txRepo, _, cardID := orphanFixture(t)
+
+	if _, err := uc.Execute(cardID, true, nil); err == nil {
+		t.Fatal("apply ran with no list: the tool was allowed to guess which rows are payments")
+	}
+	if txRepo.updates != 0 {
+		t.Fatal("a refused apply still wrote")
+	}
+}
+
+// Naming one row must not drag in the others found alongside it.
+func TestReattach_AppliesOnlyTheRowsNamed(t *testing.T) {
+	uc, txRepo, _, cardID := orphanFixture(t)
+	other := &transaction.Transaction{
+		ID: "outro", ProfileID: "personal", BankAccountID: cardID,
+		Type: transaction.TypeIncome, Status: transaction.StatusConfirmed,
+		Amount: 50, Currency: "BRL", Description: "Pagamento fatura sem marcacao",
+		OccurredOn: time.Date(2026, 2, 28, 0, 0, 0, 0, time.UTC),
+	}
+	txRepo.created = append(txRepo.created, other)
+
+	report, err := uc.Execute(cardID, true, []string{"credit"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report.Attached != 1 || report.NotSelected != 1 {
+		t.Fatalf("attached=%d notSelected=%d, want 1 and 1", report.Attached, report.NotSelected)
+	}
+	for _, txn := range txRepo.created {
+		if txn.ID == "outro" && txn.InvoiceID != nil {
+			t.Fatal("a row nobody named was written")
+		}
 	}
 }

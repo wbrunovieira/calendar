@@ -33,7 +33,16 @@ func (h *InvariantsHandlers) ReattachOrphanInvoiceLines(w http.ResponseWriter, r
 	id := mux.Vars(r)["id"]
 	apply := r.URL.Query().Get("apply") == "true"
 
-	report, err := h.reattachUC.Execute(id, apply)
+	// The rows to write are named one by one. Applying without them is refused by
+	// the use case, not by this handler — the rule belongs where the damage is.
+	var only []string
+	for _, raw := range r.URL.Query()["transactionId"] {
+		if raw != "" {
+			only = append(only, raw)
+		}
+	}
+
+	report, err := h.reattachUC.Execute(id, apply, only)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
