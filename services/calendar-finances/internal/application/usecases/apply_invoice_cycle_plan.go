@@ -36,6 +36,12 @@ type ApplyCyclesReport struct {
 	Recalculated []string            `json:"recalculated,omitempty"`
 	StaleTotals  []StaleInvoiceTotal `json:"staleTotals,omitempty"`
 	Details      []string            `json:"details"`
+	// Failed records actions that could not be applied, WITHOUT stopping the rest.
+	// An abort mid-run leaves the card half-repaired and destroys the report of
+	// what was already done — state changed, and no record of which change. Each
+	// action stands alone, so one failing is a fact to report, not a reason to
+	// abandon the others.
+	Failed []FailedAction `json:"failed,omitempty"`
 }
 
 // ApplyInvoiceCyclePlanUseCase applies the repairs that RebuildInvoiceCyclesUseCase
@@ -44,6 +50,13 @@ type ApplyCyclesReport struct {
 // It is deliberately a second use case rather than a flag on the first: the plan
 // changes nothing and can be run by anyone at any time, and keeping that property
 // is worth more than the convenience of one entry point.
+// FailedAction is one repair that could not be applied, and why.
+type FailedAction struct {
+	ReferenceDate string `json:"referenceDate"`
+	Kind          string `json:"kind"`
+	Error         string `json:"error"`
+}
+
 type ApplyInvoiceCyclePlanUseCase struct {
 	accountRepo bankaccount.Repository
 	txRepo      transactionPkg.Repository
@@ -113,12 +126,14 @@ func (uc *ApplyInvoiceCyclePlanUseCase) Execute(bankAccountID string, approve []
 		case RebuildReshapeWindow, RebuildAlignOpening:
 			inv, err := uc.invoiceRepo.FindByID(action.InvoiceID)
 			if err != nil {
-				return nil, fmt.Errorf("reading invoice %s: %w", action.InvoiceID, err)
+				report.Failed = append(report.Failed, FailedAction{key, action.Kind, err.Error()})
+				continue
 			}
 			inv.OpeningDate = action.CanonicalOpening
 			inv.ClosingDate = action.CanonicalClosing
 			if err := uc.invoiceRepo.Update(inv); err != nil {
-				return nil, fmt.Errorf("reshaping invoice %s: %w", action.InvoiceID, err)
+				report.Failed = append(report.Failed, FailedAction{key, action.Kind, err.Error()})
+				continue
 			}
 			report.Reshaped++
 			touched[inv.ID] = true
@@ -135,13 +150,22 @@ func (uc *ApplyInvoiceCyclePlanUseCase) Execute(bankAccountID string, approve []
 				ReferenceDate: action.ReferenceDate,
 			})
 			if err != nil {
-				return nil, fmt.Errorf("building the missing invoice for %s: %w", key, err)
+				report.Failed = append(report.Failed, FailedAction{key, action.Kind, err.Error()})
+				continue
 			}
-			if err := uc.invoiceRepo.Create(created); err != nil {
-				return nil, fmt.Errorf("creating the missing invoice for %s: %w", key, err)
+			// The reference date is a LABEL, and a card with legacy cycles already
+			// has rows holding the obvious one — creating this directly collided with
+			// uq_invoice_account_reference and took the whole run down with it. The
+			// same helper every other creation path uses walks the free labels and
+			// recovers from a concurrent winner.
+			stored, err := createInvoiceWithFreeLabel(
+				uc.invoiceRepo, created, action.CanonicalOpening, action.ReferenceDate)
+			if err != nil {
+				report.Failed = append(report.Failed, FailedAction{key, action.Kind, err.Error()})
+				continue
 			}
 			report.Created++
-			touched[created.ID] = true
+			touched[stored.ID] = true
 			report.Details = append(report.Details, fmt.Sprintf("%s created the missing cycle", key))
 
 		default:
