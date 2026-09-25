@@ -333,3 +333,21 @@ func TestApplyCycles_CreatesTheMissingCycleEvenWhenItsLabelIsTaken(t *testing.T)
 		t.Fatal("the existing invoice's label was taken from it")
 	}
 }
+
+// A repair that re-derives by date must not undo a bill someone chose on purpose.
+func TestApplyCycles_LeavesAPinnedChargeAlone(t *testing.T) {
+	uc, invRepo, txRepo, cardID := shiftedCycleFixture(t)
+	pinned := txRepo.created[0] // dated 29/01, would move when the window narrows
+	pinned.InvoicePinned = true
+	original := *pinned.InvoiceID
+
+	if _, err := uc.Execute(cardID, []string{"2026-01-01"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !invRepo.invoices["inv-shifted"].ClosingDate.Equal(day(2026, 1, 27)) {
+		t.Fatal("the window was not reshaped")
+	}
+	if pinned.InvoiceID == nil || *pinned.InvoiceID != original {
+		t.Fatalf("invoiceID = %v; the repair undid an explicit choice", pinned.InvoiceID)
+	}
+}

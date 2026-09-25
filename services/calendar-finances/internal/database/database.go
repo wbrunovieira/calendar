@@ -1016,6 +1016,9 @@ func migrations() []string {
 			ON finance.contracts(source, external_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_contracts_profile ON finance.contracts(profile_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_contracts_cost_center ON finance.contracts(cost_center_id)`,
+		// An explicitly chosen invoice must survive the date-based derivation that
+		// would otherwise move it back. See transaction.InvoicePinned for the case.
+		`ALTER TABLE finance.transactions ADD COLUMN IF NOT EXISTS invoice_pinned BOOLEAN NOT NULL DEFAULT false`,
 		// CREATE TABLE IF NOT EXISTS does nothing to a table that already exists, so
 		// any database that ran the first version of the migration above still has the
 		// offset-dropping columns. Converting is a no-op once the type is already

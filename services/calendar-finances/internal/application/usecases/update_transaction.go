@@ -211,8 +211,14 @@ func (uc *UpdateTransactionUseCase) Execute(id string, input UpdateTransactionIn
 	existing.Tags = sanitizeTags(input.Tags)
 	existing.UpdatedAt = time.Now()
 
-	// Reassign invoice when bank account or date changes for credit card transactions
-	if existing.BankAccountID != oldAccountID || !existing.OccurredOn.Equal(oldOccurredOn) {
+	// Reassign invoice when bank account or date changes for credit card transactions.
+	//
+	// A PINNED charge is exempt: its bill was chosen explicitly because the issuer
+	// billed it on a cycle the date does not imply. A pin that any later edit
+	// silently undoes is not a pin.
+	if existing.InvoicePinned {
+		// keep the chosen bill
+	} else if existing.BankAccountID != oldAccountID || !existing.OccurredOn.Equal(oldOccurredOn) {
 		if account.Type == bankaccount.AccountTypeCreditCard && isInvoiceLine(typeValue) {
 			if account.ClosingDay != nil && account.DueDay != nil {
 				inv, invErr := getOrCreateInvoiceForDate(uc.invoiceRepo, account, occurredOn)

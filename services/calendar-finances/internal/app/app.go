@@ -392,6 +392,11 @@ func New(db *sql.DB) (*App, error) {
 	// points here, so a caller is never told 204 for a row that stayed.
 
 	apiRouter.HandleFunc("/transactions/{id}/reversal", transactionHandler.Reverse).Methods("POST")
+	// Explicit invoice assignment: for a charge the issuer billed on a cycle its date
+	// does not imply, which is what a late fee is.
+	transactionHandler.SetPinInvoiceUseCase(
+		usecases.NewPinTransactionInvoiceUseCase(bankAccountRepo, transactionRepo, invoiceRepo))
+	apiRouter.HandleFunc("/transactions/{id}/invoice", transactionHandler.PinInvoice).Methods("POST")
 
 	// Capital Contribution routes (aportes do sócio)
 	apiRouter.HandleFunc("/capital-contributions/summary", capitalContributionHandler.Summary).Methods("GET")

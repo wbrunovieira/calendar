@@ -212,6 +212,12 @@ func (uc *ApplyInvoiceCyclePlanUseCase) refileAgainstNewWindows(
 		if txn.BankAccountID != account.ID || txn.PaidInvoiceID != nil {
 			continue
 		}
+		if txn.InvoicePinned {
+			// The bill was chosen explicitly because the issuer billed it on a cycle
+			// the date does not imply. A repair that re-derives by date would undo
+			// exactly the correction someone made on purpose.
+			continue
+		}
 		if txn.Status == transactionPkg.StatusCancelled || txn.Status == transactionPkg.StatusReversed {
 			continue
 		}

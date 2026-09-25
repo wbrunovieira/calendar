@@ -23,6 +23,7 @@ type TransactionHandlers struct {
 	cashflowSummaryUseCase  *usecases.GetCashflowSummaryUseCase
 	expenseAnalysisUseCase  *usecases.GetExpenseAnalysisUseCase
 	financialSummaryUseCase *usecases.GetFinancialSummaryUseCase
+	pinInvoiceUC            *usecases.PinTransactionInvoiceUseCase
 }
 
 func NewTransactionHandlers(
@@ -384,4 +385,40 @@ func mapTransactionError(err error) int {
 	default:
 		return http.StatusInternalServerError
 	}
+}
+
+// SetPinInvoiceUseCase wires the explicit invoice assignment after construction,
+// following the pattern the other cross-handler dependencies use here.
+func (h *TransactionHandlers) SetPinInvoiceUseCase(uc *usecases.PinTransactionInvoiceUseCase) {
+	h.pinInvoiceUC = uc
+}
+
+// PinInvoice handles POST /api/v1/transactions/{id}/invoice.
+//
+// Body: {"invoiceId": "..."} pins the charge to that bill; {"invoiceId": null}
+// releases it back to the date rule. Deriving the bill from the date is the default
+// and the right answer almost always — this is for the case where the issuer billed
+// a charge on a cycle its date does not imply, which is what a late fee is.
+func (h *TransactionHandlers) PinInvoice(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+
+	var body struct {
+		InvoiceID *string `json:"invoiceId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "malformed json body", http.StatusBadRequest)
+		return
+	}
+
+	var err error
+	if body.InvoiceID == nil || strings.TrimSpace(*body.InvoiceID) == "" {
+		err = h.pinInvoiceUC.Release(id)
+	} else {
+		err = h.pinInvoiceUC.Execute(id, strings.TrimSpace(*body.InvoiceID))
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

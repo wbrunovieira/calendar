@@ -110,6 +110,16 @@ type Transaction struct {
 	// system is removing — and the invariant that live payments must not exceed the
 	// bill cannot be written at all.
 	PaidInvoiceID *string `json:"paidInvoiceId,omitempty"`
+	// InvoicePinned says the invoice was chosen EXPLICITLY and must not be re-derived
+	// from the date.
+	//
+	// Deriving the bill from the transaction date is a good default and a wrong rule
+	// for one real case: an issuer charges a late fee on the bill that GENERATED it,
+	// not on the bill covering the day it posted. Four such charges on the Mercado
+	// Pago card are dated 10/08 and were billed in the cycle that closed 09/08 — so
+	// the system's August bill read 2.647,97 against the 2.702,66 actually charged
+	// and paid. The date is not wrong; the derivation is, for these rows.
+	InvoicePinned bool `json:"invoicePinned"`
 
 	ReversedAt     *time.Time      `json:"reversedAt,omitempty"`
 	ReversalReason *ReversalReason `json:"reversalReason,omitempty"`
