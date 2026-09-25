@@ -115,6 +115,9 @@ func strPtr(s string) *string { return &s }
 type fakeTransactionRepo struct {
 	created    []*transaction.Transaction
 	getByIDErr error
+	// updates counts writes, so a dry run can be asserted to have written nothing
+	// rather than merely to have left the values it happened to check unchanged.
+	updates int
 }
 
 func (f *fakeTransactionRepo) Create(tx *transaction.Transaction) error {
@@ -182,6 +185,7 @@ func (f *fakeTransactionRepo) List(filter transaction.ListFilter) ([]*transactio
 }
 
 func (f *fakeTransactionRepo) Update(tx *transaction.Transaction) error {
+	f.updates++
 	for i, existing := range f.created {
 		if existing.ID == tx.ID {
 			f.created[i] = tx
@@ -291,6 +295,15 @@ func (f *fakeTransactionRepo) FindByExternalID(externalID string) (*transaction.
 
 type fakeInvoiceRepo struct {
 	invoices map[string]*invoice.Invoice
+	// findByIDErr stands in for a bill that cannot be read. It is separate from an
+	// absent one so a caller that must distinguish a failure from a normal outcome
+	// can be tested doing it.
+	findByIDErr error
+	// updateErr stands in for a bill that can be READ but not WRITTEN. That
+	// asymmetry is what separates "the refresh failed" from "the bill is settled":
+	// with both reads failing, the two paths look alike and a guard between them
+	// cannot be tested.
+	updateErr error
 }
 
 func (f *fakeInvoiceRepo) Create(inv *invoice.Invoice) error {
@@ -310,6 +323,9 @@ func (f *fakeInvoiceRepo) Create(inv *invoice.Invoice) error {
 }
 
 func (f *fakeInvoiceRepo) FindByID(id string) (*invoice.Invoice, error) {
+	if f.findByIDErr != nil {
+		return nil, f.findByIDErr
+	}
 	if inv, ok := f.invoices[id]; ok {
 		return inv, nil
 	}
@@ -345,6 +361,9 @@ func (f *fakeInvoiceRepo) FindByBankAccountAndDate(bankAccountID string, txDate 
 }
 
 func (f *fakeInvoiceRepo) Update(inv *invoice.Invoice) error {
+	if f.updateErr != nil {
+		return f.updateErr
+	}
 	if f.invoices == nil {
 		return errors.New("not found")
 	}

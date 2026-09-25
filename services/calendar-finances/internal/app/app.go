@@ -298,9 +298,12 @@ func New(db *sql.DB) (*App, error) {
 	// transactions that justify them. Read-only by design.
 	checkInvariantsUC := usecases.NewCheckInvariantsUseCase(bankAccountRepo, transactionRepo, invoiceRepo)
 	rebuildCyclesUC := usecases.NewRebuildInvoiceCyclesUseCase(bankAccountRepo, transactionRepo, invoiceRepo)
-	invariantsHandler := httpHandlers.NewInvariantsHandlers(checkInvariantsUC, rebuildCyclesUC)
+	reattachOrphansUC := usecases.NewReattachOrphanInvoiceLinesUseCase(bankAccountRepo, transactionRepo, invoiceRepo)
+	invariantsHandler := httpHandlers.NewInvariantsHandlers(checkInvariantsUC, rebuildCyclesUC, reattachOrphansUC)
 	apiRouter.HandleFunc("/health/invariants", invariantsHandler.Check).Methods("GET")
 	apiRouter.HandleFunc("/bank-accounts/{id}/invoice-cycles/plan", invariantsHandler.InvoiceCyclePlan).Methods("GET")
+	// Dry run by default; ?apply=true writes. It walks real money.
+	apiRouter.HandleFunc("/bank-accounts/{id}/invoice-cycles/reattach", invariantsHandler.ReattachOrphanInvoiceLines).Methods("POST")
 
 	// Profile routes
 	apiRouter.HandleFunc("/profiles", profileHandler.List).Methods("GET")
