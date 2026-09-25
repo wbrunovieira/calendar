@@ -7,6 +7,7 @@ import (
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
 	"github.com/brunovieira/calendar-finances/internal/domain/category"
 	"github.com/brunovieira/calendar-finances/internal/domain/profile"
+	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
 )
 
 func cardAccount(id, profileID string) *bankaccount.BankAccount {
@@ -252,5 +253,68 @@ func TestCreateTransaction_CardCreditRespectsTheCycleBoundary(t *testing.T) {
 	}
 	if *before.InvoiceID == *after.InvoiceID {
 		t.Fatal("a credit after the closing date joined the bill that had already closed")
+	}
+}
+
+// A credit split into instalments follows the same rule as any other credit: each
+// part belongs to the bill of its own cycle.
+//
+// The instalment loop carried its own copy of the invoice condition, and fixing only
+// the single-transaction path left this one behind — an untested branch that looked
+// corrected from the outside. That is how the original defect survived: a rule
+// written twice, verified once.
+func TestCreateTransaction_CardCreditInInstallmentsJoinsEachBill(t *testing.T) {
+	profileRepo := &fakeProfileRepo{profiles: map[string]*profile.Profile{
+		"personal": {ID: "personal", Name: "Bruno", Type: profile.ProfileTypePersonal},
+	}}
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{
+		"card": cardAccount("card", "personal"),
+	}}
+	categoryRepo := &fakeCategoryRepo{categories: map[string]*category.Category{
+		"refund": {ID: "refund", ProfileID: "personal", Name: "Reembolso", Type: category.TypeIncome},
+	}}
+	txRepo := &fakeTransactionRepo{}
+	invoiceRepo := &fakeInvoiceRepo{}
+	uc := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
+
+	confirmed := "CONFIRMED"
+	refundCat := "refund"
+	total := 2
+	if _, err := uc.Execute(CreateTransactionInput{
+		ProfileID: "personal", BankAccountID: "card", CategoryID: &refundCat,
+		Type: "INCOME", Status: &confirmed, Amount: 200, Currency: "BRL",
+		Description: "Estorno parcelado", OccurredOn: "2026-02-20",
+		InstallmentTotal: &total,
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	parts := []*transaction.Transaction{}
+	for _, txn := range txRepo.created {
+		if txn.InstallmentTotal != nil {
+			parts = append(parts, txn)
+		}
+	}
+	if len(parts) != 2 {
+		t.Fatalf("%d instalments created, want 2", len(parts))
+	}
+	seen := map[string]bool{}
+	for _, part := range parts {
+		if part.InvoiceID == nil {
+			t.Fatalf("instalment %d joined no bill", *part.InstallmentNumber)
+		}
+		inv, err := invoiceRepo.FindByID(*part.InvoiceID)
+		if err != nil {
+			t.Fatalf("instalment %d points at an invoice that does not exist", *part.InstallmentNumber)
+		}
+		if !inv.ContainsDate(part.OccurredOn) {
+			t.Fatalf("instalment dated %s landed on the bill covering %s..%s",
+				part.OccurredOn.Format("2006-01-02"),
+				inv.OpeningDate.Format("2006-01-02"), inv.ClosingDate.Format("2006-01-02"))
+		}
+		seen[*part.InvoiceID] = true
+	}
+	if len(seen) != 2 {
+		t.Fatal("both instalments landed on the same bill; they are a month apart")
 	}
 }
