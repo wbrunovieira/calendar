@@ -299,11 +299,14 @@ func New(db *sql.DB) (*App, error) {
 	checkInvariantsUC := usecases.NewCheckInvariantsUseCase(bankAccountRepo, transactionRepo, invoiceRepo)
 	rebuildCyclesUC := usecases.NewRebuildInvoiceCyclesUseCase(bankAccountRepo, transactionRepo, invoiceRepo)
 	reattachOrphansUC := usecases.NewReattachOrphanInvoiceLinesUseCase(bankAccountRepo, transactionRepo, invoiceRepo)
-	invariantsHandler := httpHandlers.NewInvariantsHandlers(checkInvariantsUC, rebuildCyclesUC, reattachOrphansUC)
+	applyCyclePlanUC := usecases.NewApplyInvoiceCyclePlanUseCase(bankAccountRepo, transactionRepo, invoiceRepo)
+	invariantsHandler := httpHandlers.NewInvariantsHandlers(checkInvariantsUC, rebuildCyclesUC, reattachOrphansUC, applyCyclePlanUC)
 	apiRouter.HandleFunc("/health/invariants", invariantsHandler.Check).Methods("GET")
 	apiRouter.HandleFunc("/bank-accounts/{id}/invoice-cycles/plan", invariantsHandler.InvoiceCyclePlan).Methods("GET")
 	// Dry run by default; ?apply=true writes. It walks real money.
 	apiRouter.HandleFunc("/bank-accounts/{id}/invoice-cycles/reattach", invariantsHandler.ReattachOrphanInvoiceLines).Methods("POST")
+	// The GET plan above is the dry run; this writes only the cycles it is told to.
+	apiRouter.HandleFunc("/bank-accounts/{id}/invoice-cycles/apply", invariantsHandler.ApplyInvoiceCyclePlan).Methods("POST")
 
 	// Profile routes
 	apiRouter.HandleFunc("/profiles", profileHandler.List).Methods("GET")

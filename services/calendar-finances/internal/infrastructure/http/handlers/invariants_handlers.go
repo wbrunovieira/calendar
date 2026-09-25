@@ -13,14 +13,41 @@ type InvariantsHandlers struct {
 	reattachUC     *usecases.ReattachOrphanInvoiceLinesUseCase
 	checkUseCase   *usecases.CheckInvariantsUseCase
 	rebuildUseCase *usecases.RebuildInvoiceCyclesUseCase
+	applyCycleUC   *usecases.ApplyInvoiceCyclePlanUseCase
 }
 
 func NewInvariantsHandlers(
 	checkUC *usecases.CheckInvariantsUseCase,
 	rebuildUC *usecases.RebuildInvoiceCyclesUseCase,
 	reattachUC *usecases.ReattachOrphanInvoiceLinesUseCase,
+	applyCycleUC *usecases.ApplyInvoiceCyclePlanUseCase,
 ) *InvariantsHandlers {
-	return &InvariantsHandlers{checkUseCase: checkUC, rebuildUseCase: rebuildUC, reattachUC: reattachUC}
+	return &InvariantsHandlers{checkUseCase: checkUC, rebuildUseCase: rebuildUC,
+		reattachUC: reattachUC, applyCycleUC: applyCycleUC}
+}
+
+// ApplyInvoiceCyclePlan handles
+// POST /api/v1/bank-accounts/{id}/invoice-cycles/apply.
+//
+// The GET plan is the dry run, and it stays free of side effects on purpose — it can
+// be read by anyone at any time. This writes, and only the cycles it was told to:
+// each is named by its reference date, repeated as ?referenceDate=YYYY-MM-DD.
+func (h *InvariantsHandlers) ApplyInvoiceCyclePlan(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+
+	var approve []string
+	for _, raw := range r.URL.Query()["referenceDate"] {
+		if raw != "" {
+			approve = append(approve, raw)
+		}
+	}
+
+	report, err := h.applyCycleUC.Execute(id, approve)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	respondJSON(w, map[string]any{"data": report})
 }
 
 // ReattachOrphanInvoiceLines handles
