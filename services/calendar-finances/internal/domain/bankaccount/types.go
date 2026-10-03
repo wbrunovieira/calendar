@@ -11,7 +11,35 @@ const (
 	AccountTypeExchange   AccountType = "EXCHANGE" // Corretoras de cripto (Binance, OKX, Rabbit)
 	AccountTypeWallet     AccountType = "WALLET"   // Carteiras de cripto (Ledger, MetaMask)
 	AccountTypeOther      AccountType = "OTHER"
+	// AccountTypeLiability is money OWED to someone who is not a card issuer: a
+	// sister who covered a bill, a loan, a client advance still to return.
+	//
+	// The ledger could not express one. The only debt it knew was a credit card, so
+	// a real R$ 875 owed to Bruno's sisters had to live in the notes field of a
+	// forecast entry — with a paragraph explaining that the creditor had changed,
+	// because the model had nowhere to say it.
+	//
+	// It carries what is owed as a NEGATIVE balance, the same convention a card
+	// uses. It is not a card: no bill, no closing day, no limit.
+	AccountTypeLiability AccountType = "LIABILITY"
 )
+
+// IsCash reports whether the balance of an account of this type is money that can
+// be spent right now.
+//
+// It exists because the question gets asked constantly — "how much is in cash?" —
+// and answering it by summing account balances is wrong in two directions at once:
+// it leaves out nothing, and it counts investments that cannot be withdrawn and
+// debts that are not money. I made that mistake by hand, and the point of putting
+// it here is that the next caller does not have to remember.
+func (t AccountType) IsCash() bool {
+	switch t {
+	case AccountTypeChecking, AccountTypeCash:
+		return true
+	default:
+		return false
+	}
+}
 
 // InvestmentType represents the type of investment product
 type InvestmentType string

@@ -461,12 +461,19 @@ func migrations() []string {
 			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_goals_profile ON finance.goals(profile_id)`,
-		// Migration: Add EXCHANGE and WALLET account types
+		// The account types. THIS statement is the only owner of the list — adding a
+		// type anywhere else leaves two migrations rebuilding the same constraint
+		// with different contents, and the one that runs last wins. A LIABILITY row
+		// written under the newer rule then made this one fail with "violated by
+		// some row", every run, on data that was perfectly valid.
+		//
+		// LIABILITY is money owed to someone who is not a card issuer. See
+		// bankaccount.AccountTypeLiability.
 		`DO $$
 		BEGIN
 			ALTER TABLE finance.bank_accounts DROP CONSTRAINT IF EXISTS bank_accounts_type_check;
 			ALTER TABLE finance.bank_accounts ADD CONSTRAINT bank_accounts_type_check
-				CHECK (type IN ('CHECKING', 'SAVINGS', 'INVESTMENT', 'CREDIT_CARD', 'CASH', 'EXCHANGE', 'WALLET', 'OTHER'));
+				CHECK (type IN ('CHECKING', 'SAVINGS', 'INVESTMENT', 'CREDIT_CARD', 'CASH', 'EXCHANGE', 'WALLET', 'LIABILITY', 'OTHER'));
 		END $$`,
 		// Without an external id on the account, the importer has no way to know which
 		// of our accounts a statement line belongs to, and the only fallback is
@@ -1019,6 +1026,10 @@ func migrations() []string {
 		// An explicitly chosen invoice must survive the date-based derivation that
 		// would otherwise move it back. See transaction.InvoicePinned for the case.
 		`ALTER TABLE finance.transactions ADD COLUMN IF NOT EXISTS invoice_pinned BOOLEAN NOT NULL DEFAULT false`,
+		// LIABILITY: money owed to someone who is not a card issuer. The only debt
+		// this schema could represent was a credit card, so a real debt to a person
+		// had nowhere to live but a notes field.
+
 		// CREATE TABLE IF NOT EXISTS does nothing to a table that already exists, so
 		// any database that ran the first version of the migration above still has the
 		// offset-dropping columns. Converting is a no-op once the type is already

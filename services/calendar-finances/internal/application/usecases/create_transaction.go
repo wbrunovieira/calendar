@@ -527,6 +527,12 @@ func validateBalances(account *bankaccount.BankAccount, txType transaction.Type,
 			}
 			return nil
 		}
+		if account.Type == bankaccount.AccountTypeLiability {
+			// Going negative is the whole point of a liability: the balance IS what
+			// is owed. Refusing to spend past zero would make it impossible to
+			// record the first debt, which always starts from nothing.
+			return nil
+		}
 		if account.CurrentBalance < amount {
 			return ErrInsufficientBalance
 		}

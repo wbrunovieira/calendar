@@ -111,6 +111,7 @@ func IsValidCurrency(currency string) bool {
 func isValidAccountType(accountType AccountType) bool {
 	switch accountType {
 	case AccountTypeChecking, AccountTypeSavings, AccountTypeInvestment,
+		AccountTypeLiability,
 		AccountTypeCreditCard, AccountTypeCash, AccountTypeExchange,
 		AccountTypeWallet, AccountTypeOther:
 		return true
