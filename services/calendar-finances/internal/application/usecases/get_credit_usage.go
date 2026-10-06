@@ -1,8 +1,6 @@
 package usecases
 
 import (
-	"errors"
-
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
 	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
@@ -10,7 +8,9 @@ import (
 
 // ErrNotACreditCard is returned when credit figures are asked of an account that has
 // no limit to report on.
-var ErrNotACreditCard = errors.New("account is not a credit card")
+// It is a refusal, not a failure: carrying the marker keeps it a 400 wherever a
+// payment route reports it.
+var ErrNotACreditCard = refuse("account is not a credit card")
 
 // GetCreditUsageUseCase answers how much of a card's limit is committed.
 //

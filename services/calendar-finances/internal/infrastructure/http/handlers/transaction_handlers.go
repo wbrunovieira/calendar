@@ -480,13 +480,10 @@ func mapMarkInvoicePaymentError(err error) (int, string) {
 		errors.Is(err, bankaccount.ErrNotFound),
 		errors.Is(err, usecases.ErrInvoiceNotFound):
 		return http.StatusNotFound, err.Error()
-	case errors.Is(err, usecases.ErrNotACreditCard),
-		errors.Is(err, usecases.ErrNotAnInvoicePayment),
-		errors.Is(err, usecases.ErrPaymentNotConfirmed),
-		errors.Is(err, usecases.ErrInvoiceNotThisCard),
-		errors.Is(err, usecases.ErrInvoiceStillOpen),
-		errors.Is(err, usecases.ErrInvoiceAmountOutOfSync),
-		errors.Is(err, usecases.ErrPaymentExceedsInvoice):
+	// One marker instead of a list of sentinels. The list is what let
+	// ErrWouldLowerRecordedPayment ship as a 500 saying "could not record the invoice
+	// payment", when it had both numbers to report and the caller could act on them.
+	case errors.Is(err, usecases.ErrPaymentRefused):
 		return http.StatusBadRequest, err.Error()
 	default:
 		// Deliberately not err.Error(): a wrapped driver error says more about the
