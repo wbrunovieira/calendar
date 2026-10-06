@@ -397,6 +397,9 @@ func New(db *sql.DB) (*App, error) {
 	transactionHandler.SetPinInvoiceUseCase(
 		usecases.NewPinTransactionInvoiceUseCase(bankAccountRepo, transactionRepo, invoiceRepo))
 	apiRouter.HandleFunc("/transactions/{id}/invoice", transactionHandler.PinInvoice).Methods("POST")
+	transactionHandler.SetMarkInvoicePaymentUseCase(
+		usecases.NewMarkInvoicePaymentUseCase(bankAccountRepo, transactionRepo, invoiceRepo))
+	apiRouter.HandleFunc("/transactions/{id}/paid-invoice", transactionHandler.MarkInvoicePayment).Methods("POST")
 
 	// Capital Contribution routes (aportes do sócio)
 	apiRouter.HandleFunc("/capital-contributions/summary", capitalContributionHandler.Summary).Methods("GET")

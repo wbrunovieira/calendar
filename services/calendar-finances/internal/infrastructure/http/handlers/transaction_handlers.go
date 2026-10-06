@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/brunovieira/calendar-finances/internal/application/usecases"
+	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
 	transactionPkg "github.com/brunovieira/calendar-finances/internal/domain/transaction"
 	"github.com/gorilla/mux"
 )
@@ -24,6 +25,7 @@ type TransactionHandlers struct {
 	expenseAnalysisUseCase  *usecases.GetExpenseAnalysisUseCase
 	financialSummaryUseCase *usecases.GetFinancialSummaryUseCase
 	pinInvoiceUC            *usecases.PinTransactionInvoiceUseCase
+	markPaymentUC           *usecases.MarkInvoicePaymentUseCase
 }
 
 func NewTransactionHandlers(
@@ -418,6 +420,53 @@ func (h *TransactionHandlers) PinInvoice(w http.ResponseWriter, r *http.Request)
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// SetMarkInvoicePaymentUseCase wires the payment marking after construction, the same
+// way the other cross-handler dependencies here are wired.
+func (h *TransactionHandlers) SetMarkInvoicePaymentUseCase(uc *usecases.MarkInvoicePaymentUseCase) {
+	h.markPaymentUC = uc
+}
+
+// MarkInvoicePayment handles POST /api/v1/transactions/{id}/paid-invoice.
+//
+// Body: {"invoiceId": "..."} records that this credit SETTLES that bill;
+// {"invoiceId": null} takes the marking back, returning the credit to being a line
+// of whichever bill its date falls in.
+//
+// A payment and a refund are both INCOME on a card, so no rule can tell them apart
+// from a statement — only the person who made the payment can. Without this, seven
+// payments sat inside the bills they had settled, and a cycle on the Nubank PF card
+// reported -2.566,39: a bill that owes the cardholder money.
+func (h *TransactionHandlers) MarkInvoicePayment(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+
+	var body struct {
+		InvoiceID *string `json:"invoiceId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "malformed json body", http.StatusBadRequest)
+		return
+	}
+
+	var err error
+	if body.InvoiceID == nil || strings.TrimSpace(*body.InvoiceID) == "" {
+		err = h.markPaymentUC.Release(id)
+	} else {
+		err = h.markPaymentUC.Execute(id, strings.TrimSpace(*body.InvoiceID))
+	}
+	if err != nil {
+		// A missing transaction or bill is a 404: reported as 400 it reads as a
+		// malformed request, and the caller retries the same body forever.
+		status := http.StatusBadRequest
+		if errors.Is(err, transactionPkg.ErrNotFound) || errors.Is(err, usecases.ErrInvoiceNotFound) ||
+			errors.Is(err, bankaccount.ErrNotFound) {
+			status = http.StatusNotFound
+		}
+		http.Error(w, err.Error(), status)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

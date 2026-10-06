@@ -246,12 +246,20 @@ func invoiceSigned(tx *transaction.Transaction) float64 {
 
 // The repository skips CANCELLED rows; so must this, or a unit test can pass on
 // a total the database would never return.
+// Mirrors the repository: a REVERSED line is excluded as firmly as a CANCELLED one.
+// The fake dropped only CANCELLED, so a reversed charge kept counting towards the
+// bill here and did not in the database — the two disagreed about the one case the
+// SQL carries a comment about.
 func (f *fakeTransactionRepo) SumByInvoiceID(invoiceID string) (float64, error) {
 	var total float64
 	for _, tx := range f.created {
-		if tx.InvoiceID != nil && *tx.InvoiceID == invoiceID && tx.Status != transaction.StatusCancelled {
-			total += invoiceSigned(tx)
+		if tx.InvoiceID == nil || *tx.InvoiceID != invoiceID {
+			continue
 		}
+		if tx.Status == transaction.StatusCancelled || tx.Status == transaction.StatusReversed {
+			continue
+		}
+		total += invoiceSigned(tx)
 	}
 	return total, nil
 }
