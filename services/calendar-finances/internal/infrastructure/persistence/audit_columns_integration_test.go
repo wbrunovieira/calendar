@@ -340,3 +340,79 @@ func seedInvoiceThroughRepository(t *testing.T, db *sql.DB, inv *invoice.Invoice
 	}
 	return inv.ID
 }
+
+// A column that is read and never WRITTEN by Update is the same rumour from the other
+// side.
+//
+// paid_invoice_id was in the INSERT, in all three SELECTs and in the scan, and absent
+// from the UPDATE statement. So a row could be CREATED as the payment of a bill and
+// never MARKED as one afterwards: POST /transactions/{id}/paid-invoice cleared
+// invoice_id, dropped paid_invoice_id on the floor and answered 204 — leaving a
+// confirmed credit that belonged to no bill and settled no bill, with its bill
+// restated from a payment sum of zero.
+//
+// Every unit test of that route passed, because the fake repository replaced the
+// whole stored row on Update and therefore persisted columns the SQL did not.
+func TestIntegration_UpdateWritesThePaymentLinkAndAlsoClearsIt(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+
+	profileID, accountID := uuid.NewString(), uuid.NewString()
+	seedProfileAndAccount(t, db, profileID, accountID)
+
+	invoiceID := seedInvoiceThroughRepository(t, db, &invoice.Invoice{
+		BankAccountID: accountID, Amount: 2693.73, Status: invoice.StatusClosed,
+		ReferenceDate: time.Date(2025, time.December, 1, 0, 0, 0, 0, time.UTC),
+		OpeningDate:   time.Date(2025, time.November, 27, 0, 0, 0, 0, time.UTC),
+		ClosingDate:   time.Date(2025, time.December, 27, 0, 0, 0, 0, time.UTC),
+		DueDate:       time.Date(2026, time.January, 5, 0, 0, 0, 0, time.UTC),
+	})
+
+	repo := NewTransactionRepository(db)
+	txn, err := transaction.New(transaction.CreateParams{
+		ProfileID: profileID, BankAccountID: accountID,
+		Type:   transaction.TypeIncome,
+		Amount: 2693.73, Currency: "BRL", Description: "Pagamento fatura Cartao Pessoal Nubank",
+		OccurredOn: time.Date(2025, time.December, 3, 0, 0, 0, 0, time.UTC),
+		InvoiceID:  &invoiceID,
+	})
+	if err != nil {
+		t.Fatalf("build transaction: %v", err)
+	}
+	if err := repo.Create(txn); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// What the route does: it settles the bill instead of filling it.
+	txn.PaidInvoiceID = &invoiceID
+	txn.InvoiceID = nil
+	if err := repo.Update(txn); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	loaded, err := repo.GetByID(txn.ID)
+	if err != nil {
+		t.Fatalf("get by id: %v", err)
+	}
+	if loaded.PaidInvoiceID == nil {
+		t.Fatal("Update never wrote paid_invoice_id: marking a payment is lost")
+	}
+	if *loaded.PaidInvoiceID != invoiceID {
+		t.Errorf("got invoice %s, want %s", *loaded.PaidInvoiceID, invoiceID)
+	}
+	if loaded.InvoiceID != nil {
+		t.Error("the credit is still a line of the bill it settles")
+	}
+
+	// And NULL has to be written too, or Release could never undo the marking.
+	loaded.PaidInvoiceID = nil
+	if err := repo.Update(loaded); err != nil {
+		t.Fatalf("update releasing: %v", err)
+	}
+	reloaded, err := repo.GetByID(txn.ID)
+	if err != nil {
+		t.Fatalf("get by id after release: %v", err)
+	}
+	if reloaded.PaidInvoiceID != nil {
+		t.Errorf("paid_invoice_id = %s, want NULL: a mistaken marking cannot be undone", *reloaded.PaidInvoiceID)
+	}
+}

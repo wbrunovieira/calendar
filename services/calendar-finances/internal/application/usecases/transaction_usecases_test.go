@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"errors"
+	"math"
 	"sort"
 	"strings"
 	"testing"
@@ -131,7 +132,13 @@ func (f *fakeTransactionRepo) GetByID(id string) (*transaction.Transaction, erro
 	}
 	for _, tx := range f.created {
 		if tx.ID == id {
-			return tx, nil
+			// A COPY, like a row read out of Postgres. Handing back the stored
+			// pointer made every mutation a use case performed persist whether or
+			// not Update was called -- and persist columns the UPDATE statement does
+			// not write. A column missing from that statement therefore looked like
+			// a working feature in every test here.
+			loaded := *tx
+			return &loaded, nil
 		}
 	}
 	// The repository's own signal. A look-alike error made "it was deleted"
@@ -184,15 +191,87 @@ func (f *fakeTransactionRepo) List(filter transaction.ListFilter) ([]*transactio
 	return out, nil
 }
 
+// Mirrors the repository's UPDATE, which writes a FIXED column list: whatever is
+// outside that list keeps its stored value however the caller mutated the struct.
+// Replacing the whole row here made the fake persist columns the SQL did not, so a
+// column missing from the UPDATE statement looked like a working feature.
+var txUpdateWrites = []string{
+	"bank_account_id", "destination_account_id", "category_id", "invoice_id", "type",
+	"status", "amount", "currency", "description", "notes", "cost_center",
+	"cost_center_id", "is_personal_reimbursement", "occurred_on", "due_on",
+	"reminder_on", "recurrence_rule", "installment_number", "installment_total",
+	"external_id", "linked_transaction_id", "invoice_pinned", "paid_invoice_id",
+}
+
 func (f *fakeTransactionRepo) Update(tx *transaction.Transaction) error {
 	f.updates++
 	for i, existing := range f.created {
-		if existing.ID == tx.ID {
-			f.created[i] = tx
-			return nil
+		if existing.ID != tx.ID {
+			continue
 		}
+		stored := *existing
+		for _, col := range txUpdateWrites {
+			applyTxColumn(&stored, tx, col)
+		}
+		f.created[i] = &stored
+		return nil
 	}
-	return errors.New("not found")
+	// The repository's own signal, so a caller that maps "gone" to 404 and a failure
+	// to 500 is tested doing it.
+	return transaction.ErrNotFound
+}
+
+func applyTxColumn(dst, src *transaction.Transaction, col string) {
+	switch col {
+	case "bank_account_id":
+		dst.BankAccountID = src.BankAccountID
+	case "destination_account_id":
+		dst.DestinationAccountID = src.DestinationAccountID
+	case "category_id":
+		dst.CategoryID = src.CategoryID
+	case "invoice_id":
+		dst.InvoiceID = src.InvoiceID
+	case "type":
+		dst.Type = src.Type
+	case "status":
+		dst.Status = src.Status
+	case "amount":
+		dst.Amount = src.Amount
+	case "currency":
+		dst.Currency = src.Currency
+	case "description":
+		dst.Description = src.Description
+	case "notes":
+		dst.Notes = src.Notes
+	case "cost_center":
+		dst.CostCenter = src.CostCenter
+	case "cost_center_id":
+		dst.CostCenterID = src.CostCenterID
+	case "is_personal_reimbursement":
+		dst.IsPersonalReimbursement = src.IsPersonalReimbursement
+	case "occurred_on":
+		dst.OccurredOn = src.OccurredOn
+	case "due_on":
+		dst.DueOn = src.DueOn
+	case "reminder_on":
+		dst.ReminderOn = src.ReminderOn
+	case "recurrence_rule":
+		dst.RecurrenceRule = src.RecurrenceRule
+	case "installment_number":
+		dst.InstallmentNumber = src.InstallmentNumber
+	case "installment_total":
+		dst.InstallmentTotal = src.InstallmentTotal
+	case "external_id":
+		dst.ExternalID = src.ExternalID
+	case "linked_transaction_id":
+		dst.LinkedTransactionID = src.LinkedTransactionID
+	case "invoice_pinned":
+		dst.InvoicePinned = src.InvoicePinned
+	case "paid_invoice_id":
+		dst.PaidInvoiceID = src.PaidInvoiceID
+	default:
+		panic("unknown column in txUpdateWrites: " + col)
+	}
 }
 
 func (f *fakeTransactionRepo) UpdateStatus(id string, status transaction.Status, occurredOn time.Time, notes *string) error {
@@ -261,7 +340,9 @@ func (f *fakeTransactionRepo) SumByInvoiceID(invoiceID string) (float64, error) 
 		}
 		total += invoiceSigned(tx)
 	}
-	return total, nil
+	// The repository rounds before returning; without it the fake hides cent-level
+	// float drift in an invoice total.
+	return math.Round(total*100) / 100, nil
 }
 
 func (f *fakeTransactionRepo) SumByInvoiceIDByStatus(invoiceID string, status transaction.Status) (float64, error) {
@@ -359,13 +440,21 @@ func (f *fakeInvoiceRepo) FindOpenByBankAccountID(bankAccountID string) (*invoic
 	return nil, nil
 }
 
+// Mirrors the repository's ORDER BY closing_date DESC LIMIT 1. Iterating a map and
+// returning the first match made the pick depend on Go's map order, while production
+// is deterministic -- and overlapping legacy cycles, which is the only case where the
+// two differ, exist on this database.
 func (f *fakeInvoiceRepo) FindByBankAccountAndDate(bankAccountID string, txDate time.Time) (*invoice.Invoice, error) {
+	var best *invoice.Invoice
 	for _, inv := range f.invoices {
-		if inv.BankAccountID == bankAccountID && inv.ContainsDate(txDate) {
-			return inv, nil
+		if inv.BankAccountID != bankAccountID || !inv.ContainsDate(txDate) {
+			continue
+		}
+		if best == nil || inv.ClosingDate.After(best.ClosingDate) {
+			best = inv
 		}
 	}
-	return nil, nil
+	return best, nil
 }
 
 func (f *fakeInvoiceRepo) Update(inv *invoice.Invoice) error {
@@ -4642,21 +4731,65 @@ func (f *fakeTransactionRepo) DeleteMany(ids []string) error {
 	return nil
 }
 
+// Mirrors ReverseMany, which has its OWN update statement: status and the four
+// reversal columns, guarded by status <> 'REVERSED'. Routing the fake through
+// Update() conflated the two statements -- Update writes neither reversed_at nor the
+// motive, so the reversal record reached the fake only because GetByID used to hand
+// back the stored pointer.
 func (f *fakeTransactionRepo) ReverseMany(txns []*transaction.Transaction) error {
 	for _, t := range txns {
-		if err := f.Update(t); err != nil {
-			return err
+		found := false
+		for i, existing := range f.created {
+			if existing.ID != t.ID {
+				continue
+			}
+			found = true
+			// Terminal in the database too: two concurrent reversals both read
+			// CONFIRMED and both pass the domain check.
+			if existing.Status == transaction.StatusReversed {
+				return transaction.ErrAlreadyReversed
+			}
+			stored := *existing
+			stored.Status = t.Status
+			stored.ReversedAt = t.ReversedAt
+			stored.ReversalReason = t.ReversalReason
+			stored.ReversalNote = t.ReversalNote
+			stored.ReversedBy = t.ReversedBy
+			f.created[i] = &stored
+			break
+		}
+		if !found {
+			return transaction.ErrNotFound
 		}
 	}
 	return nil
 }
 
-// CancelStatus mirrors the real repository: a cancellation keeps its motive and its
-// actor. A fake that dropped them would let the use case pass while production
-// recorded nothing — which is exactly how the gap it covers went unnoticed.
+// CancelStatus mirrors the real repository: it PERSISTS status, date, notes and the four reversal
+// columns, and refuses a row that is already REVERSED (terminal in the database too).
+// The fake wrote one field on the caller's own pointer and stored nothing, so the
+// reversal record existed only for as long as that pointer did.
 func (f *fakeTransactionRepo) CancelStatus(txn *transaction.Transaction, occurredOn time.Time) error {
-	txn.OccurredOn = occurredOn
-	return nil
+	for i, existing := range f.created {
+		if existing.ID != txn.ID {
+			continue
+		}
+		if existing.Status == transaction.StatusReversed {
+			return transaction.ErrNotFound
+		}
+		stored := *existing
+		stored.Status = txn.Status
+		stored.OccurredOn = occurredOn
+		stored.Notes = txn.Notes
+		stored.ReversedAt = txn.ReversedAt
+		stored.ReversalReason = txn.ReversalReason
+		stored.ReversalNote = txn.ReversalNote
+		stored.ReversedBy = txn.ReversedBy
+		f.created[i] = &stored
+		txn.OccurredOn = occurredOn
+		return nil
+	}
+	return transaction.ErrNotFound
 }
 
 // Faithful to the real one: only live payment legs count. A fake that ignored the
