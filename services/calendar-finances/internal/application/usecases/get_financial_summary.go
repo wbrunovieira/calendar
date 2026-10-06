@@ -140,7 +140,7 @@ func rollupCategories(
 		if tx.Type != txType || tx.Status != transaction.StatusConfirmed {
 			continue
 		}
-		if exchange[tx.BankAccountID] || isInvoiceSettlement(tx.Description) {
+		if exchange[tx.BankAccountID] || isInvoiceSettlement(tx) {
 			continue
 		}
 		i, ok := idxOf[tx.OccurredOn.Format("2006-01")]
@@ -270,7 +270,7 @@ func buildDRE(
 		if tx.Status != transaction.StatusConfirmed {
 			continue
 		}
-		if exchange[tx.BankAccountID] || isInvoiceSettlement(tx.Description) {
+		if exchange[tx.BankAccountID] || isInvoiceSettlement(tx) {
 			continue
 		}
 		if isNonConsumptionCategory(catByID, tx.CategoryID) {

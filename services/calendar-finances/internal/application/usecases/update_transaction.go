@@ -247,9 +247,38 @@ func (uc *UpdateTransactionUseCase) Execute(id string, input UpdateTransactionIn
 		}
 	}
 
+	// An edit can leave the row unable to settle anything -- a linked funding leg
+	// turned into an EXPENSE keeps type=EXPENSE, no destination and paid_invoice_id
+	// still set. SumLivePaymentsByInvoiceID has no type filter, so the bill goes on
+	// counting it, and Release then answers ErrNotACreditCard: no route left to
+	// unlink it, bill PAID forever. So the link is released here rather than
+	// stranded.
+	settledBillID := existing.PaidInvoiceID
+	if existing.PaidInvoiceID != nil && !canStillSettleABill(existing, uc.accountRepo) {
+		existing.PaidInvoiceID = nil
+	}
+
 	// Persist changes
 	if err := uc.transactionRepo.Update(existing); err != nil {
 		return nil, err
+	}
+
+	// The bill it settles is restated from the transactions afterwards. Nothing did
+	// this, so correcting a leg from 1.018,18 to 900,00 left the bill still recording
+	// 1.018,18 paid: 118,18 of debt invisible, and that much phantom limit.
+	//
+	// A drop is allowed because the edit is the deliberate act that caused it.
+	if settledBillID != nil && uc.invoiceRepo != nil {
+		settled, ferr := uc.invoiceRepo.FindByID(*settledBillID)
+		if ferr == nil && settled != nil {
+			restater := invoiceRestater{txRepo: uc.transactionRepo, invoiceRepo: uc.invoiceRepo}
+			if rerr := restater.restate(settled, restateAllowingADrop); rerr != nil {
+				// Surfaced, not swallowed: a bill left stating a number its own
+				// transactions no longer support is invisible until a reconciliation
+				// months later.
+				return nil, rerr
+			}
+		}
 	}
 
 	// Adjust bank account balances
