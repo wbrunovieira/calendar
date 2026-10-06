@@ -331,7 +331,10 @@ func (uc *CheckInvariantsUseCase) checkInstallmentSeries(
 		if txn.InstallmentNumber == nil || txn.InstallmentTotal == nil || *txn.InstallmentTotal < 2 {
 			continue
 		}
-		k := key{txn.Description, *txn.InstallmentTotal}
+		// Grouped by the plan's NAME, not by the raw description: the instalment
+		// number is usually written into the description, which made every part its
+		// own series and every healthy plan an alarm.
+		k := key{installmentSeriesName(txn.Description, *txn.InstallmentNumber, *txn.InstallmentTotal), *txn.InstallmentTotal}
 		if series[k] == nil {
 			series[k] = map[int]int{}
 		}
