@@ -438,3 +438,152 @@ func TestMarkPayment_SurvivesAnEditThatMovesItsDate(t *testing.T) {
 		t.Fatalf("paidInvoiceID = %v, want inv", after.PaidInvoiceID)
 	}
 }
+
+// fundingLegFixture is the CANONICAL shape, and the one 24 of the 31 real payments
+// use: a single TRANSFER on the funding account whose destination is the card. One
+// row debits the account and credits the card, and stays out of income and expense --
+// which is why PayInvoiceV2 creates it instead of an EXPENSE/INCOME pair.
+//
+// 21 of those 24 carry no paid_invoice_id, because they were posted by hand as plain
+// transfers. That is why bills read "pago 0,00" while the bank reports them PAID.
+func fundingLegFixture(t *testing.T) (*MarkInvoicePaymentUseCase, *fakeTransactionRepo, *fakeInvoiceRepo) {
+	t.Helper()
+	const cardID, contaID, profileID = "card", "conta", "wb"
+	card := creditCardAccountWith(profileID, cardID, 27, 3)
+	conta := &bankaccount.BankAccount{ID: contaID, ProfileID: profileID, Name: "Nubank Juridica",
+		Type: bankaccount.AccountTypeChecking, Currency: "BRL", IsActive: true}
+
+	bill := &invoice.Invoice{
+		ID: "inv", BankAccountID: cardID,
+		OpeningDate: day(2026, 6, 27), ClosingDate: day(2026, 7, 27),
+		DueDate: day(2026, 8, 6), ReferenceDate: day(2026, 7, 1),
+		Status: invoice.StatusClosed, Amount: 1018.18,
+	}
+	invRepo := &fakeInvoiceRepo{invoices: map[string]*invoice.Invoice{bill.ID: bill}}
+
+	perna := &transaction.Transaction{
+		ID: "perna", ProfileID: profileID, BankAccountID: contaID,
+		DestinationAccountID: strPtr(cardID),
+		Type:                 transaction.TypeTransfer, Status: transaction.StatusConfirmed,
+		Amount: 1018.18, Currency: "BRL", Description: "Pagamento fatura Nubank Juridica Cartão",
+		OccurredOn: day(2026, 8, 3),
+	}
+	compra := &transaction.Transaction{
+		ID: "compra", ProfileID: profileID, BankAccountID: cardID,
+		Type: transaction.TypeExpense, Status: transaction.StatusConfirmed,
+		Amount: 1018.18, Currency: "BRL", Description: "compras do ciclo",
+		OccurredOn: day(2026, 7, 10), InvoiceID: &bill.ID,
+	}
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{perna, compra}}
+
+	uc := NewMarkInvoicePaymentUseCase(
+		&fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{cardID: card, contaID: conta}},
+		txRepo, invRepo,
+	)
+	return uc, txRepo, invRepo
+}
+
+func TestMarkPayment_LinksTheFundingLegToTheBillItPaid(t *testing.T) {
+	uc, txRepo, invRepo := fundingLegFixture(t)
+
+	if err := uc.Execute("perna", "inv"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	p := txRepo.created[0]
+	if p.PaidInvoiceID == nil || *p.PaidInvoiceID != "inv" {
+		t.Fatalf("paidInvoiceID = %v, want inv", p.PaidInvoiceID)
+	}
+	// It was never a line of the bill and must not become one: SumByInvoiceID counts
+	// anything that is not INCOME as a charge, so filing a TRANSFER in would add its
+	// amount to the bill as a purchase.
+	if p.InvoiceID != nil {
+		t.Fatalf("the funding leg became a line of the bill: %v", *p.InvoiceID)
+	}
+	bill := invRepo.invoices["inv"]
+	if bill.PaidAmount == nil || *bill.PaidAmount != 1018.18 {
+		t.Fatalf("paidAmount = %v, want 1018.18", bill.PaidAmount)
+	}
+	if bill.Status != invoice.StatusPaid {
+		t.Fatalf("status = %s, want PAID", bill.Status)
+	}
+	// The bill is worth what was charged, unchanged by learning who paid it.
+	if bill.Amount != 1018.18 {
+		t.Fatalf("bill amount = %.2f, want 1018.18", bill.Amount)
+	}
+}
+
+// A transfer between two ordinary accounts has no bill to settle. Only a leg whose
+// DESTINATION is the card does.
+func TestMarkPayment_RefusesATransferThatDoesNotReachACard(t *testing.T) {
+	uc, txRepo, _ := fundingLegFixture(t)
+	txRepo.created[0].DestinationAccountID = nil
+
+	if err := uc.Execute("perna", "inv"); !errors.Is(err, ErrNotACreditCard) {
+		t.Fatalf("err = %v, want ErrNotACreditCard", err)
+	}
+}
+
+// The destination card must be the one whose bill this is, or the leg would settle a
+// bill it never reached.
+func TestMarkPayment_RefusesALegThatReachesAnotherCard(t *testing.T) {
+	uc, txRepo, invRepo := fundingLegFixture(t)
+	outro := creditCardAccountWith("wb", "outro-cartao", 27, 3)
+	uc.accountRepo.(*fakeAccountRepo).accounts["outro-cartao"] = outro
+	txRepo.created[0].DestinationAccountID = strPtr("outro-cartao")
+	_ = invRepo
+
+	if err := uc.Execute("perna", "inv"); !errors.Is(err, ErrInvoiceNotThisCard) {
+		t.Fatalf("err = %v, want ErrInvoiceNotThisCard", err)
+	}
+}
+
+// Releasing a funding leg must only unlink it. Handing it to the date rule would file
+// a TRANSFER as a line of a bill, which SumByInvoiceID counts as a charge.
+func TestMarkPayment_ReleasingAFundingLegDoesNotFileItAsALine(t *testing.T) {
+	uc, txRepo, invRepo := fundingLegFixture(t)
+	// The cycle that CONTAINS 03/08, the day the leg moved: a bill closing 27/07 is
+	// paid in the cycle that opens 27/07, so a bill for the leg's date always exists.
+	// Without it the date rule had nothing to find and the test passed either way.
+	invRepo.invoices["proxima"] = &invoice.Invoice{
+		ID: "proxima", BankAccountID: "card",
+		OpeningDate: day(2026, 7, 27), ClosingDate: day(2026, 8, 27),
+		DueDate: day(2026, 9, 3), ReferenceDate: day(2026, 8, 1),
+		Status: invoice.StatusClosed, Amount: 799.57,
+	}
+	if err := uc.Execute("perna", "inv"); err != nil {
+		t.Fatalf("marking: %v", err)
+	}
+	if err := uc.Release("perna"); err != nil {
+		t.Fatalf("releasing: %v", err)
+	}
+	p := txRepo.created[0]
+	if p.PaidInvoiceID != nil {
+		t.Fatal("still recorded as settling the bill")
+	}
+	if p.InvoiceID != nil {
+		t.Fatalf("the funding leg was filed as a line of bill %v", *p.InvoiceID)
+	}
+	if got := invRepo.invoices["inv"].PaidAmount; got != nil {
+		t.Fatalf("the bill still reads paid %v", got)
+	}
+}
+
+// The duplicate this model exists to prevent: the funding leg and a card-side credit
+// for the SAME payment, both linked, recording the bill as paid twice over.
+func TestMarkPayment_RefusesTheSecondLegOfOnePayment(t *testing.T) {
+	uc, txRepo, _ := fundingLegFixture(t)
+	if err := uc.Execute("perna", "inv"); err != nil {
+		t.Fatalf("marking the funding leg: %v", err)
+	}
+	// The card-side "Pagamento recebido" of the very same payment.
+	txRepo.created = append(txRepo.created, &transaction.Transaction{
+		ID: "credito-cartao", ProfileID: "wb", BankAccountID: "card",
+		Type: transaction.TypeIncome, Status: transaction.StatusConfirmed,
+		Amount: 1018.18, Currency: "BRL", Description: "Pagamento recebido",
+		OccurredOn: day(2026, 8, 3),
+	})
+
+	if err := uc.Execute("credito-cartao", "inv"); !errors.Is(err, ErrPaymentExceedsInvoice) {
+		t.Fatalf("err = %v, want ErrPaymentExceedsInvoice: the bill is now paid twice", err)
+	}
+}

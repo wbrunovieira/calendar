@@ -30,6 +30,22 @@ var (
 	ErrPaymentExceedsInvoice = errors.New("that would record more paid than the bill is worth")
 )
 
+// settlesABill reports whether this transaction can settle a bill at all: a credit on
+// the card, or the funding leg of a payment into it. load() has already established
+// that the card is the right one.
+func settlesABill(txn *transactionPkg.Transaction) bool {
+	switch txn.Type {
+	case transactionPkg.TypeIncome:
+		// On the card, since load() resolved the card from bank_account_id here.
+		return true
+	case transactionPkg.TypeTransfer:
+		// Only a leg that names a destination reaches a card at all.
+		return txn.DestinationAccountID != nil
+	default:
+		return false
+	}
+}
+
 // amountTolerance is one cent: the sums are money, rounded to cents on both sides.
 const amountTolerance = 0.01
 
@@ -74,9 +90,10 @@ func (uc *MarkInvoicePaymentUseCase) Execute(transactionID, invoiceID string) er
 	if err != nil {
 		return err
 	}
-	// A payment credits the card. An EXPENSE is a purchase, and accepting one here
-	// would take a real charge off the bill and call it settled.
-	if txn.Type != transactionPkg.TypeIncome {
+	// A payment either credits the card (INCOME on the card) or reaches it as the
+	// funding leg (TRANSFER into the card). An EXPENSE is a purchase, and accepting
+	// one would take a real charge off the bill and call it settled.
+	if !settlesABill(txn) {
 		return ErrNotAnInvoicePayment
 	}
 	// A planned credit has not moved money, and a reversed or cancelled one moved it
@@ -207,9 +224,9 @@ func (uc *MarkInvoicePaymentUseCase) Release(transactionID string) error {
 		return nil
 	}
 	// Release writes invoice_id, and SumByInvoiceID counts anything that is not
-	// INCOME as a charge -- so releasing a TRANSFER would add its amount to a bill
-	// as a purchase. Execute refuses non-credits; so must this.
-	if txn.Type != transactionPkg.TypeIncome {
+	// INCOME as a charge. Execute refuses anything that cannot settle a bill; so
+	// must this.
+	if !settlesABill(txn) {
 		return ErrNotAnInvoicePayment
 	}
 	settled, err := uc.invoiceRepo.FindByID(*txn.PaidInvoiceID)
@@ -217,9 +234,16 @@ func (uc *MarkInvoicePaymentUseCase) Release(transactionID string) error {
 		return fmt.Errorf("reading the bill: %w", err)
 	}
 
-	target, err := uc.invoiceRepo.FindByBankAccountAndDate(account.ID, txn.OccurredOn)
-	if err != nil {
-		return fmt.Errorf("finding the bill for the date: %w", err)
+	// Only a card-side credit goes back to the date rule: released, it is an estorno,
+	// which really is a line of the bill covering its date. A funding leg is never a
+	// line of anything -- SumByInvoiceID counts a TRANSFER as a charge, so filing one
+	// in would add its amount to the bill as a purchase.
+	var target *invoice.Invoice
+	if txn.Type == transactionPkg.TypeIncome {
+		target, err = uc.invoiceRepo.FindByBankAccountAndDate(account.ID, txn.OccurredOn)
+		if err != nil {
+			return fmt.Errorf("finding the bill for the date: %w", err)
+		}
 	}
 
 	txn.PaidInvoiceID = nil
@@ -272,6 +296,21 @@ func (uc *MarkInvoicePaymentUseCase) restate(inv *invoice.Invoice) error {
 	return nil
 }
 
+// load resolves the transaction and the CARD its payment reaches, whichever side of
+// the payment the row sits on.
+//
+// There are two legitimate shapes, and 24 of the 31 real payments use the second:
+//
+//   - a credit ON the card: INCOME, bank_account_id = the card. The shape for a
+//     payment made from an account the system does not know, and the one the
+//     statement import produces.
+//   - the FUNDING LEG: TRANSFER, bank_account_id = the paying account,
+//     destination_account_id = the card. One row debits the account and credits the
+//     card, and stays out of income and expense -- which is why PayInvoiceV2 creates
+//     this and not an EXPENSE/INCOME pair.
+//
+// Only one of the two may carry paid_invoice_id for a given payment. Both would
+// record the bill as paid twice over, which checkNotOverpaid refuses.
 func (uc *MarkInvoicePaymentUseCase) load(transactionID string) (*transactionPkg.Transaction, *bankaccount.BankAccount, error) {
 	txn, err := uc.txRepo.GetByID(transactionID)
 	if err != nil {
@@ -280,14 +319,23 @@ func (uc *MarkInvoicePaymentUseCase) load(transactionID string) (*transactionPkg
 	if txn == nil {
 		return nil, nil, transactionPkg.ErrNotFound
 	}
-	account, err := uc.accountRepo.FindByID(txn.BankAccountID)
+
+	// The funding leg names the card as its destination; a card-side credit IS on the
+	// card. Either way, what matters is the card whose bill is being settled.
+	cardID := txn.BankAccountID
+	if txn.Type == transactionPkg.TypeTransfer && txn.DestinationAccountID != nil {
+		cardID = *txn.DestinationAccountID
+	}
+
+	account, err := uc.accountRepo.FindByID(cardID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("reading the account: %w", err)
 	}
 	if account == nil {
 		return nil, nil, bankaccount.ErrNotFound
 	}
-	// Only a card has a bill to settle.
+	// Only a card has a bill to settle. A transfer between two ordinary accounts, or
+	// one with no destination at all, reaches no bill.
 	if account.Type != bankaccount.AccountTypeCreditCard {
 		return nil, nil, ErrNotACreditCard
 	}
