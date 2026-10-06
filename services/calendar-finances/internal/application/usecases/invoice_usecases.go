@@ -3,6 +3,7 @@ package usecases
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -597,6 +598,7 @@ func (uc *GetCurrentInvoiceUseCase) Execute(bankAccountID string) (*invoice.Invo
 type RecalculateInvoiceAmountUseCase struct {
 	invoiceRepo     invoice.Repository
 	transactionRepo transactionPkg.Repository
+	adjustmentLog   BalanceAdjustmentLog
 }
 
 func NewRecalculateInvoiceAmountUseCase(
@@ -609,14 +611,31 @@ func NewRecalculateInvoiceAmountUseCase(
 	}
 }
 
+// SetAdjustmentLog wires the trail, following how the other collaborators attach.
+//
+// A correction with no trail is the erasure of proof. It matters more here than for a
+// balance: the number being replaced came off a bank statement.
+func (uc *RecalculateInvoiceAmountUseCase) SetAdjustmentLog(l BalanceAdjustmentLog) {
+	uc.adjustmentLog = l
+}
+
+// Execute brings a bill's stored total back in line with its own lines.
+//
+// Amount is a CACHE of SumByInvoiceID, so recomputing it is the golden rule rather
+// than a breach of it: nothing is invented, the transactions are the source. It used
+// to refuse a PAID bill, which made a stale cache permanent and deadlocked the one
+// repair that needed it -- marking a payment refuses a bill whose stored total
+// contradicts its lines, and this was the only route that could resync it. Eight
+// settled bills on the two Nubank cards sat in exactly that corner.
+//
+// Re-deriving the status keeps it honest in both directions: a settled bill whose
+// recomputed total turns out higher than what was paid owes again, which is how a
+// charge that landed late on a closed cycle becomes visible instead of hiding behind
+// a PAID flag. No payment is recorded or dropped here -- that is RestatePayments.
 func (uc *RecalculateInvoiceAmountUseCase) Execute(invoiceID string) (*invoice.Invoice, error) {
 	inv, err := uc.invoiceRepo.FindByID(invoiceID)
 	if err != nil {
 		return nil, ErrInvoiceNotFound
-	}
-
-	if inv.Status == invoice.StatusPaid {
-		return nil, ErrInvoiceAlreadyPaid
 	}
 
 	// Sum all transactions associated with this invoice
@@ -624,6 +643,8 @@ func (uc *RecalculateInvoiceAmountUseCase) Execute(invoiceID string) (*invoice.I
 	if err != nil {
 		return nil, err
 	}
+
+	before := inv.Amount
 
 	// Update the invoice amount
 	inv.Amount = total
@@ -638,6 +659,14 @@ func (uc *RecalculateInvoiceAmountUseCase) Execute(invoiceID string) (*invoice.I
 	inv.RederiveStatus()
 	if err := uc.invoiceRepo.Update(inv); err != nil {
 		return nil, err
+	}
+
+	// Only a real change is recorded: a log of no-ops is a log nobody reads.
+	if uc.adjustmentLog != nil && math.Abs(total-before) > 0.005 {
+		// Recorded against the card, which is where someone looking for "what
+		// happened to this card's bills" will look.
+		_ = uc.adjustmentLog.Record(inv.BankAccountID, before, total,
+			"invoice "+inv.ID+" total recalculated from its own transactions", "system")
 	}
 
 	return inv, nil

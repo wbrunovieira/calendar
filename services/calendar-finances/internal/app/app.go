@@ -160,6 +160,9 @@ func New(db *sql.DB) (*App, error) {
 	// left thousands in invoices reading as paid with no matching credit on the card.
 	payInvoiceUC.SetUnitOfWork(&boundUnitOfWork{uow: persistence.NewUnitOfWork(db), checkpoints: checkpointRepo, adjustments: adjustmentLog})
 	recalculateInvoiceUC := usecases.NewRecalculateInvoiceAmountUseCase(invoiceRepo, transactionRepo)
+	// The number being replaced came off a bank statement, so the correction leaves
+	// a trail in the same place a balance correction does.
+	recalculateInvoiceUC.SetAdjustmentLog(adjustmentLog)
 	// Deleting a charge changes the bill it belonged to.
 	deleteTransactionUC.SetInvoiceRecalculator(recalculateInvoiceUC)
 	updateInvoiceUC := usecases.NewUpdateInvoiceUseCase(invoiceRepo)
