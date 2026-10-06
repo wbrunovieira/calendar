@@ -405,6 +405,18 @@ const (
 )
 
 func (uc *MarkInvoicePaymentUseCase) restate(inv *invoice.Invoice, intent restateIntent) error {
+	return invoiceRestater{txRepo: uc.txRepo, invoiceRepo: uc.invoiceRepo}.restate(inv, intent)
+}
+
+// invoiceRestater recomputes a bill's total and what it has been paid from the
+// transactions as they now stand. Shared, because UpdateTransaction has to do exactly
+// this after editing a linked payment.
+type invoiceRestater struct {
+	txRepo      transactionPkg.Repository
+	invoiceRepo invoice.Repository
+}
+
+func (uc invoiceRestater) restate(inv *invoice.Invoice, intent restateIntent) error {
 	if inv == nil {
 		return nil
 	}
@@ -458,35 +470,74 @@ func (uc *MarkInvoicePaymentUseCase) load(transactionID string) (*transactionPkg
 	if txn == nil {
 		return nil, nil, transactionPkg.ErrNotFound
 	}
+	account, err := resolveSettledCard(txn, uc.accountRepo)
+	if err != nil {
+		return nil, nil, err
+	}
+	return txn, account, nil
+}
 
-	// The funding leg names the card as its destination; a card-side credit IS on the
-	// card. Either way, what matters is the card whose bill is being settled.
+// resolveSettledCard returns the CARD whose bill this row's payment reaches,
+// whichever side of the payment the row sits on.
+//
+// There are two legitimate shapes, and 24 of the 31 real payments use the second:
+//
+//   - a credit ON the card: INCOME, bank_account_id = the card. The shape for a
+//     payment made from an account the system does not know, and the one the
+//     statement import produces.
+//   - the FUNDING LEG: TRANSFER, bank_account_id = the paying account,
+//     destination_account_id = the card. One row debits the account and credits the
+//     card, and stays out of income and expense -- which is why PayInvoiceV2 creates
+//     this and not an EXPENSE/INCOME pair.
+//
+// Only one of the two may carry paid_invoice_id for a given payment. Both would
+// record the bill as paid twice over, which checkNotOverpaid refuses.
+//
+// It lives here, shared, because UpdateTransaction has to ask the same question to
+// know whether an edit left the row able to settle anything -- and a rule written in
+// two places is enforced in one.
+func resolveSettledCard(
+	txn *transactionPkg.Transaction,
+	accountRepo bankaccount.Repository,
+) (*bankaccount.BankAccount, error) {
 	cardID := txn.BankAccountID
 	if txn.Type == transactionPkg.TypeTransfer && txn.DestinationAccountID != nil {
 		cardID = *txn.DestinationAccountID
 		// A card's own balance does not move as cash -- the credit-card guard in
 		// CreateTransaction skips it -- so a transfer out of one cannot fund a bill.
 		// Accepted silently, it let card B's bill read PAID off card A's credit line.
-		source, serr := uc.accountRepo.FindByID(txn.BankAccountID)
+		source, serr := accountRepo.FindByID(txn.BankAccountID)
 		if serr != nil {
-			return nil, nil, fmt.Errorf("reading the paying account: %w", serr)
+			return nil, fmt.Errorf("reading the paying account: %w", serr)
 		}
 		if source != nil && source.Type == bankaccount.AccountTypeCreditCard {
-			return nil, nil, ErrCardCannotFundAPayment
+			return nil, ErrCardCannotFundAPayment
 		}
 	}
 
-	account, err := uc.accountRepo.FindByID(cardID)
+	account, err := accountRepo.FindByID(cardID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("reading the account: %w", err)
+		return nil, fmt.Errorf("reading the account: %w", err)
 	}
 	if account == nil {
-		return nil, nil, bankaccount.ErrNotFound
+		return nil, bankaccount.ErrNotFound
 	}
 	// Only a card has a bill to settle. A transfer between two ordinary accounts, or
 	// one with no destination at all, reaches no bill.
 	if account.Type != bankaccount.AccountTypeCreditCard {
-		return nil, nil, ErrNotACreditCard
+		return nil, ErrNotACreditCard
 	}
-	return txn, account, nil
+	return account, nil
+}
+
+// canStillSettleABill reports whether a row, as it now stands, is able to settle a
+// card bill at all. A row that cannot must not keep a paid_invoice_id: the payment
+// sum has no type filter, so the bill would go on counting it with no route left to
+// unlink it.
+func canStillSettleABill(txn *transactionPkg.Transaction, accountRepo bankaccount.Repository) bool {
+	if !settlesABill(txn) {
+		return false
+	}
+	account, err := resolveSettledCard(txn, accountRepo)
+	return err == nil && account != nil
 }

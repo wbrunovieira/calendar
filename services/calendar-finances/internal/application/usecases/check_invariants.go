@@ -204,26 +204,21 @@ func (uc *CheckInvariantsUseCase) checkPaymentsAgainstBills(
 		return nil
 	}
 
-	accountID := account.ID
-	txns, err := uc.txRepo.List(transaction.ListFilter{ProfileID: account.ProfileID, BankAccountID: &accountID, IncludeAsDestination: true})
-	if err != nil {
-		return err
-	}
-
-	paid := map[string]float64{}
-	for _, txn := range txns {
-		if txn.PaidInvoiceID == nil {
-			continue
-		}
-		if txn.Status == transaction.StatusReversed || txn.Status == transaction.StatusCancelled {
-			continue
-		}
-		paid[*txn.PaidInvoiceID] += txn.Amount
-	}
-
+	// How much a bill has been paid is a question about the BILL, so it is asked of
+	// the bill. Asking it through a profile-filtered List made a CROSS-PROFILE
+	// funding leg invisible -- Bruno paying the company card from his personal
+	// account -- and that is exactly the shape that produces a double payment, so
+	// the one report that would catch it could not see it.
+	//
+	// It is also the same query the writer uses to restate a bill, so the report and
+	// the write agree about what "paid" means by construction instead of by
+	// coincidence.
 	for _, inv := range invoices {
-		total, ok := paid[inv.ID]
-		if !ok {
+		total, err := uc.txRepo.SumLivePaymentsByInvoiceID(inv.ID)
+		if err != nil {
+			return err
+		}
+		if total == 0 {
 			continue
 		}
 		// Compare against the derived total, never the stored one. inv.Amount is a

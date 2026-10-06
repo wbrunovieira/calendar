@@ -38,6 +38,23 @@ func (f *invariantTxRepo) SumByInvoiceID(invoiceID string) (float64, error) {
 	return f.invoiceSums[invoiceID], nil
 }
 
+// Mirrors the repository: only CONFIRMED rows naming this bill in paid_invoice_id,
+// summed unsigned. The invariant asks the BILL how much it has been paid, rather than
+// scanning a profile's transactions, so a cross-profile funding leg is visible.
+func (f *invariantTxRepo) SumLivePaymentsByInvoiceID(invoiceID string) (float64, error) {
+	var total float64
+	for _, tx := range f.installments {
+		if tx.PaidInvoiceID == nil || *tx.PaidInvoiceID != invoiceID {
+			continue
+		}
+		if tx.Status != transaction.StatusConfirmed {
+			continue
+		}
+		total += tx.Amount
+	}
+	return total, nil
+}
+
 // The embedded interface is nil, so every method the check calls has to exist here or
 // the test panics instead of failing — which is a fine signal, but only once.
 // Honours the two filters the invariants actually depend on. Returning everything
@@ -452,5 +469,42 @@ func TestCheckInvariants_ReportsWhetherTheAccountIsStillActive(t *testing.T) {
 				t.Error("OK = true: a balance must match its ledger whether or not the account is open")
 			}
 		})
+	}
+}
+
+// A planned payment has not moved money, so it cannot make a bill look overpaid.
+//
+// The invariant asks the bill how much it has been paid, and that question means
+// "CONFIRMED only" in the repository. A fake that answered otherwise would let the
+// report cry wolf on every bill with a scheduled payment against it.
+func TestCheckInvariants_APlannedPaymentDoesNotCountAsPaid(t *testing.T) {
+	card := invariantCheckingAccount("card-1", 0, 0)
+	card.Type = bankaccount.AccountTypeCreditCard
+	accounts := &invariantAccountRepo{accounts: []*bankaccount.BankAccount{card}}
+
+	ref := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	invoices := &invariantInvoiceRepo{byAccount: map[string][]*invoice.Invoice{
+		"card-1": {{ID: "inv", BankAccountID: "card-1", ReferenceDate: ref, Amount: 1000, Status: invoice.StatusClosed}},
+	}}
+	txs := &invariantTxRepo{
+		balances:    map[string]float64{"card-1": 0},
+		invoiceSums: map[string]float64{"inv": 1000},
+		installments: []*transaction.Transaction{
+			// Scheduled for next week, five times the bill. Money that has not moved.
+			{ID: "planejado", ProfileID: "p", BankAccountID: "conta",
+				DestinationAccountID: strPtr("card-1"),
+				Type:                 transaction.TypeTransfer, Status: transaction.StatusPlanned,
+				Amount: 5000, Currency: "BRL", Description: "Pagamento fatura",
+				OccurredOn: ref, PaidInvoiceID: strPtr("inv")},
+		},
+	}
+
+	uc := NewCheckInvariantsUseCase(accounts, txs, invoices)
+	result, err := uc.Execute()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.PaymentDrifts) != 0 {
+		t.Fatalf("drifts = %+v, want none: a scheduled payment is not a payment", result.PaymentDrifts)
 	}
 }

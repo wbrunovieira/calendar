@@ -135,8 +135,23 @@ func monthsBetween(from, to time.Time) []string {
 	return out
 }
 
-func isInvoiceSettlement(desc string) bool {
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(desc)), "pagamento fatura")
+// isInvoiceSettlement reports whether this row settles a card bill rather than being
+// consumption.
+//
+// paid_invoice_id is the answer whenever it is there: a real payment worded anything
+// else -- "Pro-labore parcial - pagamento minimo do cartao pessoal Nubank" is a
+// genuine row -- was counted as spending in every expense and cashflow report.
+//
+// The description stays as a fallback because 21 funding legs in production carry no
+// link yet, and dropping it would make all of them start counting overnight.
+func isInvoiceSettlement(txn *transaction.Transaction) bool {
+	if txn == nil {
+		return false
+	}
+	if txn.PaidInvoiceID != nil {
+		return true
+	}
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(txn.Description)), "pagamento fatura")
 }
 
 func expenseTrend(byMonth []float64, average float64) string {
@@ -200,7 +215,7 @@ func analyzeExpenses(
 		if tx.Type != transaction.TypeExpense || tx.Status != transaction.StatusConfirmed {
 			continue
 		}
-		if exchange[tx.BankAccountID] || isInvoiceSettlement(tx.Description) {
+		if exchange[tx.BankAccountID] || isInvoiceSettlement(tx) {
 			continue
 		}
 		i, ok := idxOf[tx.OccurredOn.Format("2006-01")]
