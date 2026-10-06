@@ -216,7 +216,13 @@ func (uc *UpdateTransactionUseCase) Execute(id string, input UpdateTransactionIn
 	// A PINNED charge is exempt: its bill was chosen explicitly because the issuer
 	// billed it on a cycle the date does not imply. A pin that any later edit
 	// silently undoes is not a pin.
-	if existing.InvoicePinned {
+	//
+	// A PAYMENT is exempt for a stronger reason: it is not a line of any bill, so
+	// there is no bill for its date to re-derive. Re-filing it as a line while
+	// paid_invoice_id still points at the bill it settled double-counts it -- the
+	// bill's total drops by the payment and its paid_amount keeps the payment -- and
+	// a one-day nudge to the date was enough to trigger it.
+	if existing.InvoicePinned || existing.PaidInvoiceID != nil {
 		// keep the chosen bill
 	} else if existing.BankAccountID != oldAccountID || !existing.OccurredOn.Equal(oldOccurredOn) {
 		if account.Type == bankaccount.AccountTypeCreditCard && isInvoiceLine(typeValue) {

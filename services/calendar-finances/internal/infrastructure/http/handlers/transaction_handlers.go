@@ -459,15 +459,38 @@ func (h *TransactionHandlers) MarkInvoicePayment(w http.ResponseWriter, r *http.
 		err = h.markPaymentUC.Execute(id, strings.TrimSpace(*body.InvoiceID))
 	}
 	if err != nil {
-		// A missing transaction or bill is a 404: reported as 400 it reads as a
-		// malformed request, and the caller retries the same body forever.
-		status := http.StatusBadRequest
-		if errors.Is(err, transactionPkg.ErrNotFound) || errors.Is(err, usecases.ErrInvoiceNotFound) ||
-			errors.Is(err, bankaccount.ErrNotFound) {
-			status = http.StatusNotFound
-		}
-		http.Error(w, err.Error(), status)
+		status, message := mapMarkInvoicePaymentError(err)
+		http.Error(w, message, status)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// mapMarkInvoicePaymentError answers 404 for something that is not there, 400 for a
+// refusal the caller can act on, and 500 for everything else.
+//
+// The default matters as much as the cases. With 400 as the fallback, a Postgres
+// outage came back as "400 Bad Request: reading the transaction: pq: ..." -- the
+// driver error leaked, and callers that retry on 5xx (n8n, the agents) were told
+// their body was malformed and dropped the work instead of retrying. That is the
+// inversion mapTransactionError exists to prevent.
+func mapMarkInvoicePaymentError(err error) (int, string) {
+	switch {
+	case errors.Is(err, transactionPkg.ErrNotFound),
+		errors.Is(err, bankaccount.ErrNotFound),
+		errors.Is(err, usecases.ErrInvoiceNotFound):
+		return http.StatusNotFound, err.Error()
+	case errors.Is(err, usecases.ErrNotACreditCard),
+		errors.Is(err, usecases.ErrNotAnInvoicePayment),
+		errors.Is(err, usecases.ErrPaymentNotConfirmed),
+		errors.Is(err, usecases.ErrInvoiceNotThisCard),
+		errors.Is(err, usecases.ErrInvoiceStillOpen),
+		errors.Is(err, usecases.ErrInvoiceAmountOutOfSync),
+		errors.Is(err, usecases.ErrPaymentExceedsInvoice):
+		return http.StatusBadRequest, err.Error()
+	default:
+		// Deliberately not err.Error(): a wrapped driver error says more about the
+		// database than the caller should see.
+		return http.StatusInternalServerError, "could not record the invoice payment"
+	}
 }

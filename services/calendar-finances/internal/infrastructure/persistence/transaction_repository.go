@@ -550,6 +550,12 @@ func (r *TransactionRepository) Update(txn *transaction.Transaction) (err error)
 			external_id = $21,
 			linked_transaction_id = $22,
 			invoice_pinned = $23,
+			-- paid_invoice_id was in the INSERT, in every SELECT and in the scan, and
+			-- missing from here. A row could therefore be CREATED as the payment of a
+			-- bill and never MARKED as one afterwards: the update silently dropped the
+			-- column, the route that sets it returned 204, and the bill it was meant to
+			-- settle went from PAID to CLOSED with nothing recorded as paid.
+			paid_invoice_id = $24,
 			updated_at = NOW()
 		WHERE id = $1
 	`
@@ -578,6 +584,7 @@ func (r *TransactionRepository) Update(txn *transaction.Transaction) (err error)
 		nullableString(txn.ExternalID),
 		nullableString(txn.LinkedTransactionID),
 		txn.InvoicePinned,
+		nullableString(txn.PaidInvoiceID),
 	)
 	if err != nil {
 		return err
