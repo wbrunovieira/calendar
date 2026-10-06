@@ -351,3 +351,78 @@ func TestApplyCycles_LeavesAPinnedChargeAlone(t *testing.T) {
 		t.Fatalf("invoiceID = %v; the repair undid an explicit choice", pinned.InvoiceID)
 	}
 }
+
+// Reshaping a window must NOT recruit a line that had no bill.
+//
+// Moving a boundary can move a line between bills — that is the repair. Picking up
+// an ORPHAN is a different operation, it belongs to the reattach repair, and that one
+// demands an explicit list precisely because the data cannot tell a legacy invoice
+// payment from a credit.
+//
+// On the real Nubank card it did exactly that: two payments with no PaidInvoiceID,
+// R$ 2.693,73 and R$ 127,34, were swept into a bill and turned its total negative.
+func TestApplyCycles_DoesNotRecruitAnOrphanLine(t *testing.T) {
+	uc, invRepo, txRepo, cardID := shiftedCycleFixture(t)
+
+	orphan := &transaction.Transaction{
+		ID: "pagamento", ProfileID: "wb", BankAccountID: cardID,
+		Type: transaction.TypeIncome, Status: transaction.StatusConfirmed,
+		Amount: 2693.73, Currency: "BRL", Description: "Pagamento fatura",
+		OccurredOn: day(2026, 1, 10), // inside the new window
+	}
+	txRepo.created = append(txRepo.created, orphan)
+
+	if _, err := uc.Execute(cardID, []string{"2026-01-01"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !invRepo.invoices["inv-shifted"].ClosingDate.Equal(day(2026, 1, 27)) {
+		t.Fatal("the window was not reshaped")
+	}
+	if orphan.InvoiceID != nil {
+		t.Fatalf("an orphan was swept into bill %v: a payment filed as a bill line makes a settled bill read smaller", *orphan.InvoiceID)
+	}
+}
+
+// A cycle that closes on 27/12 cannot fall due on 03/02. When the WINDOW is
+// corrected, the due date derived from the wrong window is wrong too and has to
+// follow — otherwise two bills end up sharing a due date, which is how the Nubank
+// card finished with an impossible pair.
+//
+// This does not contradict refusing TERMS_CHANGED: there the window is already right
+// and only the due date differs, which reflects the terms as they were. Here the
+// window itself was wrong.
+func TestApplyCycles_TheDueDateFollowsTheWindow(t *testing.T) {
+	const cardID, profileID = "card", "wb"
+	card := creditCardAccountWith(profileID, cardID, 27, 3)
+
+	// The real shape from the Nubank card: the window belongs to December and the
+	// due date says February. Two bills ended up sharing 03/02 because of it.
+	shifted := &invoice.Invoice{
+		ID: "inv-dez", BankAccountID: cardID,
+		OpeningDate:   day(2025, 12, 2),
+		ClosingDate:   day(2026, 1, 1),
+		DueDate:       day(2026, 2, 3),
+		ReferenceDate: day(2025, 12, 1),
+		Status:        invoice.StatusPaid,
+	}
+	invRepo := &fakeInvoiceRepo{invoices: map[string]*invoice.Invoice{shifted.ID: shifted}}
+	uc := NewApplyInvoiceCyclePlanUseCase(
+		&fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{cardID: card}},
+		&fakeTransactionRepo{}, invRepo,
+	)
+
+	if _, err := uc.Execute(cardID, []string{"2025-12-01"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := invRepo.invoices["inv-dez"]
+	if !got.ClosingDate.Equal(day(2025, 12, 27)) {
+		t.Fatalf("closing = %s, want 2025-12-27", got.ClosingDate.Format("2006-01-02"))
+	}
+	if got.DueDate.Equal(day(2026, 2, 3)) {
+		t.Fatal("the window moved to December and the due date stayed in February: the bill claims a cycle it does not bill")
+	}
+	if !got.DueDate.Equal(day(2026, 1, 3)) {
+		t.Fatalf("due = %s, want 2026-01-03 (day 3 after the cycle that closes 27/12)",
+			got.DueDate.Format("2006-01-02"))
+	}
+}
