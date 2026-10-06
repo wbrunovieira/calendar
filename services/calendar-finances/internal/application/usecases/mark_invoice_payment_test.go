@@ -761,3 +761,33 @@ func TestMarkPayment_OnlyATransferResolvesTheCardFromItsDestination(t *testing.T
 		t.Fatalf("err = %v, want ErrNotACreditCard", err)
 	}
 }
+
+// A bill can record an amount paid that no transaction supports: inv.Pay() wrote it
+// directly, before paid_invoice_id existed. RestatePayments is the deliberate act
+// that brings it back to what the payments actually say -- which linking refuses to
+// do as a side effect, and rightly.
+func TestRestatePayments_ClearsAnAmountNoTransactionSupports(t *testing.T) {
+	uc, _, invRepo := paymentFixture(t)
+	fantasma := 2980.62
+	invRepo.invoices["inv"].PaidAmount = &fantasma
+
+	restater := NewRecalculateInvoiceAmountUseCase(invRepo, uc.txRepo)
+	out, err := restater.RestatePayments("inv")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.PaidAmount != nil {
+		t.Fatalf("paidAmount = %v, want nothing: no transaction settles this bill", out.PaidAmount)
+	}
+	if out.Status == invoice.StatusPaid {
+		t.Error("the bill still claims to be paid with nothing behind it")
+	}
+
+	// And once it is honest, linking the real payment goes through.
+	if err := uc.Execute("pagamento", "inv"); err != nil {
+		t.Fatalf("linking after the reset: %v", err)
+	}
+	if got := invRepo.invoices["inv"].PaidAmount; got == nil || *got != 2693.73 {
+		t.Fatalf("paidAmount = %v, want 2693.73", got)
+	}
+}

@@ -10,35 +10,68 @@ import (
 	transactionPkg "github.com/brunovieira/calendar-finances/internal/domain/transaction"
 )
 
-// Refusals, each its own sentinel so the HTTP layer can answer 400 for a bad request
-// and 500 for a failure. Returning one code for both told a retrying caller its body
-// was malformed when the database was down.
+// ErrPaymentRefused marks a refusal the caller can act on, as opposed to a failure.
+//
+// It exists because the two were told apart by a hand-written list in the HTTP layer,
+// and ErrWouldLowerRecordedPayment was left off it: a guard that had both numbers to
+// report came back as 500 "could not record the invoice payment", in the middle of a
+// real repair. Carrying the marker on the sentinel itself means a new guard is mapped
+// by construction instead of by remembering.
+var ErrPaymentRefused = errors.New("the payment was refused")
+
+// paymentRefusal is a sentinel that also answers to ErrPaymentRefused.
+type paymentRefusal struct{ msg string }
+
+func (e *paymentRefusal) Error() string { return e.msg }
+
+// Is answers for the marker; identity still works for the sentinel itself, because
+// each is a distinct pointer.
+func (e *paymentRefusal) Is(target error) bool { return target == ErrPaymentRefused }
+
+func refuse(msg string) error { return &paymentRefusal{msg: msg} }
+
+// The refusals. Each is its own sentinel so a caller can tell them apart, and each
+// carries the marker so the HTTP layer answers 400 without a list to maintain.
 var (
 	// ErrNotAnInvoicePayment is returned when the transaction cannot settle a bill.
-	ErrNotAnInvoicePayment = errors.New("only a credit on the card can be a payment of its bill")
+	ErrNotAnInvoicePayment = refuse("only a credit on the card can be a payment of its bill")
 	// ErrPaymentNotConfirmed rejects money that has not moved.
-	ErrPaymentNotConfirmed = errors.New("only a confirmed credit can settle a bill")
+	ErrPaymentNotConfirmed = refuse("only a confirmed credit can settle a bill")
 	// ErrInvoiceNotThisCard rejects another card's bill.
-	ErrInvoiceNotThisCard = errors.New("that bill belongs to another card")
+	ErrInvoiceNotThisCard = refuse("that bill belongs to another card")
 	// ErrInvoiceStillOpen rejects a cycle that is still accruing charges.
-	ErrInvoiceStillOpen = errors.New("that cycle is still open, so it has nothing settled yet")
+	ErrInvoiceStillOpen = refuse("that cycle is still open, so it has nothing settled yet")
 	// ErrInvoiceAmountOutOfSync rejects a bill whose stored total already disagrees
 	// with the lines linked to it, because restating it would overwrite a statement
 	// figure with an incomplete sum.
-	ErrInvoiceAmountOutOfSync = errors.New("the bill's stored total does not match its own lines")
+	ErrInvoiceAmountOutOfSync = refuse("the bill's stored total does not match its own lines")
 	// ErrPaymentExceedsInvoice rejects recording more paid than the bill is worth.
-	ErrPaymentExceedsInvoice = errors.New("that would record more paid than the bill is worth")
+	ErrPaymentExceedsInvoice = refuse("that would record more paid than the bill is worth")
 	// ErrPaymentAlreadyRecorded rejects the second row of ONE payment. A cross-profile
 	// payment creates two linked rows for a single movement of money, and linking both
 	// records the bill as paid twice over.
-	ErrPaymentAlreadyRecorded = errors.New("the other half of this same payment already settles that bill")
+	ErrPaymentAlreadyRecorded = refuse("the other half of this same payment already settles that bill")
 	// ErrWouldLowerRecordedPayment rejects a restatement that would reduce what a bill
 	// records as paid, because the amount being dropped has no transaction behind it
 	// and dropping it silently turns a settled bill into an owed one.
-	ErrWouldLowerRecordedPayment = errors.New("that would reduce what the bill records as paid")
+	ErrWouldLowerRecordedPayment = refuse("that would reduce what the bill records as paid")
 	// ErrCardCannotFundAPayment rejects a transfer whose source is itself a card.
-	ErrCardCannotFundAPayment = errors.New("a credit card cannot fund the payment of a bill")
+	ErrCardCannotFundAPayment = refuse("a credit card cannot fund the payment of a bill")
 )
+
+// amountTolerance is one cent: the sums are money, rounded to cents on both sides.
+const amountTolerance = 0.01
+
+// invoiceLineSign is how a row contributes to its bill's total, mirroring
+// SumByInvoiceID's `CASE WHEN type = 'INCOME' THEN -amount ELSE amount END`. A credit
+// lowers the bill; anything else raises it. Getting this backwards for a TRANSFER let
+// a bill of 1.000,00 be recorded as paid 2.000,00.
+func invoiceLineContribution(txn *transactionPkg.Transaction) float64 {
+	if txn.Type == transactionPkg.TypeIncome {
+		return -txn.Amount
+	}
+	return txn.Amount
+}
 
 // settlesABill reports whether this transaction can settle a bill at all: a credit on
 // the card, or the funding leg of a payment into it. load() has already established
@@ -55,20 +88,6 @@ func settlesABill(txn *transactionPkg.Transaction) bool {
 		return false
 	}
 }
-
-// invoiceLineSign is how a row contributes to its bill's total, mirroring
-// SumByInvoiceID's `CASE WHEN type = 'INCOME' THEN -amount ELSE amount END`. A credit
-// lowers the bill; anything else raises it. Getting this backwards for a TRANSFER let
-// a bill of 1.000,00 be recorded as paid 2.000,00.
-func invoiceLineContribution(txn *transactionPkg.Transaction) float64 {
-	if txn.Type == transactionPkg.TypeIncome {
-		return -txn.Amount
-	}
-	return txn.Amount
-}
-
-// amountTolerance is one cent: the sums are money, rounded to cents on both sides.
-const amountTolerance = 0.01
 
 // MarkInvoicePaymentUseCase records that a card credit SETTLES a bill rather than
 // being a line of one.

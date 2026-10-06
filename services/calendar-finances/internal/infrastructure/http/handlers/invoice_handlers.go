@@ -244,3 +244,31 @@ func (h *InvoiceHandlers) Recalculate(w http.ResponseWriter, r *http.Request) {
 
 	respondJSON(w, map[string]any{"data": invoice})
 }
+
+// RestatePayments handles POST /api/v1/invoices/{id}/restate-payments.
+//
+// It brings a bill's PAID amount back in line with the payment entries that still
+// name it, which is the only way to clear an amount recorded by Pay() with no
+// transaction behind it. Production carries several: a bill records 1.000,82 paid
+// where the statement shows 940,92, and linking the real payment is refused for
+// lowering the figure -- correctly, because the drop has to be a deliberate act and
+// not a side effect. This is that act.
+//
+// It is separate from Recalculate on purpose: that one derives the bill's TOTAL from
+// its lines, this one derives what it was PAID from its payments. Conflating them is
+// how a recalculation started erasing payment records.
+func (h *InvoiceHandlers) RestatePayments(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+
+	inv, err := h.recalculateUC.RestatePayments(id)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, usecases.ErrInvoiceNotFound) {
+			status = http.StatusNotFound
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+
+	respondJSON(w, map[string]any{"data": inv})
+}

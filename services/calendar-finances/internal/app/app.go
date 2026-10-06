@@ -470,6 +470,7 @@ func New(db *sql.DB) (*App, error) {
 	apiRouter.HandleFunc("/invoices/{id}/close", invoiceHandler.Close).Methods("POST")
 	apiRouter.HandleFunc("/invoices/{id}/pay", invoiceHandler.Pay).Methods("POST")
 	apiRouter.HandleFunc("/invoices/{id}/recalculate", invoiceHandler.Recalculate).Methods("POST")
+	apiRouter.HandleFunc("/invoices/{id}/restate-payments", invoiceHandler.RestatePayments).Methods("POST")
 
 	// Crypto routes
 	if cryptoHandler != nil {
