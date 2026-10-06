@@ -131,6 +131,15 @@ func (uc *ApplyInvoiceCyclePlanUseCase) Execute(bankAccountID string, approve []
 			}
 			inv.OpeningDate = action.CanonicalOpening
 			inv.ClosingDate = action.CanonicalClosing
+			// The due date follows. A cycle that closes on 27/12 cannot fall due on
+			// 03/02, and leaving the old one behind put two bills on the same due
+			// date — each claiming a cycle it does not bill.
+			//
+			// This does not contradict refusing TERMS_CHANGED. There the window is
+			// already right and only the due date differs, which reflects the card's
+			// terms as they were. Here the window itself was wrong, so everything
+			// derived from it was too.
+			inv.DueDate = action.CanonicalDue
 			if err := uc.invoiceRepo.Update(inv); err != nil {
 				report.Failed = append(report.Failed, FailedAction{key, action.Kind, err.Error()})
 				continue
@@ -210,6 +219,19 @@ func (uc *ApplyInvoiceCyclePlanUseCase) refileAgainstNewWindows(
 	moved := 0
 	for _, txn := range txns {
 		if txn.BankAccountID != account.ID || txn.PaidInvoiceID != nil {
+			continue
+		}
+		if txn.InvoiceID == nil {
+			// Never recruit a line that had no bill. Moving a boundary can move a
+			// line BETWEEN bills — that is the repair. Picking up an orphan is a
+			// different operation: it belongs to the reattach repair, which demands
+			// an explicit list precisely because the data cannot tell a legacy
+			// invoice payment from a credit.
+			//
+			// Skipping that here is not a detail. On the real Nubank card this swept
+			// two payments with no PaidInvoiceID into a bill and turned its total
+			// negative — the exact damage the explicit list was built to prevent,
+			// arriving through the one path that did not ask for one.
 			continue
 		}
 		if txn.InvoicePinned {
