@@ -206,18 +206,27 @@ func (uc *ReattachOrphanInvoiceLinesUseCase) Execute(bankAccountID string, apply
 // the stored total is the number anyone actually reads.
 func (uc *ReattachOrphanInvoiceLinesUseCase) settleTotals(touched map[string]bool, report *ReattachReport) error {
 	for invoiceID := range touched {
-		_, err := uc.recalc.Execute(invoiceID)
-		if err == nil {
-			report.Recalculated = append(report.Recalculated, invoiceID)
-			continue
-		}
-		if !errors.Is(err, ErrInvoiceAlreadyPaid) {
-			return fmt.Errorf("refreshing bill %s: %w", invoiceID, err)
-		}
-		// A settled bill: report the gap instead of rewriting it.
+		// Reading the bill first, because the decision not to rewrite a settled one
+		// belongs HERE. It used to come for free from Execute refusing a PAID bill;
+		// Execute no longer does, since that refusal made a stale cache permanent on
+		// bills nothing else could resync. A bulk sweep is a different matter from a
+		// named repair: this one walks every touched bill at once, so it reports a
+		// settled bill's gap for a person to look at rather than rewriting history
+		// unasked.
 		inv, findErr := uc.invoiceRepo.FindByID(invoiceID)
 		if findErr != nil {
-			return fmt.Errorf("reading settled bill %s: %w", invoiceID, findErr)
+			return fmt.Errorf("reading bill %s: %w", invoiceID, findErr)
+		}
+		if inv == nil {
+			return fmt.Errorf("bill %s is gone", invoiceID)
+		}
+
+		if inv.Status != invoice.StatusPaid {
+			if _, err := uc.recalc.Execute(invoiceID); err != nil {
+				return fmt.Errorf("refreshing bill %s: %w", invoiceID, err)
+			}
+			report.Recalculated = append(report.Recalculated, invoiceID)
+			continue
 		}
 		computed, sumErr := uc.txRepo.SumByInvoiceID(invoiceID)
 		if sumErr != nil {
