@@ -26,6 +26,14 @@ const (
 	// missing transaction behind it. Chasing that number would be chasing the
 	// design, not a bug. Phase 1 makes the balance derived and deletes this note.
 	noteCreditCardSnapshot = "credit card balance is a snapshot of the last invoice payment"
+	// noteIssuerRounding explains a cent-level excess between what a bill was paid
+	// and the sum of its own lines. Nubank's "Total a pagar" is rounded by the
+	// issuer, so summing the lines cannot reproduce it to the cent.
+	// issuerRoundingTolerance is two cents: the documented spread between Nubank's
+	// official total and the sum of the lines behind it.
+	issuerRoundingTolerance = 0.02
+
+	noteIssuerRounding = "the issuer rounds its own total, so a cent or two cannot be reproduced by summing the lines"
 
 	// A PAID invoice's total cannot be brought back in line: POST
 	// /invoices/{id}/recalculate refuses PAID. An OPEN or CLOSED one can, by
@@ -102,6 +110,9 @@ type PaymentInvariant struct {
 	InvoiceAmount float64 `json:"invoiceAmount"`
 	PaidTotal     float64 `json:"paidTotal"`
 	Excess        float64 `json:"excess"`
+	// Note explains an excess that is expected rather than wrong. Empty means the
+	// excess is real and fails the check.
+	Note string `json:"note,omitempty"`
 }
 
 // CheckInvariantsResult is a read-only report. Nothing here writes: a drift is a
@@ -233,12 +244,24 @@ func (uc *CheckInvariantsUseCase) checkPaymentsAgainstBills(
 		if total <= worth+0.005 {
 			continue
 		}
+		excess := round2(total - worth)
+		// An issuer rounds its own "total a pagar", so the raw sum of a bill's lines
+		// lands a cent or two off the amount it actually charged -- and the amount it
+		// charged is what was paid. Reported with the reason, like a balance that
+		// tracks market quotes, and not failed: an alarm nobody can clear is an alarm
+		// everybody learns to ignore, which costs more than the cent.
+		note := ""
+		if excess <= issuerRoundingTolerance+0.005 {
+			note = noteIssuerRounding
+		}
 		result.PaymentDrifts = append(result.PaymentDrifts, PaymentInvariant{
 			InvoiceID: inv.ID, BankAccountID: account.ID,
 			InvoiceAmount: worth, PaidTotal: total,
-			Excess: round2(total - worth),
+			Excess: excess, Note: note,
 		})
-		result.OK = false
+		if note == "" {
+			result.OK = false
+		}
 	}
 	return nil
 }
