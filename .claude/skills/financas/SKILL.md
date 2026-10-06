@@ -200,6 +200,86 @@ Errors: unknown account → **404**; oversell / no quotas / not linked / bad inp
 
 ⚠️ **Tax is NOT computed** — the model stores no average cost, so this route can't figure realized profit/DARF. FII/FIAGRO capital gains are **20% via DARF (código 6015)**, no R$20k exemption; compute it by hand from the broker's average price and the sale price.
 
+## "Is everything right?" — ask the system, not yourself
+
+```bash
+curl -s ".../health/invariants"     # {"ok": true/false, ...}
+```
+`ok: true` means every derived number agrees with the transactions behind it. When it
+is false, the payload names the drift with both figures. Five categories:
+
+| category | what it means |
+|---|---|
+| `accountDrifts` | stored balance ≠ sum of transactions |
+| `invoiceDrifts` | a bill's stored total ≠ the lines linked to it |
+| `cycleDrifts` | two cycles overlap, or a day belongs to no bill (a purchase there is orphaned) |
+| `installmentDrifts` | a plan with a part missing or duplicated |
+| `paymentDrifts` | a bill records more paid than it is worth |
+
+**A drift carrying a `note` is expected and does NOT set `ok: false`.** Three notes
+exist, all real: a position priced by quotas tracks market quotes rather than
+transactions; a credit card's stored balance is a snapshot of the last invoice
+payment; and an issuer rounds its own "total a pagar", so a cent or two cannot be
+reproduced by summing the lines. **Do not chase a noted drift** — an alarm nobody can
+clear is an alarm everybody learns to ignore.
+
+Repair routes, in the order they are usually needed:
+```bash
+# a card's cycles do not tile its timeline (gaps/overlaps)
+curl -s ".../bank-accounts/{cardId}/invoice-cycles/plan"                     # GET, dry
+curl -s -X POST ".../bank-accounts/{cardId}/invoice-cycles/apply?referenceDate=2026-01-01&referenceDate=2026-02-01"
+# charges on the card that belong to no bill
+curl -s -X POST ".../bank-accounts/{cardId}/invoice-cycles/reattach"         # DRY RUN by default
+```
+
+## Invoice payments: one payment = ONE row
+
+The canonical shape, and the one 24 of 31 real payments use:
+
+> a **`TRANSFER` on the account that paid**, with `destinationAccountId` = the card
+> and `paidInvoiceId` = the bill.
+
+That single row debits the account, credits the card (the balance query credits a
+TRANSFER's destination) and tells the bill how much was settled — and stays out of
+income/expense, which is why `POST /invoices/{id}/pay` creates it instead of an
+EXPENSE+INCOME pair (a pair "polluted the monthly cashflow everywhere").
+
+**Two rows for one event is how a card gets credited twice.** One row cannot. A credit
+ON the card (`INCOME` + `paidInvoiceId`) is the shape for a payment made from an
+account the system does not know — **never alongside the funding leg**.
+
+```bash
+# record that a row SETTLES a bill (accepts the funding leg OR a card-side credit)
+curl -s -X POST ".../transactions/{id}/paid-invoice" -d '{"invoiceId":"<INV>"}'   # 204
+curl -s -X POST ".../transactions/{id}/paid-invoice" -d '{"invoiceId":null}'      # undo
+```
+It **refuses with 400 and both numbers** when the bill's stored total disagrees with
+its own lines, when the bill would read more paid than it is worth, when the other
+half of the same payment already settles it, when it would *reduce* what the bill
+records as paid, when the cycle is still OPEN, or when the payment is not CONFIRMED.
+**Treat a refusal as a diagnosis, never as something to force.** The usual cure:
+
+```bash
+curl -s -X POST ".../invoices/{id}/recalculate"        # total := sum of its LINES
+curl -s -X POST ".../invoices/{id}/restate-payments"   # paid  := sum of its PAYMENTS
+```
+The two are deliberately separate — conflating them is how a recalculation started
+erasing payment records. `restate-payments` is the only way to clear a `paidAmount`
+written by `Pay()` with no transaction behind it, and lowering it has to be that
+explicit act rather than a side effect of linking.
+
+`PUT /invoices/{id}` accepts a new **`dueDate`** on a settled bill (the bank shifts
+due dates to business days, so several were 1–4 days off); `openingDate`/`closingDate`
+are still refused there, because they decide which charges belong to the bill.
+
+### A third category that is neither a payment nor a purchase
+Nubank's financing bookkeeping. `Credito de parcelamento` and `Encerramento de divida`
+**settle** a bill without cash and come back as instalments on later bills — mark them
+as the payment of the bill they settle. But `Credito de atraso` (credit) pairs with
+`Saldo em atraso` (debit) of the same amount and **nets to zero**: both are lines,
+leave them alone. Two of those pairs looked exactly like duplicate credits and were
+nearly reversed.
+
 ## Recurrences
 Model: a recurrence uses an **RRULE** + dates, not `dayOfMonth`. Actual fields: `recurrenceRule` (e.g. `FREQ=MONTHLY;BYMONTHDAY=13`), `startOn`, `nextOccurrence`, `amount`, `status` (ACTIVE/PAUSED/CANCELLED).
 ```bash
