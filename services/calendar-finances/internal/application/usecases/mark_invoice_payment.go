@@ -28,6 +28,16 @@ var (
 	ErrInvoiceAmountOutOfSync = errors.New("the bill's stored total does not match its own lines")
 	// ErrPaymentExceedsInvoice rejects recording more paid than the bill is worth.
 	ErrPaymentExceedsInvoice = errors.New("that would record more paid than the bill is worth")
+	// ErrPaymentAlreadyRecorded rejects the second row of ONE payment. A cross-profile
+	// payment creates two linked rows for a single movement of money, and linking both
+	// records the bill as paid twice over.
+	ErrPaymentAlreadyRecorded = errors.New("the other half of this same payment already settles that bill")
+	// ErrWouldLowerRecordedPayment rejects a restatement that would reduce what a bill
+	// records as paid, because the amount being dropped has no transaction behind it
+	// and dropping it silently turns a settled bill into an owed one.
+	ErrWouldLowerRecordedPayment = errors.New("that would reduce what the bill records as paid")
+	// ErrCardCannotFundAPayment rejects a transfer whose source is itself a card.
+	ErrCardCannotFundAPayment = errors.New("a credit card cannot fund the payment of a bill")
 )
 
 // settlesABill reports whether this transaction can settle a bill at all: a credit on
@@ -44,6 +54,17 @@ func settlesABill(txn *transactionPkg.Transaction) bool {
 	default:
 		return false
 	}
+}
+
+// invoiceLineSign is how a row contributes to its bill's total, mirroring
+// SumByInvoiceID's `CASE WHEN type = 'INCOME' THEN -amount ELSE amount END`. A credit
+// lowers the bill; anything else raises it. Getting this backwards for a TRANSFER let
+// a bill of 1.000,00 be recorded as paid 2.000,00.
+func invoiceLineContribution(txn *transactionPkg.Transaction) float64 {
+	if txn.Type == transactionPkg.TypeIncome {
+		return -txn.Amount
+	}
+	return txn.Amount
 }
 
 // amountTolerance is one cent: the sums are money, rounded to cents on both sides.
@@ -66,6 +87,33 @@ type MarkInvoicePaymentUseCase struct {
 	accountRepo bankaccount.Repository
 	txRepo      transactionPkg.Repository
 	invoiceRepo invoice.Repository
+	atomically  UnitOfWork
+}
+
+// SetUnitOfWork makes the marking all-or-nothing.
+//
+// Execute writes the row and then up to three bills. Without this, a failure after
+// the row moved left the payment pointing at one bill while another still recorded it
+// -- and the promise that refusals precede the first write says nothing about a
+// failure BETWEEN writes. The repair walks a list, so it has to be resumable.
+func (uc *MarkInvoicePaymentUseCase) SetUnitOfWork(u UnitOfWork) { uc.atomically = u }
+
+// boundTo returns a copy whose repositories write through the open transaction.
+// Holding repositories built on the *sql.DB while inside someone else's transaction
+// is how writes that must land together land one by one.
+func (uc *MarkInvoicePaymentUseCase) boundTo(r TxRepos) *MarkInvoicePaymentUseCase {
+	bound := *uc
+	bound.atomically = nil
+	if r.Transactions != nil {
+		bound.txRepo = r.Transactions
+	}
+	if r.Invoices != nil {
+		bound.invoiceRepo = r.Invoices
+	}
+	if r.Accounts != nil {
+		bound.accountRepo = r.Accounts
+	}
+	return &bound
 }
 
 func NewMarkInvoicePaymentUseCase(
@@ -86,6 +134,15 @@ func NewMarkInvoicePaymentUseCase(
 // Every refusal happens BEFORE the first write. A repair that fails halfway leaves a
 // credit belonging to no bill and settling no bill, which no route can then find.
 func (uc *MarkInvoicePaymentUseCase) Execute(transactionID, invoiceID string) error {
+	if uc.atomically != nil {
+		return uc.atomically.Do(func(r TxRepos) error {
+			return uc.boundTo(r).mark(transactionID, invoiceID)
+		})
+	}
+	return uc.mark(transactionID, invoiceID)
+}
+
+func (uc *MarkInvoicePaymentUseCase) mark(transactionID, invoiceID string) error {
 	txn, account, err := uc.load(transactionID)
 	if err != nil {
 		return err
@@ -121,9 +178,10 @@ func (uc *MarkInvoicePaymentUseCase) Execute(transactionID, invoiceID string) er
 		return ErrInvoiceStillOpen
 	}
 
-	// The bill the credit currently settles, if any. Re-pointing has to take the
-	// payment OFF it: restating only the new bill left the old one reading PAID with
-	// no payment behind it, and GetCreditUsage handing back that much phantom limit.
+	// The bill the row currently SETTLES, if a different one. Re-pointing has to take
+	// the payment off it: restating only the new bill left the old one reading PAID
+	// with no payment behind it, and GetCreditUsage handing back that much phantom
+	// limit.
 	var previous *invoice.Invoice
 	if txn.PaidInvoiceID != nil && *txn.PaidInvoiceID != inv.ID {
 		previous, err = uc.invoiceRepo.FindByID(*txn.PaidInvoiceID)
@@ -132,11 +190,29 @@ func (uc *MarkInvoicePaymentUseCase) Execute(transactionID, invoiceID string) er
 		}
 	}
 
-	if err := uc.checkRestatable(inv); err != nil {
+	// The bill the row is currently a LINE of -- a different thing, and the normal
+	// case: the date rule files a payment made on 03/08 into the cycle that opens
+	// 27/07, so the bill it leaves is almost never the bill it settles. Leaving that
+	// bill unrestated left it stating a total its own lines no longer support, which
+	// GetCreditUsage then reads as credit consumed.
+	var leaving *invoice.Invoice
+	if txn.InvoiceID != nil && *txn.InvoiceID != inv.ID {
+		leaving, err = uc.invoiceRepo.FindByID(*txn.InvoiceID)
+		if err != nil {
+			return fmt.Errorf("reading the bill it is filed in: %w", err)
+		}
+	}
+
+	// A cross-profile payment is ONE movement of money written as two linked rows.
+	// Linking both records the bill as paid twice, and the money comparison alone
+	// cannot see it whenever the bill is at least twice the payment.
+	if err := uc.checkNotTheOtherHalf(txn, inv); err != nil {
 		return err
 	}
-	if err := uc.checkRestatable(previous); err != nil {
-		return err
+	for _, bill := range []*invoice.Invoice{inv, previous, leaving} {
+		if err := uc.checkRestatable(bill); err != nil {
+			return err
+		}
 	}
 	// The same payment can reach a bill twice: once as the funding account's TRANSFER
 	// leg created by /invoices/{id}/pay, once as the card-side credit imported from
@@ -158,10 +234,43 @@ func (uc *MarkInvoicePaymentUseCase) Execute(transactionID, invoiceID string) er
 		return fmt.Errorf("marking the payment: %w", err)
 	}
 
-	if err := uc.restate(inv); err != nil {
+	// inv must only gain, and leaving is losing a LINE, not a payment -- a drop in
+	// either is an accident. previous is losing the payment itself, which is the
+	// point of re-pointing, so there a drop is expected.
+	if err := uc.restate(inv, restateKeepingWhatWasPaid); err != nil {
 		return err
 	}
-	return uc.restate(previous)
+	if err := uc.restate(leaving, restateKeepingWhatWasPaid); err != nil {
+		return err
+	}
+	return uc.restate(previous, restateAllowingADrop)
+}
+
+// checkNotTheOtherHalf refuses the second row of one payment.
+//
+// A cross-profile transfer and PayInvoiceV2 both write two mutually linked rows for a
+// single movement of money. checkNotOverpaid compares money only, so it misses the
+// pair whenever the bill is at least twice the payment -- and two such pairs already
+// exist on the WB card.
+func (uc *MarkInvoicePaymentUseCase) checkNotTheOtherHalf(txn *transactionPkg.Transaction, inv *invoice.Invoice) error {
+	if txn.LinkedTransactionID == nil {
+		return nil
+	}
+	other, err := uc.txRepo.GetByID(*txn.LinkedTransactionID)
+	if err != nil {
+		if errors.Is(err, transactionPkg.ErrNotFound) {
+			// The partner is gone; nothing can be double counted through it.
+			return nil
+		}
+		return fmt.Errorf("reading the other half of this payment: %w", err)
+	}
+	if other == nil || other.PaidInvoiceID == nil {
+		return nil
+	}
+	if *other.PaidInvoiceID == inv.ID {
+		return ErrPaymentAlreadyRecorded
+	}
+	return nil
 }
 
 // checkRestatable refuses a bill whose stored total already disagrees with the lines
@@ -198,11 +307,13 @@ func (uc *MarkInvoicePaymentUseCase) checkNotOverpaid(inv *invoice.Invoice, txn 
 		// Already counted: this is a re-run, not a second payment.
 		return nil
 	}
-	// Detaching the credit from the bill's lines raises the total by its amount, so
-	// the comparison is against the total the bill will have.
+	// Detaching the row from the bill's lines changes the total by its contribution,
+	// so the comparison is against the total the bill WILL have. A credit contributes
+	// -amount and a transfer +amount: adding the amount in both cases let a bill of
+	// 1.000,00 be recorded as paid 2.000,00.
 	willOwe := inv.Amount
 	if txn.InvoiceID != nil && *txn.InvoiceID == inv.ID {
-		willOwe += txn.Amount
+		willOwe -= invoiceLineContribution(txn)
 	}
 	if paid+txn.Amount > willOwe+amountTolerance {
 		return fmt.Errorf("%w: %.2f already settles a bill of %.2f", ErrPaymentExceedsInvoice, paid, willOwe)
@@ -216,6 +327,15 @@ func (uc *MarkInvoicePaymentUseCase) checkNotOverpaid(inv *invoice.Invoice, txn 
 // wrong: a refund marked as a payment must be able to go back to being a line of the
 // bill, without an operator editing a column by hand.
 func (uc *MarkInvoicePaymentUseCase) Release(transactionID string) error {
+	if uc.atomically != nil {
+		return uc.atomically.Do(func(r TxRepos) error {
+			return uc.boundTo(r).release(transactionID)
+		})
+	}
+	return uc.release(transactionID)
+}
+
+func (uc *MarkInvoicePaymentUseCase) release(transactionID string) error {
 	txn, account, err := uc.load(transactionID)
 	if err != nil {
 		return err
@@ -259,11 +379,11 @@ func (uc *MarkInvoicePaymentUseCase) Release(transactionID string) error {
 	// Both bills move: the one that loses the payment, and the one that gains the
 	// line. Restating only one of them leaves the other stating a number the
 	// transactions no longer support.
-	if err := uc.restate(settled); err != nil {
+	if err := uc.restate(settled, restateAllowingADrop); err != nil {
 		return err
 	}
 	if target != nil && (settled == nil || target.ID != settled.ID) {
-		return uc.restate(target)
+		return uc.restate(target, restateAllowingADrop)
 	}
 	return nil
 }
@@ -274,7 +394,17 @@ func (uc *MarkInvoicePaymentUseCase) Release(transactionID string) error {
 // RecalculateInvoiceAmountUseCase refuses a PAID bill, which is exactly the state
 // these bills are in — a settled bill is the normal case for a payment, not an
 // exception — so the two sums are taken here instead of through it.
-func (uc *MarkInvoicePaymentUseCase) restate(inv *invoice.Invoice) error {
+// restateIntent says whether a drop in what the bill records as paid is the point of
+// the call or an accident of it. Releasing a payment must lower it; linking one must
+// never do so by surprise.
+type restateIntent int
+
+const (
+	restateKeepingWhatWasPaid restateIntent = iota
+	restateAllowingADrop
+)
+
+func (uc *MarkInvoicePaymentUseCase) restate(inv *invoice.Invoice, intent restateIntent) error {
 	if inv == nil {
 		return nil
 	}
@@ -286,6 +416,15 @@ func (uc *MarkInvoicePaymentUseCase) restate(inv *invoice.Invoice) error {
 	if err != nil {
 		return fmt.Errorf("totalling what was paid: %w", err)
 	}
+	// A restatement that LOWERS what the bill records as paid is refused. The amount
+	// being dropped was written by inv.Pay() with no row carrying paid_invoice_id --
+	// so it cannot be re-derived, and dropping it silently turns a settled bill into
+	// an owed one. Raising it is the repair and goes through.
+	if intent == restateKeepingWhatWasPaid && inv.PaidAmount != nil && *inv.PaidAmount-paid > amountTolerance {
+		return fmt.Errorf("%w: it records %.2f paid and the payments behind it sum to %.2f",
+			ErrWouldLowerRecordedPayment, *inv.PaidAmount, paid)
+	}
+
 	inv.Amount = total
 	// RestatePayments re-derives the status from the two numbers, so a bill whose
 	// total turns out to exceed what was paid correctly stops claiming to be paid.
@@ -325,6 +464,16 @@ func (uc *MarkInvoicePaymentUseCase) load(transactionID string) (*transactionPkg
 	cardID := txn.BankAccountID
 	if txn.Type == transactionPkg.TypeTransfer && txn.DestinationAccountID != nil {
 		cardID = *txn.DestinationAccountID
+		// A card's own balance does not move as cash -- the credit-card guard in
+		// CreateTransaction skips it -- so a transfer out of one cannot fund a bill.
+		// Accepted silently, it let card B's bill read PAID off card A's credit line.
+		source, serr := uc.accountRepo.FindByID(txn.BankAccountID)
+		if serr != nil {
+			return nil, nil, fmt.Errorf("reading the paying account: %w", serr)
+		}
+		if source != nil && source.Type == bankaccount.AccountTypeCreditCard {
+			return nil, nil, ErrCardCannotFundAPayment
+		}
 	}
 
 	account, err := uc.accountRepo.FindByID(cardID)
