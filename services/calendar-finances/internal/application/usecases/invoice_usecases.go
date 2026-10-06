@@ -692,7 +692,12 @@ func (uc *UpdateInvoiceUseCase) Execute(invoiceID string, input UpdateInvoiceInp
 		return nil, ErrInvoiceNotFound
 	}
 
-	if inv.Status == invoice.StatusPaid {
+	// A settled bill keeps its cycle, not its labels. OpeningDate and ClosingDate
+	// decide WHICH charges belong to the bill, so moving them re-files real charges
+	// across two cycles and the settled total stops describing anything. The DUE DATE
+	// decides nothing -- it is what the statement says -- and refusing it made every
+	// wrong due date permanent, with no route to fix it short of editing the column.
+	if inv.Status == invoice.StatusPaid && (input.ClosingDate != nil || input.OpeningDate != nil) {
 		return nil, ErrInvoiceAlreadyPaid
 	}
 

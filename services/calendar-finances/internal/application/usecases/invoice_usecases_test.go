@@ -1444,7 +1444,11 @@ func TestAutoCloseInvoices_ShouldCloseMultipleInvoices(t *testing.T) {
 	}
 }
 
-func TestUpdateInvoice_PaidInvoice_ShouldReturnError(t *testing.T) {
+// A due date is what the statement says, not a consequence of having been paid.
+// Refusing to correct it on a settled bill made every wrong due date permanent: the
+// Nubank PF cycle 27/11..27/12 reads 03/02 where the bank says 05/01, and because the
+// bill is PAID there was no route to fix it short of editing the column by hand.
+func TestUpdateInvoice_PaidInvoice_DueDateIsStillCorrectable(t *testing.T) {
 	f := newTestFixtures()
 
 	inv, _ := invoice.New(invoice.CreateParams{
@@ -1457,15 +1461,61 @@ func TestUpdateInvoice_PaidInvoice_ShouldReturnError(t *testing.T) {
 	f.invoiceRepo.Create(inv)
 
 	useCase := NewUpdateInvoiceUseCase(f.invoiceRepo)
-
 	newDueDate := "2026-03-16"
-	input := UpdateInvoiceInput{
-		DueDate: &newDueDate,
+	updated, err := useCase.Execute(inv.ID, UpdateInvoiceInput{DueDate: &newDueDate})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := updated.DueDate.Format("2006-01-02"); got != newDueDate {
+		t.Errorf("dueDate = %s, want %s", got, newDueDate)
+	}
+	// Correcting a label must not disturb what was settled.
+	if updated.Status != invoice.StatusPaid {
+		t.Errorf("status = %s, want it to stay PAID", updated.Status)
+	}
+	if updated.PaidAmount == nil || *updated.PaidAmount != 500 {
+		t.Errorf("paidAmount = %v, want 500", updated.PaidAmount)
+	}
+}
+
+// The cycle boundaries are a different matter: they decide WHICH charges belong to
+// the bill, so moving them on a settled bill re-files real charges across two cycles
+// and the settled total stops describing anything.
+func TestUpdateInvoice_PaidInvoice_CycleBoundariesStayRefused(t *testing.T) {
+	f := newTestFixtures()
+
+	inv, _ := invoice.New(invoice.CreateParams{
+		BankAccountID: f.cardID,
+		ClosingDay:    f.closingDay,
+		DueDay:        f.dueDay,
+		ReferenceDate: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+	})
+	inv.Pay(500, time.Now())
+	f.invoiceRepo.Create(inv)
+	originalOpening, originalClosing := inv.OpeningDate, inv.ClosingDate
+
+	useCase := NewUpdateInvoiceUseCase(f.invoiceRepo)
+	closing, opening := "2026-03-20", "2026-02-20"
+
+	if _, err := useCase.Execute(inv.ID, UpdateInvoiceInput{ClosingDate: &closing}); err != ErrInvoiceAlreadyPaid {
+		t.Errorf("closingDate: err = %v, want ErrInvoiceAlreadyPaid", err)
+	}
+	if _, err := useCase.Execute(inv.ID, UpdateInvoiceInput{OpeningDate: &opening}); err != ErrInvoiceAlreadyPaid {
+		t.Errorf("openingDate: err = %v, want ErrInvoiceAlreadyPaid", err)
+	}
+	// And a due date sent ALONGSIDE a boundary is refused whole: a partially applied
+	// correction is worse than none.
+	newDue := "2026-03-16"
+	if _, err := useCase.Execute(inv.ID, UpdateInvoiceInput{DueDate: &newDue, ClosingDate: &closing}); err != ErrInvoiceAlreadyPaid {
+		t.Errorf("both: err = %v, want ErrInvoiceAlreadyPaid", err)
 	}
 
-	_, err := useCase.Execute(inv.ID, input)
-	if err != ErrInvoiceAlreadyPaid {
-		t.Errorf("expected ErrInvoiceAlreadyPaid, got %v", err)
+	stored, _ := f.invoiceRepo.FindByID(inv.ID)
+	if !stored.OpeningDate.Equal(originalOpening) || !stored.ClosingDate.Equal(originalClosing) {
+		t.Error("the cycle boundaries of a settled bill were moved")
+	}
+	if stored.DueDate.Format("2006-01-02") == newDue {
+		t.Error("the due date was applied by a call that refused")
 	}
 }
 
