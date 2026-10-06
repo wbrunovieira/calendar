@@ -397,8 +397,11 @@ func New(db *sql.DB) (*App, error) {
 	transactionHandler.SetPinInvoiceUseCase(
 		usecases.NewPinTransactionInvoiceUseCase(bankAccountRepo, transactionRepo, invoiceRepo))
 	apiRouter.HandleFunc("/transactions/{id}/invoice", transactionHandler.PinInvoice).Methods("POST")
-	transactionHandler.SetMarkInvoicePaymentUseCase(
-		usecases.NewMarkInvoicePaymentUseCase(bankAccountRepo, transactionRepo, invoiceRepo))
+	markInvoicePaymentUC := usecases.NewMarkInvoicePaymentUseCase(bankAccountRepo, transactionRepo, invoiceRepo)
+	// Execute writes the row and then up to three bills; they land together or not
+	// at all, so the repair over a list of payments stays resumable.
+	markInvoicePaymentUC.SetUnitOfWork(&boundUnitOfWork{uow: persistence.NewUnitOfWork(db), checkpoints: checkpointRepo, adjustments: adjustmentLog})
+	transactionHandler.SetMarkInvoicePaymentUseCase(markInvoicePaymentUC)
 	apiRouter.HandleFunc("/transactions/{id}/paid-invoice", transactionHandler.MarkInvoicePayment).Methods("POST")
 
 	// Capital Contribution routes (aportes do sócio)

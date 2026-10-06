@@ -416,7 +416,13 @@ func (f *fakeInvoiceRepo) FindByID(id string) (*invoice.Invoice, error) {
 		return nil, f.findByIDErr
 	}
 	if inv, ok := f.invoices[id]; ok {
-		return inv, nil
+		// A COPY, like a row scanned out of Postgres. Returning the stored pointer
+		// made every mutation a use case performed on a bill "persist" with no
+		// Update call at all -- deleting the Update from restate() left the whole
+		// suite green. It is the same defect that shipped in #55 for transactions,
+		// one object over.
+		loaded := *inv
+		return &loaded, nil
 	}
 	return nil, errors.New("not found")
 }
@@ -464,7 +470,25 @@ func (f *fakeInvoiceRepo) Update(inv *invoice.Invoice) error {
 	if f.invoices == nil {
 		return errors.New("not found")
 	}
-	f.invoices[inv.ID] = inv
+	existing, ok := f.invoices[inv.ID]
+	if !ok {
+		// The repository reports rows_affected == 0 for a bill that is not there.
+		return errors.New("invoice not found")
+	}
+	// Mirrors the repository's UPDATE column list. Storing the caller's pointer
+	// wholesale persisted fields no statement writes, and id is the key, not a value.
+	stored := *existing
+	stored.BankAccountID = inv.BankAccountID
+	stored.ReferenceDate = inv.ReferenceDate
+	stored.OpeningDate = inv.OpeningDate
+	stored.ClosingDate = inv.ClosingDate
+	stored.DueDate = inv.DueDate
+	stored.Amount = inv.Amount
+	stored.Status = inv.Status
+	stored.PaidAt = inv.PaidAt
+	stored.PaidAmount = inv.PaidAmount
+	stored.UpdatedAt = inv.UpdatedAt
+	f.invoices[inv.ID] = &stored
 	return nil
 }
 
