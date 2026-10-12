@@ -43,6 +43,7 @@ export class Event {
   targetUnit?: string | null;
   timeOfDay?: string | null; // "MORNING" | "ANYTIME" | "EVENING"
   isPaused?: boolean;
+  pausedAt?: Date | null;
 
   // Reminders/Alerts
   reminders?: Array<{ id: string; minutesBefore: number; method: string }>;

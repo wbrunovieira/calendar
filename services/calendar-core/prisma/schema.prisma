@@ -178,6 +178,7 @@ model Event {
   targetUnit            String?   @map("target_unit")
   timeOfDay             String?   @map("time_of_day") // "MORNING" | "ANYTIME" | "EVENING"
   isPaused              Boolean   @default(false) @map("is_paused")
+  pausedAt              DateTime? @map("paused_at") @db.Date // stats freeze on this day while paused
 
   // Google Calendar
   googleEventId         String?   @map("google_event_id")

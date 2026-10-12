@@ -45,6 +45,13 @@ export const HABIT_IDEAS: HabitIdea[] = [
 
 export const isQuitHabit = (h: Pick<Event, 'habitKind'>) => h.habitKind === 'QUIT';
 
+/**
+ * Habits that belong in a daily done/not-done list. Quit habits are tracked by slips and
+ * paused habits are hidden, so views built on checkboxes (day view, dashboard) skip them.
+ */
+export const isCheckableHabit = (h: { habitKind?: string | null; isPaused?: boolean }) =>
+  h.habitKind !== 'QUIT' && !h.isPaused;
+
 export function groupByTimeOfDay<T extends Pick<Event, 'timeOfDay'>>(habits: T[]) {
   return TIME_OF_DAY.map(({ key, label }) => ({
     key,

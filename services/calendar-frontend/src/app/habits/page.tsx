@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import type { Event, Calendar, FlexibleHabitProgress, HabitStats } from '@/types/calendar';
@@ -226,8 +226,13 @@ export default function HabitsPage() {
     }
   };
 
+  // Stepper clicks are debounced per habit so only the latest absolute value is sent,
+  // and the list isn't refreshed while a send is pending (an older response could
+  // otherwise overwrite the newer optimistic value).
+  const amountTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+
   // Amount habits: the check fills the day to its target, or clears it
-  const setHabitAmount = async (habit: Event, value: number) => {
+  const setHabitAmount = (habit: Event, value: number) => {
     const eventId = habit.originalEventId || habit.id;
     const date = habit.occurrenceDate || today;
     const target = habit.dailyTarget || 0;
@@ -238,12 +243,21 @@ export default function HabitsPage() {
       return { ...h, executions: [...others, { id: 'temp', eventId, executionDate: date, completed: value >= target, value }] };
     }));
 
-    try {
-      await api.events.logHabitAmount(eventId, date, value);
-    } catch (error) {
-      console.error('Error logging habit amount:', error);
-    }
-    refreshData();
+    const key = `${eventId}:${date}`;
+    const timers = amountTimers.current;
+    clearTimeout(timers.get(key));
+    timers.set(
+      key,
+      setTimeout(async () => {
+        try {
+          await api.events.logHabitAmount(eventId, date, value);
+        } catch (error) {
+          console.error('Error logging habit amount:', error);
+        }
+        timers.delete(key);
+        if (timers.size === 0) refreshData();
+      }, 400),
+    );
   };
 
   const logSlip = async (habit: Event, trigger?: string, note?: string) => {

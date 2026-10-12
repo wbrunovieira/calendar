@@ -212,6 +212,7 @@ export class EventRepository {
         targetUnit: event.targetUnit,
         timeOfDay: event.timeOfDay,
         isPaused: event.isPaused,
+        pausedAt: event.pausedAt,
         googleEventId: event.googleEventId,
         location: event.location,
         meetingUrl: event.meetingUrl,

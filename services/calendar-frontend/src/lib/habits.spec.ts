@@ -6,6 +6,7 @@ import {
   groupByTimeOfDay,
   heatmapWeeks,
   isQuitHabit,
+  isCheckableHabit,
   loggedAmount,
 } from './habits';
 
@@ -80,5 +81,12 @@ describe('habits helpers', () => {
       null, null, '2026-10-07', '2026-10-08', '2026-10-09', '2026-10-10', '2026-10-11',
     ]);
     expect(weeks[1].map((c) => c?.date ?? null)).toEqual(['2026-10-12', null, null, null, null, null, null]);
+  });
+
+  it('only build habits that are not paused show up as daily checkboxes', () => {
+    expect(isCheckableHabit(habit())).toBe(true);
+    expect(isCheckableHabit(habit({ habitKind: 'QUIT' }))).toBe(false);
+    expect(isCheckableHabit(habit({ isPaused: true }))).toBe(false);
+    expect(isCheckableHabit({ habitKind: 'QUIT', isPaused: false })).toBe(false);
   });
 });

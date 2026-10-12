@@ -69,7 +69,14 @@ export class GetHabitsStatsUseCase {
 
     for (const habit of habits) {
       const isQuit = habit.habitKind === 'QUIT';
-      const slips = slipsByHabit.get(habit.id) ?? [];
+      const startKey = habit.startDate ? this.formatDbDate(new Date(habit.startDate)) : '';
+      // Slips dated before the habit started (e.g. after editing its start) don't count
+      const slips = (slipsByHabit.get(habit.id) ?? []).filter(
+        (sl) => this.formatDbDate(sl.slipDate) >= startKey,
+      );
+      // A paused habit's stats freeze on the day it was paused
+      const asOf =
+        habit.isPaused && habit.pausedAt ? this.localDateFromDb(habit.pausedAt) : today;
 
       // Get all executions for this habit
       const executions = await this.eventExecutionRepository.findByEventId(
@@ -82,7 +89,7 @@ export class GetHabitsStatsUseCase {
       if (isQuit) {
         const slipDays = new Set(slips.map((sl) => this.formatDbDate(sl.slipDate)));
         const start = habit.startDate ? new Date(habit.startDate) : today;
-        for (const d of this.getExpectedOccurrences(habit, start, today)) {
+        for (const d of this.getExpectedOccurrences(habit, start, asOf)) {
           const key = this.formatDate(d);
           if (!slipDays.has(key)) completedDates.add(key);
         }
@@ -97,28 +104,28 @@ export class GetHabitsStatsUseCase {
       // Calculate weekly completions (last 7 days)
       const weeklyCompletions = this.getWeeklyCompletions(
         habit,
-        today,
+        asOf,
         completedDates,
       );
 
       // Calculate current streak
       const currentStreak = this.calculateCurrentStreak(
         habit,
-        today,
+        asOf,
         completedDates,
       );
 
       // Calculate longest streak
       const longestStreak = this.calculateLongestStreak(
         habit,
-        today,
+        asOf,
         completedDates,
       );
 
       // Calculate monthly completion rate
       const monthlyCompletionRate = this.calculateMonthlyCompletionRate(
         habit,
-        today,
+        asOf,
         completedDates,
       );
 
@@ -126,10 +133,10 @@ export class GetHabitsStatsUseCase {
       const totalCompletions = completedDates.size;
 
       const recentSlips = slips.filter(
-        (sl) => this.formatDbDate(sl.slipDate) >= this.formatDate(this.addDays(today, -29)),
+        (sl) => this.formatDbDate(sl.slipDate) >= this.formatDate(this.addDays(asOf, -29)),
       );
       const todaySlip = slips.find(
-        (sl) => this.formatDbDate(sl.slipDate) === this.formatDate(today),
+        (sl) => this.formatDbDate(sl.slipDate) === this.formatDate(asOf),
       );
       // Build habits get until tonight to tick today off; a slip today ends a clean run now.
       const streakNow = todaySlip ? 0 : currentStreak;
@@ -150,8 +157,11 @@ export class GetHabitsStatsUseCase {
         totalAmount: habit.dailyTarget
           ? executions.reduce((sum, e) => sum + (e.value ?? 0), 0)
           : null,
-        completionRate30d: this.calculateRate30d(habit, today, completedDates),
-        heatmap: this.buildHeatmap(habit, today, completedDates),
+        completionRate30d:
+          habit.recurrenceType === 'FLEXIBLE'
+            ? null // weekly-target habits are measured by /habits/weekly-progress
+            : this.calculateRate30d(habit, asOf, completedDates),
+        heatmap: this.buildHeatmap(habit, today, asOf, completedDates),
         slipsLast30Days: recentSlips.length,
         topTrigger: this.topTrigger(recentSlips),
         todaySlip: todaySlip
@@ -318,20 +328,28 @@ export class GetHabitsStatsUseCase {
   private buildHeatmap(
     habit: any,
     today: Date,
+    asOf: Date,
     completedDates: Set<string>,
   ): { date: string; value: number | null }[] {
     const from = this.addDays(today, -(HEATMAP_DAYS - 1));
     const flexible = habit.recurrenceType === 'FLEXIBLE';
+    const quit = habit.habitKind === 'QUIT';
+    const todayKey = this.formatDate(today);
+    const lastKey = this.formatDate(asOf);
     const expected = new Set(
-      this.getExpectedOccurrences(habit, from, today).map((d) => this.formatDate(d)),
+      this.getExpectedOccurrences(habit, from, asOf).map((d) => this.formatDate(d)),
     );
-    const start = habit.startDate ? this.formatDbDate(new Date(habit.startDate)) : '';
 
     return Array.from({ length: HEATMAP_DAYS }, (_, i) => {
       const date = this.formatDate(this.addDays(from, i));
-      // Flexible habits can be done on any day of the week
-      const scheduled = flexible ? date >= start : expected.has(date);
-      return { date, value: scheduled ? (completedDates.has(date) ? 1 : 0) : null };
+      const done = completedDates.has(date);
+      if (date > lastKey) return { date, value: null }; // paused
+      // Flexible habits can be done on any day, so only done days are marked
+      if (flexible) return { date, value: done ? 1 : null };
+      if (!expected.has(date)) return { date, value: null };
+      // A build habit not yet done today is pending, not missed
+      if (!quit && date === todayKey && !done) return { date, value: null };
+      return { date, value: done ? 1 : 0 };
     });
   }
 
@@ -345,6 +363,12 @@ export class GetHabitsStatsUseCase {
       if (best === null || n > counts.get(best)!) best = trigger;
     }
     return best;
+  }
+
+  /** A DATE column (UTC midnight) as a local-midnight Date on the same calendar day. */
+  private localDateFromDb(date: Date): Date {
+    const d = new Date(date);
+    return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
   }
 
   private addDays(date: Date, n: number): Date {
@@ -370,7 +394,7 @@ export class GetHabitsStatsUseCase {
     if (!habit.recurrenceRule) {
       // Non-recurring habit - check if startDate falls within range
       const habitStart = habit.startDate
-        ? new Date(habit.startDate)
+        ? this.localDateFromDb(habit.startDate)
         : new Date();
       if (habitStart >= startDate && habitStart <= endDate) {
         return [habitStart];

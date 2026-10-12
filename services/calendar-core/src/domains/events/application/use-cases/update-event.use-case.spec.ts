@@ -243,4 +243,48 @@ describe('UpdateEventUseCase', () => {
       expect(data).not.toHaveProperty('dailyTarget');
     });
   });
+
+  describe('habits v2 invariants', () => {
+    it('turning a habit into QUIT makes it daily and drops the daily amount', async () => {
+      await useCase.execute('event-123', { habitKind: 'QUIT', dailyTarget: 5, targetUnit: 'x' });
+
+      expect(mockEventRepository.update).toHaveBeenCalledWith(
+        'event-123',
+        expect.objectContaining({
+          habitKind: 'QUIT',
+          recurrenceRule: 'FREQ=DAILY',
+          recurrenceType: 'FIXED',
+          dailyTarget: null,
+          targetUnit: null,
+        }),
+        undefined,
+      );
+    });
+
+    it('refuses a daily amount on an existing QUIT habit', async () => {
+      vi.mocked(mockEventRepository.findById!).mockResolvedValue({
+        ...existingEvent,
+        eventType: 'HABIT',
+        habitKind: 'QUIT',
+      } as never);
+
+      await useCase.execute('event-123', { dailyTarget: 5 });
+
+      const [, data] = vi.mocked(mockEventRepository.update!).mock.calls[0];
+      expect(data.dailyTarget).toBeNull();
+    });
+
+    it('stamps the pause day and clears it on resume', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-10-12T15:00:00Z'));
+
+      await useCase.execute('event-123', { isPaused: true });
+      await useCase.execute('event-123', { isPaused: false });
+      vi.useRealTimers();
+
+      const calls = vi.mocked(mockEventRepository.update!).mock.calls;
+      expect(calls[0][1]).toMatchObject({ isPaused: true, pausedAt: new Date('2026-10-12') });
+      expect(calls[1][1]).toMatchObject({ isPaused: false, pausedAt: null });
+    });
+  });
 });

@@ -397,7 +397,7 @@ describe('GetHabitsStatsUseCase', () => {
       const [stats] = await useCase.execute({});
 
       expect(stats.heatmap).toHaveLength(112);
-      expect(stats.heatmap[111]).toEqual({ date: '2024-01-15', value: 0 });
+      expect(stats.heatmap[111]).toEqual({ date: '2024-01-15', value: null }); // still pending today
       expect(stats.heatmap[110]).toEqual({ date: '2024-01-14', value: 1 });
       expect(stats.heatmap.find((d) => d.date === '2023-12-31')?.value).toBeNull();
     });
@@ -421,6 +421,95 @@ describe('GetHabitsStatsUseCase', () => {
         isPaused: true,
         totalAmount: 32,
       });
+    });
+  });
+
+  describe('habits v2 review fixes', () => {
+    let slipRepository: Partial<HabitSlipRepository>;
+
+    beforeEach(() => {
+      slipRepository = { findByEventIds: vi.fn().mockResolvedValue([]) };
+      useCase = new GetHabitsStatsUseCase(
+        mockEventRepository as EventRepository,
+        mockExecutionRepository as EventExecutionRepository,
+        slipRepository as HabitSlipRepository,
+      );
+      vi.mocked(mockExecutionRepository.findByEventId!).mockResolvedValue([]);
+    });
+
+    const slip = (date: string) => ({
+      id: date,
+      eventId: 'habit-1',
+      slipDate: new Date(date),
+      trigger: 'Stress',
+      note: null,
+    });
+
+    it('marks done days on a FLEXIBLE heatmap and leaves the rest unscheduled', async () => {
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([
+        createHabit({ recurrenceRule: 'FREQ=WEEKLY', recurrenceType: 'FLEXIBLE', weeklyTargetCount: 3 }),
+      ]);
+      vi.mocked(mockExecutionRepository.findByEventId!).mockResolvedValue([
+        createExecution('habit-1', new Date(2024, 0, 10), true),
+      ]);
+
+      const [stats] = await useCase.execute({});
+
+      expect(stats.heatmap.find((c) => c.date === '2024-01-10')?.value).toBe(1);
+      expect(stats.heatmap.find((c) => c.date === '2024-01-11')?.value).toBeNull();
+      expect(stats.completionRate30d).toBeNull();
+    });
+
+    it('freezes a paused QUIT habit on the day it was paused', async () => {
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([
+        createHabit({ habitKind: 'QUIT', isPaused: true, pausedAt: new Date('2024-01-10') }),
+      ]);
+
+      const [stats] = await useCase.execute({});
+
+      expect(stats.currentStreak).toBe(10); // Jan 1..10, not 15
+    });
+
+    it('keeps a paused BUILD streak instead of letting the paused days break it', async () => {
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([
+        createHabit({ isPaused: true, pausedAt: new Date('2024-01-11') }),
+      ]);
+      vi.mocked(mockExecutionRepository.findByEventId!).mockResolvedValue([
+        createExecution('habit-1', new Date(2024, 0, 8), true),
+        createExecution('habit-1', new Date(2024, 0, 9), true),
+        createExecution('habit-1', new Date(2024, 0, 10), true),
+      ]);
+
+      const [stats] = await useCase.execute({});
+
+      expect(stats.currentStreak).toBe(3);
+    });
+
+    it('counts slips in a 30-day window that includes today and 29 days back', async () => {
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([
+        createHabit({ habitKind: 'QUIT', startDate: new Date(2023, 10, 1) }),
+      ]);
+      vi.mocked(slipRepository.findByEventIds!).mockResolvedValue([
+        slip('2023-12-17'), // today - 29
+        slip('2023-12-16'), // today - 30
+      ]);
+
+      const [stats] = await useCase.execute({});
+
+      expect(stats.slipsLast30Days).toBe(1);
+    });
+
+    it('ignores slips dated before the habit started', async () => {
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([
+        createHabit({ habitKind: 'QUIT', startDate: new Date('2024-01-05') }),
+      ]);
+      vi.mocked(slipRepository.findByEventIds!).mockResolvedValue([slip('2024-01-03')]);
+
+      const [stats] = await useCase.execute({});
+
+      expect(stats.slipsLast30Days).toBe(0);
+      expect(stats.topTrigger).toBeNull();
+      expect(stats.currentStreak).toBe(11); // Jan 5..15
     });
   });
 });
