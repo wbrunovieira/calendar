@@ -171,6 +171,14 @@ model Event {
   weeklyTargetCount     Int?      @map("weekly_target_count") // Meta semanal (ex: 2 vezes por semana)
   weeklyPreferredDays   String[]  @map("weekly_preferred_days") // Dias preferidos ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
 
+  // Habits v2: BUILD (do it) or QUIT (every day is clean unless a slip is logged)
+  habitKind             String?   @map("habit_kind") // "BUILD" | "QUIT" (NULL = BUILD)
+  // Optional daily amount, e.g. 20 pages; a check-in counts as done when value >= dailyTarget
+  dailyTarget           Float?    @map("daily_target")
+  targetUnit            String?   @map("target_unit")
+  timeOfDay             String?   @map("time_of_day") // "MORNING" | "ANYTIME" | "EVENING"
+  isPaused              Boolean   @default(false) @map("is_paused")
+
   // Google Calendar
   googleEventId         String?   @map("google_event_id")
 
@@ -199,6 +207,7 @@ model Event {
   completions           EventCompletion[]
   reminders             EventReminder[]
   weeklyGoalCompletions WeeklyGoalCompletion[]
+  habitSlips            HabitSlip[]
 
   @@index([calendarId])
   @@index([categoryId])
@@ -256,6 +265,7 @@ model EventCompletion {
   completed      Boolean   @default(false)
   completedAt    DateTime? @map("completed_at")
   notes          String?
+  value          Float? // Amount logged for habits with a dailyTarget
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
 
@@ -266,6 +276,22 @@ model EventCompletion {
   @@index([occurrenceDate])
   @@index([completed])
   @@map("event_completions")
+}
+
+// Slips of QUIT habits: a day without a slip counts as clean
+model HabitSlip {
+  id        String   @id @default(uuid())
+  eventId   String   @map("event_id")
+  slipDate  DateTime @map("slip_date") @db.Date
+  trigger   String? // Social, Stress, Boredom, Tired, Celebration, Craving
+  note      String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, slipDate])
+  @@index([eventId])
+  @@map("habit_slips")
 }
 
 // Tracking de metas semanais para hábitos flexíveis

@@ -90,6 +90,7 @@ export class EventExecutionRepository {
     executionDate: Date,
     completed: boolean,
     notes?: string,
+    value?: number,
   ): Promise<EventExecution> {
     const upserted = await this.prisma.eventCompletion.upsert({
       where: {
@@ -104,11 +105,13 @@ export class EventExecutionRepository {
         completed,
         completedAt: completed ? new Date() : null,
         notes,
+        value,
       },
       update: {
         completed,
         completedAt: completed ? new Date() : null,
         notes,
+        value,
         updatedAt: new Date(),
       },
     });

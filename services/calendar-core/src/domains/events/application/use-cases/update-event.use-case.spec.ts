@@ -202,4 +202,45 @@ describe('UpdateEventUseCase', () => {
       );
     });
   });
+
+  describe('habits v2 fields', () => {
+    it('updates pause, daily target, unit and time of day', async () => {
+      await useCase.execute('event-123', {
+        isPaused: true,
+        dailyTarget: 30,
+        targetUnit: 'min',
+        timeOfDay: 'MORNING',
+      });
+
+      expect(mockEventRepository.update).toHaveBeenCalledWith(
+        'event-123',
+        expect.objectContaining({
+          isPaused: true,
+          dailyTarget: 30,
+          targetUnit: 'min',
+          timeOfDay: 'MORNING',
+        }),
+        undefined,
+      );
+    });
+
+    it('clears the daily target when null is sent', async () => {
+      await useCase.execute('event-123', { dailyTarget: null });
+
+      expect(mockEventRepository.update).toHaveBeenCalledWith(
+        'event-123',
+        expect.objectContaining({ dailyTarget: null }),
+        undefined,
+      );
+    });
+
+    it('does not touch habit fields when they are absent', async () => {
+      await useCase.execute('event-123', { title: 'x' });
+
+      const [, data] = vi.mocked(mockEventRepository.update!).mock.calls[0];
+      expect(data).not.toHaveProperty('isPaused');
+      expect(data).not.toHaveProperty('habitKind');
+      expect(data).not.toHaveProperty('dailyTarget');
+    });
+  });
 });

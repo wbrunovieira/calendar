@@ -1,7 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { EventRepository } from '../../infrastructure/repositories/event.repository';
 import { EventExecutionRepository } from '../../infrastructure/repositories/event-execution.repository';
 import { RRuleHelper } from '../../domain/utils/rrule-helper';
+import {
+  HabitSlip,
+  HabitSlipRepository,
+} from '../../infrastructure/repositories/habit-slip.repository';
+
+const HEATMAP_DAYS = 16 * 7;
 
 export interface HabitStats {
   habitId: string;
@@ -11,6 +17,20 @@ export interface HabitStats {
   weeklyCompletions: { date: string; completed: boolean }[];
   monthlyCompletionRate: number;
   totalCompletions: number;
+  habitKind: 'BUILD' | 'QUIT';
+  isPaused: boolean;
+  timeOfDay: string | null;
+  dailyTarget: number | null;
+  targetUnit: string | null;
+  /** Sum of every logged amount; null when the habit has no daily target. */
+  totalAmount: number | null;
+  /** % of scheduled days done in the 30 days before today; null when nothing was scheduled. */
+  completionRate30d: number | null;
+  /** Last 16 weeks ending today: 1 done, 0 missed, null not scheduled. */
+  heatmap: { date: string; value: number | null }[];
+  slipsLast30Days: number;
+  topTrigger: string | null;
+  todaySlip: { trigger: string | null; note: string | null } | null;
 }
 
 export interface GetHabitsStatsInput {
@@ -23,6 +43,7 @@ export class GetHabitsStatsUseCase {
   constructor(
     private readonly eventRepository: EventRepository,
     private readonly eventExecutionRepository: EventExecutionRepository,
+    @Optional() private readonly habitSlipRepository?: HabitSlipRepository,
   ) {}
 
   async execute(input: GetHabitsStatsInput): Promise<HabitStats[]> {
@@ -38,18 +59,38 @@ export class GetHabitsStatsUseCase {
 
     const stats: HabitStats[] = [];
 
+    const slipsByHabit = new Map<string, HabitSlip[]>();
+    const quitIds = habits.filter((h) => h.habitKind === 'QUIT').map((h) => h.id);
+    if (this.habitSlipRepository && quitIds.length) {
+      for (const slip of await this.habitSlipRepository.findByEventIds(quitIds)) {
+        slipsByHabit.set(slip.eventId, [...(slipsByHabit.get(slip.eventId) ?? []), slip]);
+      }
+    }
+
     for (const habit of habits) {
+      const isQuit = habit.habitKind === 'QUIT';
+      const slips = slipsByHabit.get(habit.id) ?? [];
+
       // Get all executions for this habit
       const executions = await this.eventExecutionRepository.findByEventId(
         habit.id,
       );
 
-      // Build set of completed dates for fast lookup
+      // Build set of completed dates for fast lookup.
+      // A QUIT habit is done on every scheduled day that has no slip.
       const completedDates = new Set<string>();
-      for (const exec of executions) {
-        if (exec.completed) {
-          const dateStr = this.formatDate(exec.executionDate);
-          completedDates.add(dateStr);
+      if (isQuit) {
+        const slipDays = new Set(slips.map((sl) => this.formatDbDate(sl.slipDate)));
+        const start = habit.startDate ? new Date(habit.startDate) : today;
+        for (const d of this.getExpectedOccurrences(habit, start, today)) {
+          const key = this.formatDate(d);
+          if (!slipDays.has(key)) completedDates.add(key);
+        }
+      } else {
+        for (const exec of executions) {
+          if (exec.completed) {
+            completedDates.add(this.formatDbDate(exec.executionDate));
+          }
         }
       }
 
@@ -84,14 +125,38 @@ export class GetHabitsStatsUseCase {
       // Total completions
       const totalCompletions = completedDates.size;
 
+      const recentSlips = slips.filter(
+        (sl) => this.formatDbDate(sl.slipDate) >= this.formatDate(this.addDays(today, -29)),
+      );
+      const todaySlip = slips.find(
+        (sl) => this.formatDbDate(sl.slipDate) === this.formatDate(today),
+      );
+      // Build habits get until tonight to tick today off; a slip today ends a clean run now.
+      const streakNow = todaySlip ? 0 : currentStreak;
+
       stats.push({
         habitId: habit.id,
         habitTitle: habit.title,
-        currentStreak,
+        currentStreak: streakNow,
         longestStreak,
         weeklyCompletions,
         monthlyCompletionRate,
         totalCompletions,
+        habitKind: isQuit ? 'QUIT' : 'BUILD',
+        isPaused: !!habit.isPaused,
+        timeOfDay: habit.timeOfDay ?? null,
+        dailyTarget: habit.dailyTarget ?? null,
+        targetUnit: habit.targetUnit ?? null,
+        totalAmount: habit.dailyTarget
+          ? executions.reduce((sum, e) => sum + (e.value ?? 0), 0)
+          : null,
+        completionRate30d: this.calculateRate30d(habit, today, completedDates),
+        heatmap: this.buildHeatmap(habit, today, completedDates),
+        slipsLast30Days: recentSlips.length,
+        topTrigger: this.topTrigger(recentSlips),
+        todaySlip: todaySlip
+          ? { trigger: todaySlip.trigger ?? null, note: todaySlip.note ?? null }
+          : null,
       });
     }
 
@@ -233,6 +298,68 @@ export class GetHabitsStatsUseCase {
     }
 
     return Math.round((completed / expectedDates.length) * 100);
+  }
+
+  private calculateRate30d(
+    habit: any,
+    today: Date,
+    completedDates: Set<string>,
+  ): number | null {
+    const expected = this.getExpectedOccurrences(
+      habit,
+      this.addDays(today, -30),
+      this.addDays(today, -1),
+    );
+    if (!expected.length) return null;
+    const done = expected.filter((d) => completedDates.has(this.formatDate(d))).length;
+    return Math.round((done / expected.length) * 100);
+  }
+
+  private buildHeatmap(
+    habit: any,
+    today: Date,
+    completedDates: Set<string>,
+  ): { date: string; value: number | null }[] {
+    const from = this.addDays(today, -(HEATMAP_DAYS - 1));
+    const flexible = habit.recurrenceType === 'FLEXIBLE';
+    const expected = new Set(
+      this.getExpectedOccurrences(habit, from, today).map((d) => this.formatDate(d)),
+    );
+    const start = habit.startDate ? this.formatDbDate(new Date(habit.startDate)) : '';
+
+    return Array.from({ length: HEATMAP_DAYS }, (_, i) => {
+      const date = this.formatDate(this.addDays(from, i));
+      // Flexible habits can be done on any day of the week
+      const scheduled = flexible ? date >= start : expected.has(date);
+      return { date, value: scheduled ? (completedDates.has(date) ? 1 : 0) : null };
+    });
+  }
+
+  private topTrigger(slips: HabitSlip[]): string | null {
+    const counts = new Map<string, number>();
+    for (const sl of slips) {
+      if (sl.trigger) counts.set(sl.trigger, (counts.get(sl.trigger) ?? 0) + 1);
+    }
+    let best: string | null = null;
+    for (const [trigger, n] of counts) {
+      if (best === null || n > counts.get(best)!) best = trigger;
+    }
+    return best;
+  }
+
+  private addDays(date: Date, n: number): Date {
+    const d = new Date(date);
+    d.setDate(d.getDate() + n);
+    return d;
+  }
+
+  /**
+   * DATE columns come back from Prisma as UTC midnight. Reading them with local getters in
+   * America/Sao_Paulo lands on the previous day, so take the UTC calendar date instead.
+   */
+  private formatDbDate(date: Date): string {
+    const d = new Date(date);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
   }
 
   private getExpectedOccurrences(

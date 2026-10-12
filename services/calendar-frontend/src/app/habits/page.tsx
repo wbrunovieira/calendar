@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import type { Event, Calendar, FlexibleHabitProgress } from '@/types/calendar';
+import type { Event, Calendar, FlexibleHabitProgress, HabitStats } from '@/types/calendar';
 import ProfileSelector from '@/components/habits/ProfileSelector';
 import CategoryBadge from '@/components/habits/CategoryBadge';
 import CategoryTypeBadge from '@/components/habits/CategoryTypeBadge';
@@ -11,6 +11,18 @@ import LabelBadge from '@/components/labels/LabelBadge';
 import CreateHabitTodoModal from '@/components/habits/CreateHabitTodoModal';
 import EditTodoModal from '@/components/habits/EditTodoModal';
 import EditHabitModal from '@/components/habits/EditHabitModal';
+import HabitAmountStepper from '@/components/habits/HabitAmountStepper';
+import HabitDetailPanel from '@/components/habits/HabitDetailPanel';
+import HabitHeatmap from '@/components/habits/HabitHeatmap';
+import QuitHabitCard from '@/components/habits/QuitHabitCard';
+import {
+  HABIT_IDEAS,
+  type HabitIdea,
+  aggregateHeatmap,
+  groupByTimeOfDay,
+  isQuitHabit,
+  loggedAmount,
+} from '@/lib/habits';
 
 type TabType = 'habits' | 'todos';
 
@@ -81,51 +93,6 @@ const getDueDateStatus = (dueDate?: string) => {
   return { label: formatDisplayDate(dueDate), color: 'text-white/60' };
 };
 
-// Calculate streak for a habit based on its executions
-const calculateStreak = (habit: Event): number => {
-  if (!habit.executions || habit.executions.length === 0) return 0;
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  // Get completed dates sorted descending
-  const completedDates = habit.executions
-    .filter(e => e.completed)
-    .map(e => {
-      const d = new Date(e.executionDate);
-      d.setHours(0, 0, 0, 0);
-      return d.getTime();
-    })
-    .sort((a, b) => b - a);
-
-  if (completedDates.length === 0) return 0;
-
-  let streak = 0;
-  let currentDate = today.getTime();
-
-  // Check if today or yesterday was completed
-  const oneDayMs = 24 * 60 * 60 * 1000;
-  const yesterday = currentDate - oneDayMs;
-
-  if (!completedDates.includes(currentDate) && !completedDates.includes(yesterday)) {
-    return 0;
-  }
-
-  // Start counting from the most recent completed date
-  currentDate = completedDates[0];
-
-  for (const completedDate of completedDates) {
-    if (completedDate === currentDate) {
-      streak++;
-      currentDate -= oneDayMs;
-    } else if (completedDate < currentDate - oneDayMs) {
-      break;
-    }
-  }
-
-  return streak;
-};
-
 export default function HabitsPage() {
   const [activeTab, setActiveTab] = useState<TabType>('habits');
   const [habits, setHabits] = useState<Event[]>([]);
@@ -141,6 +108,8 @@ export default function HabitsPage() {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [flexibleProgress, setFlexibleProgress] = useState<FlexibleHabitProgress[]>([]);
   const [weekOffset, setWeekOffset] = useState(0);
+  const [habitStats, setHabitStats] = useState<HabitStats[]>([]);
+  const [expandedHabitId, setExpandedHabitId] = useState<string | null>(null);
 
   const today = formatLocalDate(new Date());
   const currentWeekDays = useMemo(() => getWeekDays(0), []);
@@ -184,15 +153,17 @@ export default function HabitsPage() {
 
       const progressParams = selectedCalendarId ? { calendarId: selectedCalendarId } : undefined;
 
-      const [habitsData, todosData, progressData] = await Promise.all([
+      const [habitsData, todosData, progressData, statsData] = await Promise.all([
         api.events.listHabits(params),
         api.events.listTodos(params),
         api.events.getWeeklyProgress(progressParams),
+        api.events.getHabitsStats(progressParams),
       ]);
 
       setHabits(habitsData || []);
       setTodos(todosData || []);
       setFlexibleProgress(progressData || []);
+      setHabitStats(statsData || []);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -213,15 +184,17 @@ export default function HabitsPage() {
       };
       const progressParams = selectedCalendarId ? { calendarId: selectedCalendarId } : undefined;
 
-      const [habitsData, todosData, progressData] = await Promise.all([
+      const [habitsData, todosData, progressData, statsData] = await Promise.all([
         api.events.listHabits(params),
         api.events.listTodos(params),
         api.events.getWeeklyProgress(progressParams),
+        api.events.getHabitsStats(progressParams),
       ]);
 
       setHabits(habitsData || []);
       setTodos(todosData || []);
       setFlexibleProgress(progressData || []);
+      setHabitStats(statsData || []);
     } catch (error) {
       console.error('Error refreshing data:', error);
     }
@@ -251,6 +224,76 @@ export default function HabitsPage() {
       console.error('Error toggling habit:', error);
       refreshData(); // Revert by refetching
     }
+  };
+
+  // Amount habits: the check fills the day to its target, or clears it
+  const setHabitAmount = async (habit: Event, value: number) => {
+    const eventId = habit.originalEventId || habit.id;
+    const date = habit.occurrenceDate || today;
+    const target = habit.dailyTarget || 0;
+
+    setHabits(prev => prev.map(h => {
+      if (h.id !== habit.id) return h;
+      const others = (h.executions || []).filter(e => e.executionDate.split('T')[0] !== date);
+      return { ...h, executions: [...others, { id: 'temp', eventId, executionDate: date, completed: value >= target, value }] };
+    }));
+
+    try {
+      await api.events.logHabitAmount(eventId, date, value);
+    } catch (error) {
+      console.error('Error logging habit amount:', error);
+    }
+    refreshData();
+  };
+
+  const logSlip = async (habit: Event, trigger?: string, note?: string) => {
+    try {
+      await api.events.logHabitSlip(habit.originalEventId || habit.id, today, trigger, note);
+    } catch (error) {
+      console.error('Error logging slip:', error);
+    }
+    await refreshData();
+  };
+
+  const undoSlip = async (habit: Event) => {
+    try {
+      await api.events.removeHabitSlip(habit.originalEventId || habit.id, today);
+    } catch (error) {
+      console.error('Error removing slip:', error);
+    }
+    await refreshData();
+  };
+
+  const togglePause = async (habitId: string, paused: boolean) => {
+    try {
+      await api.events.update(habitId, { isPaused: !paused });
+    } catch (error) {
+      console.error('Error pausing habit:', error);
+    }
+    refreshData();
+  };
+
+  const createFromIdea = async (idea: HabitIdea) => {
+    const calendarId = selectedCalendarId || calendars[0]?.id;
+    if (!calendarId) return;
+    try {
+      await api.events.create({
+        calendarId,
+        title: idea.title,
+        eventType: 'HABIT',
+        startDate: today,
+        startTime: idea.timeOfDay === 'EVENING' ? '21:00' : idea.timeOfDay === 'MORNING' ? '07:00' : '09:00',
+        recurrenceRule: 'FREQ=DAILY',
+        recurrenceType: 'FIXED',
+        habitKind: idea.habitKind,
+        dailyTarget: idea.dailyTarget ?? null,
+        targetUnit: idea.targetUnit ?? null,
+        timeOfDay: idea.timeOfDay ?? 'ANYTIME',
+      });
+    } catch (error) {
+      console.error('Error creating habit from idea:', error);
+    }
+    fetchData();
   };
 
   const toggleFlexibleHabitDay = async (habit: Event, dateStr: string, completedDates: string[]) => {
@@ -294,24 +337,27 @@ export default function HabitsPage() {
   };
 
   // Group habits by unique habit (not occurrence) - separate fixed and flexible
-  const { uniqueHabits, fixedHabits, flexibleHabitsWithProgress } = useMemo(() => {
+  const statsById = useMemo(() => new Map(habitStats.map(st => [st.habitId, st])), [habitStats]);
+
+  const { uniqueHabits, fixedHabits, flexibleHabitsWithProgress, quitHabits, pausedHabits } = useMemo(() => {
     const habitMap = new Map<string, Event & { streak: number }>();
 
     habits.forEach(habit => {
       const masterId = habit.originalEventId || habit.id;
       if (!habitMap.has(masterId)) {
-        habitMap.set(masterId, { ...habit, streak: calculateStreak(habit) });
+        habitMap.set(masterId, { ...habit, streak: statsById.get(masterId)?.currentStreak ?? 0 });
       }
     });
 
     const all = Array.from(habitMap.values());
+    const active = all.filter(h => !h.isPaused);
 
-    // Separate fixed and flexible habits
-    const fixed = all.filter(h => h.recurrenceType !== 'FLEXIBLE');
+    // Separate fixed, flexible and quit habits
+    const fixed = active.filter(h => h.recurrenceType !== 'FLEXIBLE' && !isQuitHabit(h));
 
     // Match flexible habits with their progress data
-    const flexible = all
-      .filter(h => h.recurrenceType === 'FLEXIBLE')
+    const flexible = active
+      .filter(h => h.recurrenceType === 'FLEXIBLE' && !isQuitHabit(h))
       .map(h => {
         const progress = flexibleProgress.find(p => p.habitId === (h.originalEventId || h.id));
         return { ...h, progress };
@@ -321,16 +367,41 @@ export default function HabitsPage() {
       uniqueHabits: all,
       fixedHabits: fixed,
       flexibleHabitsWithProgress: flexible,
+      quitHabits: active.filter(isQuitHabit),
+      pausedHabits: all.filter(h => h.isPaused),
     };
-  }, [habits, flexibleProgress]);
+  }, [habits, flexibleProgress, statsById]);
 
   // Today's habits (occurrences for today)
   const todayHabits = useMemo(() => {
     return habits.filter(h => {
       const occDate = h.occurrenceDate || h.startDate?.split('T')[0];
-      return occDate === today;
+      return occDate === today && !h.isPaused && !isQuitHabit(h);
     });
   }, [habits, today]);
+
+  const todayGroups = useMemo(() => groupByTimeOfDay(todayHabits), [todayHabits]);
+
+  const summary = useMemo(() => {
+    const isDone = (h: Event) =>
+      h.executions?.some(e => e.completed && e.executionDate.split('T')[0] === today) ?? false;
+    const rates = habitStats
+      .filter(st => st.habitKind !== 'QUIT' && !st.isPaused && st.completionRate30d !== null)
+      .map(st => st.completionRate30d as number);
+    const cleanRuns = habitStats.filter(st => st.habitKind === 'QUIT' && !st.isPaused).map(st => st.currentStreak);
+    return {
+      doneToday: todayHabits.filter(isDone).length,
+      rate30: rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length) : null,
+      longestClean: cleanRuns.length ? Math.max(...cleanRuns) : null,
+    };
+  }, [todayHabits, habitStats, today]);
+
+  const overallHeatmap = useMemo(() => aggregateHeatmap(habitStats), [habitStats]);
+
+  const existingTitles = useMemo(
+    () => new Set(uniqueHabits.map(h => h.title.toLowerCase())),
+    [uniqueHabits],
+  );
 
   // Pending and completed todos - sorted by displayOrder
   const pendingTodos = useMemo(() => {
@@ -468,6 +539,20 @@ export default function HabitsPage() {
             {/* Habits Tab */}
             {activeTab === 'habits' && (
               <div className="space-y-6">
+                {/* Summary */}
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: 'Feitos hoje', value: `${summary.doneToday}/${todayHabits.length}` },
+                    { label: 'Conclusão, últimos 30 dias', value: summary.rate30 === null ? '–' : `${summary.rate30}%` },
+                    { label: 'Maior sequência limpa agora', value: summary.longestClean === null ? '–' : String(summary.longestClean) },
+                  ].map(c => (
+                    <div key={c.label} className="bg-white/10 rounded-2xl p-4 border border-white/20">
+                      <div className="text-2xl font-bold text-white tabular-nums">{c.value}</div>
+                      <div className="text-xs text-white/60">{c.label}</div>
+                    </div>
+                  ))}
+                </div>
+
                 {/* Today's Habits */}
                 <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
                   <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
@@ -480,12 +565,20 @@ export default function HabitsPage() {
                   {todayHabits.length === 0 ? (
                     <p className="text-white/60 text-center py-4">Nenhum habito para hoje</p>
                   ) : (
-                    <div className="space-y-3">
-                      {todayHabits.map(habit => {
+                    <div className="space-y-4">
+                      {todayGroups.map(group => (
+                      <div key={group.key}>
+                      {todayGroups.length > 1 && (
+                        <h3 className="text-xs font-bold uppercase tracking-wide text-white/50 mb-2">{group.label}</h3>
+                      )}
+                      <div className="space-y-3">
+                      {group.habits.map(habit => {
                         const isCompleted = habit.executions?.some(
                           e => e.executionDate.split('T')[0] === today && e.completed
                         );
                         const habitId = habit.originalEventId || habit.id;
+                        const target = habit.dailyTarget || 0;
+                        const amount = target ? loggedAmount(habit, habit.occurrenceDate || today) : 0;
 
                         return (
                           <div
@@ -504,7 +597,8 @@ export default function HabitsPage() {
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
                               </svg>
                               <button
-                                onClick={() => toggleHabitCompletion(habit)}
+                                onClick={() => (target ? setHabitAmount(habit, isCompleted ? 0 : target) : toggleHabitCompletion(habit))}
+                                aria-label={`Marcar ${habit.title}`}
                                 className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
                                   isCompleted
                                     ? 'bg-emerald-500 border-emerald-500 text-white'
@@ -534,6 +628,14 @@ export default function HabitsPage() {
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
+                              {target > 0 && (
+                                <HabitAmountStepper
+                                  value={amount}
+                                  target={target}
+                                  unit={habit.targetUnit}
+                                  onChange={(v) => setHabitAmount(habit, v)}
+                                />
+                              )}
                               {selectedCalendarId === null && habit.calendarId && (
                                 <span className="text-xs text-white/40 bg-white/5 px-2 py-1 rounded">
                                   {getCalendarName(habit.calendarId)}
@@ -553,6 +655,9 @@ export default function HabitsPage() {
                           </div>
                         );
                       })}
+                      </div>
+                      </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -572,7 +677,7 @@ export default function HabitsPage() {
                             onDragOver={handleDragOver}
                             onDrop={(e) => handleDrop(e, habitId, fixedHabits)}
                             onDragEnd={handleDragEnd}
-                            className={`flex items-center justify-between p-4 bg-white/5 rounded-xl hover:bg-white/10 transition-colors cursor-grab active:cursor-grabbing ${
+                            className={`flex flex-wrap items-center justify-between p-4 bg-white/5 rounded-xl hover:bg-white/10 transition-colors cursor-grab active:cursor-grabbing ${
                               draggedId === habitId ? 'opacity-50' : ''
                             }`}
                           >
@@ -581,7 +686,14 @@ export default function HabitsPage() {
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
                               </svg>
                               <div>
-                                <p className="font-medium text-white">{habit.title}</p>
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedHabitId(expandedHabitId === habitId ? null : habitId)}
+                                  className="font-medium text-white hover:underline text-left"
+                                  title="Ver estatísticas"
+                                >
+                                  {habit.title}
+                                </button>
                                 <p className="text-sm text-white/50">
                                   {habit.recurrenceFrequency === 'daily' && 'Diario'}
                                   {habit.recurrenceFrequency === 'weekly' && 'Semanal'}
@@ -615,6 +727,14 @@ export default function HabitsPage() {
                                 </svg>
                               </button>
                             </div>
+                            {expandedHabitId === habitId && statsById.get(habitId) && (
+                              <div className="basis-full">
+                                <HabitDetailPanel
+                                  stats={statsById.get(habitId)!}
+                                  onTogglePause={() => togglePause(habitId, false)}
+                                />
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -806,6 +926,83 @@ export default function HabitsPage() {
                                 </span>
                               )}
                             </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Habits to quit */}
+                {quitHabits.length > 0 && (
+                  <div>
+                    <h2 className="text-lg font-semibold text-white mb-3">Para largar</h2>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {quitHabits.map(habit => {
+                        const habitId = habit.originalEventId || habit.id;
+                        return (
+                          <QuitHabitCard
+                            key={habitId}
+                            habit={habit}
+                            stats={statsById.get(habitId)}
+                            expanded={expandedHabitId === habitId}
+                            onToggleExpanded={() => setExpandedHabitId(expandedHabitId === habitId ? null : habitId)}
+                            onEdit={() => setEditingHabit(habit)}
+                            onSlip={(trigger, note) => logSlip(habit, trigger, note)}
+                            onUndoSlip={() => undoSlip(habit)}
+                            onTogglePause={() => togglePause(habitId, false)}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* All habits heatmap */}
+                {overallHeatmap.length > 0 && (
+                  <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
+                    <h2 className="text-lg font-semibold text-white mb-4">Todos os hábitos, últimas 16 semanas</h2>
+                    <HabitHeatmap cells={overallHeatmap} tone="purple" />
+                  </div>
+                )}
+
+                {/* Ideas */}
+                {HABIT_IDEAS.some(i => !existingTitles.has(i.title.toLowerCase())) && (
+                  <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
+                    <h2 className="text-lg font-semibold text-white mb-3">Ideias</h2>
+                    <div className="flex flex-wrap gap-2">
+                      {HABIT_IDEAS.filter(i => !existingTitles.has(i.title.toLowerCase())).map(idea => (
+                        <button
+                          key={idea.title}
+                          type="button"
+                          onClick={() => createFromIdea(idea)}
+                          className="px-3 py-1.5 rounded-full text-sm border border-dashed border-white/30 text-white/70 hover:border-white hover:text-white"
+                        >
+                          {idea.habitKind === 'QUIT' ? 'Largar: ' : '+ '}
+                          {idea.title}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Paused */}
+                {pausedHabits.length > 0 && (
+                  <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
+                    <h2 className="text-lg font-semibold text-white mb-3">Pausados</h2>
+                    <div className="space-y-2">
+                      {pausedHabits.map(habit => {
+                        const habitId = habit.originalEventId || habit.id;
+                        return (
+                          <div key={habitId} className="flex items-center justify-between">
+                            <span className="text-white/70">{habit.title}</span>
+                            <button
+                              type="button"
+                              onClick={() => togglePause(habitId, true)}
+                              className="px-3 py-1 rounded-lg text-sm bg-white/10 text-white/80 hover:bg-white/20"
+                            >
+                              Retomar
+                            </button>
                           </div>
                         );
                       })}

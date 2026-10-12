@@ -37,6 +37,13 @@ export class Event {
   weeklyTargetCount?: number | null; // Meta semanal (ex: 2 vezes por semana)
   weeklyPreferredDays?: string[]; // Dias preferidos ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
 
+  // Habits v2
+  habitKind?: string | null; // "BUILD" | "QUIT" (null = BUILD)
+  dailyTarget?: number | null; // daily amount, e.g. 20 pages
+  targetUnit?: string | null;
+  timeOfDay?: string | null; // "MORNING" | "ANYTIME" | "EVENING"
+  isPaused?: boolean;
+
   // Reminders/Alerts
   reminders?: Array<{ id: string; minutesBefore: number; method: string }>;
 
@@ -78,6 +85,10 @@ export class Event {
     recurrenceType?: string | null;
     weeklyTargetCount?: number | null;
     weeklyPreferredDays?: string[];
+    habitKind?: string | null;
+    dailyTarget?: number | null;
+    targetUnit?: string | null;
+    timeOfDay?: string | null;
   }): Event {
     const event = new Event({
       id: '',
@@ -101,6 +112,11 @@ export class Event {
       recurrenceType: data.recurrenceType || null,
       weeklyTargetCount: data.weeklyTargetCount || null,
       weeklyPreferredDays: data.weeklyPreferredDays || [],
+      habitKind: data.habitKind ?? null,
+      dailyTarget: data.dailyTarget ?? null,
+      targetUnit: data.targetUnit ?? null,
+      timeOfDay: data.timeOfDay ?? null,
+      isPaused: false,
       googleEventId: null,
       isActive: true,
       createdAt: new Date(),

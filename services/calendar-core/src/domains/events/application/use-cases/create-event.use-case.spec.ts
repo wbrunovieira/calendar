@@ -386,4 +386,66 @@ describe('CreateEventUseCase', () => {
       );
     });
   });
+
+  describe('habits v2 fields', () => {
+    it('passes habit kind, daily target, unit and time of day to the repository', async () => {
+      vi.mocked(mockEventRepository.create!).mockImplementation(async (event) => event);
+
+      await useCase.execute({
+        ...baseEventDto,
+        eventType: 'HABIT',
+        recurrenceRule: 'FREQ=DAILY',
+        habitKind: 'BUILD',
+        dailyTarget: 20,
+        targetUnit: 'pages',
+        timeOfDay: 'EVENING',
+      });
+
+      expect(mockEventRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          habitKind: 'BUILD',
+          dailyTarget: 20,
+          targetUnit: 'pages',
+          timeOfDay: 'EVENING',
+          isPaused: false,
+        }),
+        undefined,
+      );
+    });
+
+    it('forces a QUIT habit to recur daily and drops any daily target', async () => {
+      vi.mocked(mockEventRepository.create!).mockImplementation(async (event) => event);
+
+      await useCase.execute({
+        ...baseEventDto,
+        eventType: 'HABIT',
+        habitKind: 'QUIT',
+        dailyTarget: 5,
+        recurrenceType: 'FLEXIBLE',
+        weeklyTargetCount: 3,
+      });
+
+      expect(mockEventRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          habitKind: 'QUIT',
+          recurrenceRule: 'FREQ=DAILY',
+          recurrenceType: 'FIXED',
+          weeklyTargetCount: null,
+          dailyTarget: null,
+        }),
+        undefined,
+      );
+    });
+
+    it('ignores habit fields on non-habit events', async () => {
+      vi.mocked(mockEventRepository.create!).mockImplementation(async (event) => event);
+
+      await useCase.execute({ ...baseEventDto, habitKind: 'QUIT', dailyTarget: 3 });
+
+      expect(mockEventRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ habitKind: null, dailyTarget: null }),
+        undefined,
+      );
+    });
+  });
 });

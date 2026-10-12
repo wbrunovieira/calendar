@@ -98,6 +98,49 @@ describe('EventRepository', () => {
     });
   });
 
+  describe('habits v2 fields', () => {
+    it('persists habit kind, daily target, unit, time of day and paused flag on create', async () => {
+      const event = buildEvent({
+        eventType: 'HABIT',
+        habitKind: 'QUIT',
+        dailyTarget: 20,
+        targetUnit: 'pages',
+        timeOfDay: 'EVENING',
+        isPaused: false,
+      });
+      prisma.event.create.mockResolvedValue({ ...event, reminders: [] } as never);
+
+      await repository.create(event);
+
+      expect(prisma.event.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            habitKind: 'QUIT',
+            dailyTarget: 20,
+            targetUnit: 'pages',
+            timeOfDay: 'EVENING',
+            isPaused: false,
+          }),
+        }),
+      );
+    });
+
+    it('persists the habit fields on update and leaves them untouched when absent', async () => {
+      prisma.event.findUnique.mockResolvedValue({ ...buildEvent(), reminders: [] } as never);
+      prisma.event.update.mockResolvedValue(buildEvent() as never);
+
+      await repository.update('evt-1', { isPaused: true, dailyTarget: null });
+      await repository.update('evt-1', { title: 'Other' });
+
+      const calls = prisma.event.update.mock.calls as unknown as Array<
+        [{ data: Record<string, unknown> }]
+      >;
+      expect(calls[0][0].data).toMatchObject({ isPaused: true, dailyTarget: null });
+      expect(calls[1][0].data.isPaused).toBeUndefined();
+      expect(calls[1][0].data.habitKind).toBeUndefined();
+    });
+  });
+
   describe('upsertByGoogleEventId', () => {
     it('writes by the (calendar, Google event) identity so a concurrent sync cannot duplicate', async () => {
       prisma.event.upsert.mockResolvedValue(buildEvent() as never);

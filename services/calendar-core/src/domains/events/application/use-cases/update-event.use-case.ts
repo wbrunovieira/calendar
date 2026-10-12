@@ -45,6 +45,11 @@ export class UpdateEventUseCase {
 
     // TODO-specific fields: priority and dueDate
     if (dto.priority !== undefined) updateData.priority = dto.priority;
+    if (dto.habitKind !== undefined) updateData.habitKind = dto.habitKind;
+    if (dto.dailyTarget !== undefined) updateData.dailyTarget = dto.dailyTarget;
+    if (dto.targetUnit !== undefined) updateData.targetUnit = dto.targetUnit;
+    if (dto.timeOfDay !== undefined) updateData.timeOfDay = dto.timeOfDay;
+    if (dto.isPaused !== undefined) updateData.isPaused = dto.isPaused;
     if (dto.dueDate !== undefined) {
       if (dto.dueDate === null) {
         updateData.dueDate = null;
