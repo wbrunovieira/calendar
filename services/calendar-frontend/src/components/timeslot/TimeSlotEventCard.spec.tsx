@@ -73,10 +73,24 @@ describe('TimeSlotEventCard title overflow', () => {
     ['day, long event, overlapping', 1, '08:00', '18:00', 2],
     ['day, 30-minute event, overlapping', 1, '09:00', '09:30', 2],
     ['day, 30-minute event, single column', 1, '09:00', '09:30', 1],
+    ['day, 20-minute event', 1, '09:00', '09:20', 1],
+    ['3 days, one-hour event', 3, '09:00', '10:00', 1],
   ];
 
   it.each(cases)('keeps the title inside the card (%s)', (_label, days, start, end, columns) => {
     renderCard(days, start, end, columns);
     expectTitleContained();
+  });
+
+  it('wraps long titles only on cards taller than one hour (3 days)', () => {
+    renderCard(3, '08:00', '18:00', 1);
+    expect(classesOf(screen.getByText(LONG_TITLE))).toContain('line-clamp-2');
+  });
+
+  it('keeps one-hour cards to a single title line (3 days)', () => {
+    renderCard(3, '09:00', '10:00', 1);
+    const classes = classesOf(screen.getByText(LONG_TITLE));
+    expect(classes).toContain('truncate');
+    expect(classes).not.toContain('line-clamp-2');
   });
 });

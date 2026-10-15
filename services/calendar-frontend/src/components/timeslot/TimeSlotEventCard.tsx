@@ -527,7 +527,7 @@ export default function TimeSlotEventCard({
               <span className="text-2xl flex-shrink-0 leading-none">
                 {category?.icon || '📅'}
               </span>
-              <div className={`text-sm font-bold line-clamp-2 break-words flex-1 min-w-0 ${isCompleted ? 'line-through opacity-70' : ''}`}>
+              <div className={`text-sm font-bold ${eventHeight > PIXELS_PER_HOUR ? 'line-clamp-2 break-words' : 'truncate'} flex-1 min-w-0 ${isCompleted ? 'line-through opacity-70' : ''}`}>
                 {event.title}
               </div>
             </div>
