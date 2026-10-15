@@ -203,12 +203,12 @@ export default function TimeSlotEventCard({
           /* Layout ultra-compacto para eventos curtos sobrepostos (15m, 20m, 30m) - Duas colunas */
           <>
             {/* Coluna Esquerda - Ícone, Título e Horário */}
-            <div className={`flex-1 px-1.5 py-1 flex flex-col justify-center gap-0.5 ${isCompleted ? 'relative' : ''}`}>
+            <div className={`flex-1 min-w-0 px-1.5 py-1 flex flex-col justify-center gap-0.5 ${isCompleted ? 'relative' : ''}`}>
               <div className="flex items-center gap-1">
                 <span className="text-lg flex-shrink-0 leading-none">
                   {category?.icon || '📅'}
                 </span>
-                <div className={`text-xs font-bold truncate ${isCompleted ? 'line-through opacity-70' : ''}`}>
+                <div className={`text-xs font-bold truncate min-w-0 ${isCompleted ? 'line-through opacity-70' : ''}`}>
                   {event.title}
                 </div>
               </div>
@@ -251,11 +251,11 @@ export default function TimeSlotEventCard({
           </>
         ) : eventHeight < VERY_SHORT_EVENT_THRESHOLD && eventHeight > FIFTEEN_MINUTE_THRESHOLD && daysCount !== 3 && daysCount !== 7 ? (
           /* Layout compacto para eventos curtos (16-29 minutos) - Tudo em linha (exceto 3 e 7 dias) */
-          <div className="flex-1 px-1.5 flex items-center gap-1.5">
+          <div className="flex-1 min-w-0 px-1.5 flex items-center gap-1.5">
             <span className="text-base flex-shrink-0 leading-none">
               {category?.icon || '📅'}
             </span>
-            <div className={`text-xs font-bold truncate ${isCompleted ? 'line-through opacity-70' : ''}`}>
+            <div className={`text-xs font-bold truncate min-w-0 ${isCompleted ? 'line-through opacity-70' : ''}`}>
               {event.title}
             </div>
             {category?.name && (
@@ -289,11 +289,11 @@ export default function TimeSlotEventCard({
           </div>
         ) : eventHeight < PIXELS_PER_HOUR && daysCount === 1 ? (
           /* Layout para eventos de 30-60 minutos - Tudo em linha */
-          <div className="flex-1 px-2 flex items-center gap-2">
+          <div className="flex-1 min-w-0 px-2 flex items-center gap-2">
             <span className="text-lg flex-shrink-0 leading-none">
               {category?.icon || '📅'}
             </span>
-            <div className={`text-sm font-bold truncate ${isCompleted ? 'line-through opacity-70' : ''}`}>
+            <div className={`text-sm font-bold truncate min-w-0 ${isCompleted ? 'line-through opacity-70' : ''}`}>
               {event.title}
             </div>
             {category?.name && (
@@ -329,7 +329,7 @@ export default function TimeSlotEventCard({
           /* Layout para eventos de 1 hora+ sobrepostos (2 ou mais colunas) - Layout compacto */
           <>
             {/* Coluna única compacta */}
-            <div className={`flex-1 px-2 py-2 flex flex-col justify-center gap-1 ${isCompleted ? 'relative' : ''}`}>
+            <div className={`flex-1 min-w-0 px-2 py-2 flex flex-col justify-center gap-1 ${isCompleted ? 'relative' : ''}`}>
               {/* Linha 1: Ícone + Título */}
               <div className="flex items-center gap-2">
                 <span className="text-2xl flex-shrink-0">
@@ -381,15 +381,15 @@ export default function TimeSlotEventCard({
           /* Layout para visualização de 1 dia - Duas colunas */
           <>
             {/* Coluna Esquerda - Informações Principais */}
-            <div className={`flex-1 ${padding} flex flex-col justify-center ${isCompleted ? 'relative' : ''}`}>
+            <div className={`flex-1 min-w-0 ${padding} flex flex-col justify-center ${isCompleted ? 'relative' : ''}`}>
               {/* Category Icon - Grande e proeminente */}
               <div className="flex items-center gap-3 pb-3">
                 <span className="text-5xl">
                   {category?.icon || '📅'}
                 </span>
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   {/* Event Title - Bold */}
-                  <div className={`font-bold text-xl leading-tight ${isCompleted ? 'line-through opacity-70' : ''}`}>
+                  <div className={`font-bold text-xl leading-tight break-words ${isCompleted ? 'line-through opacity-70' : ''}`}>
                     {event.title}
                   </div>
                   {/* Time */}
@@ -451,7 +451,7 @@ export default function TimeSlotEventCard({
           </>
         ) : eventHeight <= FIFTEEN_MINUTE_THRESHOLD && daysCount === 3 ? (
           /* Layout ultra-compacto para eventos de 15 minutos na visualização de 3 dias - Tudo em linha */
-          <div className="flex-1 px-1 flex items-center gap-1">
+          <div className="flex-1 min-w-0 px-1 flex items-center gap-1">
             <span className="text-sm flex-shrink-0 leading-none">
               {categoryType?.icon ? categoryType.icon.trim() : (category?.icon || '📅')}
             </span>
@@ -464,7 +464,7 @@ export default function TimeSlotEventCard({
           </div>
         ) : eventHeight < PIXELS_PER_HOUR && daysCount === 3 ? (
           /* Layout compacto para eventos de 16-60 minutos na visualização de 3 dias */
-          <div className="flex-1 px-1.5 py-1 flex items-center gap-1.5">
+          <div className="flex-1 min-w-0 px-1.5 py-1 flex items-center gap-1.5">
             <span className="text-xl flex-shrink-0 leading-none">
               {category?.icon || '📅'}
             </span>
@@ -484,7 +484,7 @@ export default function TimeSlotEventCard({
           </div>
         ) : eventHeight >= PIXELS_PER_HOUR && positionInfo.totalColumns >= 2 && daysCount === 3 ? (
           /* Layout ultra-compacto para eventos de 1 hora+ sobrepostos na visualização de 3 dias */
-          <div className={`flex-1 px-1.5 py-1.5 flex flex-col justify-center gap-0.5 ${isCompleted ? 'relative' : ''}`}>
+          <div className={`flex-1 min-w-0 px-1.5 py-1.5 flex flex-col justify-center gap-0.5 ${isCompleted ? 'relative' : ''}`}>
             {/* Linha 1: Ícone + Título */}
             <div className="flex items-center gap-1.5">
               <span className="text-xl flex-shrink-0 leading-none">
@@ -521,13 +521,13 @@ export default function TimeSlotEventCard({
           </div>
         ) : eventHeight >= PIXELS_PER_HOUR && daysCount === 3 ? (
           /* Layout compacto para eventos de 1 hora+ na visualização de 3 dias */
-          <div className={`flex-1 px-2 py-2 flex flex-col justify-center gap-1 ${isCompleted ? 'relative' : ''}`}>
+          <div className={`flex-1 min-w-0 px-2 py-2 flex flex-col justify-center gap-1 ${isCompleted ? 'relative' : ''}`}>
             {/* Linha 1: Ícone + Título */}
             <div className="flex items-center gap-2">
               <span className="text-2xl flex-shrink-0 leading-none">
                 {category?.icon || '📅'}
               </span>
-              <div className={`text-sm font-bold truncate flex-1 min-w-0 ${isCompleted ? 'line-through opacity-70' : ''}`}>
+              <div className={`text-sm font-bold line-clamp-2 break-words flex-1 min-w-0 ${isCompleted ? 'line-through opacity-70' : ''}`}>
                 {event.title}
               </div>
             </div>
@@ -571,7 +571,7 @@ export default function TimeSlotEventCard({
         ) : daysCount === 3 ? (
           /* Layout para visualização de 3 dias - Híbrido com hierarquia visual */
           <>
-            <div className={`flex-1 ${padding} flex flex-col justify-center ${isCompleted ? 'relative' : ''}`}>
+            <div className={`flex-1 min-w-0 ${padding} flex flex-col justify-center ${isCompleted ? 'relative' : ''}`}>
               {/* Icon e Title lado a lado */}
               <div className="flex items-center gap-2 pb-2">
                 <span className="text-3xl flex-shrink-0">
@@ -638,21 +638,21 @@ export default function TimeSlotEventCard({
           </>
         ) : eventHeight <= FIFTEEN_MINUTE_THRESHOLD && positionInfo.totalColumns >= 2 && daysCount === 7 ? (
           /* Layout ultra-compacto para eventos de 15 minutos SOBREPOSTOS na visualização de 7 dias - Apenas horário */
-          <div className="flex-1 px-0 flex items-center justify-center">
+          <div className="flex-1 min-w-0 px-0 flex items-center justify-center">
             <div className={`opacity-80 leading-none ${isCompleted ? 'line-through opacity-50' : ''}`} style={{ fontSize: '8px' }}>
               {event.startTime}
             </div>
           </div>
         ) : eventHeight < VERY_SHORT_EVENT_THRESHOLD && positionInfo.totalColumns >= 2 && daysCount === 7 ? (
           /* Layout ultra-compacto para eventos de 16-29 minutos SOBREPOSTOS na visualização de 7 dias - Apenas horário */
-          <div className="flex-1 px-0 flex items-center justify-center">
+          <div className="flex-1 min-w-0 px-0 flex items-center justify-center">
             <div className={`opacity-80 leading-none ${isCompleted ? 'line-through opacity-50' : ''}`} style={{ fontSize: '8px' }}>
               {event.startTime}
             </div>
           </div>
         ) : eventHeight < PIXELS_PER_HOUR && positionInfo.totalColumns >= 2 && daysCount === 7 ? (
           /* Layout compacto para eventos de 30-60 minutos SOBREPOSTOS na visualização de 7 dias - Horário e título em duas linhas muito compactas */
-          <div className="flex-1 px-0 flex flex-col items-center justify-center gap-0.5">
+          <div className="flex-1 min-w-0 px-0 flex flex-col items-center justify-center gap-0.5">
             <div className={`opacity-70 leading-none ${isCompleted ? 'line-through opacity-50' : ''}`} style={{ fontSize: '8px' }}>
               {event.startTime}
             </div>
@@ -662,7 +662,7 @@ export default function TimeSlotEventCard({
           </div>
         ) : positionInfo.totalColumns >= 2 && daysCount === 7 ? (
           /* Layout compacto para eventos de 1h+ SOBREPOSTOS na visualização de 7 dias - Apenas horário e título vertical */
-          <div className="flex-1 px-0 py-1 flex flex-col items-center justify-center gap-0.5">
+          <div className="flex-1 min-w-0 px-0 py-1 flex flex-col items-center justify-center gap-0.5">
             <div className={`opacity-80 leading-none ${isCompleted ? 'line-through opacity-60' : ''}`} style={{ fontSize: '9px' }}>
               {event.startTime}
             </div>
@@ -672,7 +672,7 @@ export default function TimeSlotEventCard({
           </div>
         ) : eventHeight <= FIFTEEN_MINUTE_THRESHOLD && daysCount === 7 ? (
           /* Layout ultra-compacto para eventos de 15 minutos na visualização de 7 dias - Horário e título em linha */
-          <div className="flex-1 px-0.5 flex items-center justify-center gap-1">
+          <div className="flex-1 min-w-0 px-0.5 flex items-center justify-center gap-1">
             <div className={`opacity-70 leading-none flex-shrink-0 ${isCompleted ? 'line-through opacity-50' : ''}`} style={{ fontSize: '10px' }}>
               {event.startTime}{event.endTime && `-${event.endTime}`}
             </div>
@@ -682,7 +682,7 @@ export default function TimeSlotEventCard({
           </div>
         ) : eventHeight < VERY_SHORT_EVENT_THRESHOLD && daysCount === 7 ? (
           /* Layout compacto para eventos de 16-29 minutos na visualização de 7 dias - Horário e título em linha */
-          <div className="flex-1 px-0.5 flex items-center justify-center gap-1">
+          <div className="flex-1 min-w-0 px-0.5 flex items-center justify-center gap-1">
             <div className={`opacity-70 leading-none flex-shrink-0 ${isCompleted ? 'line-through opacity-50' : ''}`} style={{ fontSize: '10px' }}>
               {event.startTime}{event.endTime && `-${event.endTime}`}
             </div>
@@ -692,7 +692,7 @@ export default function TimeSlotEventCard({
           </div>
         ) : eventHeight < PIXELS_PER_HOUR && daysCount === 7 ? (
           /* Layout compacto para eventos de 30-60 minutos na visualização de 7 dias - Horário e título em duas linhas */
-          <div className="flex-1 px-0.5 flex flex-col items-center justify-center gap-1.5">
+          <div className="flex-1 min-w-0 px-0.5 flex flex-col items-center justify-center gap-1.5">
             <div className={`opacity-70 leading-none ${isCompleted ? 'line-through opacity-50' : ''}`} style={{ fontSize: '10px' }}>
               {event.startTime}{event.endTime && `-${event.endTime}`}
             </div>
@@ -702,7 +702,7 @@ export default function TimeSlotEventCard({
           </div>
         ) : daysCount === 7 ? (
           /* Layout para eventos de 1 hora+ na visualização de 7 dias */
-          <div className={`flex-1 ${padding} flex flex-col ${isCompleted ? 'relative' : ''}`}>
+          <div className={`flex-1 min-w-0 ${padding} flex flex-col ${isCompleted ? 'relative' : ''}`}>
             {/* Category Icon - centered, prominent */}
             <div className="text-center pb-1">
               <span className="text-2xl">
@@ -719,7 +719,7 @@ export default function TimeSlotEventCard({
             <div className="w-full h-px bg-white/20 mb-2"></div>
 
             {/* Event Title - more space */}
-            <div className={`text-sm leading-relaxed ${isCompleted ? 'line-through opacity-70' : ''}`}>
+            <div className={`text-sm leading-relaxed break-words ${isCompleted ? 'line-through opacity-70' : ''}`}>
               {event.title}
             </div>
 
@@ -735,7 +735,7 @@ export default function TimeSlotEventCard({
           </div>
         ) : (
           /* Fallback layout */
-          <div className={`flex-1 ${padding} flex flex-col ${isCompleted ? 'relative' : ''}`}>
+          <div className={`flex-1 min-w-0 ${padding} flex flex-col ${isCompleted ? 'relative' : ''}`}>
             <div className="text-center pb-1">
               <span className="text-2xl">
                 {category?.icon || '📅'}
@@ -745,7 +745,7 @@ export default function TimeSlotEventCard({
               {event.startTime}{event.endTime && ` - ${event.endTime}`}
             </div>
             <div className="w-full h-px bg-white/20 mb-2"></div>
-            <div className={`text-sm leading-relaxed ${isCompleted ? 'line-through opacity-70' : ''}`}>
+            <div className={`text-sm leading-relaxed break-words ${isCompleted ? 'line-through opacity-70' : ''}`}>
               {event.title}
             </div>
           </div>
