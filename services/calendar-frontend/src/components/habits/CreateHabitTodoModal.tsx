@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { api } from '@/lib/api';
-import type { Calendar, Category, CategoryType } from '@/types/calendar';
+import type { Calendar, Category, CategoryType, HabitKind, HabitTimeOfDay } from '@/types/calendar';
 import LabelSelector from '@/components/labels/LabelSelector';
+import HabitOptionsFields, { HabitKindToggle, habitOptionsPayload } from './HabitOptionsFields';
 
 interface CreateHabitTodoModalProps {
   isOpen: boolean;
@@ -39,6 +40,11 @@ export default function CreateHabitTodoModal({
   const [recurrenceType, setRecurrenceType] = useState<'FIXED' | 'FLEXIBLE'>('FIXED');
   const [weeklyTargetCount, setWeeklyTargetCount] = useState(2);
   const [weeklyPreferredDays, setWeeklyPreferredDays] = useState<string[]>([]);
+  // Habits v2
+  const [habitKind, setHabitKind] = useState<HabitKind>('BUILD');
+  const [dailyTarget, setDailyTarget] = useState('');
+  const [targetUnit, setTargetUnit] = useState('');
+  const [timeOfDay, setTimeOfDay] = useState<HabitTimeOfDay>('ANYTIME');
 
   const DAYS_OF_WEEK = [
     { value: 'MO', label: 'Seg' },
@@ -66,6 +72,10 @@ export default function CreateHabitTodoModal({
       setRecurrenceType('FIXED');
       setWeeklyTargetCount(2);
       setWeeklyPreferredDays([]);
+      setHabitKind('BUILD');
+      setDailyTarget('');
+      setTargetUnit('');
+      setTimeOfDay('ANYTIME');
     }
   }, [isOpen, selectedCalendarId]);
 
@@ -116,8 +126,9 @@ export default function CreateHabitTodoModal({
 
     setLoading(true);
     try {
+      // Local date: toISOString() would roll over to tomorrow after 21:00 in Sao Paulo
       const today = new Date();
-      const startDate = today.toISOString().split('T')[0];
+      const startDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
       const baseData = {
         calendarId: effectiveCalendarId,
@@ -135,10 +146,14 @@ export default function CreateHabitTodoModal({
           categoryId: categoryId || undefined,
           categoryTypeId: categoryTypeId || undefined,
           labelId: labelId || undefined,
+          ...habitOptionsPayload(habitKind, dailyTarget, targetUnit, timeOfDay),
         };
 
         // Build recurrence rule based on frequency and type
-        if (frequency === 'weekly' && recurrenceType === 'FLEXIBLE') {
+        if (habitKind === 'QUIT') {
+          // Quit habits are tracked every day
+          await api.events.create({ ...habitData, recurrenceRule: 'FREQ=DAILY', recurrenceType: 'FIXED' });
+        } else if (frequency === 'weekly' && recurrenceType === 'FLEXIBLE') {
           // Flexible weekly habit
           await api.events.create({
             ...habitData,
@@ -246,6 +261,18 @@ export default function CreateHabitTodoModal({
           {/* Habit-specific fields */}
           {eventType === 'HABIT' && (
             <>
+              <HabitKindToggle value={habitKind} onChange={setHabitKind} />
+              <HabitOptionsFields
+                habitKind={habitKind}
+                dailyTarget={dailyTarget}
+                targetUnit={targetUnit}
+                timeOfDay={timeOfDay}
+                onDailyTargetChange={setDailyTarget}
+                onTargetUnitChange={setTargetUnit}
+                onTimeOfDayChange={setTimeOfDay}
+              />
+              {habitKind === 'BUILD' && (
+              <>
               <div>
                 <label htmlFor="frequency" className="block text-sm font-medium text-white/70 mb-1">
                   Frequencia
@@ -380,6 +407,8 @@ export default function CreateHabitTodoModal({
                   className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
               </div>
+              </>
+              )}
 
               {/* Category Type */}
               {categoryTypes.length > 0 && (

@@ -51,7 +51,11 @@ export interface EventExecution {
   executionDate: string;
   completed: boolean;
   notes?: string;
+  value?: number | null; // amount logged for habits with a daily target
 }
+
+export type HabitKind = 'BUILD' | 'QUIT';
+export type HabitTimeOfDay = 'MORNING' | 'ANYTIME' | 'EVENING';
 
 export type EventType = 'EVENT' | 'HABIT' | 'TODO' | 'REMINDER';
 
@@ -94,6 +98,12 @@ export interface Event {
   recurrenceType?: 'FIXED' | 'FLEXIBLE';
   weeklyTargetCount?: number; // Target times per week (e.g., 2)
   weeklyPreferredDays?: string[]; // Preferred days ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
+  // Habits v2
+  habitKind?: HabitKind | null; // null = BUILD
+  dailyTarget?: number | null; // e.g. 20 (pages)
+  targetUnit?: string | null;
+  timeOfDay?: HabitTimeOfDay | null;
+  isPaused?: boolean;
   // Reminder fields
   reminderDaysBefore?: number[]; // Days before to remind (e.g., [7, 3, 1, 0])
   // Event alert reminders (minutesBefore-based)
@@ -120,6 +130,18 @@ export interface HabitStats {
   weeklyCompletions: { date: string; completed: boolean }[];
   monthlyCompletionRate: number;
   totalCompletions: number;
+  habitKind: HabitKind;
+  isPaused: boolean;
+  timeOfDay: HabitTimeOfDay | null;
+  dailyTarget: number | null;
+  targetUnit: string | null;
+  totalAmount: number | null;
+  completionRate30d: number | null;
+  /** Last 16 weeks ending today: 1 done, 0 missed, null not scheduled */
+  heatmap: { date: string; value: number | null }[];
+  slipsLast30Days: number;
+  topTrigger: string | null;
+  todaySlip: { trigger: string | null; note: string | null } | null;
 }
 
 export interface WeekProgress {

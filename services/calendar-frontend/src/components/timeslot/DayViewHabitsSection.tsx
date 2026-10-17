@@ -12,6 +12,7 @@ import { api } from '@/lib/api';
 import { formatDateToString } from '@/utils/calendar/dateHelpers';
 import { calendars } from '@/data/calendars';
 import type { Event } from '@/types/calendar';
+import { isCheckableHabit } from '@/lib/habits';
 
 interface DayViewHabitsSectionProps {
   date: Date;
@@ -43,7 +44,7 @@ export default function DayViewHabitsSection({ date }: DayViewHabitsSectionProps
       // Filter habits that occur on this specific date
       const todayHabits = data.filter(h => {
         const occDate = h.occurrenceDate || h.startDate?.split('T')[0];
-        return occDate === dateString;
+        return occDate === dateString && isCheckableHabit(h);
       });
 
       // Sort by displayOrder
