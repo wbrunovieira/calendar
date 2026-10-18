@@ -440,6 +440,14 @@ func (s *invoiceRecalcSpy) Execute(invoiceID string) (*invoice.Invoice, error) {
 	return nil, s.err
 }
 
+// RefreshTotal records into the same slice as Execute on purpose. A caller is either
+// refreshing that bill or it is not; which of the two entry points it used is not
+// something a test should have to care about.
+func (s *invoiceRecalcSpy) RefreshTotal(invoiceID string) (*invoice.Invoice, error) {
+	s.called = append(s.called, invoiceID)
+	return nil, s.err
+}
+
 // A card purchase belongs to a bill. Deleting it without recomputing that bill leaves
 // the invoice total claiming money that is no longer owed — and the card's balance and
 // its invoice then disagree, which is exactly the drift a reconciliation has to chase.

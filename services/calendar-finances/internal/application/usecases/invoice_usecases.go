@@ -633,6 +633,25 @@ func (uc *RecalculateInvoiceAmountUseCase) SetAdjustmentLog(l BalanceAdjustmentL
 // charge that landed late on a closed cycle becomes visible instead of hiding behind
 // a PAID flag. No payment is recorded or dropped here -- that is RestatePayments.
 func (uc *RecalculateInvoiceAmountUseCase) Execute(invoiceID string) (*invoice.Invoice, error) {
+	return uc.recompute(invoiceID, true)
+}
+
+// RefreshTotal is Execute without the audit trail, for the cache refresh that rides
+// along with an ordinary write.
+//
+// balance_adjustments exists so that the proof a drift existed is not erased. A card
+// purchase moving its bill from 100.00 to 135.90 is not a drift — it is the cache
+// doing its job — and once every posting writes a row, the corrections trail is
+// mostly routine traffic and nobody reads it. Worse, the row is shaped wrong: it
+// records the CARD's id against the INVOICE's totals, so a reader asking what
+// happened to the card's balance sees a stream of movements the card never made.
+//
+// So: a repair logs, a posting does not.
+func (uc *RecalculateInvoiceAmountUseCase) RefreshTotal(invoiceID string) (*invoice.Invoice, error) {
+	return uc.recompute(invoiceID, false)
+}
+
+func (uc *RecalculateInvoiceAmountUseCase) recompute(invoiceID string, audit bool) (*invoice.Invoice, error) {
 	inv, err := uc.invoiceRepo.FindByID(invoiceID)
 	if err != nil {
 		return nil, ErrInvoiceNotFound
@@ -662,7 +681,7 @@ func (uc *RecalculateInvoiceAmountUseCase) Execute(invoiceID string) (*invoice.I
 	}
 
 	// Only a real change is recorded: a log of no-ops is a log nobody reads.
-	if uc.adjustmentLog != nil && math.Abs(total-before) > 0.005 {
+	if audit && uc.adjustmentLog != nil && math.Abs(total-before) > 0.005 {
 		// Recorded against the card, which is where someone looking for "what
 		// happened to this card's bills" will look.
 		_ = uc.adjustmentLog.Record(inv.BankAccountID, before, total,

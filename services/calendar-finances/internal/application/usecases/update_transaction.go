@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -39,6 +40,35 @@ type UpdateTransactionUseCase struct {
 	transactionRepo     transaction.Repository
 	invoiceRepo         invoice.Repository
 	balanceRecalculator BalanceRecalculator
+	invoiceRecalculator InvoiceRecalculator
+}
+
+// SetInvoiceRecalculator wires the bill-total refresh, following how the other
+// cross-cutting collaborators are attached after construction.
+func (uc *UpdateTransactionUseCase) SetInvoiceRecalculator(r InvoiceRecalculator) {
+	uc.invoiceRecalculator = r
+}
+
+// restateLineBills refreshes each bill the edited charge was or is a line of, once.
+//
+// Both, because an edit can move a charge between cycles: the bill it left has to
+// stop counting it and the bill it joined has to start. Errors are logged rather
+// than returned — the row is already written, and reporting a failed refresh as a
+// failed edit invites a retry that applies the edit twice.
+func (uc *UpdateTransactionUseCase) restateLineBills(invoiceIDs ...*string) {
+	if uc.invoiceRecalculator == nil {
+		return
+	}
+	seen := make(map[string]bool, len(invoiceIDs))
+	for _, id := range invoiceIDs {
+		if id == nil || seen[*id] {
+			continue
+		}
+		seen[*id] = true
+		if _, err := uc.invoiceRecalculator.RefreshTotal(*id); err != nil {
+			log.Printf("invoice %s: refreshing the total after an edit failed: %v", *id, err)
+		}
+	}
 }
 
 func NewUpdateTransactionUseCase(
@@ -176,6 +206,10 @@ func (uc *UpdateTransactionUseCase) Execute(id string, input UpdateTransactionIn
 	oldStatus := existing.Status
 	oldDestAccountID := existing.DestinationAccountID
 	oldOccurredOn := existing.OccurredOn
+	// The bill the charge was a line of BEFORE the edit. An edit can change the
+	// amount, or move the charge to another cycle or another card, and then two
+	// bills are wrong: the one it left and the one it joined.
+	oldInvoiceID := existing.InvoiceID
 
 	// Update the transaction fields
 	existing.BankAccountID = input.BankAccountID
@@ -262,6 +296,16 @@ func (uc *UpdateTransactionUseCase) Execute(id string, input UpdateTransactionIn
 	if err := uc.transactionRepo.Update(existing); err != nil {
 		return nil, err
 	}
+	// From here the bills are out of date, so the refresh is deferred rather than
+	// placed at the return: every step below can still fail, and the charge is
+	// already written.
+	//
+	// This use case restated only the bill a row PAYS (paid_invoice_id, below). The
+	// bill a row is a LINE OF was never touched, so editing a card charge from
+	// 135,90 to 200,00 — or nudging its date into the next cycle — left both bills
+	// stating totals their own transactions no longer supported. Same defect as the
+	// create path, one use case over.
+	defer uc.restateLineBills(oldInvoiceID, existing.InvoiceID)
 
 	// The bill it settles is restated from the transactions afterwards. Nothing did
 	// this, so correcting a leg from 1.018,18 to 900,00 left the bill still recording
