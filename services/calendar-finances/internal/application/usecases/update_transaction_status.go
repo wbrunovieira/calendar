@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"errors"
+	"log"
 	"strings"
 	"time"
 
@@ -36,10 +37,16 @@ func NewUpdateTransactionStatusUseCase(repo transaction.Repository, accountRepo 
 // SetInvoiceRecalculator wires the bill-total refresh, following how the other
 // cross-cutting collaborators are attached after construction.
 //
-// A bill keeps its confirmed and its planned amounts apart, so moving a charge
-// between those two states changes the bill as surely as adding a charge does. This
-// path had no notion of an invoice at all: confirming a planned card charge left the
-// bill reporting the total it had while the charge was still only expected.
+// What makes this necessary is CANCELLED, not CONFIRMED. SumByInvoiceID excludes
+// CANCELLED and REVERSED and counts everything else, so a planned charge is already
+// in its bill's total and confirming it moves nothing — cancelling one takes it out.
+// This path had no notion of an invoice at all, so cancelling a planned card charge
+// left the bill still claiming it.
+//
+// Confirming is refreshed anyway, and deliberately: the two transitions are one act
+// here, the recomputation is idempotent, and pairing the refresh with the status
+// change rather than with one particular status is what stops this from breaking
+// silently the day that filter changes.
 func (uc *UpdateTransactionStatusUseCase) SetInvoiceRecalculator(r InvoiceRecalculator) {
 	uc.invoiceRecalculator = r
 }
@@ -57,7 +64,9 @@ func (uc *UpdateTransactionStatusUseCase) restateBills(invoiceIDs ...*string) {
 			continue
 		}
 		seen[*id] = true
-		_, _ = uc.invoiceRecalculator.Execute(*id)
+		if _, err := uc.invoiceRecalculator.RefreshTotal(*id); err != nil {
+			log.Printf("invoice %s: refreshing the total after a status change failed: %v", *id, err)
+		}
 	}
 }
 
@@ -148,6 +157,21 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 	if err := uc.persistStatus(tx, targetStatus, occurredAt); err != nil {
 		return nil, err
 	}
+	// Deferred from here, because from here the bill is out of date. Placing it at
+	// the end let the linked-leg write below return early and skip it: measured on a
+	// cancelled card charge, the bill stayed stored at 500.00 while its own lines
+	// added up to 0.00 — this PR's own defect, through the path it did not cover.
+	//
+	// Both legs: a cross-profile pair can have one side on a card. Reading
+	// linkedTx inside the closure rather than as an argument keeps it correct if the
+	// leg is only resolved later.
+	defer func() {
+		if linkedTx != nil {
+			uc.restateBills(tx.InvoiceID, linkedTx.InvoiceID)
+			return
+		}
+		uc.restateBills(tx.InvoiceID)
+	}()
 
 	// Update bank account balance based on status change
 	if err := uc.updateBalanceOnStatusChange(tx, oldStatus, targetStatus); err != nil {
@@ -174,13 +198,6 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 		if linkedAcc, err := uc.accountRepo.FindByID(linkedTx.BankAccountID); err == nil && linkedAcc.Type != bankaccount.AccountTypeCreditCard {
 			_ = recalculateAccounts(uc.balanceRecalculator, linkedTx.BankAccountID)
 		}
-	}
-
-	// Both legs, because a cross-profile pair can have one side on a card.
-	if linkedTx != nil {
-		uc.restateBills(tx.InvoiceID, linkedTx.InvoiceID)
-	} else {
-		uc.restateBills(tx.InvoiceID)
 	}
 
 	// No assignment here: the switch above already moved tx through the domain, so

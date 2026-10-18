@@ -15,6 +15,10 @@ type InvoiceRecalculator interface {
 	// add up to. Reversing a payment used to leave the bill PAID forever, because the
 	// leg carries paid_invoice_id and not invoice_id, so nothing here ever looked at it.
 	RestatePayments(invoiceID string) (*invoice.Invoice, error)
+	// RefreshTotal is the same recomputation as Execute without the corrections
+	// audit trail, for the cache refresh that rides along with an ordinary write
+	// rather than repairing one.
+	RefreshTotal(invoiceID string) (*invoice.Invoice, error)
 	Execute(invoiceID string) (*invoice.Invoice, error)
 }
 

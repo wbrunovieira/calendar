@@ -168,8 +168,13 @@ func New(db *sql.DB) (*App, error) {
 	// Every write path that can change what a bill's lines add up to has to refresh
 	// the bill's stored total. Only the delete did, so a new charge — the commonest
 	// write in the system — left the cache behind on every single posting.
+	// TestEveryInvoiceRecalculatorAwareUseCaseIsWired keeps this list complete.
 	createTransactionUC.SetInvoiceRecalculator(recalculateInvoiceUC)
 	updateTransactionStatusUC.SetInvoiceRecalculator(recalculateInvoiceUC)
+	updateTransactionUC.SetInvoiceRecalculator(recalculateInvoiceUC)
+	// Every write path that can change what a bill's lines add up to has to refresh
+	// the bill's stored total. Only the delete did, so a new charge — the commonest
+	// write in the system — left the cache behind on every single posting.
 	updateInvoiceUC := usecases.NewUpdateInvoiceUseCase(invoiceRepo)
 	invoiceHandler := httpHandlers.NewInvoiceHandlers(
 		createInvoiceUC,

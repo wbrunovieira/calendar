@@ -38,6 +38,11 @@ type fakeAccountRepo struct {
 	updateCalled  bool
 	lastUpdatedID string
 	updateCount   int
+	// updateErr stands in for an account that can be READ but not WRITTEN. It is
+	// how a test reaches the paths that fail AFTER a transaction row is already
+	// committed — the paths where a guarantee is easiest to drop, because the happy
+	// path proves nothing about them.
+	updateErr error
 }
 
 func (f *fakeAccountRepo) Create(*bankaccount.BankAccount) error { return nil }
@@ -55,6 +60,9 @@ func (f *fakeAccountRepo) FindAll() ([]*bankaccount.BankAccount, error) {
 	return out, nil
 }
 func (f *fakeAccountRepo) Update(acc *bankaccount.BankAccount) error {
+	if f.updateErr != nil {
+		return f.updateErr
+	}
 	f.updateCalled = true
 	f.lastUpdatedID = acc.ID
 	f.updateCount++
@@ -119,6 +127,11 @@ type fakeTransactionRepo struct {
 	// updates counts writes, so a dry run can be asserted to have written nothing
 	// rather than merely to have left the values it happened to check unchanged.
 	updates int
+	// updateErrFor fails the write for named rows only. A use case that writes two
+	// rows in sequence has a window between them, and a blanket error cannot reach
+	// it: failing the first write means the second never runs, and the window never
+	// opens. Keyed by id so a test can fail precisely the second one.
+	updateErrFor map[string]error
 }
 
 func (f *fakeTransactionRepo) Create(tx *transaction.Transaction) error {
@@ -204,6 +217,9 @@ var txUpdateWrites = []string{
 }
 
 func (f *fakeTransactionRepo) Update(tx *transaction.Transaction) error {
+	if err, ok := f.updateErrFor[tx.ID]; ok {
+		return err
+	}
 	f.updates++
 	for i, existing := range f.created {
 		if existing.ID != tx.ID {
@@ -275,6 +291,9 @@ func applyTxColumn(dst, src *transaction.Transaction, col string) {
 }
 
 func (f *fakeTransactionRepo) UpdateStatus(id string, status transaction.Status, occurredOn time.Time, notes *string) error {
+	if err, ok := f.updateErrFor[id]; ok {
+		return err
+	}
 	for _, tx := range f.created {
 		if tx.ID == id {
 			tx.Status = status
@@ -4794,6 +4813,9 @@ func (f *fakeTransactionRepo) ReverseMany(txns []*transaction.Transaction) error
 // The fake wrote one field on the caller's own pointer and stored nothing, so the
 // reversal record existed only for as long as that pointer did.
 func (f *fakeTransactionRepo) CancelStatus(txn *transaction.Transaction, occurredOn time.Time) error {
+	if err, ok := f.updateErrFor[txn.ID]; ok {
+		return err
+	}
 	for i, existing := range f.created {
 		if existing.ID != txn.ID {
 			continue

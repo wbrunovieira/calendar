@@ -3,6 +3,7 @@ package usecases
 import (
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"strings"
 	"time"
@@ -120,7 +121,12 @@ func (uc *CreateTransactionUseCase) restateBills(invoiceIDs ...*string) {
 			continue
 		}
 		seen[*id] = true
-		_, _ = uc.invoiceRecalculator.Execute(*id)
+		// Logged rather than swallowed. A recalculator failing on EVERY call looks
+		// exactly like one that works if the error goes to _, and the only other
+		// detector is an endpoint someone has to think to pull.
+		if _, err := uc.invoiceRecalculator.RefreshTotal(*id); err != nil {
+			log.Printf("invoice %s: refreshing the total after a new charge failed: %v", *id, err)
+		}
 	}
 }
 
@@ -422,6 +428,17 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		if err := uc.transactionRepo.Create(destTxn); err != nil {
 			return nil, err
 		}
+		// Deferred, not placed at the return. The charge is on the bill the moment
+		// this write lands, and every path below can still fail: a failing
+		// accountRepo.Update returned an error while leaving a committed card charge
+		// on a bill that was never refreshed — the original defect reached through
+		// the error path instead of the happy one.
+		defer uc.restateBills(txn.InvoiceID)
+		// Deferred, not placed at the return. The charge is on the bill the moment
+		// this write lands, and every path below can still fail: a failing
+		// accountRepo.Update returned an error while leaving a committed card charge
+		// on a bill that was never refreshed — the original defect reached through
+		// the error path instead of the happy one.
 
 		// Update balances for CONFIRMED cross-profile transfers.
 		//
@@ -460,7 +477,6 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 			_ = recalculateAccounts(uc.balanceRecalculator, settled...)
 		}
 
-		uc.restateBills(txn.InvoiceID)
 		return txn, nil
 	}
 
@@ -468,6 +484,13 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 	if err := uc.transactionRepo.Create(txn); err != nil {
 		return nil, err
 	}
+	// Deferred for the same reason as the cross-profile branch above: the bill is
+	// out of date from this line onwards, and a later failure must not be able to
+	// skip the refresh.
+	defer uc.restateBills(txn.InvoiceID)
+	// Deferred for the same reason as the cross-profile branch above: the bill is
+	// out of date from this line onwards, and a later failure must not be able to
+	// skip the refresh.
 
 	// Update bank account balance for CONFIRMED transactions
 	// NOTE: Credit card transactions do NOT update balance - the balance is only
@@ -490,7 +513,6 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		}
 	}
 
-	uc.restateBills(txn.InvoiceID)
 	return txn, nil
 }
 
