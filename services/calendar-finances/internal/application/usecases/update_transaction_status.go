@@ -23,6 +23,17 @@ type UpdateTransactionStatusInput struct {
 	Actor      *string `json:"actor,omitempty"`
 }
 
+// cancelIntent carries the motive of a cancellation from the addressed row to its
+// linked leg. A cross-profile pair is one act in two rows, so both have to record the
+// same motive, the same actor and the same instant — a pair audited on one side only
+// is a pair whose two halves cannot be matched up later.
+type cancelIntent struct {
+	reason transaction.ReversalReason
+	note   string
+	actor  string
+	at     time.Time
+}
+
 type UpdateTransactionStatusUseCase struct {
 	repo                transaction.Repository
 	accountRepo         bankaccount.Repository
@@ -77,6 +88,9 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 		return nil, ErrTransactionNotFound
 	}
 
+	// Set only on the cancel path, and read again when the linked leg is validated.
+	var cancellation *cancelIntent
+
 	targetStatus, err := parseTransactionStatus(input.Status)
 	if err != nil {
 		return nil, err
@@ -109,7 +123,15 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 		}
 		// A confirmed movement cannot be cancelled: it is reversed, which records the
 		// motive and the actor. Cancelling would be an unaudited way out.
-		if err := tx.Cancel(transaction.ReversalReason(strings.ToUpper(*input.ReasonCode)), reason, *input.Actor, time.Now()); err != nil {
+		// Captured so the linked leg goes through the SAME domain call with the same
+		// motive, actor and instant.
+		cancellation = &cancelIntent{
+			reason: transaction.ReversalReason(strings.ToUpper(*input.ReasonCode)),
+			note:   reason,
+			actor:  *input.Actor,
+			at:     time.Now(),
+		}
+		if err := tx.Cancel(cancellation.reason, cancellation.note, cancellation.actor, cancellation.at); err != nil {
 			return nil, err
 		}
 		occurredAt = tx.OccurredOn
@@ -152,6 +174,56 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 		if err := found.CanTransitionTo(targetStatus); err != nil {
 			return nil, err
 		}
+
+		// The linked leg has to go through Cancel() because CancelStatus writes
+		// `SET status = $2` from txn.Status, the struct's own field. A leg that never
+		// changed status therefore had its OLD status written back, and the write
+		// reported success: a silent no-op, audit columns left NULL. The comment in
+		// the write block used to claim the domain had already moved this leg. It had
+		// not — only the addressed one.
+		//
+		// What that costs, measured: the surviving leg goes on counting. A linked leg
+		// that is a card charge stays on its bill, so the other profile's invoice still
+		// claims a debt whose counterpart was cancelled.
+		//
+		// It does NOT move that profile's balance. updateBalanceOnStatusChange only
+		// acts on a transition to or from CONFIRMED, and a CONFIRMED leg is refused by
+		// CanTransitionTo just above — "a confirmed transaction must be reversed, not
+		// cancelled". An earlier version of this comment asserted the balance damage
+		// anyway, without measuring it; every combination of the two legs' statuses was
+		// then run and no balance moved in any of them.
+		//
+		// Done HERE, in the validation block, and the position is LOAD-BEARING: the
+		// found.CanTransitionTo above has to run before persistStatus writes the
+		// addressed row, or a mixed pair — this leg CONFIRMED, the addressed one
+		// PLANNED — is refused only after the addressed row is already cancelled and
+		// audited. (Cancel() itself cannot refuse what CanTransitionTo accepted, same
+		// reason and actor already checked, so that call alone would be hygiene. The
+		// BLOCK is not. An earlier comment said "hygiene" of the whole thing, which
+		// invites moving it down.)
+		//
+		// A leg that already carries a cancellation record keeps it. CanTransitionTo
+		// permits CANCELLED -> CANCELLED, and Cancel() overwrites reversed_at, reason
+		// and actor unconditionally while keeping the older note — forging a record of
+		// an event that never happened: this cancellation's motive and actor welded to
+		// the first one's note.
+		//
+		// Tested on the RECORD, not on the status. A row can be CANCELLED with every
+		// audit column NULL — POST /transactions accepts status=CANCELLED and gives the
+		// cross-profile destination leg the same status without writing any reversal
+		// column, and the CHECK constraint only enforces the trail for REVERSED. Keying
+		// off the status alone skipped those too, leaving the pair audited on one side
+		// only: precisely the state this cancelIntent exists to prevent.
+		//
+		// Skipping Cancel() does not mean the row is untouched — persistStatus below
+		// still writes it, which is how issue 2625 (the addressed row's occurred_on
+		// landing on this leg) reaches even an exempted leg.
+		if cancellation != nil && (found.Status != transaction.StatusCancelled || found.ReversedBy == nil) {
+			if err := found.Cancel(cancellation.reason, cancellation.note, cancellation.actor, cancellation.at); err != nil {
+				return nil, err
+			}
+		}
+
 		linkedTx = found
 	}
 
@@ -189,9 +261,6 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 		// The error is surfaced, not discarded: a leg that failed to persist leaves
 		// the other profile holding a movement with no counterpart, and swallowing it
 		// means nobody goes looking.
-		// The linked leg carries the same motive and actor: the domain moved it through
-		// Cancel above, so persisting it any other way would leave one profile audited
-		// and the other not.
 		if err := uc.persistStatus(linkedTx, targetStatus, occurredAt); err != nil {
 			return nil, err
 		}

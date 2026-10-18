@@ -295,14 +295,26 @@ func (f *fakeTransactionRepo) UpdateStatus(id string, status transaction.Status,
 		return err
 	}
 	for _, tx := range f.created {
-		if tx.ID == id {
-			tx.Status = status
-			tx.OccurredOn = occurredOn
-			tx.UpdatedAt = time.Now()
-			return nil
+		if tx.ID != id {
+			continue
 		}
+		// REVERSED is terminal in the real statement's WHERE clause, which then
+		// reports no rows affected. Without it here a use case could be tested
+		// moving a reversed row and the fake would cheerfully let it.
+		if tx.Status == transaction.StatusReversed {
+			return transaction.ErrNotFound
+		}
+		tx.Status = status
+		tx.OccurredOn = occurredOn
+		// notes is a column of the real UPDATE. Leaving it out made the fake
+		// incapable of showing a caller that passes the wrong note.
+		tx.Notes = notes
+		tx.UpdatedAt = time.Now()
+		return nil
 	}
-	return errors.New("not found")
+	// The repository's own sentinel, not a look-alike: a different error with the
+	// same text is what makes errors.Is false everywhere.
+	return transaction.ErrNotFound
 }
 func (f *fakeTransactionRepo) Delete(id string) error {
 	for i, tx := range f.created {
@@ -4831,8 +4843,8 @@ func (f *fakeTransactionRepo) CancelStatus(txn *transaction.Transaction, occurre
 		stored.ReversalReason = txn.ReversalReason
 		stored.ReversalNote = txn.ReversalNote
 		stored.ReversedBy = txn.ReversedBy
+		stored.UpdatedAt = time.Now()
 		f.created[i] = &stored
-		txn.OccurredOn = occurredOn
 		return nil
 	}
 	return transaction.ErrNotFound
