@@ -165,6 +165,11 @@ func New(db *sql.DB) (*App, error) {
 	recalculateInvoiceUC.SetAdjustmentLog(adjustmentLog)
 	// Deleting a charge changes the bill it belonged to.
 	deleteTransactionUC.SetInvoiceRecalculator(recalculateInvoiceUC)
+	// Every write path that can change what a bill's lines add up to has to refresh
+	// the bill's stored total. Only the delete did, so a new charge — the commonest
+	// write in the system — left the cache behind on every single posting.
+	createTransactionUC.SetInvoiceRecalculator(recalculateInvoiceUC)
+	updateTransactionStatusUC.SetInvoiceRecalculator(recalculateInvoiceUC)
 	updateInvoiceUC := usecases.NewUpdateInvoiceUseCase(invoiceRepo)
 	invoiceHandler := httpHandlers.NewInvoiceHandlers(
 		createInvoiceUC,

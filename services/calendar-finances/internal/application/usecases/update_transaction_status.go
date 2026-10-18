@@ -26,10 +26,39 @@ type UpdateTransactionStatusUseCase struct {
 	repo                transaction.Repository
 	accountRepo         bankaccount.Repository
 	balanceRecalculator BalanceRecalculator
+	invoiceRecalculator InvoiceRecalculator
 }
 
 func NewUpdateTransactionStatusUseCase(repo transaction.Repository, accountRepo bankaccount.Repository, recalculator BalanceRecalculator) *UpdateTransactionStatusUseCase {
 	return &UpdateTransactionStatusUseCase{repo: repo, accountRepo: accountRepo, balanceRecalculator: recalculator}
+}
+
+// SetInvoiceRecalculator wires the bill-total refresh, following how the other
+// cross-cutting collaborators are attached after construction.
+//
+// A bill keeps its confirmed and its planned amounts apart, so moving a charge
+// between those two states changes the bill as surely as adding a charge does. This
+// path had no notion of an invoice at all: confirming a planned card charge left the
+// bill reporting the total it had while the charge was still only expected.
+func (uc *UpdateTransactionStatusUseCase) SetInvoiceRecalculator(r InvoiceRecalculator) {
+	uc.invoiceRecalculator = r
+}
+
+// restateBills refreshes each named bill once. Errors are dropped for the same reason
+// the balance update above drops them: the status is already persisted, and failing
+// the operation now would report a change that did happen as one that did not.
+func (uc *UpdateTransactionStatusUseCase) restateBills(invoiceIDs ...*string) {
+	if uc.invoiceRecalculator == nil {
+		return
+	}
+	seen := make(map[string]bool, len(invoiceIDs))
+	for _, id := range invoiceIDs {
+		if id == nil || seen[*id] {
+			continue
+		}
+		seen[*id] = true
+		_, _ = uc.invoiceRecalculator.Execute(*id)
+	}
 }
 
 func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransactionStatusInput) (*transaction.Transaction, error) {
@@ -145,6 +174,13 @@ func (uc *UpdateTransactionStatusUseCase) Execute(id string, input UpdateTransac
 		if linkedAcc, err := uc.accountRepo.FindByID(linkedTx.BankAccountID); err == nil && linkedAcc.Type != bankaccount.AccountTypeCreditCard {
 			_ = recalculateAccounts(uc.balanceRecalculator, linkedTx.BankAccountID)
 		}
+	}
+
+	// Both legs, because a cross-profile pair can have one side on a card.
+	if linkedTx != nil {
+		uc.restateBills(tx.InvoiceID, linkedTx.InvoiceID)
+	} else {
+		uc.restateBills(tx.InvoiceID)
 	}
 
 	// No assignment here: the switch above already moved tx through the domain, so

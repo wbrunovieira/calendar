@@ -55,6 +55,10 @@ type CreateTransactionUseCase struct {
 	invoiceRepo         invoice.Repository
 	balanceRecalculator BalanceRecalculator
 	costCenterRepo      costcenter.Repository
+	// invoiceRecalculator brings a bill's stored total back in line with its own
+	// lines after a charge is added to it. Optional, like the other cross-cutting
+	// collaborators: unwired, the bill keeps whatever total it had.
+	invoiceRecalculator InvoiceRecalculator
 	// atomically runs a multi-row write as one unit. Optional: without it the
 	// instalment loop writes row by row exactly as before, which is the behaviour
 	// this exists to end but not something to fail on when unwired.
@@ -86,6 +90,38 @@ type UnitOfWork interface {
 // collaborators are attached after construction.
 func (uc *CreateTransactionUseCase) SetUnitOfWork(u UnitOfWork) {
 	uc.atomically = u
+}
+
+// SetInvoiceRecalculator wires the bill-total refresh, following how the other
+// cross-cutting collaborators are attached after construction.
+//
+// A bill's amount is a CACHE of the sum of its lines, and adding a line is precisely
+// when that cache goes stale. Only the delete path refreshed it, so every card
+// purchase ever posted left its bill claiming the previous total until someone ran
+// the recalculation by hand. /health/invariants could see the drift; nothing closed
+// it.
+func (uc *CreateTransactionUseCase) SetInvoiceRecalculator(r InvoiceRecalculator) {
+	uc.invoiceRecalculator = r
+}
+
+// restateBills refreshes each named bill once.
+//
+// Errors are deliberately dropped: the charge is already written by the time this
+// runs, and reporting a failed refresh as a failed creation would invite the caller
+// to retry and post the charge twice. A stale total is recoverable and visible to
+// /health/invariants; a duplicate charge is neither.
+func (uc *CreateTransactionUseCase) restateBills(invoiceIDs ...*string) {
+	if uc.invoiceRecalculator == nil {
+		return
+	}
+	seen := make(map[string]bool, len(invoiceIDs))
+	for _, id := range invoiceIDs {
+		if id == nil || seen[*id] {
+			continue
+		}
+		seen[*id] = true
+		_, _ = uc.invoiceRecalculator.Execute(*id)
+	}
 }
 
 func NewCreateTransactionUseCase(
@@ -424,6 +460,7 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 			_ = recalculateAccounts(uc.balanceRecalculator, settled...)
 		}
 
+		uc.restateBills(txn.InvoiceID)
 		return txn, nil
 	}
 
@@ -453,6 +490,7 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		}
 	}
 
+	uc.restateBills(txn.InvoiceID)
 	return txn, nil
 }
 
@@ -651,26 +689,46 @@ func (uc *CreateTransactionUseCase) createInstallments(
 
 	var firstTxn *transaction.Transaction
 
+	// Each instalment falls in the month after the last, so a plan touches one bill
+	// PER PART. Restating only the first would leave every later bill stale — the
+	// same defect, just further from the write that caused it.
+	var touchedBills []string
+
 	// The whole series is one unit of work. Writing row by row means a failure at
 	// part 7 of 12 leaves six committed while the caller is told the operation
 	// failed — a half-written plan nobody goes looking for. Without a unit of work
 	// wired, the loop behaves as it always did.
 	writeSeries := func(uc *CreateTransactionUseCase) error {
 		firstTxn = nil
+		touchedBills = nil
 		return uc.writeInstallments(input, account, typeValue, occurredOn, dueOn, reminderOn, splits,
-			total, installmentAmount, remainder, txnStatus, &firstTxn)
+			total, installmentAmount, remainder, txnStatus, &firstTxn, &touchedBills)
 	}
+
+	// The refresh runs AFTER the series is committed, never inside the unit of work:
+	// it re-reads the rows to sum them, and a sum taken mid-transaction would count a
+	// series that a later failure rolls back.
+	restate := func() {
+		ids := make([]*string, 0, len(touchedBills))
+		for i := range touchedBills {
+			ids = append(ids, &touchedBills[i])
+		}
+		uc.restateBills(ids...)
+	}
+
 	if uc.atomically != nil {
 		if err := uc.atomically.Do(func(r TxRepos) error {
 			return writeSeries(uc.boundTo(r))
 		}); err != nil {
 			return nil, err
 		}
+		restate()
 		return firstTxn, nil
 	}
 	if err := writeSeries(uc); err != nil {
 		return nil, err
 	}
+	restate()
 	return firstTxn, nil
 }
 
@@ -708,6 +766,7 @@ func (uc *CreateTransactionUseCase) writeInstallments(
 	remainder float64,
 	txnStatus transaction.Status,
 	firstTxn **transaction.Transaction,
+	touchedBills *[]string,
 ) error {
 	currency, err := resolveCurrency(input.Currency, account)
 	if err != nil {
@@ -756,6 +815,7 @@ func (uc *CreateTransactionUseCase) writeInstallments(
 				}
 				if inv != nil {
 					invoiceID = &inv.ID
+					*touchedBills = append(*touchedBills, inv.ID)
 				}
 			}
 		}
