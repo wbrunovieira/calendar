@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -751,5 +752,64 @@ func TestUpdateTransaction_RestatesTheBillLeftBehindEvenWhenALaterStepFails(t *t
 	bill := billFor(t, invRepo, invoiceID)
 	if bill.Amount != 0 {
 		t.Fatalf("the charge left and the call failed, leaving the bill stale: stored %.2f, expected 0.00", bill.Amount)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// The corrections trail stays a corrections trail
+// ---------------------------------------------------------------------------
+
+type recordingAdjustmentLog struct {
+	records []string
+}
+
+func (l *recordingAdjustmentLog) Record(accountID string, before, after float64, reason, by string) error {
+	l.records = append(l.records, fmt.Sprintf("%s %.2f->%.2f %s", accountID, before, after, reason))
+	return nil
+}
+
+// balance_adjustments exists so the proof a drift existed is not erased. A card
+// purchase moving its bill from 0.00 to 135.90 is not a drift — it is the cache
+// doing its job — and once every posting writes a row the trail is mostly routine
+// traffic and nobody reads it. Worse, the row records the CARD's id against the
+// INVOICE's totals, so someone asking what happened to the card's balance sees a
+// stream of movements the card never made.
+//
+// A repair logs; a posting does not. Both halves are asserted, because a test for
+// only the first would pass just as well if logging were switched off everywhere.
+func TestCreateTransaction_AnOrdinaryChargeDoesNotWriteToTheCorrectionsTrail(t *testing.T) {
+	txRepo, invRepo, _, uc := cardInvoiceFixture(t)
+
+	recalc := NewRecalculateInvoiceAmountUseCase(invRepo, txRepo)
+	trail := &recordingAdjustmentLog{}
+	recalc.SetAdjustmentLog(trail)
+	uc.SetInvoiceRecalculator(recalc)
+
+	status := "CONFIRMED"
+	txn, err := uc.Execute(CreateTransactionInput{
+		ProfileID: testProfile, BankAccountID: testCC, CategoryID: strPtr(testCat),
+		Type: "EXPENSE", Amount: 135.90, Currency: "BRL", Description: "Padaria",
+		OccurredOn: time.Now().Format("2006-01-02"), Status: &status,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if bill := billFor(t, invRepo, *txn.InvoiceID); bill.Amount != 135.90 {
+		t.Fatalf("the refresh did not happen at all, so this test proves nothing: bill is %.2f", bill.Amount)
+	}
+	if len(trail.records) != 0 {
+		t.Fatalf("an ordinary posting wrote to the corrections trail: %v", trail.records)
+	}
+
+	// The repair route still logs. Forced out of step first, or there is nothing
+	// for the recalculation to correct and the assertion would hold vacuously.
+	bill := invRepo.invoices[*txn.InvoiceID]
+	bill.Amount = 999
+	if _, err := recalc.Execute(*txn.InvoiceID); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(trail.records) != 1 {
+		t.Fatalf("a repair must leave a trail, got %v", trail.records)
 	}
 }

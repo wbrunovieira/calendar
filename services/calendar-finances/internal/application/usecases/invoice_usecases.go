@@ -681,7 +681,7 @@ func (uc *RecalculateInvoiceAmountUseCase) recompute(invoiceID string, audit boo
 	}
 
 	// Only a real change is recorded: a log of no-ops is a log nobody reads.
-	if uc.adjustmentLog != nil && math.Abs(total-before) > 0.005 {
+	if audit && uc.adjustmentLog != nil && math.Abs(total-before) > 0.005 {
 		// Recorded against the card, which is where someone looking for "what
 		// happened to this card's bills" will look.
 		_ = uc.adjustmentLog.Record(inv.BankAccountID, before, total,
