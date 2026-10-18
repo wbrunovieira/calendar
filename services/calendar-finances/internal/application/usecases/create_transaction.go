@@ -107,10 +107,12 @@ func (uc *CreateTransactionUseCase) SetInvoiceRecalculator(r InvoiceRecalculator
 
 // restateBills refreshes each named bill once.
 //
-// Errors are deliberately dropped: the charge is already written by the time this
-// runs, and reporting a failed refresh as a failed creation would invite the caller
-// to retry and post the charge twice. A stale total is recoverable and visible to
-// /health/invariants; a duplicate charge is neither.
+// A failure here is logged, never returned. The charge is already written by the
+// time this runs, and reporting a failed refresh as a failed creation would invite
+// the caller to retry and post the charge twice: a stale total is recoverable and
+// visible to /health/invariants, a duplicate charge is neither. Logged rather than
+// discarded because a recalculator failing on EVERY call otherwise looks exactly
+// like one that works.
 func (uc *CreateTransactionUseCase) restateBills(invoiceIDs ...*string) {
 	if uc.invoiceRecalculator == nil {
 		return
@@ -121,9 +123,6 @@ func (uc *CreateTransactionUseCase) restateBills(invoiceIDs ...*string) {
 			continue
 		}
 		seen[*id] = true
-		// Logged rather than swallowed. A recalculator failing on EVERY call looks
-		// exactly like one that works if the error goes to _, and the only other
-		// detector is an endpoint someone has to think to pull.
 		if _, err := uc.invoiceRecalculator.RefreshTotal(*id); err != nil {
 			log.Printf("invoice %s: refreshing the total after a new charge failed: %v", *id, err)
 		}
@@ -434,12 +433,6 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 		// on a bill that was never refreshed — the original defect reached through
 		// the error path instead of the happy one.
 		defer uc.restateBills(txn.InvoiceID)
-		// Deferred, not placed at the return. The charge is on the bill the moment
-		// this write lands, and every path below can still fail: a failing
-		// accountRepo.Update returned an error while leaving a committed card charge
-		// on a bill that was never refreshed — the original defect reached through
-		// the error path instead of the happy one.
-
 		// Update balances for CONFIRMED cross-profile transfers.
 		//
 		// A card is settled when its invoice is paid, not when it is used, so
@@ -488,9 +481,6 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 	// out of date from this line onwards, and a later failure must not be able to
 	// skip the refresh.
 	defer uc.restateBills(txn.InvoiceID)
-	// Deferred for the same reason as the cross-profile branch above: the bill is
-	// out of date from this line onwards, and a later failure must not be able to
-	// skip the refresh.
 
 	// Update bank account balance for CONFIRMED transactions
 	// NOTE: Credit card transactions do NOT update balance - the balance is only

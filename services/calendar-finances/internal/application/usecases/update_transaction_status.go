@@ -51,9 +51,10 @@ func (uc *UpdateTransactionStatusUseCase) SetInvoiceRecalculator(r InvoiceRecalc
 	uc.invoiceRecalculator = r
 }
 
-// restateBills refreshes each named bill once. Errors are dropped for the same reason
-// the balance update above drops them: the status is already persisted, and failing
-// the operation now would report a change that did happen as one that did not.
+// restateBills refreshes each named bill once. A failure is logged, never returned,
+// for the same reason the balance update above does not fail the operation: the
+// status is already persisted, so reporting an error here would describe a change
+// that did happen as one that did not.
 func (uc *UpdateTransactionStatusUseCase) restateBills(invoiceIDs ...*string) {
 	if uc.invoiceRecalculator == nil {
 		return

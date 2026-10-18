@@ -60,9 +60,14 @@ func TestEveryInvoiceRecalculatorAwareUseCaseIsWired(t *testing.T) {
 		builtFrom[typ] = append(builtFrom[typ], local)
 	}
 
-	wired := regexp.MustCompile(`(\w+)\.SetInvoiceRecalculator\(`)
+	// The argument is checked, not just the call. Wiring a literal nil satisfies
+	// "is it called?" while leaving the refresh exactly as dead as never calling it.
+	wired := regexp.MustCompile(`(\w+)\.SetInvoiceRecalculator\(\s*(\w+)\s*\)`)
 	isWired := map[string]bool{}
 	for _, m := range wired.FindAllSubmatch(wiring, -1) {
+		if string(m[2]) == "nil" {
+			continue
+		}
 		isWired[string(m[1])] = true
 	}
 

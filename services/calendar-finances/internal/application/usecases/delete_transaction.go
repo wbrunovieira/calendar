@@ -1,6 +1,7 @@
 package usecases
 
 import (
+	"log"
 	"time"
 
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
@@ -245,11 +246,21 @@ func (uc *DeleteTransactionUseCase) recomputeInvoices(txns ...*transaction.Trans
 		}
 		if t.InvoiceID != nil && !seenCharges[*t.InvoiceID] {
 			seenCharges[*t.InvoiceID] = true
-			_, _ = uc.invoiceRecalculator.Execute(*t.InvoiceID)
+			// Execute, the AUDITED recomputation — not the quiet RefreshTotal the
+			// posting paths use. The distinction is not repair-versus-routine but
+			// what evidence survives: a created charge leaves its own row behind,
+			// so the bill's movement is explainable from the ledger, while a
+			// deleted one leaves nothing at all. Without this entry, a bill that
+			// silently drops by 500,00 has no surviving account of why.
+			if _, err := uc.invoiceRecalculator.Execute(*t.InvoiceID); err != nil {
+				log.Printf("invoice %s: recomputing the total after a delete failed: %v", *t.InvoiceID, err)
+			}
 		}
 		if t.PaidInvoiceID != nil && !seenPayments[*t.PaidInvoiceID] {
 			seenPayments[*t.PaidInvoiceID] = true
-			_, _ = uc.invoiceRecalculator.RestatePayments(*t.PaidInvoiceID)
+			if _, err := uc.invoiceRecalculator.RestatePayments(*t.PaidInvoiceID); err != nil {
+				log.Printf("invoice %s: restating its payments after a delete failed: %v", *t.PaidInvoiceID, err)
+			}
 		}
 	}
 }
