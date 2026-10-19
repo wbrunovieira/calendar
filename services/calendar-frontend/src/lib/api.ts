@@ -170,6 +170,18 @@ export const api = {
       const query = queryParams.toString();
       return fetchAPI<FlexibleHabitProgress[]>(`/events/habits/weekly-progress${query ? `?${query}` : ''}`);
     },
+    logHabitAmount: (eventId: string, executionDate: string, value: number) =>
+      fetchAPI<EventExecution>('/events/executions/amount', {
+        method: 'POST',
+        body: JSON.stringify({ eventId, executionDate, value }),
+      }),
+    logHabitSlip: (eventId: string, date: string, trigger?: string, note?: string) =>
+      fetchAPI<unknown>(`/events/${eventId}/slips`, {
+        method: 'POST',
+        body: JSON.stringify({ date, trigger, note }),
+      }),
+    removeHabitSlip: (eventId: string, date: string) =>
+      fetchAPI<void>(`/events/${eventId}/slips/${date}`, { method: 'DELETE' }),
     reorder: (orderedIds: string[]) =>
       fetchAPI<{ success: boolean }>('/events/reorder', {
         method: 'POST',

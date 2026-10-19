@@ -45,6 +45,31 @@ export class UpdateEventUseCase {
 
     // TODO-specific fields: priority and dueDate
     if (dto.priority !== undefined) updateData.priority = dto.priority;
+    if (dto.habitKind !== undefined) updateData.habitKind = dto.habitKind;
+    if (dto.dailyTarget !== undefined) updateData.dailyTarget = dto.dailyTarget;
+    if (dto.targetUnit !== undefined) updateData.targetUnit = dto.targetUnit;
+    if (dto.timeOfDay !== undefined) updateData.timeOfDay = dto.timeOfDay;
+    if (dto.isPaused !== undefined) {
+      updateData.isPaused = dto.isPaused;
+      // Stats freeze on the day the habit was paused
+      const now = new Date();
+      updateData.pausedAt = dto.isPaused
+        ? new Date(
+            `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`,
+          )
+        : null;
+    }
+    // A QUIT habit is tracked every day and has no daily amount
+    const becomesQuit = dto.habitKind === 'QUIT';
+    if (becomesQuit) {
+      updateData.recurrenceRule = 'FREQ=DAILY';
+      updateData.recurrenceType = 'FIXED';
+      updateData.weeklyTargetCount = null;
+    }
+    if (becomesQuit || existingEvent.habitKind === 'QUIT') {
+      if (becomesQuit || dto.dailyTarget !== undefined) updateData.dailyTarget = null;
+      if (becomesQuit || dto.targetUnit !== undefined) updateData.targetUnit = null;
+    }
     if (dto.dueDate !== undefined) {
       if (dto.dueDate === null) {
         updateData.dueDate = null;
