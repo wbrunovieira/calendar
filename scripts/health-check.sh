@@ -256,6 +256,73 @@ check_databases() {
     DB_SECTION="Bancos: Calendar ${CAL_DB_SIZE} | Langfuse ${LF_DB_SIZE} | Projects ${PROJ_DB_SIZE}"
 }
 
+# ── 5b. Backup Freshness ─────────────────────────────────────
+#
+# The monitor ran green every day for 86 days while the backup was dead.
+# It checked containers, disk, SSL, endpoints and databases — everything
+# except whether the thing that protects the data had actually run.
+#
+# Root cause on 2026-07-25: scripts/backup.sh is tracked in git without the
+# execute bit, so every deploy reset the mode and cron answered "Permission
+# denied" into a log nobody reads. The mode is fixed in the same change as
+# this check, but a mode is one `git checkout` away from being lost again —
+# whereas an alert that fires when no backup landed catches ANY cause, including
+# the ones nobody thought of.
+#
+# Reads the local log rather than listing the remote: the upload is the slow,
+# flaky part and a monitor must not depend on it to report. The log line is
+# written only after the upload succeeds.
+check_backup() {
+    local marker="/var/log/calendar-backup.log"
+    local age_h="?"
+
+    if [[ ! -f "$marker" ]]; then
+        add_alert "Backup: log nao existe — o cron nunca rodou"
+        BACKUP_SECTION="Backup: SEM LOG"
+        return
+    fi
+
+    # The last line the script writes after a successful upload.
+    local last_ok
+    last_ok=$(grep -E "Upload concluido" "$marker" 2>/dev/null | tail -1 || true)
+
+    if [[ -z "$last_ok" ]]; then
+        add_alert "Backup: nenhum upload bem-sucedido no log"
+        BACKUP_SECTION="Backup: NUNCA CONCLUIDO"
+        return
+    fi
+
+    # Timestamps look like [2026-10-19 15:13:53].
+    local ts
+    ts=$(echo "$last_ok" | sed -n 's/^\[\([0-9-]* [0-9:]*\)\].*/\1/p')
+    local epoch
+    epoch=$(date -d "$ts" +%s 2>/dev/null || echo "")
+
+    if [[ -z "$epoch" ]]; then
+        add_warning "Backup: nao consegui ler a data do ultimo upload"
+        BACKUP_SECTION="Backup: data ilegivel"
+        return
+    fi
+
+    age_h=$(( ( $(date +%s) - epoch ) / 3600 ))
+
+    # The backup runs daily at 07:00 UTC. 36h allows one missed run to be a
+    # warning before it becomes an alert, so a single transient failure does
+    # not cry wolf while a dead cron still gets caught within two days.
+    if (( age_h > 72 )); then
+        add_alert "Backup: ultimo ha ${age_h}h (mais de 3 dias) — PROTECAO PERDIDA"
+    elif (( age_h > 36 )); then
+        add_warning "Backup: ultimo ha ${age_h}h — pulou pelo menos um dia"
+    fi
+
+    # The execute bit is the specific thing that broke, so it is named.
+    if [[ ! -x /opt/calendar/scripts/backup.sh ]]; then
+        add_alert "Backup: backup.sh perdeu o bit de execucao — o cron vai falhar"
+    fi
+
+    BACKUP_SECTION="Backup: ultimo ha ${age_h}h"
+}
+
 # ── 6. Security Checks ────────────────────────────────────────
 check_security() {
     SECURITY_LINES=""
@@ -356,6 +423,7 @@ ${ENDPOINT_SECTION}
 ${SSL_SECTION}
 
 ${DB_SECTION}
+${BACKUP_SECTION}
 
 ${SECURITY_SECTION}"
 
@@ -478,6 +546,7 @@ main() {
     check_endpoints
     check_ssl
     check_databases
+    check_backup
     check_security
     format_message
 
