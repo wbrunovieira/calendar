@@ -1,6 +1,7 @@
 package usecases
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -8,21 +9,40 @@ import (
 
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
 	"github.com/brunovieira/calendar-finances/internal/domain/category"
+	"github.com/brunovieira/calendar-finances/internal/domain/costcenter"
 	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
 )
 
 type UpdateTransactionInput struct {
-	BankAccountID           string   `json:"bankAccountId"`
-	DestinationAccountID    *string  `json:"destinationAccountId,omitempty"`
-	CategoryID              *string  `json:"categoryId,omitempty"`
-	Type                    string   `json:"type"`
-	Status                  *string  `json:"status,omitempty"`
-	Amount                  float64  `json:"amount"`
-	Currency                string   `json:"currency"`
-	Description             string   `json:"description"`
-	Notes                   *string  `json:"notes,omitempty"`
-	CostCenter              *string  `json:"costCenter,omitempty"`
+	BankAccountID        string  `json:"bankAccountId"`
+	DestinationAccountID *string `json:"destinationAccountId,omitempty"`
+	CategoryID           *string `json:"categoryId,omitempty"`
+	Type                 string  `json:"type"`
+	Status               *string `json:"status,omitempty"`
+	Amount               float64 `json:"amount"`
+	Currency             string  `json:"currency"`
+	Description          string  `json:"description"`
+	Notes                *string `json:"notes,omitempty"`
+	CostCenter           *string `json:"costCenter,omitempty"`
+	// CostCenterID links the row to a client, project or department. The create
+	// path has always accepted it; this one never did, so a transaction posted
+	// without one could not be given one afterwards — only reversed and re-posted,
+	// which spends a reversal on a metadata correction and makes the ledger's
+	// history say something did not happen when it did.
+	//
+	// OMITTING IT KEEPS WHAT THE ROW HAS, which breaks this route's full-replace
+	// rule on purpose. Every other field is cleared by omission because the clients
+	// echo it back: the dashboard's edit form loads costCenter off the transaction
+	// and sends it again, so an omission there is a deliberate clear. No client
+	// sends costCenterId — the frontend has no notion of it at all — so clearing on
+	// omission would mean every description fix made in the dashboard silently
+	// unfiles the row from its client or project, with nothing on screen to show it
+	// happened. Consistency with a field the caller can see is not the same as
+	// consistency with one it cannot.
+	//
+	// To clear it deliberately, send an empty string.
+	CostCenterID            *string  `json:"costCenterId,omitempty"`
 	IsPersonalReimbursement bool     `json:"isPersonalReimbursement"`
 	OccurredOn              string   `json:"occurredOn"`
 	DueOn                   *string  `json:"dueOn,omitempty"`
@@ -41,6 +61,52 @@ type UpdateTransactionUseCase struct {
 	invoiceRepo         invoice.Repository
 	balanceRecalculator BalanceRecalculator
 	invoiceRecalculator InvoiceRecalculator
+	costCenterRepo      costcenter.Repository
+}
+
+// SetCostCenterRepository wires the cost centre check, following how the other
+// collaborators attach after construction.
+//
+// Attached rather than required because the constructor already has five arguments
+// and some thirty call sites; the risk that buys — a validator quietly left unwired
+// — is answered by refusing an id it cannot check rather than writing it unverified.
+// See the guard in Execute.
+func (uc *UpdateTransactionUseCase) SetCostCenterRepository(r costcenter.Repository) {
+	uc.costCenterRepo = r
+}
+
+// resolveCostCenter accepts an id only once it is known to exist and to belong to
+// this transaction's profile.
+//
+// A cost centre from another profile would file one company's spending under
+// another's project, which is why the create path checks the same two things.
+func (uc *UpdateTransactionUseCase) resolveCostCenter(id *string, profileID string) error {
+	// Absent means keep, and the empty string means clear. Neither names a cost
+	// centre, so neither needs one to exist.
+	if id == nil || *id == "" {
+		return nil
+	}
+	// Fails CLOSED. With no repository there is no way to check the id, and an
+	// unchecked id written to the ledger is worse than a refused edit: it looks
+	// correct and nothing downstream can tell. This repository has shipped the
+	// opposite shape — a collaborator left unwired, silently doing nothing — more
+	// than once.
+	if uc.costCenterRepo == nil {
+		return errors.New("a cost centre cannot be verified: no cost centre repository is wired")
+	}
+	center, err := uc.costCenterRepo.FindByID(*id)
+	if errors.Is(err, costcenter.ErrNotFound) {
+		return ErrCostCenterNotFound
+	}
+	if err != nil {
+		// A failed read is not a missing cost centre. Reporting it as one answers a
+		// database outage with 400 and tells the caller their input was wrong.
+		return err
+	}
+	if center.ProfileID != profileID {
+		return ErrCostCenterNotFound
+	}
+	return nil
 }
 
 // SetInvoiceRecalculator wires the bill-total refresh, following how the other
@@ -126,6 +192,13 @@ func (uc *UpdateTransactionUseCase) Execute(id string, input UpdateTransactionIn
 		if !isCategoryCompatible(typeValue, cat.Type) {
 			return nil, ErrInvalidInput
 		}
+	}
+
+	// Checked here, beside the category, and before anything is written: a refusal
+	// that lands after the row has already changed is worse than the refusal it
+	// reports.
+	if err := uc.resolveCostCenter(input.CostCenterID, existing.ProfileID); err != nil {
+		return nil, err
 	}
 
 	// Validate destination account for transfers
@@ -234,6 +307,15 @@ func (uc *UpdateTransactionUseCase) Execute(id string, input UpdateTransactionIn
 	existing.Description = strings.TrimSpace(input.Description)
 	existing.Notes = input.Notes
 	existing.CostCenter = input.CostCenter
+	// Absent keeps, empty string clears, anything else was validated above. See the
+	// field's comment for why this one does not follow the full-replace rule.
+	if input.CostCenterID != nil {
+		if *input.CostCenterID == "" {
+			existing.CostCenterID = nil
+		} else {
+			existing.CostCenterID = input.CostCenterID
+		}
+	}
 	existing.IsPersonalReimbursement = input.IsPersonalReimbursement
 	existing.OccurredOn = occurredOn
 	existing.DueOn = dueOn
