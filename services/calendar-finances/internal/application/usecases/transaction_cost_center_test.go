@@ -31,7 +31,12 @@ func (f *fakeCostCenterRepo) FindByID(id string) (*costcenter.CostCenter, error)
 		return nil, f.readErr
 	}
 	if c, ok := f.centers[id]; ok {
-		return c, nil
+		// A COPY, like a row scanned out of Postgres. Handing back the stored
+		// pointer is the defect that has shipped here repeatedly: a use case's
+		// in-memory mutation then "persists" with no write, and deleting the write
+		// leaves the suite green. This fake has a second consumer now.
+		loaded := *c
+		return &loaded, nil
 	}
 	// The SQL repository answers absence with this sentinel; a fake that answered
 	// anything else would let a caller pass here and fail in production.

@@ -172,6 +172,9 @@ func New(db *sql.DB) (*App, error) {
 	createTransactionUC.SetInvoiceRecalculator(recalculateInvoiceUC)
 	updateTransactionStatusUC.SetInvoiceRecalculator(recalculateInvoiceUC)
 	updateTransactionUC.SetInvoiceRecalculator(recalculateInvoiceUC)
+	// Without this the edit path cannot verify a cost centre id, and refuses it —
+	// see resolveCostCenter. TestEveryWiredCollaboratorIsAttached keeps it honest.
+	updateTransactionUC.SetCostCenterRepository(costCenterRepo)
 	updateInvoiceUC := usecases.NewUpdateInvoiceUseCase(invoiceRepo)
 	invoiceHandler := httpHandlers.NewInvoiceHandlers(
 		createInvoiceUC,
