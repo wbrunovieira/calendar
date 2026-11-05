@@ -8,6 +8,7 @@ import {
   Min,
   Max,
   ValidateNested,
+  ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { EventReminderDto } from './event-reminder.dto';
@@ -108,6 +109,30 @@ export class UpdateEventDto {
   @IsArray()
   @IsNumber({}, { each: true })
   reminderDaysBefore?: number[];
+
+  // Habits v2
+  @IsOptional()
+  @IsIn(['BUILD', 'QUIT'])
+  habitKind?: string;
+
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsNumber()
+  @Min(0)
+  dailyTarget?: number | null;
+
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsString()
+  targetUnit?: string | null;
+
+  @IsOptional()
+  @IsIn(['MORNING', 'ANYTIME', 'EVENING'])
+  timeOfDay?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isPaused?: boolean;
 
   // Alertas do evento (ex: [{ minutesBefore: 30, method: 'notification' }])
   @IsOptional()

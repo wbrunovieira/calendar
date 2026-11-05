@@ -5,6 +5,7 @@ export class EventExecution {
   completed: boolean;
   completedAt?: Date | null;
   notes?: string | null;
+  value?: number | null;
   createdAt: Date;
   updatedAt: Date;
 
@@ -15,6 +16,7 @@ export class EventExecution {
     this.completed = props.completed;
     this.completedAt = props.completedAt || undefined;
     this.notes = props.notes || undefined;
+    this.value = props.value ?? null;
     this.createdAt = props.createdAt;
     this.updatedAt = props.updatedAt;
   }

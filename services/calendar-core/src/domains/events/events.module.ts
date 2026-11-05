@@ -10,6 +10,12 @@ import { GetEventsStatsUseCase } from './application/use-cases/get-events-stats.
 import { GetHabitsStatsUseCase } from './application/use-cases/get-habits-stats.use-case';
 import { GetWeeklyProgressUseCase } from './application/use-cases/get-weekly-progress.use-case';
 import { ReorderEventsUseCase } from './application/use-cases/reorder-events.use-case';
+import { LogHabitAmountUseCase } from './application/use-cases/log-habit-amount.use-case';
+import {
+  LogHabitSlipUseCase,
+  RemoveHabitSlipUseCase,
+} from './application/use-cases/habit-slips.use-case';
+import { HabitSlipRepository } from './infrastructure/repositories/habit-slip.repository';
 import { EventRepository } from './infrastructure/repositories/event.repository';
 import { EventExecutionRepository } from './infrastructure/repositories/event-execution.repository';
 import { GoogleCalendarModule } from '../google-calendar/google-calendar.module';
@@ -30,6 +36,10 @@ import { SyncEventToGoogleUseCase } from '../google-calendar/application/use-cas
     GetHabitsStatsUseCase,
     GetWeeklyProgressUseCase,
     ReorderEventsUseCase,
+    LogHabitAmountUseCase,
+    LogHabitSlipUseCase,
+    RemoveHabitSlipUseCase,
+    HabitSlipRepository,
     EventRepository,
     EventExecutionRepository,
     SyncEventToGoogleUseCase,

@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { api } from '@/lib/api';
-import type { Calendar, Category, CategoryType, Event } from '@/types/calendar';
+import type { Calendar, Category, CategoryType, Event, HabitTimeOfDay } from '@/types/calendar';
 import LabelSelector from '@/components/labels/LabelSelector';
+import HabitOptionsFields, { habitOptionsPayload } from './HabitOptionsFields';
 
 interface EditHabitModalProps {
   isOpen: boolean;
@@ -36,6 +37,11 @@ export default function EditHabitModal({
   const [recurrenceType, setRecurrenceType] = useState<'FIXED' | 'FLEXIBLE'>('FIXED');
   const [weeklyTargetCount, setWeeklyTargetCount] = useState(2);
   const [weeklyPreferredDays, setWeeklyPreferredDays] = useState<string[]>([]);
+  // Habits v2 (the kind is fixed after creation: a quit habit's history means something else)
+  const [dailyTarget, setDailyTarget] = useState('');
+  const [targetUnit, setTargetUnit] = useState('');
+  const [timeOfDay, setTimeOfDay] = useState<HabitTimeOfDay>('ANYTIME');
+  const habitKind = habit?.habitKind === 'QUIT' ? 'QUIT' : 'BUILD';
 
   const DAYS_OF_WEEK = [
     { value: 'MO', label: 'Seg' },
@@ -79,6 +85,9 @@ export default function EditHabitModal({
       setRecurrenceType(habit.recurrenceType || 'FIXED');
       setWeeklyTargetCount(habit.weeklyTargetCount || 2);
       setWeeklyPreferredDays(habit.weeklyPreferredDays || []);
+      setDailyTarget(habit.dailyTarget ? String(habit.dailyTarget) : '');
+      setTargetUnit(habit.targetUnit || '');
+      setTimeOfDay(habit.timeOfDay || 'ANYTIME');
     }
   }, [isOpen, habit]);
 
@@ -131,11 +140,12 @@ export default function EditHabitModal({
         categoryId: categoryId || null,
         categoryTypeId: categoryTypeId || null,
         labelId: labelId || null,
-        recurrenceRule: freqMap[frequency],
+        recurrenceRule: habitKind === 'QUIT' ? 'FREQ=DAILY' : freqMap[frequency],
+        ...habitOptionsPayload(habitKind, dailyTarget, targetUnit, timeOfDay),
       };
 
       // Add flexible weekly habit fields
-      if (frequency === 'weekly' && recurrenceType === 'FLEXIBLE') {
+      if (habitKind === 'BUILD' && frequency === 'weekly' && recurrenceType === 'FLEXIBLE') {
         updateData.recurrenceType = 'FLEXIBLE';
         updateData.weeklyTargetCount = weeklyTargetCount;
         updateData.weeklyPreferredDays = weeklyPreferredDays.length > 0 ? weeklyPreferredDays : null;
@@ -248,6 +258,18 @@ export default function EditHabitModal({
             </p>
           </div>
 
+          <HabitOptionsFields
+            habitKind={habitKind}
+            dailyTarget={dailyTarget}
+            targetUnit={targetUnit}
+            timeOfDay={timeOfDay}
+            onDailyTargetChange={setDailyTarget}
+            onTargetUnitChange={setTargetUnit}
+            onTimeOfDayChange={setTimeOfDay}
+          />
+
+          {habitKind === 'BUILD' && (
+          <>
           {/* Frequency */}
           <div>
             <label htmlFor="frequency" className="block text-sm font-medium text-white/70 mb-1">
@@ -368,6 +390,8 @@ export default function EditHabitModal({
                 </div>
               </div>
             </>
+          )}
+          </>
           )}
 
           {/* Start Time */}

@@ -74,7 +74,14 @@ export class CreateEventUseCase {
     let weeklyTargetCount: number | null = null;
     let weeklyPreferredDays: string[] = [];
 
-    if (dto.recurrenceType === 'FLEXIBLE' && dto.weeklyTargetCount) {
+    const isHabit = dto.eventType === 'HABIT';
+    const isQuitHabit = isHabit && dto.habitKind === 'QUIT';
+
+    if (isQuitHabit) {
+      // Every day counts as clean unless a slip is logged
+      recurrenceRule = 'FREQ=DAILY';
+      recurrenceType = 'FIXED';
+    } else if (dto.recurrenceType === 'FLEXIBLE' && dto.weeklyTargetCount) {
       // Flexible weekly habit
       recurrenceType = 'FLEXIBLE';
       weeklyTargetCount = dto.weeklyTargetCount;
@@ -110,6 +117,10 @@ export class CreateEventUseCase {
       recurrenceType,
       weeklyTargetCount,
       weeklyPreferredDays,
+      habitKind: isHabit ? dto.habitKind || 'BUILD' : null,
+      dailyTarget: isHabit && !isQuitHabit ? dto.dailyTarget ?? null : null,
+      targetUnit: isHabit && !isQuitHabit ? dto.targetUnit ?? null : null,
+      timeOfDay: isHabit ? dto.timeOfDay ?? null : null,
     });
 
     const created = await this.eventRepository.create(event, dto.reminders);

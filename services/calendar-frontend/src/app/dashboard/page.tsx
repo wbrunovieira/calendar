@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import type { Event, Calendar, HabitStats, FlexibleHabitProgress } from '@/types/calendar';
+import { isCheckableHabit } from '@/lib/habits';
 
 const formatLocalDate = (date: Date) => {
   const year = date.getFullYear();
@@ -107,10 +108,11 @@ export default function HabitsDashboardPage() {
         ]);
 
         setCalendars(calendarsData || []);
-        setHabits(habitsData || []);
+        // Quit habits are tracked by slips, not checkboxes, and paused habits are hidden
+        setHabits((habitsData || []).filter(isCheckableHabit));
         setTodos(todosData || []);
         setEvents(eventsData || []);
-        setHabitStats(statsData || []);
+        setHabitStats((statsData || []).filter(isCheckableHabit));
         setFlexibleProgress(flexibleData || []);
       } catch (error) {
         console.error('Error fetching data:', error);

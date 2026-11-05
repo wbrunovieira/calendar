@@ -9,6 +9,8 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  ValidationPipe,
+  BadRequestException,
 } from "@nestjs/common";
 import { ApiTags, ApiBearerAuth, ApiOperation } from "@nestjs/swagger";
 import { EventRepository } from "../repositories/event.repository";
@@ -22,6 +24,12 @@ import { GetEventsStatsUseCase } from "../../application/use-cases/get-events-st
 import { GetHabitsStatsUseCase } from "../../application/use-cases/get-habits-stats.use-case";
 import { GetWeeklyProgressUseCase } from "../../application/use-cases/get-weekly-progress.use-case";
 import { ReorderEventsUseCase } from "../../application/use-cases/reorder-events.use-case";
+import { LogHabitAmountUseCase } from "../../application/use-cases/log-habit-amount.use-case";
+import {
+  LogHabitSlipUseCase,
+  RemoveHabitSlipUseCase,
+} from "../../application/use-cases/habit-slips.use-case";
+import { LogHabitAmountDto, LogHabitSlipDto } from "../dtos/habit-v2.dto";
 import { CreateEventDto } from "../dtos/create-event.dto";
 import { UpdateEventDto } from "../dtos/update-event.dto";
 import { ToggleEventExecutionDto } from "../dtos/toggle-event-execution.dto";
@@ -43,6 +51,9 @@ export class EventsController {
     private readonly getHabitsStatsUseCase: GetHabitsStatsUseCase,
     private readonly getWeeklyProgressUseCase: GetWeeklyProgressUseCase,
     private readonly reorderEventsUseCase: ReorderEventsUseCase,
+    private readonly logHabitAmountUseCase: LogHabitAmountUseCase,
+    private readonly logHabitSlipUseCase: LogHabitSlipUseCase,
+    private readonly removeHabitSlipUseCase: RemoveHabitSlipUseCase,
   ) {}
 
   private convertRRuleToLegacy(recurrenceRule: string | null): any {
@@ -216,6 +227,49 @@ export class EventsController {
       createdAt: execution.createdAt,
       updatedAt: execution.updatedAt,
     };
+  }
+
+  @ApiOperation({
+    summary: "Log how much of a habit's daily amount was done; completes the day at the target.",
+  })
+  @Post("executions/amount")
+  @HttpCode(HttpStatus.OK)
+  // No global ValidationPipe in this app; validate the new habit endpoints explicitly.
+  async logHabitAmount(@Body(new ValidationPipe()) dto: LogHabitAmountDto) {
+    const execution = await this.logHabitAmountUseCase.execute({
+      eventId: dto.eventId,
+      executionDate: new Date(dto.executionDate),
+      value: dto.value,
+    });
+
+    return {
+      id: execution.id,
+      eventId: execution.eventId,
+      executionDate: execution.executionDate,
+      completed: execution.completed,
+      completedAt: execution.completedAt,
+      value: execution.value,
+    };
+  }
+
+  @ApiOperation({ summary: "Log a slip on a habit being quit (breaks the clean-day count)." })
+  @Post(":id/slips")
+  @HttpCode(HttpStatus.CREATED)
+  async logHabitSlip(
+    @Param("id") eventId: string,
+    @Body(new ValidationPipe()) dto: LogHabitSlipDto,
+  ) {
+    return await this.logHabitSlipUseCase.execute({ eventId, ...dto });
+  }
+
+  @ApiOperation({ summary: "Undo a slip logged on a given day." })
+  @Delete(":id/slips/:date")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async removeHabitSlip(@Param("id") eventId: string, @Param("date") date: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      throw new BadRequestException("date must be YYYY-MM-DD");
+    }
+    await this.removeHabitSlipUseCase.execute(eventId, date);
   }
 
   @ApiOperation({ summary: "Reorder events (drag-and-drop) by an ordered list of ids." })

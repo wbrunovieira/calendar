@@ -4,6 +4,7 @@ import { EventRepository } from '../../infrastructure/repositories/event.reposit
 import { EventExecutionRepository } from '../../infrastructure/repositories/event-execution.repository';
 import { Event } from '../../domain/entities/event.entity';
 import { EventExecution } from '../../domain/entities/event-execution.entity';
+import { HabitSlipRepository } from '../../infrastructure/repositories/habit-slip.repository';
 
 describe('GetHabitsStatsUseCase', () => {
   let useCase: GetHabitsStatsUseCase;
@@ -303,6 +304,212 @@ describe('GetHabitsStatsUseCase', () => {
 
       // Should have streak of 1 for the completed Monday
       expect(result[0].totalCompletions).toBe(1);
+    });
+  });
+
+  describe('habits v2', () => {
+    let slipRepository: Partial<HabitSlipRepository>;
+
+    beforeEach(() => {
+      slipRepository = { findByEventIds: vi.fn().mockResolvedValue([]) };
+      useCase = new GetHabitsStatsUseCase(
+        mockEventRepository as EventRepository,
+        mockExecutionRepository as EventExecutionRepository,
+        slipRepository as HabitSlipRepository,
+      );
+    });
+
+    const slip = (date: string, trigger?: string) => ({
+      id: `slip-${date}`,
+      eventId: 'habit-1',
+      slipDate: new Date(date), // DATE columns come back as UTC midnight
+      trigger: trigger ?? null,
+      note: null,
+    });
+
+    it('reads completions stored as UTC midnight on their own calendar day (regression)', async () => {
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([createHabit()]);
+      vi.mocked(mockExecutionRepository.findByEventId!).mockResolvedValue([
+        createExecution('habit-1', new Date('2024-01-13'), true),
+        createExecution('habit-1', new Date('2024-01-14'), true),
+      ]);
+
+      const [stats] = await useCase.execute({});
+
+      expect(stats.currentStreak).toBe(2);
+      expect(stats.weeklyCompletions.filter((d) => d.completed).map((d) => d.date)).toEqual([
+        '2024-01-13',
+        '2024-01-14',
+      ]);
+    });
+
+    it('counts clean days since the last slip for a QUIT habit', async () => {
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([createHabit({ habitKind: 'QUIT' })]);
+      vi.mocked(mockExecutionRepository.findByEventId!).mockResolvedValue([]);
+      vi.mocked(slipRepository.findByEventIds!).mockResolvedValue([
+        slip('2024-01-10', 'Stress'),
+        slip('2024-01-04', 'Stress'),
+        slip('2024-01-02', 'Social'),
+      ]);
+
+      const [stats] = await useCase.execute({});
+
+      expect(stats.habitKind).toBe('QUIT');
+      expect(stats.currentStreak).toBe(5); // Jan 11..15
+      expect(stats.longestStreak).toBe(5); // Jan 5..9 and Jan 11..15
+      expect(stats.slipsLast30Days).toBe(3);
+      expect(stats.topTrigger).toBe('Stress');
+      expect(stats.todaySlip).toBeNull();
+    });
+
+    it('reports a slip logged today and resets the clean count', async () => {
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([createHabit({ habitKind: 'QUIT' })]);
+      vi.mocked(mockExecutionRepository.findByEventId!).mockResolvedValue([]);
+      vi.mocked(slipRepository.findByEventIds!).mockResolvedValue([slip('2024-01-15', 'Tired')]);
+
+      const [stats] = await useCase.execute({});
+
+      expect(stats.currentStreak).toBe(0);
+      expect(stats.todaySlip).toEqual({ trigger: 'Tired', note: null });
+    });
+
+    it('computes the completion rate over the last 30 days, excluding today', async () => {
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([
+        createHabit({ startDate: new Date(2023, 11, 1) }),
+      ]);
+      const done = Array.from({ length: 10 }, (_, i) =>
+        createExecution('habit-1', new Date(2024, 0, 14 - i * 2), true),
+      );
+      done.push(createExecution('habit-1', new Date(2024, 0, 15), true)); // today: ignored
+      vi.mocked(mockExecutionRepository.findByEventId!).mockResolvedValue(done);
+
+      const [stats] = await useCase.execute({});
+
+      expect(stats.completionRate30d).toBe(33);
+    });
+
+    it('returns a 16-week heatmap ending today with null outside the schedule', async () => {
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([createHabit()]);
+      vi.mocked(mockExecutionRepository.findByEventId!).mockResolvedValue([
+        createExecution('habit-1', new Date(2024, 0, 14), true),
+      ]);
+
+      const [stats] = await useCase.execute({});
+
+      expect(stats.heatmap).toHaveLength(112);
+      expect(stats.heatmap[111]).toEqual({ date: '2024-01-15', value: null }); // still pending today
+      expect(stats.heatmap[110]).toEqual({ date: '2024-01-14', value: 1 });
+      expect(stats.heatmap.find((d) => d.date === '2023-12-31')?.value).toBeNull();
+    });
+
+    it('sums the logged amount and passes the habit settings through', async () => {
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([
+        createHabit({ dailyTarget: 20, targetUnit: 'pages', timeOfDay: 'EVENING', isPaused: true }),
+      ]);
+      vi.mocked(mockExecutionRepository.findByEventId!).mockResolvedValue([
+        new EventExecution({ id: 'a', eventId: 'habit-1', executionDate: new Date(2024, 0, 13), completed: true, value: 20 }),
+        new EventExecution({ id: 'b', eventId: 'habit-1', executionDate: new Date(2024, 0, 14), completed: false, value: 12 }),
+      ]);
+
+      const [stats] = await useCase.execute({});
+
+      expect(stats).toMatchObject({
+        habitKind: 'BUILD',
+        dailyTarget: 20,
+        targetUnit: 'pages',
+        timeOfDay: 'EVENING',
+        isPaused: true,
+        totalAmount: 32,
+      });
+    });
+  });
+
+  describe('habits v2 review fixes', () => {
+    let slipRepository: Partial<HabitSlipRepository>;
+
+    beforeEach(() => {
+      slipRepository = { findByEventIds: vi.fn().mockResolvedValue([]) };
+      useCase = new GetHabitsStatsUseCase(
+        mockEventRepository as EventRepository,
+        mockExecutionRepository as EventExecutionRepository,
+        slipRepository as HabitSlipRepository,
+      );
+      vi.mocked(mockExecutionRepository.findByEventId!).mockResolvedValue([]);
+    });
+
+    const slip = (date: string) => ({
+      id: date,
+      eventId: 'habit-1',
+      slipDate: new Date(date),
+      trigger: 'Stress',
+      note: null,
+    });
+
+    it('marks done days on a FLEXIBLE heatmap and leaves the rest unscheduled', async () => {
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([
+        createHabit({ recurrenceRule: 'FREQ=WEEKLY', recurrenceType: 'FLEXIBLE', weeklyTargetCount: 3 }),
+      ]);
+      vi.mocked(mockExecutionRepository.findByEventId!).mockResolvedValue([
+        createExecution('habit-1', new Date(2024, 0, 10), true),
+      ]);
+
+      const [stats] = await useCase.execute({});
+
+      expect(stats.heatmap.find((c) => c.date === '2024-01-10')?.value).toBe(1);
+      expect(stats.heatmap.find((c) => c.date === '2024-01-11')?.value).toBeNull();
+      expect(stats.completionRate30d).toBeNull();
+    });
+
+    it('freezes a paused QUIT habit on the day it was paused', async () => {
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([
+        createHabit({ habitKind: 'QUIT', isPaused: true, pausedAt: new Date('2024-01-10') }),
+      ]);
+
+      const [stats] = await useCase.execute({});
+
+      expect(stats.currentStreak).toBe(10); // Jan 1..10, not 15
+    });
+
+    it('keeps a paused BUILD streak instead of letting the paused days break it', async () => {
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([
+        createHabit({ isPaused: true, pausedAt: new Date('2024-01-11') }),
+      ]);
+      vi.mocked(mockExecutionRepository.findByEventId!).mockResolvedValue([
+        createExecution('habit-1', new Date(2024, 0, 8), true),
+        createExecution('habit-1', new Date(2024, 0, 9), true),
+        createExecution('habit-1', new Date(2024, 0, 10), true),
+      ]);
+
+      const [stats] = await useCase.execute({});
+
+      expect(stats.currentStreak).toBe(3);
+    });
+
+    it('counts slips in a 30-day window that includes today and 29 days back', async () => {
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([
+        createHabit({ habitKind: 'QUIT', startDate: new Date(2023, 10, 1) }),
+      ]);
+      vi.mocked(slipRepository.findByEventIds!).mockResolvedValue([
+        slip('2023-12-17'), // today - 29
+        slip('2023-12-16'), // today - 30
+      ]);
+
+      const [stats] = await useCase.execute({});
+
+      expect(stats.slipsLast30Days).toBe(1);
+    });
+
+    it('ignores slips dated before the habit started', async () => {
+      vi.mocked(mockEventRepository.findAll!).mockResolvedValue([
+        createHabit({ habitKind: 'QUIT', startDate: new Date('2024-01-05') }),
+      ]);
+      vi.mocked(slipRepository.findByEventIds!).mockResolvedValue([slip('2024-01-03')]);
+
+      const [stats] = await useCase.execute({});
+
+      expect(stats.slipsLast30Days).toBe(0);
+      expect(stats.topTrigger).toBeNull();
+      expect(stats.currentStreak).toBe(11); // Jan 5..15
     });
   });
 });
