@@ -151,6 +151,26 @@ func TestRefinanceIsNotRepeatable(t *testing.T) {
 
 // Same reasoning as a paid bill: letting a converted cycle reopen puts an old
 // cycle back to OPEN, where it starts accepting charges from a later one.
+//
+// The state to test is a bill whose status says CLOSED while the conversion
+// record is still on it. Asserting against a REFINANCED one proves nothing —
+// Reopen already refuses every status other than CLOSED, so the guard is never
+// reached and deleting it leaves the test green.
+func TestABillStillCarryingAConversionCannotReopen(t *testing.T) {
+	inv := settledCandidate(t, 1000)
+	if err := inv.Refinance("txn-a", time.Now()); err != nil {
+		t.Fatalf("Refinance: %v", err)
+	}
+	inv.Status = StatusClosed // what a status rewritten elsewhere leaves behind
+
+	if err := inv.Reopen(); err == nil {
+		t.Fatal("expected a bill still carrying a conversion to refuse reopening")
+	}
+	if inv.Status == StatusOpen {
+		t.Error("the cycle reopened and will start taking charges from a later one")
+	}
+}
+
 func TestARefinancedBillCannotReopen(t *testing.T) {
 	inv := settledCandidate(t, 1000)
 	if err := inv.Refinance("txn-a", time.Now()); err != nil {

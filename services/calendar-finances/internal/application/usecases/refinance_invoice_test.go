@@ -109,8 +109,11 @@ func TestRefinanceLeavesNothingHalfDoneWhenOneBillIsIneligible(t *testing.T) {
 
 	err := uc.Execute("credito", []string{"set", "out"})
 
-	if err == nil {
-		t.Fatal("expected a refusal")
+	// Named, not merely refused: an open cycle is a different problem from a bill
+	// that owes nothing, and the caller is told which. Letting the domain's generic
+	// refusal answer instead loses that.
+	if !errors.Is(err, ErrPaymentRefused) || err.Error() != ErrInvoiceStillOpen.Error() {
+		t.Fatalf("error = %v, want %v", err, ErrInvoiceStillOpen)
 	}
 	if invRepo.invoices["set"].Status == invoice.StatusRefinanced {
 		t.Error("september was converted even though the batch failed")
