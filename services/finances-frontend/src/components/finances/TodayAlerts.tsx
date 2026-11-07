@@ -5,6 +5,7 @@ import Link from 'next/link';
 import type { Transaction, RecurringTransaction, Invoice, BankAccount, Category } from '@/types/finances';
 import { formatCurrency } from '@/utils/format';
 import { amountLeftOn } from '@/utils/creditCard';
+import { describeInvoicePayment } from '@/utils/invoicePayment';
 import { findPendingRecurrings } from '@/utils/pendingAlerts';
 
 interface TodayAlertsProps {
@@ -425,8 +426,32 @@ export default function TodayAlerts({
                     )}
                   </div>
                 </div>
-                {onPayInvoice && payingInvoiceDates[invoice.id] !== undefined && (
-                  <div className="flex items-center gap-2 pt-1 border-t border-white/10">
+                {onPayInvoice && payingInvoiceDates[invoice.id] !== undefined && (() => {
+                  // Say what this will write before it is written. Paying a bill
+                  // creates a real debit against a real account, and when the bill
+                  // was settled outside the system that debit is money that never
+                  // moved — it breaks a balance that reconciles to the cent.
+                  const preview = describeInvoicePayment(invoice, account, accounts);
+                  if (preview.blockedReason) {
+                    return (
+                      <div className="pt-1 border-t border-white/10 space-y-1">
+                        <p className="text-amber-300 text-xs">{preview.blockedReason}</p>
+                        <button
+                          onClick={() => setPayingInvoiceDates((prev) => { const n = { ...prev }; delete n[invoice.id]; return n; })}
+                          className="text-white/40 hover:text-white/70 text-xs"
+                        >
+                          fechar
+                        </button>
+                      </div>
+                    );
+                  }
+                  return (
+                  <div className="space-y-1 pt-1 border-t border-white/10">
+                    <p className="text-white/50 text-xs">
+                      Vai lançar <span className="text-white/80">{formatCurrency(preview.amount)}</span> saindo de{' '}
+                      <span className="text-white/80">{preview.fundingAccountName}</span>.
+                    </p>
+                  <div className="flex items-center gap-2">
                     <span className="text-white/60 text-xs">Pago em</span>
                     <input
                       type="date"
@@ -448,7 +473,9 @@ export default function TodayAlerts({
                       cancelar
                     </button>
                   </div>
-                )}
+                  </div>
+                  );
+                })()}
               </div>
             ))}
 

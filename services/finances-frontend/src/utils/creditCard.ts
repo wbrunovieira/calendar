@@ -41,6 +41,11 @@ export function getCardUsage(
  */
 export function amountLeftOn(invoice: Invoice): number {
   if (typeof invoice.amountRemaining === 'number') return Math.max(0, invoice.amountRemaining);
+  // A converted bill owes nothing regardless of what was paid against it: the
+  // balance moved to the instalments, which are transactions of their own.
+  // Reading paidAmount here would report the unpaid remainder as still owed and
+  // count the same debt twice.
+  if (invoice.status === 'REFINANCED') return 0;
   const paid = invoice.paidAmount ?? (invoice.status === 'PAID' ? invoice.amount : 0);
   return Math.max(0, invoice.amount - paid);
 }
@@ -52,8 +57,8 @@ export function amountLeftOn(invoice: Invoice): number {
  * partially paid bill in the "owes everything" case and counted money that had
  * already left the checking account.
  *
- * A bill marked PAID with no paidAmount recorded owes nothing — the status is the
- * only evidence there is. Everything else defaults to nothing paid yet, which also
+ * A bill marked PAID or REFINANCED with no paidAmount recorded owes nothing — the
+ * status is the only evidence there is. Everything else defaults to nothing paid yet, which also
  * covers legacy rows where a partial payment was stored as PAID.
  */
 export function outstandingOn(invoices: Invoice[]): number {
