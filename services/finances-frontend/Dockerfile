@@ -11,6 +11,11 @@ ENV NEXT_PUBLIC_CALENDAR_API_URL=$NEXT_PUBLIC_CALENDAR_API_URL
 ARG NEXT_PUBLIC_CALENDAR_API_TOKEN=
 ENV NEXT_PUBLIC_CALENDAR_API_TOKEN=$NEXT_PUBLIC_CALENDAR_API_TOKEN
 
+# Authelia gateway. The code defaults to the production host, so a missing build
+# argument degrades to the right behaviour rather than to a dead login button.
+ARG NEXT_PUBLIC_AUTH_URL=https://auth.wbdigitalsolutions.com
+ENV NEXT_PUBLIC_AUTH_URL=$NEXT_PUBLIC_AUTH_URL
+
 COPY package*.json ./
 RUN npm ci
 

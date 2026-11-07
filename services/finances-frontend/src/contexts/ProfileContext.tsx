@@ -2,6 +2,13 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { api } from '@/lib/api';
+import {
+  getSessionState,
+  subscribeSession,
+  reportRequestFailure,
+  ACTIVE_SESSION,
+  type SessionState,
+} from '@/lib/session';
 import type { Profile } from '@/types/finances';
 
 interface ProfileContextType {
@@ -10,6 +17,19 @@ interface ProfileContextType {
   selectedProfile: Profile | null;
   setSelectedProfileId: (id: string) => void;
   isLoading: boolean;
+  /**
+   * True when the load failed because the gateway wants a login. Without it a
+   * screen cannot tell "this account has no profiles" from "you are logged out"
+   * and reports the wrong one — which is what every screen did until 07/11/2026.
+   */
+  authRequired: boolean;
+  loginUrl: string;
+  /**
+   * Set when the load failed for a reason that is not the session. Without it a
+   * 500, an offline laptop or a DNS blip all leave `profiles` empty and the
+   * screens report "no profiles" — the same lie, with a different cause.
+   */
+  loadError: boolean;
 }
 
 const ProfileContext = createContext<ProfileContextType | undefined>(undefined);
@@ -20,6 +40,12 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedProfileId, setSelectedProfileIdState] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [session, setSession] = useState<SessionState>(ACTIVE_SESSION);
+  const [loadError, setLoadError] = useState(false);
+
+  // Any request anywhere in the app can discover that the session ended, not
+  // just this one at mount.
+  useEffect(() => subscribeSession(setSession), []);
 
   // Load profiles on mount
   useEffect(() => {
@@ -40,6 +66,9 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
         }
       } catch (error) {
         console.error('Erro ao carregar perfis:', error);
+        const isAuth = reportRequestFailure(error);
+        setSession(getSessionState());
+        setLoadError(!isAuth);
       } finally {
         setIsLoading(false);
       }
@@ -63,6 +92,9 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
         selectedProfile,
         setSelectedProfileId,
         isLoading,
+        authRequired: session.authRequired,
+        loginUrl: session.loginUrl,
+        loadError,
       }}
     >
       {children}
