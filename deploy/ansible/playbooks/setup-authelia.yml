@@ -123,6 +123,76 @@
         proxy_set_header Remote-Email $email;
         EOF
 
+    # ── API variant of the auth-request snippet ──────────────
+    # A browser calling the API from a sibling subdomain cannot follow a
+    # redirect to the login page. The cross-origin 302 carries no CORS headers,
+    # so fetch rejects with "TypeError: Failed to fetch" and the caller never
+    # learns that the session is what expired — every screen reports an empty
+    # account instead. The preflight is redirected too, and a redirected
+    # preflight is refused outright, so the real request is never even sent.
+    #
+    # The API therefore answers an expired session with a real 401 the browser
+    # is allowed to read, and answers the preflight before the access phase.
+    # Pages keep the 302: a human typing a URL should land on the login form.
+    - name: Create cross-origin map for the API vhosts
+      raw: |
+        cat > /etc/nginx/conf.d/cors-origin.conf << 'EOF'
+        # Echo back only the origins we actually serve. A credentialed request
+        # may not be answered with "*", and an unlisted origin yields an empty
+        # value, which nginx omits rather than emitting a blank header.
+        map $http_origin $cors_origin {
+            default                                     "";
+            "https://finances.wbdigitalsolutions.com"   $http_origin;
+            "https://health.wbdigitalsolutions.com"     $http_origin;
+            "https://calendar.wbdigitalsolutions.com"   $http_origin;
+        }
+        EOF
+
+    - name: Create authelia-authrequest-api snippet
+      raw: |
+        cat > /etc/nginx/snippets/authelia-authrequest-api.conf << 'EOF'
+        # The preflight carries no cookies and discloses nothing, and it is
+        # evaluated in the rewrite phase — before auth_request runs — which is
+        # exactly what keeps the real request from being blocked behind it.
+        if ($request_method = OPTIONS) {
+            add_header Access-Control-Allow-Origin      $cors_origin always;
+            add_header Access-Control-Allow-Credentials true         always;
+            add_header Access-Control-Allow-Methods     "GET, POST, PUT, PATCH, DELETE, OPTIONS" always;
+            add_header Access-Control-Allow-Headers     "Content-Type, Authorization" always;
+            add_header Access-Control-Max-Age           86400        always;
+            return 204;
+        }
+
+        auth_request /authelia;
+        auth_request_set $user   $upstream_http_remote_user;
+        auth_request_set $groups $upstream_http_remote_groups;
+        auth_request_set $name   $upstream_http_remote_name;
+        auth_request_set $email  $upstream_http_remote_email;
+
+        # A readable 401 instead of a redirect the browser has to throw away.
+        error_page 401 = @authelia_api_401;
+
+        proxy_set_header Remote-User   $user;
+        proxy_set_header Remote-Groups $groups;
+        proxy_set_header Remote-Name   $name;
+        proxy_set_header Remote-Email  $email;
+        EOF
+
+    - name: Create authelia-api-401 snippet
+      raw: |
+        cat > /etc/nginx/snippets/authelia-api-401.conf << 'EOF'
+        # `always` matters: without it nginx attaches these only to 2xx/3xx, and
+        # a 401 the browser cannot read is the bug this whole change exists to
+        # remove. The body names the login portal so the caller never has to
+        # hardcode it.
+        location @authelia_api_401 {
+            add_header Access-Control-Allow-Origin      $cors_origin always;
+            add_header Access-Control-Allow-Credentials true         always;
+            default_type application/json;
+            return 401 '{"error":"unauthenticated","login":"https://auth.wbdigitalsolutions.com/"}';
+        }
+        EOF
+
     # ── Backup existing Nginx configs ────────────────────────
     - name: Backup existing frontend Nginx configs
       raw: |
@@ -355,31 +425,50 @@
     # These files are certbot-managed and use cert paths that differ from the
     # frontends, so this INSERTS the includes instead of rewriting the file.
     # Re-running is safe: a vhost that already includes the snippet is skipped.
-    - name: Include Authelia snippets in the API vhosts
+    - name: Wire the API vhosts to the API auth snippets
       raw: |
         python3 - <<'PYEOF'
         import os, re
         SITES = ["calendar-finances", "calendar-health", "agents"]
-        LOC = "    include /etc/nginx/snippets/authelia-location.conf;"
-        REQ = "        include /etc/nginx/snippets/authelia-authrequest.conf;"
+        LOC  = "    include /etc/nginx/snippets/authelia-location.conf;"
+        E401 = "    include /etc/nginx/snippets/authelia-api-401.conf;"
+        REQ  = "        include /etc/nginx/snippets/authelia-authrequest-api.conf;"
+        GENERIC = "authelia-authrequest.conf"
+
         for name in SITES:
             p = "/etc/nginx/sites-enabled/%s.wbdigitalsolutions.com.conf" % name
             if not os.path.exists(p):
                 print("SKIP (missing): %s" % name); continue
             src = open(p).read()
-            if "authelia" in src:
-                print("SKIP (already protected): %s" % name); continue
-            out, did_loc, did_req = [], False, False
-            for line in src.split("\n"):
+            before = src
+
+            # A vhost wired by the earlier revision of this playbook carries the
+            # page snippet, whose error_page turns 401 into a cross-origin 302 the
+            # browser cannot read. Swap it rather than skipping: the vhosts that
+            # most need this fix are exactly the ones already protected.
+            src = src.replace(GENERIC, "authelia-authrequest-api.conf")
+
+            lines, out = src.split("\n"), []
+            has_loc  = "authelia-location.conf" in src
+            has_401  = "authelia-api-401.conf" in src
+            has_req  = "authelia-authrequest-api.conf" in src
+            did_loc = did_req = False
+            for line in lines:
                 out.append(line)
                 if not did_loc and re.match(r"\s*server_name\s", line):
-                    out.append(""); out.append(LOC); did_loc = True
-                elif not did_req and re.match(r"\s*location\s+/\s*\{", line):
+                    if not has_loc: out.append(""); out.append(LOC)
+                    if not has_401: out.append(E401)
+                    did_loc = True
+                elif not did_req and not has_req and re.match(r"\s*location\s+/\s*\{", line):
                     out.append(REQ); did_req = True
-            if not (did_loc and did_req):
-                raise SystemExit("ERROR: anchors not found in %s (loc=%s req=%s)" % (name, did_loc, did_req))
-            open(p, "w").write("\n".join(out))
-            print("PROTECTED: %s" % name)
+            src = "\n".join(out)
+
+            if src == before:
+                print("OK (already current): %s" % name); continue
+            if "authelia-authrequest-api.conf" not in src or "authelia-api-401.conf" not in src:
+                raise SystemExit("ERROR: anchors not found in %s" % name)
+            open(p, "w").write(src)
+            print("WIRED: %s" % name)
         PYEOF
 
     # calendar-agents is a second vhost onto the same agents container, and n8n
@@ -411,6 +500,34 @@
                 print("BLOCKED: calendar-agents /docs /redoc /openapi.json")
         PYEOF
 
+    # ── Test and reload after rewiring the API vhosts ────
+    # The earlier nginx -t ran before these files were touched, so without this
+    # the run would reload the old config and then "verify" it - a check that
+    # passes by testing the thing it was supposed to change.
+    - name: Test Nginx after wiring the API vhosts
+      raw: nginx -t 2>&1
+      register: nginx_test_api
+      ignore_errors: true
+
+    - name: Restore the backed-up vhosts if the config is broken
+      raw: |
+        BACKUP_DIR=$(ls -1d /etc/nginx/backups/*/ 2>/dev/null | tail -1)
+        echo "RESTORING from $BACKUP_DIR"
+        for conf in calendar-finances calendar-health agents calendar-agents; do
+          F="$BACKUP_DIR/${conf}.wbdigitalsolutions.com.conf"
+          [ -f "$F" ] && cp "$F" "/etc/nginx/sites-enabled/${conf}.wbdigitalsolutions.com.conf" && echo "  restored $conf"
+        done
+        rm -f /etc/nginx/snippets/authelia-authrequest-api.conf /etc/nginx/snippets/authelia-api-401.conf /etc/nginx/conf.d/cors-origin.conf
+        nginx -t 2>&1
+      when: nginx_test_api is failed
+
+    - name: Fail loudly rather than reload a broken gateway
+      raw: "echo 'nginx -t failed after wiring the API vhosts; previous config restored' && exit 1"
+      when: nginx_test_api is failed
+
+    - name: Reload Nginx after wiring the API vhosts
+      raw: systemctl reload nginx
+
     # ── Final verification ───────────────────────────────────
     - name: Verify Authelia health
       raw: |
@@ -428,11 +545,19 @@
 
     # These were listed as "bypass" while they in fact answered anyone. They are
     # protected now, so the expected result is a redirect, not a 200.
-    - name: Verify protected APIs redirect to login
+    # The APIs now answer a browser, not a human typing a URL: a readable 401
+    # instead of a redirect that cross-origin JavaScript has to throw away, and
+    # a preflight that is answered rather than redirected. A 302 here means the
+    # vhost is still on the page snippet and the dashboards will report empty
+    # accounts the next time a session lapses.
+    - name: Verify the protected APIs answer a readable 401, not a redirect
       raw: |
+        ORIGIN="https://finances.wbdigitalsolutions.com"
         for domain in calendar-finances.wbdigitalsolutions.com calendar-health.wbdigitalsolutions.com agents.wbdigitalsolutions.com; do
-          STATUS=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://$domain/ 2>/dev/null || echo "FAIL")
-          echo "  $domain → $STATUS (expect 302)"
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -H "Origin: $ORIGIN" https://$domain/api/v1/profiles 2>/dev/null || echo "FAIL")
+          ACAO=$(curl -s -D- -o /dev/null --max-time 10 -H "Origin: $ORIGIN" https://$domain/api/v1/profiles 2>/dev/null | grep -ci '^access-control-allow-origin' || true)
+          PRE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X OPTIONS -H "Origin: $ORIGIN" -H 'Access-Control-Request-Method: GET' -H 'Access-Control-Request-Headers: content-type' https://$domain/api/v1/profiles 2>/dev/null || echo "FAIL")
+          echo "  $domain -> GET $CODE (expect 401) | CORS header present: $ACAO (expect 1) | preflight $PRE (expect 204)"
         done
 
     - name: Verify the genuinely-bypassed paths still answer
