@@ -740,6 +740,11 @@ func migrations() []string {
 		// balance that nothing moved.
 		`ALTER TABLE finance.credit_card_invoices ADD COLUMN IF NOT EXISTS refinanced_by UUID REFERENCES finance.transactions(id)`,
 		`ALTER TABLE finance.credit_card_invoices ADD COLUMN IF NOT EXISTS refinanced_at TIMESTAMP`,
+		// What the bill owed at the moment of conversion. Recorded rather than
+		// recomputed from amount minus paid_amount, because amount is restated
+		// whenever the cycle's lines change — and this is what caps one credit
+		// across more than one request.
+		`ALTER TABLE finance.credit_card_invoices ADD COLUMN IF NOT EXISTS refinanced_amount NUMERIC(15, 2)`,
 		`DO $$
 		BEGIN
 			ALTER TABLE finance.credit_card_invoices DROP CONSTRAINT IF EXISTS credit_card_invoices_status_check;

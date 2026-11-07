@@ -79,9 +79,17 @@ func (uc *GetCreditUsageUseCase) outstandingFor(account *bankaccount.BankAccount
 		// only evidence there is. Anything else defaults to nothing paid yet, which
 		// also covers legacy rows where a partial payment was stored as PAID.
 		paid := 0.0
-		if inv.PaidAmount != nil {
+		switch {
+		case inv.Status == invoice.StatusRefinanced:
+			// Converted: the balance moved to the instalments, which are charges of
+			// later cycles and counted there. Falling through to PaidAmount would
+			// report the part nobody paid in cash as still owed, which is the same
+			// debt counted twice — in the endpoint the rest of the system treats as
+			// canonical.
+			paid = billed
+		case inv.PaidAmount != nil:
 			paid = *inv.PaidAmount
-		} else if inv.Status == invoice.StatusPaid {
+		case inv.Status == invoice.StatusPaid:
 			paid = billed
 		}
 		if remaining := billed - paid; remaining > 0 {

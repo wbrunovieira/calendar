@@ -171,3 +171,150 @@ func TestRefinanceRefusesToReassignABillToAnotherConversion(t *testing.T) {
 		t.Fatal("expected a bill converted by another credit to be refused")
 	}
 }
+
+// The cap has to hold across REQUESTS, not only within one. Spending the same
+// credit a few bills at a time passed every batch while settling far more debt
+// than the bank ever credited — a forced settlement in instalments.
+func TestRefinanceCapsOneCreditAcrossSeparateRequests(t *testing.T) {
+	uc, invRepo := refinanceFixture(t)
+	// 2.205,86 of credit against 92,96 + 1.649,35 = 1.742,31 owed: the first two
+	// fit. A third bill of 1.000,00 does not, even though on its own it would.
+	invRepo.invoices["nov"] = &invoice.Invoice{
+		ID: "nov", BankAccountID: "card",
+		OpeningDate: day(2026, 10, 10), ClosingDate: day(2026, 11, 9),
+		DueDate: day(2026, 11, 14), ReferenceDate: day(2026, 11, 1),
+		Status: invoice.StatusClosed, Amount: 1000,
+	}
+
+	if err := uc.Execute("credito", []string{"set", "out"}); err != nil {
+		t.Fatalf("first request: %v", err)
+	}
+
+	err := uc.Execute("credito", []string{"nov"})
+
+	if !errors.Is(err, ErrPaymentRefused) {
+		t.Fatalf("second request: error = %v, want a refusal", err)
+	}
+	if invRepo.invoices["nov"].Status == invoice.StatusRefinanced {
+		t.Error("the third bill was converted beyond what the credit covered")
+	}
+}
+
+// Spending the rest of a credit later is legitimate, and must still work.
+func TestRefinanceAllowsASecondRequestWithinWhatIsLeft(t *testing.T) {
+	uc, invRepo := refinanceFixture(t)
+	invRepo.invoices["nov"] = &invoice.Invoice{
+		ID: "nov", BankAccountID: "card",
+		OpeningDate: day(2026, 10, 10), ClosingDate: day(2026, 11, 9),
+		DueDate: day(2026, 11, 14), ReferenceDate: day(2026, 11, 1),
+		Status: invoice.StatusClosed, Amount: 400,
+	}
+
+	if err := uc.Execute("credito", []string{"set", "out"}); err != nil {
+		t.Fatalf("first request: %v", err)
+	}
+	// 2.205,86 - 1.742,31 = 463,55 left, which covers 400,00.
+	if err := uc.Execute("credito", []string{"nov"}); err != nil {
+		t.Fatalf("second request: %v", err)
+	}
+	if invRepo.invoices["nov"].Status != invoice.StatusRefinanced {
+		t.Error("a conversion within the remaining credit was refused")
+	}
+}
+
+// Money that never moved cannot settle debt that did.
+func TestRefinanceRefusesACreditThatIsNotConfirmed(t *testing.T) {
+	for _, status := range []transaction.Status{
+		transaction.StatusPlanned, transaction.StatusCancelled, transaction.StatusReversed,
+	} {
+		uc, invRepo := refinanceFixture(t)
+		txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{{
+			ID: "credito", ProfileID: "personal", BankAccountID: "card",
+			Type: transaction.TypeIncome, Status: status, Amount: 2205.86,
+			Currency: "BRL", OccurredOn: day(2026, 10, 11),
+		}}}
+		uc.txRepo = txRepo
+
+		if err := uc.Execute("credito", []string{"out"}); !errors.Is(err, ErrPaymentRefused) {
+			t.Errorf("%s: error = %v, want a refusal", status, err)
+		}
+		if invRepo.invoices["out"].Status == invoice.StatusRefinanced {
+			t.Errorf("%s: a bill was converted by a credit that is not confirmed", status)
+		}
+	}
+}
+
+func TestRefinanceRefusesADebitOrATransferAsTheConversion(t *testing.T) {
+	for _, kind := range []transaction.Type{transaction.TypeExpense, transaction.TypeTransfer} {
+		uc, invRepo := refinanceFixture(t)
+		uc.txRepo = &fakeTransactionRepo{created: []*transaction.Transaction{{
+			ID: "credito", ProfileID: "personal", BankAccountID: "card",
+			Type: kind, Status: transaction.StatusConfirmed, Amount: 2205.86,
+			Currency: "BRL", OccurredOn: day(2026, 10, 11),
+		}}}
+
+		if err := uc.Execute("credito", []string{"out"}); !errors.Is(err, ErrPaymentRefused) {
+			t.Errorf("%s: error = %v, want a refusal", kind, err)
+		}
+		if invRepo.invoices["out"].Status == invoice.StatusRefinanced {
+			t.Errorf("%s: a bill was converted by something that is not a credit", kind)
+		}
+	}
+}
+
+// The conversion is dated by the bank's own posting, not by the clock.
+func TestRefinanceIsDatedByTheCredit(t *testing.T) {
+	uc, invRepo := refinanceFixture(t)
+
+	if err := uc.Execute("credito", []string{"out"}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	at := invRepo.invoices["out"].RefinancedAt
+	if at == nil || !at.Equal(day(2026, 10, 11)) {
+		t.Errorf("refinanced at = %v, want the credit's own date 11/10/2026", at)
+	}
+}
+
+// The conversion credit is INCOME on the card, so the date rule files it as a LINE
+// of whatever cycle is open — where SumByInvoiceID scores a credit as -amount. The
+// November bill came out R$ 2.205,86 lighter: phantom CREDIT, the mirror image of
+// the phantom debt this whole change removes.
+//
+// It is the same failure MarkInvoicePayment documents and fixes by detaching the
+// row. A credit that settles bills is not a line of one.
+func TestRefinanceDetachesTheCreditFromTheCycleItLandedIn(t *testing.T) {
+	uc, _ := refinanceFixture(t)
+	novID := "nov"
+	uc.txRepo.(*fakeTransactionRepo).created[0].InvoiceID = &novID
+
+	if err := uc.Execute("credito", []string{"out"}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	// Read it back through the repository: the fake hands out copies, so asserting
+	// on the seeded pointer would pass whether or not anything was persisted.
+	stored, err := uc.txRepo.GetByID("credito")
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if stored.InvoiceID != nil {
+		t.Errorf("the credit is still a line of bill %v; it would deflate that cycle by its full value", *stored.InvoiceID)
+	}
+}
+
+func TestRefinanceLeavesACreditThatWasNotFiledAsALineAlone(t *testing.T) {
+	uc, _ := refinanceFixture(t)
+
+	if err := uc.Execute("credito", []string{"out"}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	stored, err := uc.txRepo.GetByID("credito")
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if stored.InvoiceID != nil {
+		t.Error("expected the credit to stay detached")
+	}
+}

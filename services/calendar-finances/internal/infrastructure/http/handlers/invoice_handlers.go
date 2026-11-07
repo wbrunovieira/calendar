@@ -315,3 +315,23 @@ func (h *InvoiceHandlers) Refinance(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// ReleaseRefinancing undoes the conversion of one bill.
+func (h *InvoiceHandlers) ReleaseRefinancing(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+	if h.refinanceUC == nil {
+		http.Error(w, "refinancing is not wired on this server", http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.refinanceUC.Release(id); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, usecases.ErrPaymentRefused) {
+			status = http.StatusBadRequest
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}

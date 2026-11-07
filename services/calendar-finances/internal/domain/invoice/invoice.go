@@ -50,8 +50,13 @@ type Invoice struct {
 	// later against the instalment plan it produced.
 	RefinancedBy *string    `json:"refinancedBy,omitempty"`
 	RefinancedAt *time.Time `json:"refinancedAt,omitempty"`
-	CreatedAt    time.Time  `json:"createdAt"`
-	UpdatedAt    time.Time  `json:"updatedAt"`
+	// RefinancedAmount is what the bill owed at the moment of conversion. Recorded
+	// rather than recomputed: Amount is restated whenever the cycle's lines change,
+	// so anything derived from it drifts away from what the bank credited — and
+	// this figure is what caps a single credit across more than one request.
+	RefinancedAmount *float64  `json:"refinancedAmount,omitempty"`
+	CreatedAt        time.Time `json:"createdAt"`
+	UpdatedAt        time.Time `json:"updatedAt"`
 }
 
 // CreateParams contains the parameters to create a new invoice
@@ -200,9 +205,34 @@ func (i *Invoice) Refinance(transactionID string, at time.Time) error {
 		return errors.New("invoice owes nothing to convert")
 	}
 
+	converted := i.AmountRemaining()
 	i.Status = StatusRefinanced
 	i.RefinancedBy = &transactionID
 	i.RefinancedAt = &at
+	i.RefinancedAmount = &converted
+	i.touch()
+	return nil
+}
+
+// ReleaseRefinancing undoes a conversion, putting the debt back where it was.
+//
+// Marking one is a human judgement and judgements are sometimes wrong; a credit
+// can also be reversed after the fact. Without a way back the bill stays settled
+// forever — re-running the conversion sees it already named by that credit and
+// does nothing, another credit is refused, and Reopen refuses a converted bill.
+//
+// The status it returns to is derived rather than remembered: a bill paid in cash
+// before being converted goes back to PARTIALLY_PAID, because that payment really
+// happened and is still recorded.
+func (i *Invoice) ReleaseRefinancing() error {
+	if i.Status != StatusRefinanced {
+		return errors.New("this bill was not settled by a debt conversion")
+	}
+	i.RefinancedBy = nil
+	i.RefinancedAt = nil
+	i.RefinancedAmount = nil
+	i.Status = StatusClosed
+	i.RederiveStatus()
 	i.touch()
 	return nil
 }
@@ -333,6 +363,10 @@ type Repository interface {
 	Update(invoice *Invoice) error
 	Delete(id string) error
 	FindOpenPastClosingDate(now time.Time) ([]*Invoice, error)
+	// FindByRefinancedBy returns every bill a given credit has already converted.
+	// Without it the cap can only see the bills named in the request at hand, and
+	// one credit settles unlimited debt by being spent a few bills at a time.
+	FindByRefinancedBy(transactionID string) ([]*Invoice, error)
 }
 
 // RestatePayments sets what a bill has been paid to what its live payment entries
@@ -374,6 +408,14 @@ func (i *Invoice) RestatePayments(total float64) {
 // paid is settled, and a settled bill that later receives a charge owes again.
 func (i *Invoice) RederiveStatus() {
 	if i == nil || i.Status == StatusOpen {
+		return
+	}
+	// A converted bill is settled by something this function cannot see. It runs
+	// off PaidAmount alone, so the real case — 3.292,96 billed, 3.200,00 paid in
+	// cash, the remaining 92,96 converted — lands in the partial branch and brings
+	// the 92,96 back as debt. RefreshTotal calls this on the next charge, edit,
+	// confirm or delete touching the cycle, so the settlement would last minutes.
+	if i.Status == StatusRefinanced {
 		return
 	}
 	paid := 0.0

@@ -458,7 +458,7 @@ func (uc *CheckInvariantsUseCase) checkInvoiceTotals(
 		// of its transactions is the signature of a duplicated or lost charge.
 		// Only PAID is frozen, because that route refuses it.
 		note := ""
-		if inv.Status == invoice.StatusPaid {
+		if inv.IsSettled() {
 			note = notePaidInvoiceFrozen
 		}
 

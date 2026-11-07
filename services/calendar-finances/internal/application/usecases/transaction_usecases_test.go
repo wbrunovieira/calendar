@@ -520,9 +520,22 @@ func (f *fakeInvoiceRepo) Update(inv *invoice.Invoice) error {
 	stored.PaidAmount = inv.PaidAmount
 	stored.RefinancedBy = inv.RefinancedBy
 	stored.RefinancedAt = inv.RefinancedAt
+	stored.RefinancedAmount = inv.RefinancedAmount
 	stored.UpdatedAt = inv.UpdatedAt
 	f.invoices[inv.ID] = &stored
 	return nil
+}
+
+// Mirrors the repository: every bill this credit has already converted.
+func (f *fakeInvoiceRepo) FindByRefinancedBy(transactionID string) ([]*invoice.Invoice, error) {
+	var list []*invoice.Invoice
+	for _, inv := range f.invoices {
+		if inv.RefinancedBy != nil && *inv.RefinancedBy == transactionID {
+			loaded := *inv
+			list = append(list, &loaded)
+		}
+	}
+	return list, nil
 }
 
 func (f *fakeInvoiceRepo) Delete(id string) error {

@@ -192,3 +192,130 @@ func TestIsSettledCoversPaidBillsAsWell(t *testing.T) {
 		t.Error("IsSettled() = true for a CLOSED unpaid bill, want false")
 	}
 }
+
+// RederiveStatus runs off PaidAmount alone and knew nothing of conversion, so for
+// the real September bill — 3.292,96 billed, 3.200,00 paid in cash, the remaining
+// 92,96 converted — it fell into the partial branch and wrote PARTIALLY_PAID. The
+// 92,96 came back as debt.
+//
+// It is called from RefreshTotal, which fires on the next charge, edit, confirm or
+// delete touching that cycle: the settlement would survive minutes, not days. And
+// nothing could repair it, since re-running the conversion sees the bill already
+// named by that credit and returns without doing anything.
+func TestRederiveStatusLeavesAConvertedBillAlone(t *testing.T) {
+	inv := settledCandidate(t, 3292.96)
+	if err := inv.Pay(3200.00, time.Now()); err != nil {
+		t.Fatalf("Pay: %v", err)
+	}
+	if err := inv.Refinance("txn-credit", time.Now()); err != nil {
+		t.Fatalf("Refinance: %v", err)
+	}
+
+	inv.RederiveStatus()
+
+	if inv.Status != StatusRefinanced {
+		t.Errorf("status = %q, want REFINANCED preserved", inv.Status)
+	}
+	if got := inv.AmountRemaining(); got != 0 {
+		t.Errorf("amount remaining = %v, want 0", got)
+	}
+}
+
+func TestRederiveStatusStillFixesABillThatWasNeverConverted(t *testing.T) {
+	inv := settledCandidate(t, 1000)
+	if err := inv.Pay(400, time.Now()); err != nil {
+		t.Fatalf("Pay: %v", err)
+	}
+	inv.Status = StatusPaid // the drift RederiveStatus exists to correct
+
+	inv.RederiveStatus()
+
+	if inv.Status != StatusPartiallyPaid {
+		t.Errorf("status = %q, want PARTIALLY_PAID", inv.Status)
+	}
+}
+
+// What the conversion was worth has to be RECORDED, not recomputed later from
+// Amount minus PaidAmount: Amount is restated whenever the cycle's lines change,
+// so a figure derived from it drifts away from what the bank actually credited.
+// It is also what lets one credit be capped across several requests.
+func TestRefinanceRecordsWhatItConverted(t *testing.T) {
+	inv := settledCandidate(t, 3292.96)
+	if err := inv.Pay(3200.00, time.Now()); err != nil {
+		t.Fatalf("Pay: %v", err)
+	}
+
+	if err := inv.Refinance("txn-credit", time.Now()); err != nil {
+		t.Fatalf("Refinance: %v", err)
+	}
+
+	if inv.RefinancedAmount == nil || !near(*inv.RefinancedAmount, 92.96) {
+		t.Fatalf("refinanced amount = %v, want 92.96 — what was owed at conversion", inv.RefinancedAmount)
+	}
+
+	// Restating the cycle must not rewrite history.
+	inv.Amount = 5000
+	if !near(*inv.RefinancedAmount, 92.96) {
+		t.Error("the recorded conversion moved when the bill's total was restated")
+	}
+}
+
+// Marking a conversion is a human judgement, and judgements are sometimes wrong —
+// the same reason MarkInvoicePayment has a Release. Without a way back, a bill
+// converted by mistake, or by a credit that was later reversed, stays settled
+// forever: re-running sees it already named by that credit and does nothing,
+// another credit is refused, and Reopen refuses a converted bill.
+func TestReleaseUndoesAConversion(t *testing.T) {
+	inv := settledCandidate(t, 1649.35)
+	if err := inv.Refinance("txn-credit", time.Now()); err != nil {
+		t.Fatalf("Refinance: %v", err)
+	}
+
+	if err := inv.ReleaseRefinancing(); err != nil {
+		t.Fatalf("ReleaseRefinancing: %v", err)
+	}
+
+	if inv.Status != StatusClosed {
+		t.Errorf("status = %q, want CLOSED — the debt is owed again", inv.Status)
+	}
+	if inv.RefinancedBy != nil || inv.RefinancedAt != nil || inv.RefinancedAmount != nil {
+		t.Error("the conversion record survived the release")
+	}
+	if got := inv.AmountRemaining(); !near(got, 1649.35) {
+		t.Errorf("amount remaining = %v, want the whole bill owed again", got)
+	}
+}
+
+// A bill paid in cash and then converted goes back to PARTIALLY_PAID, not CLOSED:
+// the cash payment really happened and is still recorded.
+func TestReleaseRestoresAPartialPayment(t *testing.T) {
+	inv := settledCandidate(t, 3292.96)
+	if err := inv.Pay(3200.00, time.Now()); err != nil {
+		t.Fatalf("Pay: %v", err)
+	}
+	if err := inv.Refinance("txn-credit", time.Now()); err != nil {
+		t.Fatalf("Refinance: %v", err)
+	}
+
+	if err := inv.ReleaseRefinancing(); err != nil {
+		t.Fatalf("ReleaseRefinancing: %v", err)
+	}
+
+	if inv.Status != StatusPartiallyPaid {
+		t.Errorf("status = %q, want PARTIALLY_PAID", inv.Status)
+	}
+	if got := inv.AmountRemaining(); !near(got, 92.96) {
+		t.Errorf("amount remaining = %v, want 92.96 owed again", got)
+	}
+}
+
+func TestReleaseRefusesABillThatWasNeverConverted(t *testing.T) {
+	inv := settledCandidate(t, 100)
+
+	if err := inv.ReleaseRefinancing(); err == nil {
+		t.Fatal("expected a bill that was never converted to refuse release")
+	}
+	if inv.Status != StatusClosed {
+		t.Errorf("status = %q, want it left untouched", inv.Status)
+	}
+}

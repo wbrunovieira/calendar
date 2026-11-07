@@ -745,7 +745,7 @@ func (uc *UpdateInvoiceUseCase) Execute(invoiceID string, input UpdateInvoiceInp
 	// across two cycles and the settled total stops describing anything. The DUE DATE
 	// decides nothing -- it is what the statement says -- and refusing it made every
 	// wrong due date permanent, with no route to fix it short of editing the column.
-	if inv.Status == invoice.StatusPaid && (input.ClosingDate != nil || input.OpeningDate != nil) {
+	if inv.IsSettled() && (input.ClosingDate != nil || input.OpeningDate != nil) {
 		return nil, ErrInvoiceAlreadyPaid
 	}
 

@@ -478,12 +478,17 @@ func New(db *sql.DB) (*App, error) {
 	apiRouter.HandleFunc("/invoices/{id}/pay", invoiceHandler.Pay).Methods("POST")
 	apiRouter.HandleFunc("/invoices/{id}/recalculate", invoiceHandler.Recalculate).Methods("POST")
 	apiRouter.HandleFunc("/invoices/{id}/restate-payments", invoiceHandler.RestatePayments).Methods("POST")
-	invoiceHandler.SetRefinanceUseCase(
-		usecases.NewRefinanceInvoiceUseCase(bankAccountRepo, transactionRepo, invoiceRepo))
+	refinanceInvoiceUC := usecases.NewRefinanceInvoiceUseCase(bankAccountRepo, transactionRepo, invoiceRepo)
+	refinanceInvoiceUC.SetInvoiceRecalculator(recalculateInvoiceUC)
+	// One conversion settles several bills and then detaches the credit; they land
+	// together or not at all.
+	refinanceInvoiceUC.SetUnitOfWork(&boundUnitOfWork{uow: persistence.NewUnitOfWork(db), checkpoints: checkpointRepo, adjustments: adjustmentLog})
+	invoiceHandler.SetRefinanceUseCase(refinanceInvoiceUC)
 	// Not /invoices/{id}/refinance: one conversion routinely clears several
 	// cycles at once, and a per-bill route turns that into two requests that can
 	// half-succeed.
 	apiRouter.HandleFunc("/invoices/refinance", invoiceHandler.Refinance).Methods("POST")
+	apiRouter.HandleFunc("/invoices/{id}/release-refinancing", invoiceHandler.ReleaseRefinancing).Methods("POST")
 
 	// Crypto routes
 	if cryptoHandler != nil {
