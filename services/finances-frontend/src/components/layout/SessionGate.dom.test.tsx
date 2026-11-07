@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, waitFor, cleanup } from '@testing-library/react';
 import { ProfileProvider, useProfile } from '@/contexts/ProfileContext';
 import { resetSessionState, reportRequestFailure } from '@/lib/session';
-import { AuthRequiredError, ApiError } from '@/lib/api';
+import { AuthRequiredError, ApiError, apiBase } from '@/lib/api';
 
 /**
  * The three files that constitute the user-visible fix — the provider, the
@@ -33,7 +33,10 @@ function mockFetch(impl: () => Promise<unknown>) {
         ok: true,
         status: 200,
         statusText: 'OK',
-        url: 'http://localhost:3335/api/v1/profiles',
+        // Derived, never hardcoded: a fake that pins the origin turns into a
+        // cross-origin response the moment NEXT_PUBLIC_API_URL differs, and the
+        // test then fails for a reason that has nothing to do with the fix.
+        url: `${apiBase()}/profiles`,
         redirected: false,
         headers: { get: () => 'application/json' },
         json: async () => body,
