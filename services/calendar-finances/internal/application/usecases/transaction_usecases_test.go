@@ -518,6 +518,8 @@ func (f *fakeInvoiceRepo) Update(inv *invoice.Invoice) error {
 	stored.Status = inv.Status
 	stored.PaidAt = inv.PaidAt
 	stored.PaidAmount = inv.PaidAmount
+	stored.RefinancedBy = inv.RefinancedBy
+	stored.RefinancedAt = inv.RefinancedAt
 	stored.UpdatedAt = inv.UpdatedAt
 	f.invoices[inv.ID] = &stored
 	return nil

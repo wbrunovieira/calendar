@@ -722,6 +722,30 @@ func migrations() []string {
 			ALTER TABLE finance.credit_card_invoices ADD CONSTRAINT credit_card_invoices_status_check
 				CHECK (status IN ('OPEN', 'CLOSED', 'PAID', 'PARTIALLY_PAID'));
 		END $$`,
+		// Migration: a bill can be settled by DEBT CONVERSION, not only by payment.
+		// The bank credits what is still owed and charges the same money again as
+		// instalments on later cycles. Without a word for it the bill stayed CLOSED
+		// and unpaid forever while the instalments it had become were also recorded,
+		// so one debt was counted twice. REFINANCED is kept distinct from PAID
+		// because no money left any account, and recording it as a payment debits a
+		// balance that nothing moved.
+		`ALTER TABLE finance.credit_card_invoices ADD COLUMN IF NOT EXISTS refinanced_by UUID REFERENCES finance.transactions(id)`,
+		`ALTER TABLE finance.credit_card_invoices ADD COLUMN IF NOT EXISTS refinanced_at TIMESTAMP`,
+		`DO $$
+		BEGIN
+			ALTER TABLE finance.credit_card_invoices DROP CONSTRAINT IF EXISTS credit_card_invoices_status_check;
+			ALTER TABLE finance.credit_card_invoices ADD CONSTRAINT credit_card_invoices_status_check
+				CHECK (status IN ('OPEN', 'CLOSED', 'PAID', 'PARTIALLY_PAID', 'REFINANCED'));
+		END $$`,
+		// A converted bill must name the transaction that converted it. A status
+		// without the evidence behind it is the kind of record that cannot be
+		// audited later, which is the whole reason this concept exists.
+		`DO $$
+		BEGIN
+			ALTER TABLE finance.credit_card_invoices DROP CONSTRAINT IF EXISTS chk_refinanced_has_transaction;
+			ALTER TABLE finance.credit_card_invoices ADD CONSTRAINT chk_refinanced_has_transaction
+				CHECK (status <> 'REFINANCED' OR refinanced_by IS NOT NULL);
+		END $$`,
 		// Migration: Create crypto_purchases table for tracking structured purchase data
 		`CREATE TABLE IF NOT EXISTS finance.crypto_purchases (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

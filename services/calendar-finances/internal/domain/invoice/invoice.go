@@ -20,6 +20,11 @@ const (
 	// settled. Without it, a partial payment marked the bill PAID and the
 	// remaining debt vanished from the ledger.
 	StatusPartiallyPaid Status = "PARTIALLY_PAID"
+	// StatusRefinanced means the bank cleared the outstanding balance and charged
+	// it again as future instalments. The bill is settled and NO money was paid —
+	// a distinction the ledger has to keep, because recording it as a payment
+	// debits an account that nothing left.
+	StatusRefinanced Status = "REFINANCED"
 )
 
 // paymentTolerance absorbs float dust so that instalments summing to the total
@@ -40,8 +45,13 @@ type Invoice struct {
 	Status          Status     `json:"status"`
 	PaidAt          *time.Time `json:"paidAt,omitempty"`
 	PaidAmount      *float64   `json:"paidAmount,omitempty"`
-	CreatedAt       time.Time  `json:"createdAt"`
-	UpdatedAt       time.Time  `json:"updatedAt"`
+	// RefinancedBy is the credit the bank posted when it converted this bill into
+	// instalments. Naming the transaction is what lets the conversion be audited
+	// later against the instalment plan it produced.
+	RefinancedBy *string    `json:"refinancedBy,omitempty"`
+	RefinancedAt *time.Time `json:"refinancedAt,omitempty"`
+	CreatedAt    time.Time  `json:"createdAt"`
+	UpdatedAt    time.Time  `json:"updatedAt"`
 }
 
 // CreateParams contains the parameters to create a new invoice
@@ -169,6 +179,41 @@ func (i *Invoice) Pay(paidAmount float64, paidAt time.Time) error {
 	return nil
 }
 
+// Refinance settles the bill by debt conversion: the bank credits what is still
+// owed and charges the same money again as instalments on later cycles.
+//
+// It deliberately leaves PaidAmount and PaidAt alone. A partial payment that
+// really happened stays in the record, and the part nobody paid is not dressed
+// up as having been paid — the instalments carry it, and they are transactions
+// of their own.
+func (i *Invoice) Refinance(transactionID string, at time.Time) error {
+	if transactionID == "" {
+		return errors.New("refinancing requires the transaction that converted the debt")
+	}
+	if i.Status == StatusOpen {
+		return errors.New("an open cycle is still collecting charges and has no balance to convert")
+	}
+	if i.Status == StatusRefinanced {
+		return errors.New("invoice is already refinanced")
+	}
+	if i.AmountRemaining() == 0 {
+		return errors.New("invoice owes nothing to convert")
+	}
+
+	i.Status = StatusRefinanced
+	i.RefinancedBy = &transactionID
+	i.RefinancedAt = &at
+	i.touch()
+	return nil
+}
+
+// IsSettled reports whether the bill still owes anything, by payment or by
+// conversion. Consumers asking "is this debt" want this, not a status compare
+// that silently misses whichever settlement kind was added last.
+func (i *Invoice) IsSettled() bool {
+	return i.Status == StatusPaid || i.Status == StatusRefinanced
+}
+
 // MarshalJSON adds the outstanding debt to the payload. It is DERIVED on every
 // read rather than stored, so it can never drift from Amount and PaidAmount the
 // way a persisted copy would.
@@ -186,6 +231,11 @@ func (i *Invoice) MarshalJSON() ([]byte, error) {
 // AmountRemaining is the debt still owed on this bill. It never goes negative:
 // overpaying settles the bill, it does not create negative debt.
 func (i *Invoice) AmountRemaining() float64 {
+	if i.Status == StatusRefinanced {
+		// The balance moved to the instalments, which are transactions in their own
+		// right. Reporting it here too is how one debt came to be counted twice.
+		return 0
+	}
 	paid := 0.0
 	if i.PaidAmount != nil {
 		paid = *i.PaidAmount
@@ -222,6 +272,9 @@ func (i *Invoice) Reopen() error {
 	// for something else.
 	if i.PaidAt != nil || (i.PaidAmount != nil && *i.PaidAmount > 0) {
 		return errors.New("a bill that was paid cannot be reopened; correct its transactions instead")
+	}
+	if i.RefinancedBy != nil {
+		return errors.New("a bill converted into instalments cannot be reopened; correct its transactions instead")
 	}
 	i.Status = StatusOpen
 	i.touch()

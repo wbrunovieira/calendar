@@ -155,6 +155,7 @@ var wantRoutes = []string{
 	"POST /api/v1/invoices/{id}/pay",
 	"POST /api/v1/invoices/{id}/recalculate",
 	"POST /api/v1/invoices/{id}/restate-payments",
+	"POST /api/v1/invoices/refinance",
 	"POST /api/v1/marketing-campaigns",
 	"POST /api/v1/profiles",
 	"POST /api/v1/recurring-transactions",
