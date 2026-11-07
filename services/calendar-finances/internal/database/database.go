@@ -716,11 +716,20 @@ func migrations() []string {
 		// Migration: allow PARTIALLY_PAID on credit card invoices.
 		// A bill paid in parts used to be marked PAID on the first payment, which
 		// erased the outstanding debt from the ledger.
+		//
+		// REFINANCED is listed HERE and not only in the later block that introduced
+		// it. This slice is replayed on every startup, this statement drops and
+		// re-adds the constraint under the same name, and Postgres validates a new
+		// CHECK against the rows already there. Leaving it narrow meant that the
+		// first restart after any bill was converted failed this migration, and
+		// RunMigrations aborts on the first error into log.Fatalf — the service
+		// would not boot again. A widening migration has to widen every statement
+		// that asserts the old width, not just add one that asserts the new one.
 		`DO $$
 		BEGIN
 			ALTER TABLE finance.credit_card_invoices DROP CONSTRAINT IF EXISTS credit_card_invoices_status_check;
 			ALTER TABLE finance.credit_card_invoices ADD CONSTRAINT credit_card_invoices_status_check
-				CHECK (status IN ('OPEN', 'CLOSED', 'PAID', 'PARTIALLY_PAID'));
+				CHECK (status IN ('OPEN', 'CLOSED', 'PAID', 'PARTIALLY_PAID', 'REFINANCED'));
 		END $$`,
 		// Migration: a bill can be settled by DEBT CONVERSION, not only by payment.
 		// The bank credits what is still owed and charges the same money again as

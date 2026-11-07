@@ -176,3 +176,39 @@ func TestPostgresRefusesARefinancedBillWithNoTransaction(t *testing.T) {
 		t.Fatal("expected the CHECK constraint to refuse a conversion with no transaction")
 	}
 }
+
+// The migration slice is replayed on EVERY startup, and the block that widened the
+// status CHECK is not the only one that asserts its width: an older block drops and
+// re-adds the same constraint, and it runs first. Left narrow, it failed against the
+// REFINANCED rows already in the table, RunMigrations aborted on the first error, and
+// the service died in log.Fatalf on boot. A restart after the feature was used once
+// would not come back.
+//
+// Every test here calls RunMigrations on a table that its own cleanup has emptied,
+// which is exactly the condition under which the defect is invisible. This one keeps
+// the row.
+func TestMigrationsReplayWithAConvertedBillAlreadyInTheTable(t *testing.T) {
+	db := refiDB(t)
+	bill := refiSeed(t, db)
+	repo := NewInvoiceRepository(db)
+
+	if err := bill.Refinance(refiTxnID, time.Date(2026, time.October, 11, 0, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("Refinance: %v", err)
+	}
+	if err := repo.Update(bill); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	// What the next container start does.
+	if err := database.RunMigrations(db); err != nil {
+		t.Fatalf("migrations failed with a converted bill present, so the service would not boot: %v", err)
+	}
+
+	reloaded, err := repo.FindByID(refiBillID)
+	if err != nil {
+		t.Fatalf("FindByID after replay: %v", err)
+	}
+	if reloaded.Status != invoice.StatusRefinanced {
+		t.Errorf("status = %q after replaying migrations, want REFINANCED", reloaded.Status)
+	}
+}
