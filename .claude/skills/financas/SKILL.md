@@ -311,4 +311,19 @@ Input dates are `YYYY-MM-DD`. `nextOccurrence` = when the next one falls (e.g. t
 - **Confirm the category with the user** before posting anything new.
 - **Never adjust an entry just to "match" a balance** — hunt down the missing entry.
 - Credit-card invoice payment: **`POST /invoices/{id}/pay`** (POST, not PUT) already creates the debit (don't post it manually). Body: `{"paidAmount":769.51,"paidAt":"2026-07-05"}` (`paidAt` = `YYYY-MM-DD`). It debits the **account linked to the card** (`linkedAccountId`), so no account needs to be passed. Check it first: `GET /bank-accounts/{cardId}` → `linkedAccountId`. Find the invoice with `GET /invoices?bankAccountId=<cardId>` (the one to pay is the CLOSED one with the month's `dueDate`). `paidAmount` = the amount the bank actually charged.
+- **Fatura parcelada pelo banco ≠ fatura paga.** Quando o banco converte a dívida
+  em parcelas ele posta um crédito ("Crédito por parcelamento da fatura") que zera
+  o saldo e cobra o mesmo dinheiro de novo nos ciclos seguintes. **Ninguém pagou
+  nada** — registrar como pagamento debita uma conta de onde nada saiu, e
+  `/invoices/{id}/pay` vai recusar de qualquer forma, porque uma conversão limpa
+  vários ciclos de uma vez e ele limita pelo valor de uma fatura só.
+  Use **`POST /invoices/refinance`** com `{"transactionId": "<id do crédito>",
+  "invoiceIds": ["<fatura>", ...]}`. Ele valida que o crédito é CONFIRMED e INCOME
+  no cartão, que as faturas são daquele cartão, e que a soma do que elas devem
+  (incluindo o que esse mesmo crédito já converteu antes) **cabe no crédito**.
+  Devolve 204. A fatura vira `REFINANCED`, `amountRemaining` zera, o pagamento
+  parcial em dinheiro que houver é preservado, e o crédito deixa de ser linha do
+  ciclo em que caiu.
+  Errou? **`POST /invoices/{id}/release-refinancing`** desfaz e devolve a dívida.
+
 - Reconciliation: compare against the bank statement; when reconciling, Bruno's BRL accounts live at Mercado Pago/Nubank.

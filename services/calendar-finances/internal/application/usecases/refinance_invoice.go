@@ -39,6 +39,9 @@ var (
 // The cap here is the credit itself rather than any single bill: the bank cleared
 // exactly what it credited, so that is the only honest limit.
 type RefinanceInvoiceUseCase struct {
+	// accountRepo is held only so boundTo can bind it alongside the others when a
+	// unit of work is in play; nothing here reads it. The card is resolved from
+	// the credit's own bank_account_id, and invoices exist for cards alone.
 	accountRepo bankaccount.Repository
 	txRepo      transactionPkg.Repository
 	invoiceRepo invoice.Repository
@@ -174,6 +177,12 @@ func (uc *RefinanceInvoiceUseCase) convert(transactionID string, invoiceIDs []st
 		bill, err := uc.invoiceRepo.FindByID(id)
 		if err != nil {
 			return nil, fmt.Errorf("could not read bill %s: %w", id, err)
+		}
+		// The concrete repository returns an error for a missing bill, but a
+		// transaction-bound one need not; MarkInvoicePayment guards this for the
+		// same reason.
+		if bill == nil {
+			return nil, fmt.Errorf("invoice %s not found", id)
 		}
 		if bill.BankAccountID != txn.BankAccountID {
 			return nil, ErrInvoiceNotThisCard
