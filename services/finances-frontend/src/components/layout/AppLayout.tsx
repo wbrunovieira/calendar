@@ -1,10 +1,11 @@
 'use client';
 
-import { ReactNode } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useProfile } from '@/contexts/ProfileContext';
 import { buildLogoutUrl } from '@/lib/session';
+import { AUTH_BASE } from '@/lib/api';
 import SessionExpired from './SessionExpired';
 
 export type ProfileTheme = 'personal' | 'business';
@@ -67,6 +68,12 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const pathname = usePathname();
   const { profiles, selectedProfileId, selectedProfile, setSelectedProfileId, isLoading, authRequired, loginUrl } =
     useProfile();
+
+  // Computed after mount: buildLogoutUrl reads window.location, and doing that
+  // during render makes the prerendered markup disagree with the first client
+  // render, which React 19 reports as a hydration error.
+  const [logoutUrl, setLogoutUrl] = useState(`${AUTH_BASE}/logout`);
+  useEffect(() => setLogoutUrl(buildLogoutUrl()), []);
 
   const profileTheme: ProfileTheme = selectedProfile?.type === 'BUSINESS' ? 'business' : 'personal';
   const theme = themeConfig[profileTheme];
@@ -136,7 +143,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
                   indistinguishable from an empty account: there was nothing on
                   screen that referred to being signed in at all. */}
               <a
-                href={authRequired ? loginUrl : buildLogoutUrl()}
+                href={authRequired ? loginUrl : logoutUrl}
                 title={authRequired ? 'Entrar' : 'Sair'}
                 className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all border ${
                   authRequired

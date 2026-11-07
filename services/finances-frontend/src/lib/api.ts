@@ -96,7 +96,12 @@ export async function apiFetch<T = unknown>(
   });
 
   if (isAuthChallenge(res, url)) {
-    throw new AuthRequiredError(res.status, res.statusText, buildLoginUrl());
+    const challenge = new AuthRequiredError(res.status, res.statusText, buildLoginUrl());
+    // Reported here rather than at the call site: there are 62 of those and a
+    // session that lapses mid-session is noticed by whichever one fires next,
+    // not by the one that happened to run at mount.
+    onRequestFailure?.(challenge);
+    throw challenge;
   }
 
   if (!res.ok) {
@@ -104,11 +109,28 @@ export async function apiFetch<T = unknown>(
     throw new ApiError(res.status, res.statusText, text || undefined);
   }
 
+  onRequestSuccess?.();
+
   const contentType = res.headers.get('content-type');
   if (contentType?.includes('application/json')) {
     return res.json();
   }
   return undefined as T;
+}
+
+/**
+ * Session reporting is injected rather than imported so this module stays free
+ * of a cycle with session.ts, which needs AuthRequiredError from here.
+ */
+let onRequestFailure: ((error: unknown) => void) | undefined;
+let onRequestSuccess: (() => void) | undefined;
+
+export function setRequestObservers(observers: {
+  onFailure?: (error: unknown) => void;
+  onSuccess?: () => void;
+}): void {
+  onRequestFailure = observers.onFailure;
+  onRequestSuccess = observers.onSuccess;
 }
 
 export const api = {

@@ -53,7 +53,7 @@ const defaultFilters: TransactionFilters = {
 
 export default function FinancesPage() {
   // Use shared profile context
-  const { profiles, selectedProfileId, selectedProfile, isLoading: profilesLoading } = useProfile();
+  const { loadError, profiles, selectedProfileId, selectedProfile, isLoading: profilesLoading } = useProfile();
   const labels = getProfileLabels(selectedProfile);
   const { toast, confirm } = useToast();
 
@@ -524,6 +524,11 @@ export default function FinancesPage() {
             {profilesLoading ? (
               <div className="bg-white/5 border border-white/10 rounded-2xl p-8 text-center text-white/70">
                 Carregando perfis...
+              </div>
+            ) : loadError ? (
+              <div className="bg-white/10 border border-rose-400/30 rounded-2xl p-8 text-center text-white/70">
+                Nao foi possivel carregar seus dados. O servidor nao respondeu como esperado —
+                isso nao significa que a sua conta esta vazia. Tente recarregar a pagina.
               </div>
             ) : profiles.length === 0 ? (
               <div className="bg-white/10 border border-white/10 rounded-2xl p-8 text-center text-white/70">

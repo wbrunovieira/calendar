@@ -150,11 +150,52 @@ describe('apiFetch', () => {
     expect(err.loginUrl).toContain(AUTH_BASE);
   });
 
+  // M9: the only exact-'text/html' case was same-origin, and the realistic
+  // charset-bearing one was already caught by the origin rule — so tolerating a
+  // charset was never actually asserted. Production sends exactly this.
+  it('raises AuthRequiredError on same-origin HTML that carries a charset', async () => {
+    fetchMock.mockResolvedValue(
+      response({ status: 200, contentType: 'text/html; charset=utf-8', body: '<html/>' }),
+    );
+
+    await expect(apiFetch('/profiles')).rejects.toBeInstanceOf(AuthRequiredError);
+  });
+
+  // M10: an HTML *error* page is a fault, not a login prompt. Without the res.ok
+  // guard a 502 from nginx or Cloudflare would tell the user to sign in again.
+  it('treats a 502 HTML error page as a failure, not a login prompt', async () => {
+    fetchMock.mockResolvedValue(
+      response({ status: 502, contentType: 'text/html', body: '<html>bad gateway</html>' }),
+    );
+
+    const err = (await apiFetch('/profiles').catch((e: unknown) => e)) as ApiError;
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).not.toBeInstanceOf(AuthRequiredError);
+    expect(err.status).toBe(502);
+  });
+
+  // M5: an unparseable URL must fail safe towards "this is fine". Flipping the
+  // catch would turn every such response into a spurious logout.
+  it('does not call a response with an unparseable URL a session problem', async () => {
+    fetchMock.mockResolvedValue(response({ url: 'not a url', body: { data: [] } }));
+
+    await expect(apiFetch('/profiles')).resolves.toEqual({ data: [] });
+  });
+
   // A 204 has no body by design and must not be mistaken for a login page.
   it('accepts a 204 with no content type', async () => {
     fetchMock.mockResolvedValue(response({ status: 204, contentType: null, body: undefined }));
 
     await expect(apiFetch('/transactions/1', { method: 'DELETE' })).resolves.toBeUndefined();
+  });
+});
+
+describe('AUTH_BASE', () => {
+  // M20: every other assertion compares against AUTH_BASE itself, so a wrong
+  // default would ship with the suite green. The Dockerfile comment claims this
+  // value; this is what holds it to it.
+  it('defaults to the production gateway', () => {
+    expect(AUTH_BASE).toBe('https://auth.wbdigitalsolutions.com');
   });
 });
 
@@ -166,7 +207,16 @@ describe('buildLoginUrl', () => {
     expect(url).toContain(encodeURIComponent('https://finances.wbdigitalsolutions.com/contas'));
   });
 
+  // M8: Authelia reads the parameter by name. Asserting only that the encoded
+  // address appears somewhere lets a rename through, and a renamed parameter is
+  // a login that silently drops the return address.
+  it('passes the return address in the parameter Authelia reads', () => {
+    expect(buildLoginUrl('https://finances.wbdigitalsolutions.com/')).toBe(
+      `${AUTH_BASE}/?rd=${encodeURIComponent('https://finances.wbdigitalsolutions.com/')}`,
+    );
+  });
+
   it('still produces a usable URL when there is no return address', () => {
-    expect(buildLoginUrl(undefined).startsWith(AUTH_BASE)).toBe(true);
+    expect(buildLoginUrl(undefined)).toBe(`${AUTH_BASE}/`);
   });
 });
