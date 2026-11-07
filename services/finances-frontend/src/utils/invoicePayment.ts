@@ -8,6 +8,12 @@ export interface PaymentPreview {
   fundingAccountName: string | null;
   /** Why this payment should not be recorded, if it should not. */
   blockedReason: string | null;
+  /**
+   * The card names no funding account. Not a refusal — the API marks the bill
+   * paid and skips the transfer — but the user should know no money will be
+   * recorded as leaving anywhere.
+   */
+  noFundingAccount?: boolean;
 }
 
 /**
@@ -42,15 +48,15 @@ export function describeInvoicePayment(
 
   const fundingId = card?.linkedAccountId;
   const funding = fundingId ? accounts.find((a) => a.id === fundingId) : undefined;
-  if (!funding) {
-    // Better to say so than to let the entry land somewhere the user did not pick.
-    return {
-      amount,
-      fundingAccountName: null,
-      blockedReason:
-        'Este cartão não tem conta de pagamento vinculada, então não dá para dizer de onde o dinheiro sairia.',
-    };
-  }
 
-  return { amount, fundingAccountName: funding.name, blockedReason: null };
+  // No funding account is not a refusal: the API handles that case on purpose,
+  // marking the bill paid and skipping the transfer. Blocking it here made cards
+  // without a linked account unpayable from the screen while the backend was
+  // perfectly willing. Saying so is enough.
+  return {
+    amount,
+    fundingAccountName: funding?.name ?? null,
+    blockedReason: null,
+    noFundingAccount: !funding,
+  };
 }

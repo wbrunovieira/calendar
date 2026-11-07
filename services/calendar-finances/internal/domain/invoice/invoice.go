@@ -163,6 +163,13 @@ func (i *Invoice) Pay(paidAmount float64, paidAt time.Time) error {
 	if i.Status == StatusPaid {
 		return errors.New("invoice is already paid")
 	}
+	// A converted bill is settled and nobody owes it. Paying it writes a real
+	// debit for debt the bank already cleared, and leaves the row unrecoverable:
+	// PAID with the conversion record still on it, which release refuses (not
+	// REFINANCED) and Reopen refuses (not CLOSED). Release it first.
+	if i.Status == StatusRefinanced {
+		return errors.New("this bill was settled by a debt conversion; release it before paying")
+	}
 	if paidAmount <= 0 {
 		return errors.New("paid amount must be greater than zero")
 	}
@@ -262,8 +269,21 @@ func (i *Invoice) MarshalJSON() ([]byte, error) {
 // overpaying settles the bill, it does not create negative debt.
 func (i *Invoice) AmountRemaining() float64 {
 	if i.Status == StatusRefinanced {
-		// The balance moved to the instalments, which are transactions in their own
-		// right. Reporting it here too is how one debt came to be counted twice.
+		// What the conversion settled is a FIXED amount, recorded when it happened:
+		// the balance moved to the instalments, which are transactions of their own.
+		// Returning a flat zero instead would swallow anything billed to the cycle
+		// afterwards — a back-dated charge attaches to a converted cycle, and that
+		// is real debt nobody converted.
+		settled := 0.0
+		if i.RefinancedAmount != nil {
+			settled = *i.RefinancedAmount
+		}
+		if i.PaidAmount != nil {
+			settled += *i.PaidAmount
+		}
+		if remaining := i.Amount - settled; remaining > paymentTolerance {
+			return remaining
+		}
 		return 0
 	}
 	paid := 0.0

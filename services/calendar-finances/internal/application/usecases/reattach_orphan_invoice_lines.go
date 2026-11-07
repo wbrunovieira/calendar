@@ -221,7 +221,7 @@ func (uc *ReattachOrphanInvoiceLinesUseCase) settleTotals(touched map[string]boo
 			return fmt.Errorf("bill %s is gone", invoiceID)
 		}
 
-		if inv.Status != invoice.StatusPaid {
+		if !inv.IsSettled() {
 			if _, err := uc.recalc.Execute(invoiceID); err != nil {
 				return fmt.Errorf("refreshing bill %s: %w", invoiceID, err)
 			}

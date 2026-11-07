@@ -366,6 +366,8 @@ export interface Invoice {
   /** The credit the bank posted when it converted this bill into instalments. */
   refinancedBy?: string;
   refinancedAt?: string;
+  /** What the bill owed at the moment of conversion. */
+  refinancedAmount?: number;
   createdAt: string;
   updatedAt: string;
 }

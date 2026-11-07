@@ -81,12 +81,17 @@ func (uc *GetCreditUsageUseCase) outstandingFor(account *bankaccount.BankAccount
 		paid := 0.0
 		switch {
 		case inv.Status == invoice.StatusRefinanced:
-			// Converted: the balance moved to the instalments, which are charges of
-			// later cycles and counted there. Falling through to PaidAmount would
-			// report the part nobody paid in cash as still owed, which is the same
-			// debt counted twice — in the endpoint the rest of the system treats as
-			// canonical.
-			paid = billed
+			// Converted: what the conversion settled is a fixed amount recorded at
+			// the time, plus whatever cash was paid before it. Anything billed
+			// beyond that is debt nobody converted — a back-dated charge lands on a
+			// converted cycle, and a flat "owes nothing" here would swallow it in
+			// the endpoint the rest of the system treats as canonical.
+			if inv.RefinancedAmount != nil {
+				paid = *inv.RefinancedAmount
+			}
+			if inv.PaidAmount != nil {
+				paid += *inv.PaidAmount
+			}
 		case inv.PaidAmount != nil:
 			paid = *inv.PaidAmount
 		case inv.Status == invoice.StatusPaid:

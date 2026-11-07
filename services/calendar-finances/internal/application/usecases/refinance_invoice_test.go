@@ -47,7 +47,20 @@ func refinanceFixture(t *testing.T) (*RefinanceInvoiceUseCase, *fakeInvoiceRepo)
 		Amount: 2205.86, Currency: "BRL", Description: "Credito por parcelamento da fatura",
 		OccurredOn: day(2026, 10, 11),
 	}
-	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{credito}}
+	// The bills' own lines. Without them the stored totals disagree with what the
+	// transactions say, which is precisely the state the use case must refuse.
+	linha := func(id, billID string, amount float64) *transaction.Transaction {
+		b := billID
+		return &transaction.Transaction{
+			ID: id, ProfileID: profileID, BankAccountID: cardID,
+			Type: transaction.TypeExpense, Status: transaction.StatusConfirmed,
+			Amount: amount, Currency: "BRL", Description: "compras do ciclo",
+			OccurredOn: day(2026, 9, 20), InvoiceID: &b,
+		}
+	}
+	txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{
+		credito, linha("l-set", "set", 3292.96), linha("l-out", "out", 1649.35),
+	}}
 
 	uc := NewRefinanceInvoiceUseCase(
 		&fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{cardID: card}},
@@ -188,6 +201,7 @@ func TestRefinanceCapsOneCreditAcrossSeparateRequests(t *testing.T) {
 		DueDate: day(2026, 11, 14), ReferenceDate: day(2026, 11, 1),
 		Status: invoice.StatusClosed, Amount: 1000,
 	}
+	seedBillLine(uc, "nov", 1000)
 
 	if err := uc.Execute("credito", []string{"set", "out"}); err != nil {
 		t.Fatalf("first request: %v", err)
@@ -212,6 +226,7 @@ func TestRefinanceAllowsASecondRequestWithinWhatIsLeft(t *testing.T) {
 		DueDate: day(2026, 11, 14), ReferenceDate: day(2026, 11, 1),
 		Status: invoice.StatusClosed, Amount: 400,
 	}
+	seedBillLine(uc, "nov", 400)
 
 	if err := uc.Execute("credito", []string{"set", "out"}); err != nil {
 		t.Fatalf("first request: %v", err)
@@ -319,5 +334,189 @@ func TestRefinanceLeavesACreditThatWasNotFiledAsALineAlone(t *testing.T) {
 	}
 	if stored.InvoiceID != nil {
 		t.Error("expected the credit to stay detached")
+	}
+}
+
+// Converting must not rewrite the bills' totals. Their lines did not change, and
+// `amount` is a statement figure that a blind refresh replaces with whatever the
+// lines happen to sum to — in production that is frequently zero.
+func TestRefinanceDoesNotRestateTheBillsItSettles(t *testing.T) {
+	uc, invRepo := refinanceFixture(t)
+	uc.SetInvoiceRecalculator(&recordingRecalculator{})
+
+	if err := uc.Execute("credito", []string{"set", "out"}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	rec := uc.invoiceRecalculator.(*recordingRecalculator)
+	for _, id := range rec.refreshed {
+		if id == "set" || id == "out" {
+			t.Errorf("bill %s was restated; its lines did not change and its total is a statement figure", id)
+		}
+	}
+	if !moneyNear(invRepo.invoices["out"].Amount, 1649.35) {
+		t.Errorf("october's total is now %v, want 1649.35 preserved", invRepo.invoices["out"].Amount)
+	}
+}
+
+// The cycle the credit was removed FROM did change, and must be refreshed.
+func TestRefinanceRestatesTheCycleTheCreditLeft(t *testing.T) {
+	uc, _ := refinanceFixture(t)
+	uc.SetInvoiceRecalculator(&recordingRecalculator{})
+	novID := "nov"
+	uc.txRepo.(*fakeTransactionRepo).created[0].InvoiceID = &novID
+
+	if err := uc.Execute("credito", []string{"out"}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	rec := uc.invoiceRecalculator.(*recordingRecalculator)
+	found := false
+	for _, id := range rec.refreshed {
+		if id == "nov" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the cycle the credit left was not refreshed; it is still short by the credit's value")
+	}
+}
+
+// seedBillLine gives a bill the charges its stored total claims. A bill with a
+// total and no lines is the out-of-sync state the use case refuses, so a fixture
+// without them tests the guard rather than the behaviour under it.
+func seedBillLine(uc *RefinanceInvoiceUseCase, billID string, amount float64) {
+	b := billID
+	repo := uc.txRepo.(*fakeTransactionRepo)
+	repo.created = append(repo.created, &transaction.Transaction{
+		ID: "l-" + billID, ProfileID: "personal", BankAccountID: "card",
+		Type: transaction.TypeExpense, Status: transaction.StatusConfirmed,
+		Amount: amount, Currency: "BRL", Description: "compras do ciclo",
+		OccurredOn: day(2026, 10, 20), InvoiceID: &b,
+	})
+}
+
+type recordingRecalculator struct{ refreshed []string }
+
+func (r *recordingRecalculator) RefreshTotal(id string) (*invoice.Invoice, error) {
+	r.refreshed = append(r.refreshed, id)
+	return nil, nil
+}
+
+func (r *recordingRecalculator) Execute(id string) (*invoice.Invoice, error) {
+	return nil, nil
+}
+
+func (r *recordingRecalculator) RestatePayments(id string) (*invoice.Invoice, error) {
+	return nil, nil
+}
+
+func moneyNear(got, want float64) bool { return got-want < 0.005 && want-got < 0.005 }
+
+// The cap reads the bill's stored total, and that column is NOT the source of
+// truth: it is written as zero on creation and refreshed by a manual endpoint, so
+// it drifts from the lines underneath it. A credit of R$ 100 could settle a bill
+// storing 100 while carrying 3.000 of confirmed charges — and RefinancedAmount
+// would freeze at 100, so the cross-request cap would still believe the rest of
+// the credit was unspent. The same unbounded settlement through a different door.
+//
+// Refusing to settle against a number that disagrees with itself is the only
+// honest answer: it is the same guard MarkInvoicePayment carries.
+func TestRefinanceRefusesABillWhoseTotalDisagreesWithItsLines(t *testing.T) {
+	uc, invRepo := refinanceFixture(t)
+	// The lines say 1.649,35; the stored total drifted to 100,00.
+	invRepo.invoices["out"].Amount = 100
+
+	err := uc.Execute("credito", []string{"out"})
+
+	if !errors.Is(err, ErrPaymentRefused) {
+		t.Fatalf("error = %v, want a refusal naming both numbers", err)
+	}
+	if invRepo.invoices["out"].Status == invoice.StatusRefinanced {
+		t.Error("a bill was settled against a total nothing agrees with")
+	}
+}
+
+func TestRefinanceProceedsWhenTheTotalAgreesWithItsLines(t *testing.T) {
+	uc, invRepo := refinanceFixture(t)
+
+	if err := uc.Execute("credito", []string{"set", "out"}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if invRepo.invoices["out"].Status != invoice.StatusRefinanced {
+		t.Error("a bill whose total matches its lines was refused")
+	}
+}
+
+// Release had no coverage above the domain: deleting its Update, or its restate,
+// left the whole suite green — integration included.
+func TestReleasePersistsAndRestores(t *testing.T) {
+	uc, invRepo := refinanceFixture(t)
+	uc.SetInvoiceRecalculator(&recordingRecalculator{})
+	if err := uc.Execute("credito", []string{"out"}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if err := uc.Release("out"); err != nil {
+		t.Fatalf("Release: %v", err)
+	}
+
+	// Read through the repository: asserting on an in-memory object would pass
+	// whether or not Update was called.
+	stored := invRepo.invoices["out"]
+	if stored.Status == invoice.StatusRefinanced {
+		t.Error("the release was not persisted")
+	}
+	if stored.RefinancedBy != nil || stored.RefinancedAmount != nil {
+		t.Error("the conversion record survived the release in storage")
+	}
+	if !moneyNear(stored.AmountRemaining(), 1649.35) {
+		t.Errorf("remaining = %v, want the whole bill owed again", stored.AmountRemaining())
+	}
+
+	rec := uc.invoiceRecalculator.(*recordingRecalculator)
+	found := false
+	for _, id := range rec.refreshed {
+		if id == "out" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the released bill's total was not refreshed")
+	}
+}
+
+// Releasing frees the credit again: the cap must stop counting what it converted.
+func TestReleaseReturnsTheCreditToTheCap(t *testing.T) {
+	uc, invRepo := refinanceFixture(t)
+	invRepo.invoices["nov"] = &invoice.Invoice{
+		ID: "nov", BankAccountID: "card",
+		OpeningDate: day(2026, 10, 10), ClosingDate: day(2026, 11, 9),
+		DueDate: day(2026, 11, 14), ReferenceDate: day(2026, 11, 1),
+		Status: invoice.StatusClosed, Amount: 1000,
+	}
+	seedBillLine(uc, "nov", 1000)
+
+	if err := uc.Execute("credito", []string{"set", "out"}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if err := uc.Execute("credito", []string{"nov"}); err == nil {
+		t.Fatal("precondition: the third bill should not fit")
+	}
+
+	if err := uc.Release("out"); err != nil {
+		t.Fatalf("Release: %v", err)
+	}
+
+	if err := uc.Execute("credito", []string{"nov"}); err != nil {
+		t.Fatalf("after releasing 1.649,35 the credit should cover 1.000,00: %v", err)
+	}
+}
+
+func TestReleaseRefusesABillThatWasNotConverted(t *testing.T) {
+	uc, _ := refinanceFixture(t)
+
+	if err := uc.Release("out"); !errors.Is(err, ErrPaymentRefused) {
+		t.Fatalf("error = %v, want a refusal", err)
 	}
 }

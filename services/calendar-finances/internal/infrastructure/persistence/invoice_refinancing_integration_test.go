@@ -120,8 +120,52 @@ func TestRefinancingSurvivesTheRoundTripThroughPostgres(t *testing.T) {
 	if reloaded.RefinancedAt == nil || !reloaded.RefinancedAt.UTC().Equal(at) {
 		t.Errorf("refinanced at = %v, want %v", reloaded.RefinancedAt, at)
 	}
+	// The column the cross-request cap is built on. Nothing read it back through
+	// Postgres until this line: replacing it with NULL in the SELECT survived the
+	// whole integration suite.
+	if reloaded.RefinancedAmount == nil || *reloaded.RefinancedAmount != 1649.35 {
+		t.Errorf("refinanced amount = %v, want 1649.35", reloaded.RefinancedAmount)
+	}
 	if got := reloaded.AmountRemaining(); got != 0 {
 		t.Errorf("amount remaining = %.2f, want 0 after the round trip", got)
+	}
+}
+
+// FindByRefinancedBy is what caps one credit across separate requests. It has its
+// own SELECT, so a column missing from it reports zero already spent and the cap
+// stops holding.
+func TestFindByRefinancedByReadsBackWhatWasConverted(t *testing.T) {
+	db := refiDB(t)
+	bill := refiSeed(t, db)
+	repo := NewInvoiceRepository(db)
+
+	if err := bill.Refinance(refiTxnID, time.Date(2026, time.October, 11, 0, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("Refinance: %v", err)
+	}
+	if err := repo.Update(bill); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	found, err := repo.FindByRefinancedBy(refiTxnID)
+	if err != nil {
+		t.Fatalf("FindByRefinancedBy: %v", err)
+	}
+	if len(found) != 1 {
+		t.Fatalf("got %d bills, want 1", len(found))
+	}
+	if found[0].RefinancedAmount == nil || *found[0].RefinancedAmount != 1649.35 {
+		t.Errorf("refinanced amount = %v, want 1649.35 — the cap reads this", found[0].RefinancedAmount)
+	}
+	if found[0].ID != refiBillID {
+		t.Errorf("id = %s, want %s", found[0].ID, refiBillID)
+	}
+
+	none, err := repo.FindByRefinancedBy("5c3d0000-0000-4000-8000-00000000ffff")
+	if err != nil {
+		t.Fatalf("FindByRefinancedBy for an unrelated credit: %v", err)
+	}
+	if len(none) != 0 {
+		t.Errorf("an unrelated credit reports %d converted bills, want 0", len(none))
 	}
 }
 

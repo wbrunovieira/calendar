@@ -56,8 +56,17 @@ export default function InvoicePaymentConfirm({
     <div className="space-y-1 pt-1 border-t border-white/10">
       {/* Say what this will write, before it is written. */}
       <p className="text-white/50 text-xs">
-        Vai lançar <span className="text-white/80">{formatCurrency(preview.amount)}</span> saindo de{' '}
-        <span className="text-white/80">{preview.fundingAccountName}</span>.
+        {preview.noFundingAccount ? (
+          <>
+            Vai marcar <span className="text-white/80">{formatCurrency(preview.amount)}</span> como paga.
+            Este cartão não tem conta vinculada, então nenhum lançamento de saída será criado.
+          </>
+        ) : (
+          <>
+            Vai lançar <span className="text-white/80">{formatCurrency(preview.amount)}</span> saindo de{' '}
+            <span className="text-white/80">{preview.fundingAccountName}</span>.
+          </>
+        )}
       </p>
       <div className="flex items-center gap-2">
         <span className="text-white/60 text-xs">Pago em</span>

@@ -28,6 +28,7 @@ describe('describeInvoicePayment', () => {
       amount: 1649.35,
       fundingAccountName: 'Mercado Pago',
       blockedReason: null,
+      noFundingAccount: false,
     });
   });
 
@@ -63,19 +64,23 @@ describe('describeInvoicePayment', () => {
     expect(preview.blockedReason).toContain('não deve nada');
   });
 
-  // Saying "it will be debited from somewhere" is worse than refusing: the entry
-  // would land on an account the user never picked.
-  it('blocks a card with no funding account rather than guessing one', () => {
+  // Not a refusal: PayInvoiceUseCaseV2 handles this on purpose, marking the bill
+  // paid and skipping the transfer. Blocking it made such cards unpayable from
+  // the screen while the API was willing.
+  it('allows a card with no funding account, and says no account is named', () => {
     const preview = describeInvoicePayment(bill(), { id: 'card' } as BankAccount, accounts);
 
+    expect(preview.blockedReason).toBeNull();
+    expect(preview.noFundingAccount).toBe(true);
     expect(preview.fundingAccountName).toBeNull();
-    expect(preview.blockedReason).toContain('vinculada');
   });
 
-  it('blocks when the linked account is not among the ones loaded', () => {
+  it('says the same when the linked account is not among the ones loaded', () => {
     const orphan = { id: 'card', linkedAccountId: 'gone' } as BankAccount;
+    const preview = describeInvoicePayment(bill(), orphan, accounts);
 
-    expect(describeInvoicePayment(bill(), orphan, accounts).blockedReason).not.toBeNull();
+    expect(preview.blockedReason).toBeNull();
+    expect(preview.noFundingAccount).toBe(true);
   });
 });
 

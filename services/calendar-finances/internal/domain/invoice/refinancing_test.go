@@ -339,3 +339,85 @@ func TestReleaseRefusesABillThatWasNeverConverted(t *testing.T) {
 		t.Errorf("status = %q, want it left untouched", inv.Status)
 	}
 }
+
+// Pay guarded only StatusPaid, so a converted bill still accepted a payment —
+// and the result was unrecoverable: status PAID with the conversion record still
+// on it, which ReleaseRefinancing refuses (not REFINANCED) and Reopen refuses
+// (not CLOSED, and it still carries a conversion). The database CHECK does not
+// catch it either: it constrains REFINANCED without a transaction, not a
+// transaction without REFINANCED.
+//
+// And the money is worse than the state: paying it writes a real debit for debt
+// the bank already settled.
+func TestAConvertedBillRefusesAPayment(t *testing.T) {
+	inv := settledCandidate(t, 1649.35)
+	if err := inv.Refinance("txn-credit", time.Now()); err != nil {
+		t.Fatalf("Refinance: %v", err)
+	}
+
+	if err := inv.Pay(1649.35, time.Now()); err == nil {
+		t.Fatal("expected a converted bill to refuse a payment")
+	}
+	if inv.Status != StatusRefinanced {
+		t.Errorf("status = %q, want REFINANCED preserved", inv.Status)
+	}
+	if inv.RefinancedBy == nil {
+		t.Error("the conversion record was lost")
+	}
+}
+
+// Releasing it first is the way to pay a bill converted by mistake.
+func TestAReleasedBillAcceptsAPaymentAgain(t *testing.T) {
+	inv := settledCandidate(t, 1649.35)
+	if err := inv.Refinance("txn-credit", time.Now()); err != nil {
+		t.Fatalf("Refinance: %v", err)
+	}
+	if err := inv.ReleaseRefinancing(); err != nil {
+		t.Fatalf("ReleaseRefinancing: %v", err)
+	}
+
+	if err := inv.Pay(1649.35, time.Now()); err != nil {
+		t.Fatalf("Pay after release: %v", err)
+	}
+	if inv.Status != StatusPaid {
+		t.Errorf("status = %q, want PAID", inv.Status)
+	}
+}
+
+// A hard zero hides new debt. A back-dated charge attaches to a converted cycle
+// (FindByBankAccountAndDate has no status filter), the bill's total goes up, and
+// a flat "owes nothing" swallows it — in amountRemaining, in credit-usage, and in
+// the invariants check, all at once.
+//
+// What the conversion settled is a FIXED amount, recorded at the time. Anything
+// billed beyond it is owed, which is the same property RederiveStatus preserves
+// for a paid bill that is charged again.
+func TestAConvertedBillOwesWhatIsBilledBeyondTheConversion(t *testing.T) {
+	inv := settledCandidate(t, 1649.35)
+	if err := inv.Refinance("txn-credit", time.Now()); err != nil {
+		t.Fatalf("Refinance: %v", err)
+	}
+	if got := inv.AmountRemaining(); got != 0 {
+		t.Fatalf("precondition: remaining = %v, want 0", got)
+	}
+
+	inv.Amount = 2149.35 // a 500,00 charge landed on the cycle afterwards
+
+	if got := inv.AmountRemaining(); !near(got, 500) {
+		t.Errorf("amount remaining = %v, want 500 — the late charge is real debt", got)
+	}
+}
+
+func TestAConvertedBillStillOwesNothingWhenItsTotalIsUnchanged(t *testing.T) {
+	inv := settledCandidate(t, 3292.96)
+	if err := inv.Pay(3200.00, time.Now()); err != nil {
+		t.Fatalf("Pay: %v", err)
+	}
+	if err := inv.Refinance("txn-credit", time.Now()); err != nil {
+		t.Fatalf("Refinance: %v", err)
+	}
+
+	if got := inv.AmountRemaining(); got != 0 {
+		t.Errorf("amount remaining = %v, want 0", got)
+	}
+}

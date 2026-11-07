@@ -3,6 +3,7 @@ package usecases
 import (
 	"fmt"
 	"log"
+	"math"
 	"time"
 
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
@@ -198,6 +199,17 @@ func (uc *RefinanceInvoiceUseCase) convert(transactionID string, invoiceIDs []st
 			return nil, ErrInvoiceStillOpen
 		}
 
+		// The cap is about to be measured against the bill's stored total, and that
+		// column is NOT the source of truth: it is written as zero on creation and
+		// refreshed by a manual endpoint, so it drifts from the lines underneath.
+		// Settling against a number nothing else agrees with is how a small credit
+		// comes to clear a large bill — and RefinancedAmount would then freeze at
+		// the wrong figure, so the cross-request cap would believe the rest of the
+		// credit was still unspent.
+		if err := uc.checkRestatable(bill); err != nil {
+			return nil, err
+		}
+
 		outstanding += bill.AmountRemaining()
 		bills = append(bills, bill)
 	}
@@ -238,9 +250,11 @@ func (uc *RefinanceInvoiceUseCase) convert(transactionID string, invoiceIDs []st
 		}
 		touched = append(touched, deflated)
 	}
-	for _, bill := range bills {
-		touched = append(touched, bill.ID)
-	}
+	// Deliberately NOT the converted bills. Their lines did not change — only the
+	// cycle the credit was detached from did. Refreshing them would overwrite each
+	// statement figure with whatever its lines currently sum to, and `amount` is
+	// not the source of truth: it is written as zero on creation and refreshed by
+	// a manual endpoint, so a blind refresh wipes the number the bank gave us.
 	return touched, nil
 }
 
@@ -265,6 +279,19 @@ func (uc *RefinanceInvoiceUseCase) Release(invoiceID string) error {
 		return fmt.Errorf("could not release the conversion of bill %s: %w", bill.ID, err)
 	}
 	uc.restate(bill.ID)
+	return nil
+}
+
+// checkRestatable refuses a bill whose stored total disagrees with its own lines.
+// The same guard MarkInvoicePayment carries, for the same reason.
+func (uc *RefinanceInvoiceUseCase) checkRestatable(inv *invoice.Invoice) error {
+	linked, err := uc.txRepo.SumByInvoiceID(inv.ID)
+	if err != nil {
+		return fmt.Errorf("totalling bill %s: %w", inv.ID, err)
+	}
+	if math.Abs(linked-inv.Amount) > amountTolerance {
+		return fmt.Errorf("%w: it stores %.2f and its lines sum to %.2f", ErrInvoiceAmountOutOfSync, inv.Amount, linked)
+	}
 	return nil
 }
 
