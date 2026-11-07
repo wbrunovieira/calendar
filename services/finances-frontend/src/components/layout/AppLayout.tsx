@@ -75,6 +75,10 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const [logoutUrl, setLogoutUrl] = useState(`${AUTH_BASE}/logout`);
   useEffect(() => setLogoutUrl(buildLogoutUrl()), []);
 
+  // One value for the label and its tooltip. Two copies of the same conditional
+  // drift, and the tooltip half is invisible to a test that reads text.
+  const authLabel = authRequired ? 'Entrar' : 'Sair';
+
   const profileTheme: ProfileTheme = selectedProfile?.type === 'BUSINESS' ? 'business' : 'personal';
   const theme = themeConfig[profileTheme];
 
@@ -144,7 +148,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
                   screen that referred to being signed in at all. */}
               <a
                 href={authRequired ? loginUrl : logoutUrl}
-                title={authRequired ? 'Entrar' : 'Sair'}
+                title={authLabel}
                 className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all border ${
                   authRequired
                     ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 border-amber-400/40'
@@ -155,7 +159,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 17l5-5m0 0l-5-5m5 5H9m3 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h3a3 3 0 013 3v1" />
                 </svg>
                 <span className="text-sm font-semibold hidden sm:inline">
-                  {authRequired ? 'Entrar' : 'Sair'}
+                  {authLabel}
                 </span>
               </a>
 
