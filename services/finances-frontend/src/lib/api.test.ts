@@ -98,6 +98,23 @@ describe('apiFetch', () => {
     await expect(apiFetch('/profiles')).rejects.toBeInstanceOf(AuthRequiredError);
   });
 
+  // The cross-origin hop must stand on its own. The production response also
+  // carried HTML, so a test that asserts both leaves the origin check unguarded:
+  // deleting it kept the suite green until this case existed.
+  it('raises AuthRequiredError on a cross-origin hop even when the body is JSON', async () => {
+    fetchMock.mockResolvedValue(
+      response({
+        status: 200,
+        redirected: true,
+        url: 'https://auth.wbdigitalsolutions.com/api/verify',
+        contentType: 'application/json',
+        body: { authenticated: false },
+      }),
+    );
+
+    await expect(apiFetch('/profiles')).rejects.toBeInstanceOf(AuthRequiredError);
+  });
+
   // Same failure without the redirect flag: some gateways rewrite rather than
   // redirect, so HTML where JSON belongs is itself the signal.
   it('raises AuthRequiredError when a 200 arrives as HTML instead of JSON', async () => {
