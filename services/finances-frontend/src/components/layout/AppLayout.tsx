@@ -4,6 +4,8 @@ import { ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useProfile } from '@/contexts/ProfileContext';
+import { buildLogoutUrl } from '@/lib/session';
+import SessionExpired from './SessionExpired';
 
 export type ProfileTheme = 'personal' | 'business';
 
@@ -63,7 +65,8 @@ const themeConfig = {
 
 export default function AppLayout({ children }: AppLayoutProps) {
   const pathname = usePathname();
-  const { profiles, selectedProfileId, selectedProfile, setSelectedProfileId, isLoading } = useProfile();
+  const { profiles, selectedProfileId, selectedProfile, setSelectedProfileId, isLoading, authRequired, loginUrl } =
+    useProfile();
 
   const profileTheme: ProfileTheme = selectedProfile?.type === 'BUSINESS' ? 'business' : 'personal';
   const theme = themeConfig[profileTheme];
@@ -129,6 +132,26 @@ export default function AppLayout({ children }: AppLayoutProps) {
                 </div>
               )}
 
+              {/* Auth control. Its absence is what made an expired session
+                  indistinguishable from an empty account: there was nothing on
+                  screen that referred to being signed in at all. */}
+              <a
+                href={authRequired ? loginUrl : buildLogoutUrl()}
+                title={authRequired ? 'Entrar' : 'Sair'}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all border ${
+                  authRequired
+                    ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 border-amber-400/40'
+                    : 'bg-white/10 hover:bg-white/20 text-white border-white/20'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 17l5-5m0 0l-5-5m5 5H9m3 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h3a3 3 0 013 3v1" />
+                </svg>
+                <span className="text-sm font-semibold hidden sm:inline">
+                  {authRequired ? 'Entrar' : 'Sair'}
+                </span>
+              </a>
+
               <a
                 href="http://localhost:3002"
                 className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all border border-white/20"
@@ -163,7 +186,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
       {/* Main Content */}
       <main className="container mx-auto px-6">
-        {children}
+        {authRequired ? <SessionExpired loginUrl={loginUrl} /> : children}
       </main>
     </div>
   );

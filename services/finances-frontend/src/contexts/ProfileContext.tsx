@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { api } from '@/lib/api';
+import { sessionStateFromError, ACTIVE_SESSION, type SessionState } from '@/lib/session';
 import type { Profile } from '@/types/finances';
 
 interface ProfileContextType {
@@ -10,6 +11,13 @@ interface ProfileContextType {
   selectedProfile: Profile | null;
   setSelectedProfileId: (id: string) => void;
   isLoading: boolean;
+  /**
+   * True when the load failed because the gateway wants a login. Without it a
+   * screen cannot tell "this account has no profiles" from "you are logged out"
+   * and reports the wrong one — which is what every screen did until 07/11/2026.
+   */
+  authRequired: boolean;
+  loginUrl: string;
 }
 
 const ProfileContext = createContext<ProfileContextType | undefined>(undefined);
@@ -20,6 +28,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedProfileId, setSelectedProfileIdState] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [session, setSession] = useState<SessionState>(ACTIVE_SESSION);
 
   // Load profiles on mount
   useEffect(() => {
@@ -40,6 +49,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
         }
       } catch (error) {
         console.error('Erro ao carregar perfis:', error);
+        setSession(sessionStateFromError(error));
       } finally {
         setIsLoading(false);
       }
@@ -63,6 +73,8 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
         selectedProfile,
         setSelectedProfileId,
         isLoading,
+        authRequired: session.authRequired,
+        loginUrl: session.loginUrl,
       }}
     >
       {children}
