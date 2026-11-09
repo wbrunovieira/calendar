@@ -45,6 +45,11 @@ export function amountLeftOn(invoice: Invoice): number {
   // balance moved to the instalments, which are transactions of their own.
   // Reading paidAmount here would report the unpaid remainder as still owed and
   // count the same debt twice.
+  //
+  // A charge that lands on a converted cycle afterwards is NOT shown as debt
+  // here either — it surfaces as drift in /health/invariants, for a person to
+  // release the bill and settle it. Debt nobody can pay would be worse than debt
+  // nobody sees, and neither Pagar nor the API accepts a converted bill.
   if (invoice.status === 'REFINANCED') return 0;
   const paid = invoice.paidAmount ?? (invoice.status === 'PAID' ? invoice.amount : 0);
   return Math.max(0, invoice.amount - paid);

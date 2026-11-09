@@ -25,6 +25,11 @@ var (
 	// ErrAlreadyRefinancedByAnother rejects taking a bill from the conversion that
 	// already settled it.
 	ErrAlreadyRefinancedByAnother = refuse("that bill was already converted by a different credit")
+	// ErrBillHostsTheCredit rejects converting the very cycle the credit landed in.
+	// Such a bill's total NETS the credit against its own charges, so the cap reads
+	// a figure smaller than the debt and the bill is restated back to the gross
+	// afterwards — it ends settled while reporting the credit's full value as owed.
+	ErrBillHostsTheCredit = refuse("that bill is the cycle this credit landed in; move the credit off it first")
 )
 
 // RefinanceInvoiceUseCase records that a card credit SETTLED one or more bills by
@@ -198,6 +203,9 @@ func (uc *RefinanceInvoiceUseCase) convert(transactionID string, invoiceIDs []st
 		if bill.Status == invoice.StatusOpen {
 			return nil, ErrInvoiceStillOpen
 		}
+		if txn.InvoiceID != nil && *txn.InvoiceID == bill.ID {
+			return nil, ErrBillHostsTheCredit
+		}
 
 		// The cap is about to be measured against the bill's stored total, and that
 		// column is NOT the source of truth: it is written as zero on creation and
@@ -219,6 +227,21 @@ func (uc *RefinanceInvoiceUseCase) convert(transactionID string, invoiceIDs []st
 	}
 	if outstanding > txn.Amount+amountTolerance {
 		return nil, ErrConversionExceeded
+	}
+
+	// The cycle the credit is about to LEAVE is the only bill this work rewrites,
+	// and it was never checked. Restating a drifted bill replaces a statement
+	// figure with an incomplete sum. The check belongs here, before the detach:
+	// afterwards the sum has legitimately changed and proves nothing.
+	if txn.InvoiceID != nil {
+		// A credit pointing at a bill that cannot be read has no statement figure
+		// to protect, and refusing the whole conversion over a dangling reference
+		// helps nobody. Guard what exists.
+		if host, err := uc.invoiceRepo.FindByID(*txn.InvoiceID); err == nil && host != nil {
+			if err := uc.checkRestatable(host); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	at := txn.OccurredOn
@@ -264,6 +287,14 @@ func (uc *RefinanceInvoiceUseCase) convert(transactionID string, invoiceIDs []st
 // marking is a human judgement, and a credit can be reversed after the fact. With
 // no way back a wrong conversion is permanent, since re-running does nothing and
 // another credit is refused.
+//
+// It is NOT a full inverse, deliberately. Execute detaches the credit from the
+// cycle it was filed in, and Release leaves it detached: a credit that settles
+// bills is not a line of one, and that is true whether or not this particular
+// conversion was undone. If the credit really does belong to that cycle — the
+// conversion was recorded against the wrong transaction, say — pin it back with
+// POST /transactions/{id}/invoice. Re-attaching silently here would restore a
+// state the detach existed to correct.
 func (uc *RefinanceInvoiceUseCase) Release(invoiceID string) error {
 	bill, err := uc.invoiceRepo.FindByID(invoiceID)
 	if err != nil {

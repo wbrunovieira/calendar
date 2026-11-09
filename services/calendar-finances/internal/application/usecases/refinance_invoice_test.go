@@ -100,12 +100,15 @@ func TestRefinanceSettlesEveryBillTheConversionCovered(t *testing.T) {
 // actually credited is how a forced settlement would hide a bill nobody cleared.
 func TestRefinanceRefusesMoreDebtThanTheCreditCovers(t *testing.T) {
 	uc, invRepo := refinanceFixture(t)
-	invRepo.invoices["out"].Amount = 9000 // far beyond the 2.205,86 credit
+	// Raise BOTH the stored total and the lines, or checkRestatable fires first and
+	// the test passes on the wrong refusal — which is what it was doing.
+	invRepo.invoices["out"].Amount = 9000
+	seedBillLine(uc, "out", 9000-1649.35)
 
 	err := uc.Execute("credito", []string{"set", "out"})
 
-	if !errors.Is(err, ErrPaymentRefused) {
-		t.Fatalf("error = %v, want a refusal", err)
+	if err == nil || err.Error() != ErrConversionExceeded.Error() {
+		t.Fatalf("error = %v, want %v", err, ErrConversionExceeded)
 	}
 	for _, id := range []string{"set", "out"} {
 		if invRepo.invoices[id].Status == invoice.StatusRefinanced {
@@ -518,5 +521,99 @@ func TestReleaseRefusesABillThatWasNotConverted(t *testing.T) {
 
 	if err := uc.Release("out"); !errors.Is(err, ErrPaymentRefused) {
 		t.Fatalf("error = %v, want a refusal", err)
+	}
+}
+
+// BLOCKER 1 (review 3). checkRestatable guarded the bills being converted but not
+// the one bill that actually gets REWRITTEN: the cycle the credit is detached
+// from. Restating a drifted bill replaces a statement figure with an incomplete
+// sum — reproduced destroying R$ 54,69 of a real Mercado Pago total.
+//
+// The guard has to run BEFORE the detach, where the credit is still one of the
+// lines; after it, the sum has legitimately changed and proves nothing.
+func TestRefinanceRefusesWhenTheCreditsOwnCycleIsOutOfSync(t *testing.T) {
+	uc, invRepo := refinanceFixture(t)
+	novID := "nov"
+	invRepo.invoices[novID] = &invoice.Invoice{
+		ID: novID, BankAccountID: "card",
+		OpeningDate: day(2026, 10, 10), ClosingDate: day(2026, 11, 9),
+		DueDate: day(2026, 11, 14), ReferenceDate: day(2026, 11, 1),
+		Status: invoice.StatusClosed, Amount: 2702.66, // statement figure
+	}
+	seedBillLine(uc, novID, 497.00) // lines sum 497,00 - 2.205,86 = -1.708,86: drifted
+	uc.txRepo.(*fakeTransactionRepo).created[0].InvoiceID = &novID
+
+	err := uc.Execute("credito", []string{"out"})
+
+	if !errors.Is(err, ErrPaymentRefused) {
+		t.Fatalf("error = %v, want a refusal", err)
+	}
+	if invRepo.invoices["out"].Status == invoice.StatusRefinanced {
+		t.Error("a conversion went through that would have rewritten a drifted statement total")
+	}
+	if !moneyNear(invRepo.invoices[novID].Amount, 2702.66) {
+		t.Errorf("the statement total was changed to %v", invRepo.invoices[novID].Amount)
+	}
+}
+
+// BLOCKER 2 (review 3). When the bill being converted is ALSO the cycle the credit
+// landed in, its total nets the credit against its own charges: the cap reads the
+// netted figure and lets a credit settle far more than it covers, and the bill is
+// then restated back to the gross — ending REFINANCED while reporting the credit's
+// full value as debt. The phantom this change exists to delete, reintroduced.
+func TestRefinanceRefusesABillThatIsAlsoTheCreditsOwnCycle(t *testing.T) {
+	uc, invRepo := refinanceFixture(t)
+	outID := "out"
+	uc.txRepo.(*fakeTransactionRepo).created[0].InvoiceID = &outID
+	// Already restated after the credit landed, so the stored total IS the netted
+	// figure and checkRestatable passes. That is the state the reviewer found:
+	// 3.000,00 of purchases less a 2.205,86 credit stored as 794,14.
+	seedBillLine(uc, outID, 1350.65) // 1.649,35 + 1.350,65 = 3.000,00 of charges
+	invRepo.invoices[outID].Amount = 794.14
+
+	err := uc.Execute("credito", []string{"out"})
+
+	if !errors.Is(err, ErrPaymentRefused) {
+		t.Fatalf("error = %v, want a refusal", err)
+	}
+	if invRepo.invoices["out"].Status == invoice.StatusRefinanced {
+		t.Error("the bill hosting the credit was converted by it")
+	}
+}
+
+// The cap's boundary. One cent either side decides whether a bill is settled.
+func TestRefinanceCapIsInclusiveToTheCent(t *testing.T) {
+	// Exactly the credit: 2.205,86 of debt against 2.205,86 of credit.
+	uc, invRepo := refinanceFixture(t)
+	invRepo.invoices["out"].Amount = 2205.86 - 92.96
+	seedBillLine(uc, "out", (2205.86-92.96)-1649.35)
+
+	if err := uc.Execute("credito", []string{"set", "out"}); err != nil {
+		t.Fatalf("a conversion that exactly exhausts the credit was refused: %v", err)
+	}
+
+	// One cent over.
+	uc2, invRepo2 := refinanceFixture(t)
+	invRepo2.invoices["out"].Amount = 2205.86 - 92.96 + 0.02
+	seedBillLine(uc2, "out", (2205.86-92.96+0.02)-1649.35)
+
+	if err := uc2.Execute("credito", []string{"set", "out"}); err == nil {
+		t.Error("a conversion two cents over the credit was allowed")
+	}
+}
+
+// The same bill named twice in one request must be counted once, or the cap sees
+// double the debt and refuses a conversion that fits.
+func TestRefinanceCountsARepeatedBillOnce(t *testing.T) {
+	uc, invRepo := refinanceFixture(t)
+
+	if err := uc.Execute("credito", []string{"out", "out"}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if invRepo.invoices["out"].Status != invoice.StatusRefinanced {
+		t.Error("the bill was not converted")
+	}
+	if invRepo.invoices["out"].RefinancedAmount == nil || !moneyNear(*invRepo.invoices["out"].RefinancedAmount, 1649.35) {
+		t.Errorf("recorded conversion = %v, want 1649.35 counted once", invRepo.invoices["out"].RefinancedAmount)
 	}
 }

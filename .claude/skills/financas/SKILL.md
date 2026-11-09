@@ -323,7 +323,13 @@ Input dates are `YYYY-MM-DD`. `nextOccurrence` = when the next one falls (e.g. t
   (incluindo o que esse mesmo crédito já converteu antes) **cabe no crédito**.
   Devolve 204. A fatura vira `REFINANCED`, `amountRemaining` zera, o pagamento
   parcial em dinheiro que houver é preservado, e o crédito deixa de ser linha do
-  ciclo em que caiu.
+  ciclo em que caiu. **Recusa** se o total da fatura não bater com as linhas dela,
+  se a fatura for o próprio ciclo onde o crédito caiu, ou se a soma do que as
+  faturas devem passar do crédito.
+  Se depois disso cair compra nesse ciclo (lançamento retroativo), ela **não vira
+  dívida** — aparece como deriva no `/health/invariants` com o aviso
+  "charges landed on this bill after it was converted"; o caminho é dar release,
+  resolver, e converter de novo se for o caso.
   Errou? **`POST /invoices/{id}/release-refinancing`** desfaz e devolve a dívida.
 
 - Reconciliation: compare against the bank statement; when reconciling, Bruno's BRL accounts live at Mercado Pago/Nubank.

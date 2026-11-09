@@ -57,6 +57,11 @@ var (
 	ErrWouldLowerRecordedPayment = refuse("that would reduce what the bill records as paid")
 	// ErrCardCannotFundAPayment rejects a transfer whose source is itself a card.
 	ErrCardCannotFundAPayment = refuse("a credit card cannot fund the payment of a bill")
+	// ErrInvoiceAlreadyConverted rejects settling a bill the bank already settled
+	// by converting it into instalments. Recording a payment there writes
+	// paid_amount alongside refinanced_amount on one row — the same bill settled
+	// twice, by two different mechanisms.
+	ErrInvoiceAlreadyConverted = refuse("that bill was already settled by a debt conversion; release it first")
 )
 
 // amountTolerance is one cent: the sums are money, rounded to cents on both sides.

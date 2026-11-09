@@ -283,9 +283,10 @@ func TestGetCreditUsage_DoesNotCountABillTheBankConverted(t *testing.T) {
 	}
 }
 
-// A charge that lands on a converted cycle afterwards is debt nobody converted,
-// and the canonical endpoint has to say so.
-func TestGetCreditUsage_CountsALateChargeOnAConvertedCycle(t *testing.T) {
+// A converted bill owes nothing here, late charge or not: the drift is surfaced
+// by the invariants check, for a person, instead of becoming debt that neither
+// Pay nor the screen will accept.
+func TestGetCreditUsage_DoesNotCountALateChargeOnAConvertedCycleAsDebt(t *testing.T) {
 	converted := 1649.35
 	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"card": card(4400)}}
 	invoiceRepo := &usageInvoiceRepo{list: []*invoice.Invoice{
@@ -301,7 +302,7 @@ func TestGetCreditUsage_CountsALateChargeOnAConvertedCycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if usage.Outstanding != 500 {
-		t.Errorf("outstanding = %.2f, want 500 — the late charge was never converted", usage.Outstanding)
+	if usage.Outstanding != 0 {
+		t.Errorf("outstanding = %.2f, want 0 — a settled bill owes nothing here", usage.Outstanding)
 	}
 }

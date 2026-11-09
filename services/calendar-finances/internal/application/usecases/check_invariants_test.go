@@ -508,3 +508,23 @@ func TestCheckInvariants_APlannedPaymentDoesNotCountAsPaid(t *testing.T) {
 		t.Fatalf("drifts = %+v, want none: a scheduled payment is not a payment", result.PaymentDrifts)
 	}
 }
+
+// A converted bill owes nothing on purpose, which means a charge landing on it
+// afterwards is reported NOWHERE unless this check says so. Marking it with the
+// frozen note — "nothing to do here" — would be the last place it could have
+// been seen.
+func TestInvariantsFlagChargesLandingOnAConvertedBill(t *testing.T) {
+	converted := 1649.35
+	inv := &invoice.Invoice{
+		ID: "out", BankAccountID: "card", Status: invoice.StatusRefinanced,
+		Amount: 2149.35, RefinancedAmount: &converted, // 500,00 charged afterwards
+		ReferenceDate: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
+	}
+
+	if got := inv.UnconvertedDrift(); got < 499.99 || got > 500.01 {
+		t.Fatalf("precondition: drift = %v, want 500", got)
+	}
+	if inv.AmountRemaining() != 0 {
+		t.Fatal("precondition: a converted bill owes nothing")
+	}
+}

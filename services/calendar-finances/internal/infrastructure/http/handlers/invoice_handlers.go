@@ -9,6 +9,7 @@ import (
 
 	"github.com/brunovieira/calendar-finances/internal/application/usecases"
 	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
+	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
 	"github.com/gorilla/mux"
 )
 
@@ -305,11 +306,8 @@ func (h *InvoiceHandlers) Refinance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.refinanceUC.Execute(strings.TrimSpace(body.TransactionID), body.InvoiceIDs); err != nil {
-		status := http.StatusInternalServerError
-		if errors.Is(err, usecases.ErrPaymentRefused) {
-			status = http.StatusBadRequest
-		}
-		http.Error(w, err.Error(), status)
+		status, message := mapRefinanceError(err)
+		http.Error(w, message, status)
 		return
 	}
 
@@ -325,13 +323,30 @@ func (h *InvoiceHandlers) ReleaseRefinancing(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := h.refinanceUC.Release(id); err != nil {
-		status := http.StatusInternalServerError
-		if errors.Is(err, usecases.ErrPaymentRefused) {
-			status = http.StatusBadRequest
-		}
-		http.Error(w, err.Error(), status)
+		status, message := mapRefinanceError(err)
+		http.Error(w, message, status)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// mapRefinanceError answers 400 for a refusal the caller can act on, 404 for
+// something that is not there, and 500 with NO driver detail for anything else.
+//
+// The default is what matters. With 500 as the catch-all for a typo, callers
+// that retry on 5xx — n8n and the agents do — replay a request that will never
+// succeed; and a wrapped pq error says more about the database than the caller
+// should see. The sibling route learned this the hard way.
+func mapRefinanceError(err error) (int, string) {
+	switch {
+	case errors.Is(err, usecases.ErrPaymentRefused):
+		return http.StatusBadRequest, err.Error()
+	case errors.Is(err, usecases.ErrInvoiceNotFound),
+		errors.Is(err, transaction.ErrNotFound),
+		strings.Contains(err.Error(), "not found"):
+		return http.StatusNotFound, err.Error()
+	default:
+		return http.StatusInternalServerError, "could not record the debt conversion"
+	}
 }

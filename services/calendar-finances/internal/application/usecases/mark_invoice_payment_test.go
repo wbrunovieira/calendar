@@ -791,3 +791,27 @@ func TestRestatePayments_ClearsAnAmountNoTransactionSupports(t *testing.T) {
 		t.Fatalf("paidAmount = %v, want 2693.73", got)
 	}
 }
+
+// Pay refuses a converted bill; this route is the one memory calls canonical
+// ("1 pagamento = 1 linha") and it guarded OPEN but not REFINANCED. It reaches
+// the bill through RestatePayments -> RederiveStatus, which early-returns on
+// REFINANCED, so a credit could be recorded as settling an already-converted
+// bill — paid_amount written alongside refinanced_amount on the same row.
+func TestMarkInvoicePaymentRefusesAConvertedBill(t *testing.T) {
+	uc, _, invRepo := paymentFixture(t)
+	bill := invRepo.invoices["inv"]
+	bill.Amount = 2693.73
+	bill.Status = invoice.StatusClosed
+	if err := bill.Refinance("outro-credito", bill.DueDate); err != nil {
+		t.Fatalf("Refinance: %v", err)
+	}
+
+	err := uc.Execute("pagamento", "inv")
+
+	if !errors.Is(err, ErrPaymentRefused) {
+		t.Fatalf("error = %v, want a refusal", err)
+	}
+	if invRepo.invoices["inv"].PaidAmount != nil {
+		t.Error("a payment was recorded against a bill the bank had already converted")
+	}
+}

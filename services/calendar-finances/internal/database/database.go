@@ -745,6 +745,22 @@ func migrations() []string {
 		// whenever the cycle's lines change — and this is what caps one credit
 		// across more than one request.
 		`ALTER TABLE finance.credit_card_invoices ADD COLUMN IF NOT EXISTS refinanced_amount NUMERIC(15, 2)`,
+		// Backfill. Rows converted before this column existed read NULL, and a NULL
+		// here makes the bill's whole amount look unconverted: it reports as drift
+		// in the invariants check and loosens the cap that limits one credit. The
+		// value is what the bill owed at conversion, which is amount minus whatever
+		// cash had been paid against it.
+		`UPDATE finance.credit_card_invoices
+		   SET refinanced_amount = GREATEST(amount - COALESCE(paid_amount, 0), 0)
+		 WHERE status = 'REFINANCED' AND refinanced_amount IS NULL`,
+		// And from here on the column is as required as the transaction is: a
+		// conversion of an unknown amount cannot be audited or capped.
+		`DO $$
+		BEGIN
+			ALTER TABLE finance.credit_card_invoices DROP CONSTRAINT IF EXISTS chk_refinanced_has_amount;
+			ALTER TABLE finance.credit_card_invoices ADD CONSTRAINT chk_refinanced_has_amount
+				CHECK (status <> 'REFINANCED' OR refinanced_amount IS NOT NULL);
+		END $$`,
 		`DO $$
 		BEGIN
 			ALTER TABLE finance.credit_card_invoices DROP CONSTRAINT IF EXISTS credit_card_invoices_status_check;

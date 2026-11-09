@@ -244,6 +244,32 @@ func (i *Invoice) ReleaseRefinancing() error {
 	return nil
 }
 
+// UnconvertedDrift is what a converted bill has been billed BEYOND what the
+// conversion and any cash payment settled. It should be zero; anything else means
+// charges landed on the cycle after it was converted — a back-dated purchase
+// attaches to a closed cycle, since the lookup by date has no status filter.
+//
+// It is reported rather than owed on purpose. Turning it into AmountRemaining
+// would create debt that Pay refuses and the screen refuses, with no route to
+// settle it; surfacing it as drift sends it to a person, who can release the bill
+// and handle it properly.
+func (i *Invoice) UnconvertedDrift() float64 {
+	if i.Status != StatusRefinanced {
+		return 0
+	}
+	settled := 0.0
+	if i.RefinancedAmount != nil {
+		settled = *i.RefinancedAmount
+	}
+	if i.PaidAmount != nil {
+		settled += *i.PaidAmount
+	}
+	if drift := i.Amount - settled; drift > paymentTolerance {
+		return drift
+	}
+	return 0
+}
+
 // IsSettled reports whether the bill still owes anything, by payment or by
 // conversion. Consumers asking "is this debt" want this, not a status compare
 // that silently misses whichever settlement kind was added last.
@@ -269,21 +295,15 @@ func (i *Invoice) MarshalJSON() ([]byte, error) {
 // overpaying settles the bill, it does not create negative debt.
 func (i *Invoice) AmountRemaining() float64 {
 	if i.Status == StatusRefinanced {
-		// What the conversion settled is a FIXED amount, recorded when it happened:
-		// the balance moved to the instalments, which are transactions of their own.
-		// Returning a flat zero instead would swallow anything billed to the cycle
-		// afterwards — a back-dated charge attaches to a converted cycle, and that
-		// is real debt nobody converted.
-		settled := 0.0
-		if i.RefinancedAmount != nil {
-			settled = *i.RefinancedAmount
-		}
-		if i.PaidAmount != nil {
-			settled += *i.PaidAmount
-		}
-		if remaining := i.Amount - settled; remaining > paymentTolerance {
-			return remaining
-		}
+		// A converted bill is settled and owes nothing. The balance moved to the
+		// instalments, which are transactions of their own.
+		//
+		// Reporting debt here instead would be debt with no way to settle it: Pay
+		// refuses a converted bill, and so does the screen. A charge that lands on
+		// a converted cycle afterwards is real and must be seen — but as DRIFT, for
+		// a person to release the bill and deal with it, which is what
+		// UnconvertedDrift and the invariants check are for. Debt nobody can pay is
+		// worse than debt nobody can see.
 		return 0
 	}
 	paid := 0.0

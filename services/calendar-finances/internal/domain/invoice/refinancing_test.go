@@ -384,15 +384,12 @@ func TestAReleasedBillAcceptsAPaymentAgain(t *testing.T) {
 	}
 }
 
-// A hard zero hides new debt. A back-dated charge attaches to a converted cycle
-// (FindByBankAccountAndDate has no status filter), the bill's total goes up, and
-// a flat "owes nothing" swallows it — in amountRemaining, in credit-usage, and in
-// the invariants check, all at once.
-//
-// What the conversion settled is a FIXED amount, recorded at the time. Anything
-// billed beyond it is owed, which is the same property RederiveStatus preserves
-// for a paid bill that is charged again.
-func TestAConvertedBillOwesWhatIsBilledBeyondTheConversion(t *testing.T) {
+// A charge that lands on a converted cycle afterwards is real and must be seen.
+// It is reported as DRIFT rather than as debt: Pay refuses a converted bill and
+// so does the screen, so turning it into AmountRemaining would create debt with
+// no route to settle it. Drift sends it to a person, who releases the bill and
+// deals with it.
+func TestAConvertedBillReportsALateChargeAsDriftNotDebt(t *testing.T) {
 	inv := settledCandidate(t, 1649.35)
 	if err := inv.Refinance("txn-credit", time.Now()); err != nil {
 		t.Fatalf("Refinance: %v", err)
@@ -403,8 +400,33 @@ func TestAConvertedBillOwesWhatIsBilledBeyondTheConversion(t *testing.T) {
 
 	inv.Amount = 2149.35 // a 500,00 charge landed on the cycle afterwards
 
-	if got := inv.AmountRemaining(); !near(got, 500) {
-		t.Errorf("amount remaining = %v, want 500 — the late charge is real debt", got)
+	if got := inv.AmountRemaining(); got != 0 {
+		t.Errorf("amount remaining = %v, want 0 — a settled bill owes nothing", got)
+	}
+	if got := inv.UnconvertedDrift(); !near(got, 500) {
+		t.Errorf("drift = %v, want 500 — the late charge has to be visible somewhere", got)
+	}
+}
+
+func TestAConvertedBillWithNoLateChargeHasNoDrift(t *testing.T) {
+	inv := settledCandidate(t, 3292.96)
+	if err := inv.Pay(3200.00, time.Now()); err != nil {
+		t.Fatalf("Pay: %v", err)
+	}
+	if err := inv.Refinance("txn-credit", time.Now()); err != nil {
+		t.Fatalf("Refinance: %v", err)
+	}
+
+	if got := inv.UnconvertedDrift(); got != 0 {
+		t.Errorf("drift = %v, want 0", got)
+	}
+}
+
+// A bill that was never converted has no conversion drift by definition.
+func TestDriftIsZeroForABillThatWasNotConverted(t *testing.T) {
+	inv := settledCandidate(t, 1000)
+	if got := inv.UnconvertedDrift(); got != 0 {
+		t.Errorf("drift = %v, want 0", got)
 	}
 }
 

@@ -39,6 +39,12 @@ const (
 	// /invoices/{id}/recalculate refuses PAID. An OPEN or CLOSED one can, by
 	// that same route, so it is a real finding and is reported without a note.
 	notePaidInvoiceFrozen = "a paid invoice total can no longer be recalculated"
+	// noteChargesAfterConversion is NOT a reason to look away. A converted bill
+	// owes nothing by design, so new charges on it would otherwise vanish: not
+	// from amountRemaining, not from credit-usage, not from here. Naming them and
+	// failing the check is what sends them to a person, who can release the bill
+	// and deal with the charge properly.
+	noteChargesAfterConversion = "charges landed on this bill after it was converted into instalments; release it to settle them"
 )
 
 // AccountInvariant is one account whose stored balance differs from the balance
@@ -460,6 +466,12 @@ func (uc *CheckInvariantsUseCase) checkInvoiceTotals(
 		note := ""
 		if inv.IsSettled() {
 			note = notePaidInvoiceFrozen
+		}
+		// A converted bill that has been charged SINCE the conversion is a live
+		// problem, not a frozen total: the charges are real, nothing else reports
+		// them, and the operator has a route (release, then settle).
+		if inv.UnconvertedDrift() > 0 {
+			note = noteChargesAfterConversion
 		}
 
 		result.InvoiceDrifts = append(result.InvoiceDrifts, InvoiceInvariant{
