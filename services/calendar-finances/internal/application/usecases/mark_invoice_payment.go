@@ -201,6 +201,12 @@ func (uc *MarkInvoicePaymentUseCase) mark(transactionID, invoiceID string) error
 		// that is still collecting charges.
 		return ErrInvoiceStillOpen
 	}
+	// Before checkRestatable: a converted bill is refused for being converted, not
+	// for a total that happens to disagree. The reason the caller is given has to
+	// be the reason that matters.
+	if inv.Status == invoice.StatusRefinanced {
+		return ErrInvoiceAlreadyConverted
+	}
 
 	// The bill the row currently SETTLES, if a different one. Re-pointing has to take
 	// the payment off it: restating only the new bill left the old one reading PAID

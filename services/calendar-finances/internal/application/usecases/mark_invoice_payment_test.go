@@ -808,8 +808,11 @@ func TestMarkInvoicePaymentRefusesAConvertedBill(t *testing.T) {
 
 	err := uc.Execute("pagamento", "inv")
 
-	if !errors.Is(err, ErrPaymentRefused) {
-		t.Fatalf("error = %v, want a refusal", err)
+	// Named, not merely refused: without this the test passes on whichever other
+	// guard happens to fire, and the one that matters can go missing unnoticed —
+	// which is exactly what happened to it once.
+	if err == nil || err.Error() != ErrInvoiceAlreadyConverted.Error() {
+		t.Fatalf("error = %v, want %v", err, ErrInvoiceAlreadyConverted)
 	}
 	if invRepo.invoices["inv"].PaidAmount != nil {
 		t.Error("a payment was recorded against a bill the bank had already converted")
