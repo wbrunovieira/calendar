@@ -38,7 +38,7 @@ const (
 	// A PAID invoice's total cannot be brought back in line: POST
 	// /invoices/{id}/recalculate refuses PAID. An OPEN or CLOSED one can, by
 	// that same route, so it is a real finding and is reported without a note.
-	notePaidInvoiceFrozen = "a paid invoice total can no longer be recalculated"
+	notePaidInvoiceFrozen = "this bill is settled; recalculating it would overwrite the statement figure"
 	// noteChargesAfterConversion is NOT a reason to look away. A converted bill
 	// owes nothing by design, so new charges on it would otherwise vanish: not
 	// from amountRemaining, not from credit-usage, not from here. Naming them and
@@ -70,7 +70,13 @@ type InvoiceInvariant struct {
 	StoredAmount   float64 `json:"storedAmount"`
 	ComputedAmount float64 `json:"computedAmount"`
 	Drift          float64 `json:"drift"`
-	Note           string  `json:"note,omitempty"`
+	// UnconvertedDrift is what a converted bill has been billed BEYOND what the
+	// conversion settled. It is carried separately because such a charge raises
+	// the stored total and the lines together, so `drift` is zero and the payload
+	// would otherwise say the numbers agree while failing the check. This endpoint
+	// is the only place that money is visible at all.
+	UnconvertedDrift float64 `json:"unconvertedDrift,omitempty"`
+	Note             string  `json:"note,omitempty"`
 }
 
 // CycleInvariant is a pair of invoices on one card whose periods overlap, or a gap
@@ -265,10 +271,7 @@ func (uc *CheckInvariantsUseCase) checkPaymentsAgainstBills(
 			InvoiceAmount: worth, PaidTotal: total,
 			Excess: excess, Note: note,
 		})
-		// The frozen note excuses a drift nobody can act on. Charges after a
-		// conversion are the opposite: real, invisible everywhere else, and with a
-		// route out (release the bill, settle them).
-		if note == "" || note == noteChargesAfterConversion {
+		if note == "" {
 			result.OK = false
 		}
 	}
@@ -483,14 +486,15 @@ func (uc *CheckInvariantsUseCase) checkInvoiceTotals(
 		}
 
 		result.InvoiceDrifts = append(result.InvoiceDrifts, InvoiceInvariant{
-			InvoiceID:      inv.ID,
-			BankAccountID:  inv.BankAccountID,
-			ReferenceDate:  inv.ReferenceDate.Format("2006-01"),
-			Status:         string(inv.Status),
-			StoredAmount:   round2(inv.Amount),
-			ComputedAmount: computed,
-			Drift:          drift,
-			Note:           note,
+			InvoiceID:        inv.ID,
+			BankAccountID:    inv.BankAccountID,
+			ReferenceDate:    inv.ReferenceDate.Format("2006-01"),
+			Status:           string(inv.Status),
+			StoredAmount:     round2(inv.Amount),
+			ComputedAmount:   computed,
+			Drift:            drift,
+			UnconvertedDrift: unconverted,
+			Note:             note,
 		})
 		// The frozen note excuses a drift nobody can act on. Charges after a
 		// conversion are the opposite: real, invisible everywhere else, and with a

@@ -211,13 +211,68 @@ func TestPostgresRefusesARefinancedBillWithNoTransaction(t *testing.T) {
 	db := refiDB(t)
 	refiSeed(t, db)
 
+	// refinanced_amount is supplied so ONLY the missing transaction can be the
+	// reason. The earlier version left both NULL, so either constraint satisfied
+	// it and neither was independently verified.
 	_, err := db.Exec(`
 		UPDATE finance.credit_card_invoices
-		SET status = 'REFINANCED', refinanced_by = NULL
+		SET status = 'REFINANCED', refinanced_by = NULL, refinanced_amount = 100
 		WHERE id = $1`, refiBillID)
 
 	if err == nil {
 		t.Fatal("expected the CHECK constraint to refuse a conversion with no transaction")
+	}
+}
+
+// The sibling constraint, isolated the same way: a conversion whose amount is
+// unknown can be neither audited nor counted against the credit's cap.
+func TestPostgresRefusesARefinancedBillWithNoAmount(t *testing.T) {
+	db := refiDB(t)
+	refiSeed(t, db)
+
+	_, err := db.Exec(`
+		UPDATE finance.credit_card_invoices
+		SET status = 'REFINANCED', refinanced_by = $2, refinanced_amount = NULL
+		WHERE id = $1`, refiBillID, refiTxnID)
+
+	if err == nil {
+		t.Fatal("expected the CHECK constraint to refuse a conversion with no amount")
+	}
+}
+
+// Rows converted before refinanced_amount existed read NULL, and a NULL makes the
+// whole bill look unconverted: it reports as drift and loosens the cap. The
+// backfill runs on every startup and must repair them.
+func TestMigrationsBackfillTheAmountOfAnOlderConversion(t *testing.T) {
+	db := refiDB(t)
+	bill := refiSeed(t, db)
+
+	// A row as the earlier commits left it: converted, amount unknown. Written
+	// with the constraint dropped, since that is the state it predates.
+	if _, err := db.Exec(`ALTER TABLE finance.credit_card_invoices DROP CONSTRAINT IF EXISTS chk_refinanced_has_amount`); err != nil {
+		t.Fatalf("dropping the constraint to recreate the legacy state: %v", err)
+	}
+	if _, err := db.Exec(`
+		UPDATE finance.credit_card_invoices
+		SET status = 'REFINANCED', refinanced_by = $2, refinanced_amount = NULL, paid_amount = 400
+		WHERE id = $1`, bill.ID, refiTxnID); err != nil {
+		t.Fatalf("seeding the legacy row: %v", err)
+	}
+
+	if err := database.RunMigrations(db); err != nil {
+		t.Fatalf("migrations failed over a legacy converted row: %v", err)
+	}
+
+	reloaded, err := NewInvoiceRepository(db).FindByID(bill.ID)
+	if err != nil {
+		t.Fatalf("FindByID: %v", err)
+	}
+	// 1.649,35 billed less 400,00 already paid in cash.
+	if reloaded.RefinancedAmount == nil || *reloaded.RefinancedAmount != 1249.35 {
+		t.Errorf("refinanced amount = %v, want 1249.35 backfilled", reloaded.RefinancedAmount)
+	}
+	if got := reloaded.UnconvertedDrift(); got != 0 {
+		t.Errorf("drift = %v, want 0 — a backfilled row is not drifting", got)
 	}
 }
 

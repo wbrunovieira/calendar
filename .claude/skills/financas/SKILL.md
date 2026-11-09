@@ -314,9 +314,14 @@ Input dates are `YYYY-MM-DD`. `nextOccurrence` = when the next one falls (e.g. t
 - **Fatura parcelada pelo banco ≠ fatura paga.** Quando o banco converte a dívida
   em parcelas ele posta um crédito ("Crédito por parcelamento da fatura") que zera
   o saldo e cobra o mesmo dinheiro de novo nos ciclos seguintes. **Ninguém pagou
-  nada** — registrar como pagamento debita uma conta de onde nada saiu, e
-  `/invoices/{id}/pay` vai recusar de qualquer forma, porque uma conversão limpa
-  vários ciclos de uma vez e ele limita pelo valor de uma fatura só.
+  nada** — registrar como pagamento debita uma conta de onde nada saiu.
+  ⚠️ **`/invoices/{id}/pay` NÃO te protege disso.** Ele não tem teto nenhum:
+  `inv.Pay` só recusa valor ≤ 0. Numa fatura CLOSED — exatamente o estado em que
+  você está ao registrar uma conversão — ele aceita, marca a fatura como paga e
+  **cria um TRANSFER de verdade saindo da `linkedAccountId`**: dinheiro que nunca
+  se moveu, contra uma conta que bate ao centavo com o banco.
+  Quem tem teto é `/transactions/{id}/paid-invoice`, e esse recusa a conversão
+  por limitar ao valor de UMA fatura — enquanto a conversão limpa vários ciclos.
   Use **`POST /invoices/refinance`** com `{"transactionId": "<id do crédito>",
   "invoiceIds": ["<fatura>", ...]}`. Ele valida que o crédito é CONFIRMED e INCOME
   no cartão, que as faturas são daquele cartão, e que a soma do que elas devem

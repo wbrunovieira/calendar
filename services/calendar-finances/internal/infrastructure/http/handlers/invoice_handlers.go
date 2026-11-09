@@ -340,13 +340,18 @@ func (h *InvoiceHandlers) ReleaseRefinancing(w http.ResponseWriter, r *http.Requ
 // should see. The sibling route learned this the hard way.
 func mapRefinanceError(err error) (int, string) {
 	switch {
+	case errors.Is(err, usecases.ErrConversionCreditNotFound),
+		errors.Is(err, usecases.ErrConversionBillNotFound),
+		errors.Is(err, usecases.ErrInvoiceNotFound),
+		errors.Is(err, transaction.ErrNotFound):
+		return http.StatusNotFound, err.Error()
 	case errors.Is(err, usecases.ErrPaymentRefused):
 		return http.StatusBadRequest, err.Error()
-	case errors.Is(err, usecases.ErrInvoiceNotFound),
-		errors.Is(err, transaction.ErrNotFound),
-		strings.Contains(err.Error(), "not found"):
-		return http.StatusNotFound, err.Error()
 	default:
+		// No sniffing of the error text. A driver message that happens to contain
+		// "not found" was coming back as a 404 carrying pq's own words; and the
+		// default says nothing about the database, because what the caller needs
+		// is a status it will not blindly retry.
 		return http.StatusInternalServerError, "could not record the debt conversion"
 	}
 }

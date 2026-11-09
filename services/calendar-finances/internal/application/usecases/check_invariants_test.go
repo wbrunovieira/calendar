@@ -541,8 +541,22 @@ func TestCheckInvariants_FlagsChargesLandingOnAConvertedBill(t *testing.T) {
 	}
 	found := false
 	for _, d := range result.InvoiceDrifts {
-		if d.InvoiceID == "out" && d.Note == noteChargesAfterConversion {
-			found = true
+		if d.InvoiceID != "out" {
+			continue
+		}
+		found = true
+		if d.Note != noteChargesAfterConversion {
+			t.Errorf("note = %q, want the post-conversion warning", d.Note)
+		}
+		// The magnitude has to travel with the alarm. `drift` is 0 here by
+		// construction — the charge raised the stored total and the lines
+		// together — so without this field the payload says the numbers agree
+		// and never mentions the 500.
+		if d.UnconvertedDrift < 499.99 || d.UnconvertedDrift > 500.01 {
+			t.Errorf("unconvertedDrift = %v, want 500", d.UnconvertedDrift)
+		}
+		if d.Drift != 0 {
+			t.Errorf("drift = %v, want 0 — stored total and lines agree", d.Drift)
 		}
 	}
 	if !found {

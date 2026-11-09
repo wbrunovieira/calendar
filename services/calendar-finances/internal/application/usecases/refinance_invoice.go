@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
@@ -30,6 +31,14 @@ var (
 	// a figure smaller than the debt and the bill is restated back to the gross
 	// afterwards — it ends settled while reporting the credit's full value as owed.
 	ErrBillHostsTheCredit = refuse("that bill is the cycle this credit landed in; move the credit off it first")
+	// Absent ids are refusals the caller can act on, not failures. Returned as
+	// refusals so a typo cannot come back as a 5xx that retry logic replays.
+	ErrConversionCreditNotFound = refuse("that transaction is not a credit this card can convert with")
+	ErrConversionBillNotFound   = refuse("that bill does not exist")
+	// ErrHostAlreadyConverted rejects detaching the credit from a cycle that was
+	// itself settled by a conversion: restating it afterwards reads as charges
+	// landing after that settlement, an alarm nobody can clear.
+	ErrHostAlreadyConverted = refuse("the cycle this credit is filed in was itself converted; move the credit off it first")
 )
 
 // RefinanceInvoiceUseCase records that a card credit SETTLED one or more bills by
@@ -145,11 +154,11 @@ func (uc *RefinanceInvoiceUseCase) Execute(transactionID string, invoiceIDs []st
 func (uc *RefinanceInvoiceUseCase) convert(transactionID string, invoiceIDs []string) ([]string, error) {
 
 	txn, err := uc.txRepo.GetByID(transactionID)
-	if err != nil {
-		return nil, fmt.Errorf("could not read the conversion transaction: %w", err)
-	}
-	if txn == nil {
-		return nil, fmt.Errorf("transaction %s not found", transactionID)
+	if err != nil || txn == nil {
+		// Wrapped as a REFUSAL, not a failure. A malformed id reaches Postgres as
+		// `invalid input syntax for type uuid` — a 500 to the caller, which n8n and
+		// the agents retry, replaying a request that can never succeed.
+		return nil, fmt.Errorf("%w: no confirmed credit with id %s on this card", ErrConversionCreditNotFound, transactionID)
 	}
 	if txn.Type != transactionPkg.TypeIncome || txn.Status != transactionPkg.StatusConfirmed {
 		return nil, ErrNotAConversionCredit
@@ -181,17 +190,17 @@ func (uc *RefinanceInvoiceUseCase) convert(transactionID string, invoiceIDs []st
 		seen[id] = true
 
 		bill, err := uc.invoiceRepo.FindByID(id)
-		if err != nil {
-			return nil, fmt.Errorf("could not read bill %s: %w", id, err)
-		}
-		// The concrete repository returns an error for a missing bill, but a
-		// transaction-bound one need not; MarkInvoicePayment guards this for the
-		// same reason.
-		if bill == nil {
-			return nil, fmt.Errorf("invoice %s not found", id)
+		if err != nil || bill == nil {
+			return nil, fmt.Errorf("%w: no bill with id %s", ErrConversionBillNotFound, id)
 		}
 		if bill.BankAccountID != txn.BankAccountID {
 			return nil, ErrInvoiceNotThisCard
+		}
+		// Ordered before the retry short-circuit below: a bill that is both
+		// already-converted-by-this-credit AND the credit's current host would
+		// otherwise skip this check entirely.
+		if txn.InvoiceID != nil && *txn.InvoiceID == bill.ID {
+			return nil, ErrBillHostsTheCredit
 		}
 		// Already converted by this very credit: a retry, not a second conversion.
 		if bill.RefinancedBy != nil {
@@ -202,9 +211,6 @@ func (uc *RefinanceInvoiceUseCase) convert(transactionID string, invoiceIDs []st
 		}
 		if bill.Status == invoice.StatusOpen {
 			return nil, ErrInvoiceStillOpen
-		}
-		if txn.InvoiceID != nil && *txn.InvoiceID == bill.ID {
-			return nil, ErrBillHostsTheCredit
 		}
 
 		// The cap is about to be measured against the bill's stored total, and that
@@ -237,10 +243,23 @@ func (uc *RefinanceInvoiceUseCase) convert(transactionID string, invoiceIDs []st
 		// A credit pointing at a bill that cannot be read has no statement figure
 		// to protect, and refusing the whole conversion over a dangling reference
 		// helps nobody. Guard what exists.
-		if host, err := uc.invoiceRepo.FindByID(*txn.InvoiceID); err == nil && host != nil {
+		host, herr := uc.invoiceRepo.FindByID(*txn.InvoiceID)
+		switch {
+		case host != nil && host.Status == invoice.StatusRefinanced:
+			// Detaching from an already-converted cycle restates it back to the
+			// gross, which then reads as charges landing after ITS conversion: a
+			// permanent OK=false telling the operator to settle charges nobody
+			// made. Refuse instead of manufacturing an alarm that cannot clear.
+			return nil, ErrHostAlreadyConverted
+		case host != nil:
 			if err := uc.checkRestatable(host); err != nil {
 				return nil, err
 			}
+		case herr != nil && !strings.Contains(herr.Error(), "not found"):
+			// A database failure is NOT a missing bill. Treating the two alike
+			// skipped the guard and then let restate overwrite the host's total
+			// with an incomplete sum — the R$ 54,69 case, through the back door.
+			return nil, fmt.Errorf("could not read the cycle the credit is filed in: %w", herr)
 		}
 	}
 
@@ -297,11 +316,8 @@ func (uc *RefinanceInvoiceUseCase) convert(transactionID string, invoiceIDs []st
 // state the detach existed to correct.
 func (uc *RefinanceInvoiceUseCase) Release(invoiceID string) error {
 	bill, err := uc.invoiceRepo.FindByID(invoiceID)
-	if err != nil {
-		return fmt.Errorf("could not read bill %s: %w", invoiceID, err)
-	}
-	if bill == nil {
-		return fmt.Errorf("invoice %s not found", invoiceID)
+	if err != nil || bill == nil {
+		return fmt.Errorf("%w: no bill with id %s", ErrConversionBillNotFound, invoiceID)
 	}
 	if err := bill.ReleaseRefinancing(); err != nil {
 		return refuse(err.Error())
@@ -321,7 +337,7 @@ func (uc *RefinanceInvoiceUseCase) checkRestatable(inv *invoice.Invoice) error {
 		return fmt.Errorf("totalling bill %s: %w", inv.ID, err)
 	}
 	if math.Abs(linked-inv.Amount) > amountTolerance {
-		return fmt.Errorf("%w: it stores %.2f and its lines sum to %.2f", ErrInvoiceAmountOutOfSync, inv.Amount, linked)
+		return fmt.Errorf("%w: bill %s stores %.2f and its lines sum to %.2f", ErrInvoiceAmountOutOfSync, inv.ID, inv.Amount, linked)
 	}
 	return nil
 }

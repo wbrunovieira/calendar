@@ -249,15 +249,14 @@ func TestRefinanceRefusesACreditThatIsNotConfirmed(t *testing.T) {
 		transaction.StatusPlanned, transaction.StatusCancelled, transaction.StatusReversed,
 	} {
 		uc, invRepo := refinanceFixture(t)
-		txRepo := &fakeTransactionRepo{created: []*transaction.Transaction{{
-			ID: "credito", ProfileID: "personal", BankAccountID: "card",
-			Type: transaction.TypeIncome, Status: status, Amount: 2205.86,
-			Currency: "BRL", OccurredOn: day(2026, 10, 11),
-		}}}
-		uc.txRepo = txRepo
+		// Change the credit IN PLACE. Swapping the whole repo deletes the bills'
+		// own lines, and then checkRestatable fires first — which is how both of
+		// these tests came to pass without ever reaching the guard they name.
+		uc.txRepo.(*fakeTransactionRepo).created[0].Status = status
 
-		if err := uc.Execute("credito", []string{"out"}); !errors.Is(err, ErrPaymentRefused) {
-			t.Errorf("%s: error = %v, want a refusal", status, err)
+		err := uc.Execute("credito", []string{"out"})
+		if err == nil || err.Error() != ErrNotAConversionCredit.Error() {
+			t.Errorf("%s: error = %v, want %v", status, err, ErrNotAConversionCredit)
 		}
 		if invRepo.invoices["out"].Status == invoice.StatusRefinanced {
 			t.Errorf("%s: a bill was converted by a credit that is not confirmed", status)
@@ -268,14 +267,11 @@ func TestRefinanceRefusesACreditThatIsNotConfirmed(t *testing.T) {
 func TestRefinanceRefusesADebitOrATransferAsTheConversion(t *testing.T) {
 	for _, kind := range []transaction.Type{transaction.TypeExpense, transaction.TypeTransfer} {
 		uc, invRepo := refinanceFixture(t)
-		uc.txRepo = &fakeTransactionRepo{created: []*transaction.Transaction{{
-			ID: "credito", ProfileID: "personal", BankAccountID: "card",
-			Type: kind, Status: transaction.StatusConfirmed, Amount: 2205.86,
-			Currency: "BRL", OccurredOn: day(2026, 10, 11),
-		}}}
+		uc.txRepo.(*fakeTransactionRepo).created[0].Type = kind
 
-		if err := uc.Execute("credito", []string{"out"}); !errors.Is(err, ErrPaymentRefused) {
-			t.Errorf("%s: error = %v, want a refusal", kind, err)
+		err := uc.Execute("credito", []string{"out"})
+		if err == nil || err.Error() != ErrNotAConversionCredit.Error() {
+			t.Errorf("%s: error = %v, want %v", kind, err, ErrNotAConversionCredit)
 		}
 		if invRepo.invoices["out"].Status == invoice.StatusRefinanced {
 			t.Errorf("%s: a bill was converted by something that is not a credit", kind)
@@ -615,5 +611,34 @@ func TestRefinanceCountsARepeatedBillOnce(t *testing.T) {
 	}
 	if invRepo.invoices["out"].RefinancedAmount == nil || !moneyNear(*invRepo.invoices["out"].RefinancedAmount, 1649.35) {
 		t.Errorf("recorded conversion = %v, want 1649.35 counted once", invRepo.invoices["out"].RefinancedAmount)
+	}
+}
+
+// Detaching the credit from a cycle that was ITSELF converted restates that cycle
+// back to the gross, which then reads as charges landing after its own
+// conversion — /health/invariants goes OK=false forever, telling the operator to
+// settle charges nobody made. An alarm that cannot clear is worse than no alarm.
+func TestRefinanceRefusesWhenTheHostCycleWasItselfConverted(t *testing.T) {
+	uc, invRepo := refinanceFixture(t)
+	novID := "nov"
+	host := &invoice.Invoice{
+		ID: novID, BankAccountID: "card",
+		OpeningDate: day(2026, 10, 10), ClosingDate: day(2026, 11, 9),
+		DueDate: day(2026, 11, 14), ReferenceDate: day(2026, 11, 1),
+		Status: invoice.StatusClosed, Amount: 500,
+	}
+	if err := host.Refinance("outro-credito", day(2026, 11, 1)); err != nil {
+		t.Fatalf("Refinance host: %v", err)
+	}
+	invRepo.invoices[novID] = host
+	uc.txRepo.(*fakeTransactionRepo).created[0].InvoiceID = &novID
+
+	err := uc.Execute("credito", []string{"out"})
+
+	if err == nil || err.Error() != ErrHostAlreadyConverted.Error() {
+		t.Fatalf("error = %v, want %v", err, ErrHostAlreadyConverted)
+	}
+	if invRepo.invoices["out"].Status == invoice.StatusRefinanced {
+		t.Error("the conversion went through and left a permanent false alarm behind")
 	}
 }

@@ -249,3 +249,29 @@ func (r *handlerInvoiceRepo) FindByRefinancedBy(transactionID string) ([]*invoic
 	}
 	return list, nil
 }
+
+// A typo in an id must not come back as a 5xx: n8n and the agents retry those,
+// replaying a request that can never succeed. Postgres answers a malformed uuid
+// with `invalid input syntax for type uuid`, which carries no "not found" text —
+// the string-sniffing version of this mapping returned 500 for it.
+func TestRefinanceAnswers404ForIdsThatDoNotExist(t *testing.T) {
+	r := refinanceRouter(wiredRefinanceHandler(t))
+
+	for _, body := range []string{
+		`{"transactionId":"nao-existe","invoiceIds":["out"]}`,
+		`{"transactionId":"credito","invoiceIds":["nao-existe"]}`,
+	} {
+		rec := postJSON(t, r, "/invoices/refinance", body)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("body %s -> status %d, want 404; got: %s", body, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestReleaseRefinancingAnswers404ForABillThatDoesNotExist(t *testing.T) {
+	rec := postJSON(t, refinanceRouter(wiredRefinanceHandler(t)), "/invoices/nao-existe/release-refinancing", ``)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
+	}
+}

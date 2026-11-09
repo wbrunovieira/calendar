@@ -40,17 +40,16 @@ export function getCardUsage(
  * money that is no longer owed.
  */
 export function amountLeftOn(invoice: Invoice): number {
-  if (typeof invoice.amountRemaining === 'number') return Math.max(0, invoice.amountRemaining);
-  // A converted bill owes nothing regardless of what was paid against it: the
-  // balance moved to the instalments, which are transactions of their own.
-  // Reading paidAmount here would report the unpaid remainder as still owed and
-  // count the same debt twice.
-  //
-  // A charge that lands on a converted cycle afterwards is NOT shown as debt
-  // here either — it surfaces as drift in /health/invariants, for a person to
-  // release the bill and settle it. Debt nobody can pay would be worse than debt
-  // nobody sees, and neither Pagar nor the API accepts a converted bill.
+  // Before the derived field, not after: the API answers 0 for a converted bill,
+  // so the REFINANCED branch below is only ever reached by a payload that
+  // predates amountRemaining. Keeping the order honest costs nothing and stops
+  // the comment there from describing an unreachable decision.
   if (invoice.status === 'REFINANCED') return 0;
+  if (typeof invoice.amountRemaining === 'number') return Math.max(0, invoice.amountRemaining);
+  // A charge that lands on a converted cycle afterwards is NOT shown as debt
+  // either — it surfaces as drift in /health/invariants, for a person to release
+  // the bill and settle it. Debt nobody can pay would be worse than debt nobody
+  // sees, and neither Pagar nor the API accepts a converted bill.
   const paid = invoice.paidAmount ?? (invoice.status === 'PAID' ? invoice.amount : 0);
   return Math.max(0, invoice.amount - paid);
 }
