@@ -419,6 +419,9 @@ type fakeInvoiceRepo struct {
 	// absent one so a caller that must distinguish a failure from a normal outcome
 	// can be tested doing it.
 	findByIDErr error
+	// findByIDErrFor fails the read of ONE bill. A use case that reads several
+	// has to be testable failing on the one that matters, not on all of them.
+	findByIDErrFor map[string]error
 	// updateErr stands in for a bill that can be READ but not WRITTEN. That
 	// asymmetry is what separates "the refresh failed" from "the bill is settled":
 	// with both reads failing, the two paths look alike and a guard between them
@@ -443,6 +446,9 @@ func (f *fakeInvoiceRepo) Create(inv *invoice.Invoice) error {
 }
 
 func (f *fakeInvoiceRepo) FindByID(id string) (*invoice.Invoice, error) {
+	if err, ok := f.findByIDErrFor[id]; ok {
+		return nil, err
+	}
 	if f.findByIDErr != nil {
 		return nil, f.findByIDErr
 	}

@@ -642,3 +642,65 @@ func TestRefinanceRefusesWhenTheHostCycleWasItselfConverted(t *testing.T) {
 		t.Error("the conversion went through and left a permanent false alarm behind")
 	}
 }
+
+// An outage is not a missing row. Reporting one as "that bill does not exist"
+// comes back as a 404, and n8n and the agents give up on work that would have
+// succeeded a second later; reporting a missing row as an outage has them retry
+// forever. Both directions are tested because collapsing them is the easy error
+// — the first version of this classification made exactly that mistake.
+func TestRefinanceTellsADatabaseFailureFromAMissingRow(t *testing.T) {
+	t.Run("missing bill is a refusal", func(t *testing.T) {
+		uc, _ := refinanceFixture(t)
+
+		err := uc.Execute("credito", []string{"nao-existe"})
+
+		if !errors.Is(err, ErrConversionBillNotFound) {
+			t.Fatalf("error = %v, want %v", err, ErrConversionBillNotFound)
+		}
+	})
+
+	t.Run("missing credit is a refusal", func(t *testing.T) {
+		uc, _ := refinanceFixture(t)
+
+		err := uc.Execute("nao-existe", []string{"out"})
+
+		if !errors.Is(err, ErrConversionCreditNotFound) {
+			t.Fatalf("error = %v, want %v", err, ErrConversionCreditNotFound)
+		}
+	})
+
+	t.Run("a failed read is NOT a refusal", func(t *testing.T) {
+		uc, invRepo := refinanceFixture(t)
+		invRepo.findByIDErr = errors.New("pq: connection refused")
+
+		err := uc.Execute("credito", []string{"out"})
+
+		if err == nil {
+			t.Fatal("expected an error")
+		}
+		if errors.Is(err, ErrPaymentRefused) {
+			t.Errorf("a database outage came back as a refusal: %v", err)
+		}
+	})
+
+	// The host lookup specifically: treating its failure as "no such host" skips
+	// the guard and lets restate overwrite that cycle's statement total.
+	t.Run("a failed HOST read is NOT silently skipped", func(t *testing.T) {
+		uc, invRepo := refinanceFixture(t)
+		novID := "nov"
+		uc.txRepo.(*fakeTransactionRepo).created[0].InvoiceID = &novID
+		invRepo.findByIDErrFor = map[string]error{novID: errors.New("pq: connection refused")}
+
+		err := uc.Execute("credito", []string{"out"})
+
+		if err == nil {
+			t.Fatal("the conversion proceeded without checking the cycle it would rewrite")
+		}
+		if errors.Is(err, ErrPaymentRefused) {
+			t.Errorf("a database outage came back as a refusal: %v", err)
+		}
+		if invRepo.invoices["out"].Status == invoice.StatusRefinanced {
+			t.Error("a bill was converted while the host cycle could not be read")
+		}
+	})
+}

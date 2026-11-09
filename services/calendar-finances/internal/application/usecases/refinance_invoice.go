@@ -112,6 +112,17 @@ func NewRefinanceInvoiceUseCase(
 	}
 }
 
+// isAbsent reports whether a repository error means "there is no such row"
+// rather than "the database could not answer".
+//
+// The two must not collapse: an absent id is a refusal the caller can fix, while
+// a failure is transient and has to come back as one. Reporting an outage as
+// "that bill does not exist" tells n8n and the agents to give up on work that
+// would have succeeded a second later.
+func isAbsent(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "not found")
+}
+
 // Execute converts the debt of every named bill, or none of them.
 //
 // Validation runs over the whole batch before anything is written. A conversion
@@ -154,11 +165,14 @@ func (uc *RefinanceInvoiceUseCase) Execute(transactionID string, invoiceIDs []st
 func (uc *RefinanceInvoiceUseCase) convert(transactionID string, invoiceIDs []string) ([]string, error) {
 
 	txn, err := uc.txRepo.GetByID(transactionID)
-	if err != nil || txn == nil {
-		// Wrapped as a REFUSAL, not a failure. A malformed id reaches Postgres as
-		// `invalid input syntax for type uuid` — a 500 to the caller, which n8n and
-		// the agents retry, replaying a request that can never succeed.
-		return nil, fmt.Errorf("%w: no confirmed credit with id %s on this card", ErrConversionCreditNotFound, transactionID)
+	switch {
+	case txn != nil:
+	case err == nil || isAbsent(err):
+		// A REFUSAL, not a failure. A malformed id reaches Postgres as `invalid
+		// input syntax for type uuid`, and as a 500 the caller retries it forever.
+		return nil, fmt.Errorf("%w: no credit with id %s", ErrConversionCreditNotFound, transactionID)
+	default:
+		return nil, fmt.Errorf("could not read the conversion transaction: %w", err)
 	}
 	if txn.Type != transactionPkg.TypeIncome || txn.Status != transactionPkg.StatusConfirmed {
 		return nil, ErrNotAConversionCredit
@@ -190,8 +204,12 @@ func (uc *RefinanceInvoiceUseCase) convert(transactionID string, invoiceIDs []st
 		seen[id] = true
 
 		bill, err := uc.invoiceRepo.FindByID(id)
-		if err != nil || bill == nil {
+		switch {
+		case bill != nil:
+		case err == nil || isAbsent(err):
 			return nil, fmt.Errorf("%w: no bill with id %s", ErrConversionBillNotFound, id)
+		default:
+			return nil, fmt.Errorf("could not read bill %s: %w", id, err)
 		}
 		if bill.BankAccountID != txn.BankAccountID {
 			return nil, ErrInvoiceNotThisCard
@@ -255,7 +273,7 @@ func (uc *RefinanceInvoiceUseCase) convert(transactionID string, invoiceIDs []st
 			if err := uc.checkRestatable(host); err != nil {
 				return nil, err
 			}
-		case herr != nil && !strings.Contains(herr.Error(), "not found"):
+		case herr != nil && !isAbsent(herr):
 			// A database failure is NOT a missing bill. Treating the two alike
 			// skipped the guard and then let restate overwrite the host's total
 			// with an incomplete sum — the R$ 54,69 case, through the back door.
@@ -316,8 +334,12 @@ func (uc *RefinanceInvoiceUseCase) convert(transactionID string, invoiceIDs []st
 // state the detach existed to correct.
 func (uc *RefinanceInvoiceUseCase) Release(invoiceID string) error {
 	bill, err := uc.invoiceRepo.FindByID(invoiceID)
-	if err != nil || bill == nil {
+	switch {
+	case bill != nil:
+	case err == nil || isAbsent(err):
 		return fmt.Errorf("%w: no bill with id %s", ErrConversionBillNotFound, invoiceID)
+	default:
+		return fmt.Errorf("could not read bill %s: %w", invoiceID, err)
 	}
 	if err := bill.ReleaseRefinancing(); err != nil {
 		return refuse(err.Error())
