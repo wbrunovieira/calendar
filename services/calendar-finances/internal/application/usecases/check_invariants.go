@@ -265,7 +265,10 @@ func (uc *CheckInvariantsUseCase) checkPaymentsAgainstBills(
 			InvoiceAmount: worth, PaidTotal: total,
 			Excess: excess, Note: note,
 		})
-		if note == "" {
+		// The frozen note excuses a drift nobody can act on. Charges after a
+		// conversion are the opposite: real, invisible everywhere else, and with a
+		// route out (release the bill, settle them).
+		if note == "" || note == noteChargesAfterConversion {
 			result.OK = false
 		}
 	}
@@ -454,7 +457,12 @@ func (uc *CheckInvariantsUseCase) checkInvoiceTotals(
 
 		computed = round2(computed)
 		drift := round2(inv.Amount - computed)
-		if drift == 0 {
+		// A charge landing on a converted bill raises BOTH the stored total and
+		// the lines, so there is no ordinary drift and this loop used to skip the
+		// bill entirely. That is the whole difficulty: the one case nothing else
+		// reports is also the one this check would not look at.
+		unconverted := round2(inv.UnconvertedDrift())
+		if drift == 0 && unconverted == 0 {
 			continue
 		}
 
@@ -470,7 +478,7 @@ func (uc *CheckInvariantsUseCase) checkInvoiceTotals(
 		// A converted bill that has been charged SINCE the conversion is a live
 		// problem, not a frozen total: the charges are real, nothing else reports
 		// them, and the operator has a route (release, then settle).
-		if inv.UnconvertedDrift() > 0 {
+		if unconverted > 0 {
 			note = noteChargesAfterConversion
 		}
 
@@ -484,7 +492,10 @@ func (uc *CheckInvariantsUseCase) checkInvoiceTotals(
 			Drift:          drift,
 			Note:           note,
 		})
-		if note == "" {
+		// The frozen note excuses a drift nobody can act on. Charges after a
+		// conversion are the opposite: real, invisible everywhere else, and with a
+		// route out — release the bill and settle them.
+		if note == "" || note == noteChargesAfterConversion {
 			result.OK = false
 		}
 	}

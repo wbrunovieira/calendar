@@ -513,18 +513,42 @@ func TestCheckInvariants_APlannedPaymentDoesNotCountAsPaid(t *testing.T) {
 // afterwards is reported NOWHERE unless this check says so. Marking it with the
 // frozen note — "nothing to do here" — would be the last place it could have
 // been seen.
-func TestInvariantsFlagChargesLandingOnAConvertedBill(t *testing.T) {
+//
+// This runs the use case. An earlier version of this test asserted the domain
+// object instead, so deleting the branch in the check left it green.
+func TestCheckInvariants_FlagsChargesLandingOnAConvertedBill(t *testing.T) {
 	converted := 1649.35
-	inv := &invoice.Invoice{
+	bill := &invoice.Invoice{
 		ID: "out", BankAccountID: "card", Status: invoice.StatusRefinanced,
 		Amount: 2149.35, RefinancedAmount: &converted, // 500,00 charged afterwards
 		ReferenceDate: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
 	}
+	accounts := &invariantAccountRepo{accounts: []*bankaccount.BankAccount{
+		{ID: "card", Name: "Cartão", Type: bankaccount.AccountTypeCreditCard, IsActive: true},
+	}}
+	txs := &invariantTxRepo{invoiceSums: map[string]float64{"out": 2149.35}}
+	invoices := &invariantInvoiceRepo{byAccount: map[string][]*invoice.Invoice{"card": {bill}}}
 
-	if got := inv.UnconvertedDrift(); got < 499.99 || got > 500.01 {
+	result, err := NewCheckInvariantsUseCase(accounts, txs, invoices).Execute()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The stored total already equals the lines, so there is no ordinary drift —
+	// the only thing that can surface the late charge is the conversion check.
+	if got := bill.UnconvertedDrift(); got < 499.99 || got > 500.01 {
 		t.Fatalf("precondition: drift = %v, want 500", got)
 	}
-	if inv.AmountRemaining() != 0 {
-		t.Fatal("precondition: a converted bill owes nothing")
+	found := false
+	for _, d := range result.InvoiceDrifts {
+		if d.InvoiceID == "out" && d.Note == noteChargesAfterConversion {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the late charge was not reported: %+v", result.InvoiceDrifts)
+	}
+	if result.OK {
+		t.Error("OK = true; a charge nothing else reports has to fail the check")
 	}
 }
