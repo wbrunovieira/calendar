@@ -443,3 +443,36 @@ func TestAConvertedBillStillOwesNothingWhenItsTotalIsUnchanged(t *testing.T) {
 		t.Errorf("amount remaining = %v, want 0", got)
 	}
 }
+
+// The floor. A converted bill whose lines later shrink must report no drift, not
+// a negative one: the payload would carry a number that reads as debt reversed.
+func TestDriftNeverGoesNegative(t *testing.T) {
+	inv := settledCandidate(t, 1000)
+	if err := inv.Refinance("txn-credit", time.Now()); err != nil {
+		t.Fatalf("Refinance: %v", err)
+	}
+
+	inv.Amount = 600 // a charge was cancelled afterwards
+
+	if got := inv.UnconvertedDrift(); got != 0 {
+		t.Errorf("drift = %v, want 0 — a shrinking bill is not negative debt", got)
+	}
+	if got := inv.UnconvertedDriftAgainst(600); got != 0 {
+		t.Errorf("drift against lines = %v, want 0", got)
+	}
+}
+
+// Exactly at the tolerance is not drift; just over it is.
+func TestDriftRespectsTheTolerance(t *testing.T) {
+	inv := settledCandidate(t, 1000)
+	if err := inv.Refinance("txn-credit", time.Now()); err != nil {
+		t.Fatalf("Refinance: %v", err)
+	}
+
+	if got := inv.UnconvertedDriftAgainst(1000.004); got != 0 {
+		t.Errorf("drift = %v, want 0 within tolerance", got)
+	}
+	if got := inv.UnconvertedDriftAgainst(1000.02); !near(got, 0.02) {
+		t.Errorf("drift = %v, want 0.02", got)
+	}
+}

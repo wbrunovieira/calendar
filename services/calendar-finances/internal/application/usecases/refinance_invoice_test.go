@@ -704,3 +704,138 @@ func TestRefinanceTellsADatabaseFailureFromAMissingRow(t *testing.T) {
 		}
 	})
 }
+
+// An id Postgres cannot parse is absence, not an outage. pq answers
+// `invalid input syntax for type uuid`, which carries no "not found", so the
+// first version of this classification sent it to the failure branch and the
+// caller got a 500 — which n8n and the agents retry forever.
+//
+// The handler test that claimed to cover this passed for the opposite reason:
+// its fakes returned "transaction not found" and "invoice not found".
+func TestRefinanceTreatsAnUnparseableIdAsAbsent(t *testing.T) {
+	pqSyntax := errors.New(`pq: invalid input syntax for type uuid: "nao-e-uuid"`)
+
+	t.Run("bill", func(t *testing.T) {
+		uc, _ := refinanceFixture(t)
+		uc.invoiceRepo.(*fakeInvoiceRepo).findByIDErrFor = map[string]error{"nao-e-uuid": pqSyntax}
+
+		err := uc.Execute("credito", []string{"nao-e-uuid"})
+
+		if !errors.Is(err, ErrConversionBillNotFound) {
+			t.Fatalf("error = %v, want %v", err, ErrConversionBillNotFound)
+		}
+	})
+
+	t.Run("credit", func(t *testing.T) {
+		uc, _ := refinanceFixture(t)
+		uc.txRepo.(*fakeTransactionRepo).getByIDErr = pqSyntax
+
+		err := uc.Execute("nao-e-uuid", []string{"out"})
+
+		if !errors.Is(err, ErrConversionCreditNotFound) {
+			t.Fatalf("error = %v, want %v", err, ErrConversionCreditNotFound)
+		}
+	})
+}
+
+// The atomicity every safety argument here rests on was wired and never
+// exercised: stripping the bindings from boundTo, or skipping the unit-of-work
+// path outright, left the whole suite green.
+type recordingUoW struct {
+	repos  TxRepos
+	ran    bool
+	failed error
+}
+
+func (u *recordingUoW) Do(fn func(TxRepos) error) error {
+	u.ran = true
+	if err := fn(u.repos); err != nil {
+		return err // a real one rolls back; nothing was committed
+	}
+	return u.failed
+}
+
+func TestRefinanceRunsItsWritesThroughTheUnitOfWork(t *testing.T) {
+	uc, invRepo := refinanceFixture(t)
+	bound := &fakeInvoiceRepo{invoices: map[string]*invoice.Invoice{}}
+	for id, inv := range invRepo.invoices {
+		copied := *inv
+		bound.invoices[id] = &copied
+	}
+	uow := &recordingUoW{repos: TxRepos{Invoices: bound, Transactions: uc.txRepo}}
+	uc.SetUnitOfWork(uow)
+	uc.SetInvoiceRecalculator(&recordingRecalculator{})
+
+	if err := uc.Execute("credito", []string{"out"}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !uow.ran {
+		t.Fatal("the unit of work was never entered; the writes were not atomic")
+	}
+	// Written through the BOUND repository, not the one the use case was built
+	// with. Holding the outer repositories inside someone else's transaction is
+	// how writes that must land together land one by one.
+	if bound.invoices["out"].Status != invoice.StatusRefinanced {
+		t.Error("the conversion did not go through the bound repository")
+	}
+	if invRepo.invoices["out"].Status == invoice.StatusRefinanced {
+		t.Error("the conversion bypassed the transaction and wrote directly")
+	}
+}
+
+// The refresh reads rows the transaction wrote, so it has to run after the
+// commit — inside, it would read a state that may yet roll back.
+func TestRefinanceRestatesOnlyAfterTheTransactionCommits(t *testing.T) {
+	uc, invRepo := refinanceFixture(t)
+	bound := &fakeInvoiceRepo{invoices: map[string]*invoice.Invoice{}}
+	for id, inv := range invRepo.invoices {
+		copied := *inv
+		bound.invoices[id] = &copied
+	}
+	novID := "nov"
+	uc.txRepo.(*fakeTransactionRepo).created[0].InvoiceID = &novID
+	bound.invoices[novID] = &invoice.Invoice{
+		ID: novID, BankAccountID: "card", Status: invoice.StatusClosed, Amount: 0,
+		OpeningDate: day(2026, 10, 10), ClosingDate: day(2026, 11, 9),
+		DueDate: day(2026, 11, 14), ReferenceDate: day(2026, 11, 1),
+	}
+	invRepo.invoices[novID] = bound.invoices[novID]
+	uc.SetUnitOfWork(&recordingUoW{
+		repos:  TxRepos{Invoices: bound, Transactions: uc.txRepo},
+		failed: errors.New("commit failed"),
+	})
+	rec := &recordingRecalculator{}
+	uc.SetInvoiceRecalculator(rec)
+
+	if err := uc.Execute("credito", []string{"out"}); err == nil {
+		t.Fatal("expected the commit failure to surface")
+	}
+
+	if len(rec.refreshed) != 0 {
+		t.Errorf("refreshed %v after a failed commit; those rows may never have landed", rec.refreshed)
+	}
+}
+
+// The host guard is ordered before the already-converted short-circuit. Without
+// that order a bill which is BOTH already converted by this credit AND the
+// credit's current host skips the check entirely.
+func TestRefinanceChecksTheHostBeforeTheRetryShortCircuit(t *testing.T) {
+	uc, invRepo := refinanceFixture(t)
+	outID := "out"
+	if err := uc.Execute("credito", []string{outID}); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	// Re-pinned to the bill it converted, which POST /transactions/{id}/invoice
+	// can do.
+	uc.txRepo.(*fakeTransactionRepo).created[0].InvoiceID = &outID
+
+	err := uc.Execute("credito", []string{outID})
+
+	if err == nil || err.Error() != ErrBillHostsTheCredit.Error() {
+		t.Fatalf("error = %v, want %v", err, ErrBillHostsTheCredit)
+	}
+	if invRepo.invoices[outID].RefinancedBy == nil {
+		t.Error("the existing conversion was lost")
+	}
+}

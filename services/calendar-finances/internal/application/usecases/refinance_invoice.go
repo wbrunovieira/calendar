@@ -120,7 +120,16 @@ func NewRefinanceInvoiceUseCase(
 // "that bill does not exist" tells n8n and the agents to give up on work that
 // would have succeeded a second later.
 func isAbsent(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "not found")
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	// An id Postgres cannot even parse names no row and never will: pq answers
+	// `invalid input syntax for type uuid`, which carries no "not found" text.
+	// Left in the failure branch it came back as a 500, and n8n and the agents
+	// retry a 5xx — replaying a typo forever, which is the exact thing this
+	// classification was added to stop.
+	return strings.Contains(msg, "not found") || strings.Contains(msg, "invalid input syntax")
 }
 
 // Execute converts the debt of every named bill, or none of them.

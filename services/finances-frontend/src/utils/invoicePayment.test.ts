@@ -98,3 +98,14 @@ describe('amountLeftOn with a converted bill', () => {
     );
   });
 });
+
+// The REFINANCED check sits BEFORE the amountRemaining early return. The API
+// never emits a converted bill with a non-zero remainder, but a payload that
+// did would otherwise be reported as debt on a settled bill.
+describe('amountLeftOn ordering', () => {
+  it('answers zero for a converted bill even if a remainder is present', () => {
+    expect(
+      amountLeftOn(bill({ status: 'REFINANCED', amount: 1649.35, amountRemaining: 1649.35 })),
+    ).toBe(0);
+  });
+});

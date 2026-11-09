@@ -254,6 +254,19 @@ func (i *Invoice) ReleaseRefinancing() error {
 // settle it; surfacing it as drift sends it to a person, who can release the bill
 // and handle it properly.
 func (i *Invoice) UnconvertedDrift() float64 {
+	return i.UnconvertedDriftAgainst(i.Amount)
+}
+
+// UnconvertedDriftAgainst is the same measure against a total supplied by the
+// caller, normally the sum of the bill's live lines.
+//
+// It takes the HIGHER of the two. The stored total is deliberately not refreshed
+// for a settled bill — reattaching an orphan line skips the recalculation so a
+// statement figure is never overwritten — so a charge that lands afterwards can
+// show up in the lines while `Amount` still reads the pre-charge figure. Measuring
+// against the stored one alone reported zero drift for the very event this exists
+// to catch, and the invariants check then excused the bill as frozen.
+func (i *Invoice) UnconvertedDriftAgainst(billed float64) float64 {
 	if i.Status != StatusRefinanced {
 		return 0
 	}
@@ -264,7 +277,11 @@ func (i *Invoice) UnconvertedDrift() float64 {
 	if i.PaidAmount != nil {
 		settled += *i.PaidAmount
 	}
-	if drift := i.Amount - settled; drift > paymentTolerance {
+	total := i.Amount
+	if billed > total {
+		total = billed
+	}
+	if drift := total - settled; drift > paymentTolerance {
 		return drift
 	}
 	return 0

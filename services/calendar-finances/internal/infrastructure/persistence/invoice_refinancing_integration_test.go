@@ -252,6 +252,14 @@ func TestMigrationsBackfillTheAmountOfAnOlderConversion(t *testing.T) {
 	if _, err := db.Exec(`ALTER TABLE finance.credit_card_invoices DROP CONSTRAINT IF EXISTS chk_refinanced_has_amount`); err != nil {
 		t.Fatalf("dropping the constraint to recreate the legacy state: %v", err)
 	}
+	// Put it back even if this test dies before the replay below. Leaving the
+	// schema weakened would silently disarm the sibling test for the rest of the
+	// run, and a guard that only sometimes guards is worse than none.
+	t.Cleanup(func() {
+		db.Exec(`ALTER TABLE finance.credit_card_invoices DROP CONSTRAINT IF EXISTS chk_refinanced_has_amount`)
+		db.Exec(`ALTER TABLE finance.credit_card_invoices ADD CONSTRAINT chk_refinanced_has_amount
+			CHECK (status <> 'REFINANCED' OR refinanced_amount IS NOT NULL)`)
+	})
 	if _, err := db.Exec(`
 		UPDATE finance.credit_card_invoices
 		SET status = 'REFINANCED', refinanced_by = $2, refinanced_amount = NULL, paid_amount = 400

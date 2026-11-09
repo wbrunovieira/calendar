@@ -961,6 +961,12 @@ func (uc *PayInvoiceUseCaseV2) pay(input PayInvoiceInput) (*invoice.Invoice, err
 		if inv.IsPaid() {
 			return nil, ErrInvoiceAlreadyPaid
 		}
+		// A bill the bank converted into instalments is refused for that reason,
+		// said out loud. Collapsing it into "invalid input" tells the operator
+		// their amount was wrong, when what is wrong is that nobody owes this.
+		if inv.Status == invoice.StatusRefinanced {
+			return nil, fmt.Errorf("%w: %s", ErrInvalidInput, payErr.Error())
+		}
 		return nil, ErrInvalidInput
 	}
 

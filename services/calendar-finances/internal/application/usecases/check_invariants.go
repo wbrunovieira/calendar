@@ -464,7 +464,12 @@ func (uc *CheckInvariantsUseCase) checkInvoiceTotals(
 		// the lines, so there is no ordinary drift and this loop used to skip the
 		// bill entirely. That is the whole difficulty: the one case nothing else
 		// reports is also the one this check would not look at.
-		unconverted := round2(inv.UnconvertedDrift())
+		// Against the LINES, not only the stored total: this PR made the refresh
+		// skip a settled bill, so a charge landing after a conversion shows up in
+		// `computed` while `Amount` still reads the pre-charge figure. Measuring
+		// the stored one alone reported zero and the bill was excused as frozen —
+		// the one event nothing else reports, waved through.
+		unconverted := round2(inv.UnconvertedDriftAgainst(computed))
 		if drift == 0 && unconverted == 0 {
 			continue
 		}
