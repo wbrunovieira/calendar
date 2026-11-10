@@ -83,6 +83,11 @@ SSL_DOMAINS=(
 NOW=$(date '+%d/%m/%Y %H:%M')
 ALERTS=()
 WARNINGS=()
+# Every section the message interpolates starts out defined: under `set -u` an
+# unset one would kill the script before format_message and send nothing at all.
+LEDGER_SECTION="Financeiro: nao verificado"
+HOST_SECTION=""; CONTAINER_SECTION=""; ENDPOINT_SECTION=""
+SSL_SECTION=""; DB_SECTION=""; BACKUP_SECTION=""; SECURITY_SECTION=""
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"; }
 add_alert()   { ALERTS+=("$1"); }
@@ -331,54 +336,123 @@ check_backup() {
 # Both are hit on 127.0.0.1 on purpose: the public route sits behind Authelia,
 # so from outside this box the honest answer is always 302.
 #
-# Status codes carry the verdict, because this cron has no jq (see the notes in
-# backup.sh): 200 clean, 409 a finding, 503 the bank could not be reached.
+# The status code carries the verdict, because this cron has no jq: 200 a real
+# answer, 409 a finding, 501 the feature is not configured, 503 the bank could
+# not be reached.
+#
+# The 200 branch PRINTS THE SUMMARY rather than declaring agreement. A card
+# difference is advisory — reported without failing the check — so the first
+# version of this answered 200 and printed the single word "bate" while a card
+# was R$ 517,45 out, which is the exact incident the endpoint was built for.
 check_ledger() {
     local base="http://127.0.0.1:3335/api/v1/health"
-    local body code issues=""
+    local body code detail issues=""
     body=$(mktemp)
 
+    # The endpoint builds its own one-line verdict in `summary`, so this reads
+    # ONE value instead of re-deriving it. Grepping every "name" out of the
+    # payload reported the advisory cards and silently dropped the unanswered
+    # accounts, whose names live in a plain string array.
+    read_summary() { grep -o '"summary":"[^"]*"' "$body" 2>/dev/null | cut -d'"' -f4 || true; }
+
+    # fetch_code writes the body to $body and echoes the status code — or 000
+    # when curl could not FINISH, which includes a 200 whose body was cut off
+    # mid-write. The server's WriteTimeout can do exactly that, and curl still
+    # reports 200 for the header it already read: without this, a truncated
+    # answer reads as a calm 200 with no summary and raises nothing.
+    fetch_code() {
+        local out rc=0
+        out=$(curl -s -o "$body" -w '%{http_code}' --max-time 20 "$1") || rc=$?
+        if [[ "$rc" -ne 0 ]]; then echo "000"; else echo "${out:-000}"; fi
+    }
+
     # Ledger against itself.
-    code=$(curl -s -o "$body" -w '%{http_code}' --max-time 20 "${base}/invariants" 2>/dev/null || echo "000")
-    case "$code" in
+    code=$(fetch_code "${base}/invariants")
+    case "${code:-000}" in
         200) issues="${issues}
   - Invariantes: ok" ;;
         409) add_alert "Invariantes do financeiro: divergencia encontrada"
              issues="${issues}
-  - Invariantes: DIVERGENCIA" ;;
-        *)   add_warning "Invariantes do financeiro nao responderam (HTTP ${code})"
+  - Invariantes: DIVERGENCIA
+    detalhe: curl -s ${base}/invariants" ;;
+        *)   add_warning "Invariantes do financeiro nao responderam (HTTP ${code:-000})"
              issues="${issues}
-  - Invariantes: sem resposta (${code})" ;;
+  - Invariantes: sem resposta (${code:-000})" ;;
     esac
 
-    # Ledger against the bank. A difference here is a finding to investigate, not
-    # an outage — and an unreachable bank is the opposite, so they never share a
-    # severity.
-    code=$(curl -s -o "$body" -w '%{http_code}' --max-time 60 "${base}/bank-reconciliation" 2>/dev/null || echo "000")
-    case "$code" in
-        200) issues="${issues}
-  - Banco x sistema: bate" ;;
-        409) local detail
-             # The endpoint builds the one-line verdict itself, in the `summary`
-             # field, so this reads ONE value instead of re-deriving it. Grepping
-             # every "name" out of the payload (the first version) reported the
-             # advisory cards and silently dropped the unanswered accounts, whose
-             # names live in a plain string array.
-             detail=$(grep -o '"summary":"[^"]*"' "$body" 2>/dev/null | cut -d'"' -f4 || true)
+    # Ledger against the bank. The budget is 20s because the server's own
+    # WriteTimeout is 15s: a longer one cannot buy an answer the server is no
+    # longer allowed to write.
+    code=$(fetch_code "${base}/bank-reconciliation")
+    case "${code:-000}" in
+        200) detail=$(read_summary)
+             issues="${issues}
+  - Banco x sistema: ${detail:-respondeu 200 sem resumo}"
+             # An advisory difference does not fail the check — the two sides do
+             # not yet measure the same set on a card — but it must not pass as
+             # agreement either.
+             if [[ "$detail" == *"informativo (cartoes):"* ]]; then
+                 add_warning "Banco x sistema: diferenca em cartao, nao verificada — ${detail}"
+             fi
+             bankrec_failures 0 >/dev/null ;;
+        409) detail=$(read_summary)
              add_alert "Banco x sistema: ${detail:-conciliacao com pendencia}"
              issues="${issues}
   - Banco x sistema: PENDENCIA${detail:+ — ${detail}}
-    detalhe: curl -s 127.0.0.1:3335/api/v1/health/bank-reconciliation" ;;
-        503) add_warning "Conciliacao bancaria indisponivel (open finance fora, HTTP 503)"
+    detalhe: curl -s ${base}/bank-reconciliation"
+             bankrec_failures 0 >/dev/null ;;
+        501) # Not the bank's fault: the key was never set. Reported as its own
+             # thing so nobody spends a morning on an outage that is a blank env
+             # var — and escalated, because a feature switched off behind a daily
+             # low-severity warning is a feature that stays off.
+             bankrec_failures_escalate "Conciliacao bancaria DESLIGADA (MCP_AI_API_KEY nao configurada)"
              issues="${issues}
-  - Banco x sistema: open finance fora" ;;
-        *)   add_warning "Conciliacao bancaria nao respondeu (HTTP ${code})"
+  - Banco x sistema: desligado (sem MCP_AI_API_KEY)" ;;
+        503) # The provider's own reason is in the body — a stale consent needs a
+             # reconnect, and that never reads as "the bank is down".
+             local reason=""
+             grep -q "not_connected" "$body" 2>/dev/null && reason=" — consentimento caiu, reconectar o banco"
+             bankrec_failures_escalate "Conciliacao bancaria indisponivel (open finance fora)${reason}"
              issues="${issues}
-  - Banco x sistema: sem resposta (${code})" ;;
+  - Banco x sistema: open finance fora${reason}" ;;
+        *)   bankrec_failures_escalate "Conciliacao bancaria nao respondeu (HTTP ${code:-000})"
+             issues="${issues}
+  - Banco x sistema: sem resposta (${code:-000})" ;;
     esac
 
     rm -f "$body"
     LEDGER_SECTION="Financeiro:${issues}"
+}
+
+# bankrec_failures records how many days in a row the comparison failed to
+# produce an answer, and echoes the count. `bankrec_failures 0` resets it.
+#
+# A check that dies quietly is worse than no check: on this server a webhook was
+# dead for two months behind exactly this kind of daily low-severity line.
+BANKREC_STATE="${BANKREC_STATE:-/var/log/health-check-bankrec.state}"
+bankrec_failures() {
+    if [[ "${1:-}" == "0" ]]; then
+        echo 0 > "$BANKREC_STATE" 2>/dev/null || true
+        echo 0
+        return
+    fi
+    local n=0
+    [[ -r "$BANKREC_STATE" ]] && n=$(tr -dc '0-9' < "$BANKREC_STATE" 2>/dev/null || true)
+    n=$(( ${n:-0} + 1 ))
+    echo "$n" > "$BANKREC_STATE" 2>/dev/null || true
+    echo "$n"
+}
+
+# bankrec_failures_escalate warns on the first days and ALERTS once it has been
+# failing for three, so a permanent silence cannot hide in the warnings.
+bankrec_failures_escalate() {
+    local n
+    n=$(bankrec_failures)
+    if [[ "$n" -ge 3 ]]; then
+        add_alert "$1 — ${n} dias seguidos sem conferir o banco"
+    else
+        add_warning "$1 (dia ${n})"
+    fi
 }
 
 # ── 6. Security Checks ────────────────────────────────────────

@@ -27,6 +27,11 @@ type AccountSnapshot struct {
 	// cross-checked against Kind so a transposed mapping is named instead of
 	// compared — see Mismatch.
 	BankKind string `json:"bankKind"`
+	// BankName and BankInstitution are what the provider CALLS the account this
+	// one is mapped to. Reported alongside a difference so a mapping error can be
+	// read rather than inferred from a figure that merely looks wrong.
+	BankName        string `json:"bankName,omitempty"`
+	BankInstitution string `json:"bankInstitution,omitempty"`
 	// Unreadable marks an account whose own figure could not be computed. One
 	// such account used to abort the whole run and be reported as a bank outage,
 	// losing the comparison for every healthy account and sending the
@@ -76,6 +81,10 @@ type Mismatch struct {
 	// is mapped to. Both are reported because the fix depends on which is wrong.
 	Kind     string `json:"kind"`
 	BankKind string `json:"bankKind"`
+	// BankName and BankInstitution say WHICH provider account it is pointed at,
+	// so the fix does not start with an opaque uuid.
+	BankName        string `json:"bankName,omitempty"`
+	BankInstitution string `json:"bankInstitution,omitempty"`
 }
 
 // ReconciliationReport is what the daily check produces.
@@ -84,6 +93,11 @@ type ReconciliationReport struct {
 	// account the bank did not answer for.
 	OK      bool `json:"ok"`
 	Checked int  `json:"checked"`
+	// AdvisoryOnly is how many of Checked were only REPORTED, never verified —
+	// the credit cards. Without it, "2 de 3 conferidas" counts as verified a
+	// card whose difference can never fail the check, which overstates by
+	// exactly the accounts this system has had the most trouble with.
+	AdvisoryOnly int `json:"advisoryOnly"`
 	// Total is every account considered, so "compared 3 of 13" is a fact in the
 	// payload rather than a claim in a comment. Without it, a report that checked
 	// nothing looks exactly like one that checked everything and found nothing.
@@ -95,6 +109,12 @@ type ReconciliationReport struct {
 	Diverged     []Divergence `json:"diverged"`
 	// Advisory carries differences that are reported without failing the check.
 	Advisory []Divergence `json:"advisory"`
+	// UnmappedAtBank names accounts the BANK reports that no active account of
+	// ours claims. It does not fail the check — some are genuinely outside the
+	// ledger — but it has to be SAID, because this is the only number that moves
+	// when coverage shrinks: dropping a mapping, or deactivating an account,
+	// lowers "checked" and "total" together and leaves full coverage showing.
+	UnmappedAtBank []string `json:"unmappedAtBank"`
 	// Mismatched names accounts mapped to a provider account of the wrong nature.
 	// They fail the check and are NOT compared: the comparison would be
 	// meaningless, and reporting it as a difference would send the investigation
@@ -127,13 +147,14 @@ const centTolerance = 0.005
 // still findable — rather than to quietly make the two numbers match.
 func Reconcile(snapshots []AccountSnapshot) ReconciliationReport {
 	report := ReconciliationReport{
-		OK:           true,
-		NotConnected: []string{},
-		Unreadable:   []string{},
-		Unanswered:   []string{},
-		Diverged:     []Divergence{},
-		Advisory:     []Divergence{},
-		Mismatched:   []Mismatch{},
+		OK:             true,
+		NotConnected:   []string{},
+		UnmappedAtBank: []string{},
+		Unreadable:     []string{},
+		Unanswered:     []string{},
+		Diverged:       []Divergence{},
+		Advisory:       []Divergence{},
+		Mismatched:     []Mismatch{},
 	}
 
 	report.Total = len(snapshots)
@@ -156,12 +177,16 @@ func Reconcile(snapshots []AccountSnapshot) ReconciliationReport {
 		if !kindsAgree(s.Kind, s.BankKind) {
 			report.Mismatched = append(report.Mismatched, Mismatch{
 				Name: s.Name, Kind: s.Kind, BankKind: s.BankKind,
+				BankName: s.BankName, BankInstitution: s.BankInstitution,
 			})
 			report.OK = false
 			continue
 		}
 
 		report.Checked++
+		if s.Advisory {
+			report.AdvisoryOnly++
+		}
 		diff := round2(s.System - s.Bank)
 		if math.Abs(diff) < centTolerance {
 			continue
@@ -216,7 +241,13 @@ func kindsAgree(ours, theirs string) bool {
 // summarize states what the report found, in one line, in the language the
 // person reading the WhatsApp message speaks.
 func summarize(r ReconciliationReport) string {
-	parts := []string{fmt.Sprintf("%d de %d conferidas", r.Checked, r.Total)}
+	coverage := fmt.Sprintf("%d de %d conferidas", r.Checked, r.Total)
+	if r.AdvisoryOnly > 0 {
+		// A card counted in `checked` was reported, not verified — saying so in
+		// the same breath keeps the coverage number from overstating itself.
+		coverage += fmt.Sprintf(" (%d cartao(oes) apenas reportado(s))", r.AdvisoryOnly)
+	}
+	parts := []string{coverage}
 	if len(r.Diverged) > 0 {
 		parts = append(parts, "divergencia: "+namesOf(r.Diverged))
 	}
@@ -238,6 +269,9 @@ func summarize(r ReconciliationReport) string {
 		// a defect, and a message that reads like one trains the reader to ignore
 		// the whole line.
 		parts = append(parts, "informativo (cartoes): "+namesOf(r.Advisory))
+	}
+	if len(r.UnmappedAtBank) > 0 {
+		parts = append(parts, fmt.Sprintf("no banco sem conta no sistema: %s", strings.Join(r.UnmappedAtBank, ", ")))
 	}
 	if r.Checked == 0 {
 		parts = append(parts, "nada foi comparado")

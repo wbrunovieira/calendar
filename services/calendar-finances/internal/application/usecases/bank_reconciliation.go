@@ -3,6 +3,7 @@ package usecases
 import (
 	"fmt"
 	"log"
+	"sort"
 
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
 )
@@ -10,9 +11,9 @@ import (
 // BankAccountLister is what the bank side has to provide: every account it can
 // see, keyed by the provider id stored on our own accounts.
 type BankAccountLister interface {
-	// FiguresByProviderID returns what each account is worth AND what the
-	// provider says each account is (BANK or CREDIT), in one call.
-	FiguresByProviderID() (amounts map[string]float64, kinds map[string]string, err error)
+	// FiguresByProviderID returns every account the bank can see, keyed by the
+	// provider id our own accounts store, as one value each.
+	FiguresByProviderID() (map[string]bankaccount.ProviderFigure, error)
 }
 
 // CardUsageReader answers what a card owes on our side. It is the endpoint the
@@ -53,7 +54,7 @@ func (uc *BankReconciliationUseCase) Execute() (ReconciliationReport, error) {
 		return ReconciliationReport{}, fmt.Errorf("listing accounts: %w", err)
 	}
 
-	owed, bankKinds, err := uc.bank.FiguresByProviderID()
+	figures, err := uc.bank.FiguresByProviderID()
 	if err != nil {
 		// Reaching the bank failed. Answering "no divergences" here would make an
 		// outage indistinguishable from a clean day, which is the failure this
@@ -62,6 +63,16 @@ func (uc *BankReconciliationUseCase) Execute() (ReconciliationReport, error) {
 	}
 
 	snapshots := make([]AccountSnapshot, 0, len(accounts))
+	// Every provider account starts out unclaimed. What is left at the end is
+	// coverage the report does not have — including the provider account of a
+	// local account someone deactivated, which otherwise disappears from the
+	// check silently, taking the denominator down with it so that "1 de 1
+	// conferidas" looks like full coverage.
+	unclaimed := make(map[string]bankaccount.ProviderFigure, len(figures))
+	for id, f := range figures {
+		unclaimed[id] = f
+	}
+
 	for _, a := range accounts {
 		if !a.IsActive {
 			continue
@@ -100,15 +111,47 @@ func (uc *BankReconciliationUseCase) Execute() (ReconciliationReport, error) {
 		}
 
 		if s.ProviderID != "" {
-			v, found := owed[s.ProviderID]
-			if !found {
+			delete(unclaimed, s.ProviderID)
+			f, found := figures[s.ProviderID]
+			// Both "the bank never mentioned this account" and "the bank
+			// mentioned it and could not price it" are unanswered. Neither is
+			// agreement.
+			if !found || !f.HasAmount {
 				s.BankMissing = true
 			}
-			s.Bank = v
-			s.BankKind = bankKinds[s.ProviderID]
+			s.Bank = f.Amount
+			s.BankKind = f.Kind
+			s.BankName = f.Name
+			s.BankInstitution = f.Institution
 		}
 		snapshots = append(snapshots, s)
 	}
 
-	return Reconcile(snapshots), nil
+	report := Reconcile(snapshots)
+	// Reconcile already wrote a summary from what it could see. Coverage the
+	// comparison never had is only knowable here, so the line is rebuilt once
+	// the unclaimed accounts are in — otherwise the one sentence a person reads
+	// would be the only part of the report that did not mention them.
+	for id, f := range unclaimed {
+		report.UnmappedAtBank = append(report.UnmappedAtBank, describeUnmapped(id, f))
+	}
+	sort.Strings(report.UnmappedAtBank)
+	report.Summary = summarize(report)
+	return report, nil
+}
+
+// describeUnmapped names a provider account no active account of ours claims, in
+// terms a person can act on: the id alone is not something anyone recognises.
+func describeUnmapped(id string, f bankaccount.ProviderFigure) string {
+	label := f.Name
+	if f.Institution != "" && f.Institution != f.Name {
+		label = f.Institution + " / " + f.Name
+	}
+	if label == "" {
+		label = id
+	}
+	if f.Kind != "" {
+		label += " (" + f.Kind + ")"
+	}
+	return label
 }

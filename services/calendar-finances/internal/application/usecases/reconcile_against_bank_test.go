@@ -146,11 +146,24 @@ func TestReconcileReportsASingleCent(t *testing.T) {
 type stubBankLister struct {
 	owed  map[string]float64
 	kinds map[string]string
+	// extra carries provider accounts that are NOT in `owed` — the ones the bank
+	// reports and the ledger does not claim.
+	extra map[string]bankaccount.ProviderFigure
 	err   error
 }
 
-func (s *stubBankLister) FiguresByProviderID() (map[string]float64, map[string]string, error) {
-	return s.owed, s.kinds, s.err
+func (s *stubBankLister) FiguresByProviderID() (map[string]bankaccount.ProviderFigure, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	out := make(map[string]bankaccount.ProviderFigure, len(s.owed)+len(s.extra))
+	for id, v := range s.owed {
+		out[id] = bankaccount.ProviderFigure{Amount: v, HasAmount: true, Kind: s.kinds[id]}
+	}
+	for id, f := range s.extra {
+		out[id] = f
+	}
+	return out, nil
 }
 
 type stubCardUsage struct{ byID map[string]float64 }
@@ -532,5 +545,101 @@ func TestReconcileFailsOnAMismatchEvenWhenEverythingElseAgrees(t *testing.T) {
 	}
 	if report.OK {
 		t.Error("a wrong mapping passed the check because the other account agreed")
+	}
+}
+
+// Deactivating an account must not shrink the check silently.
+//
+// "checked" and "total" only ever count OUR active accounts, so dropping one
+// lowers both together and leaves a full-coverage number showing: 1 de 1
+// conferidas, on a ledger that stopped looking at a real bank account. The only
+// figure that moves is the provider side nobody claims.
+func TestBankReconciliationNamesABankAccountNoActiveAccountClaims(t *testing.T) {
+	bank := &stubBankLister{
+		owed:  map[string]float64{"prov-conta": 718.36, "prov-cartao": 4237.87},
+		kinds: map[string]string{"prov-conta": "BANK", "prov-cartao": "CREDIT"},
+		extra: map[string]bankaccount.ProviderFigure{
+			"prov-nubank": {Amount: 0.51, HasAmount: true, Kind: "BANK", Name: "41722077-9", Institution: "Nubank"},
+		},
+	}
+	uc, repo := reconciliationFixture(bank)
+	// Someone deactivates the account that WAS mapped to prov-desativada.
+	desativada := "prov-desativada"
+	repo.accounts["morta"] = &bankaccount.BankAccount{
+		ID: "morta", Name: "Clear", Type: bankaccount.AccountTypeInvestment,
+		IsActive: false, ProviderAccountID: &desativada,
+	}
+	bank.extra["prov-desativada"] = bankaccount.ProviderFigure{
+		Amount: 9261, HasAmount: true, Kind: "BANK", Name: "CCTVM 102", Institution: "Clear",
+	}
+
+	report, err := uc.Execute()
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if len(report.UnmappedAtBank) != 2 {
+		t.Fatalf("unmappedAtBank = %v, want both unclaimed bank accounts", report.UnmappedAtBank)
+	}
+	for _, want := range []string{"Clear / CCTVM 102 (BANK)", "Nubank / 41722077-9 (BANK)"} {
+		found := false
+		for _, got := range report.UnmappedAtBank {
+			if got == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("unmappedAtBank = %v, missing %q", report.UnmappedAtBank, want)
+		}
+	}
+	// And it reaches the ONE line a person reads.
+	if !strings.Contains(report.Summary, "no banco sem conta no sistema: Clear / CCTVM 102 (BANK)") {
+		t.Errorf("summary = %q", report.Summary)
+	}
+}
+
+// A provider account that is mapped and priced must NOT be reported as
+// unclaimed — otherwise the healthy state is noisy and the signal is worthless.
+func TestBankReconciliationReportsNothingUnclaimedWhenEverythingIsMapped(t *testing.T) {
+	uc, _ := reconciliationFixture(&stubBankLister{owed: map[string]float64{
+		"prov-conta": 718.36, "prov-cartao": 4237.87,
+	}})
+
+	report, err := uc.Execute()
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(report.UnmappedAtBank) != 0 {
+		t.Errorf("unmappedAtBank = %v, want none", report.UnmappedAtBank)
+	}
+	if report.Summary != "2 de 3 conferidas (1 cartao(oes) apenas reportado(s))" {
+		t.Errorf("summary = %q", report.Summary)
+	}
+}
+
+// The bank mentioning an account but putting no number on it is UNANSWERED, not
+// agreement. A zero here would reconcile against an empty ledger.
+func TestBankReconciliationTreatsAPricelessAnswerAsUnanswered(t *testing.T) {
+	uc, _ := reconciliationFixture(&stubBankLister{
+		owed:  map[string]float64{"prov-cartao": 4237.87},
+		kinds: map[string]string{"prov-conta": "BANK", "prov-cartao": "CREDIT"},
+		extra: map[string]bankaccount.ProviderFigure{
+			// answered for, with no figure
+			"prov-conta": {HasAmount: false, Kind: "BANK", Name: "Mercado Pago"},
+		},
+	})
+
+	report, err := uc.Execute()
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(report.Unanswered) != 1 || report.Unanswered[0] != "Mercado Pago" {
+		t.Fatalf("unanswered = %v, want the checking account", report.Unanswered)
+	}
+	if report.OK {
+		t.Error("an account the bank could not price was counted as agreement")
+	}
+	if len(report.UnmappedAtBank) != 0 {
+		t.Errorf("unmappedAtBank = %v — it IS mapped, just unpriced", report.UnmappedAtBank)
 	}
 }

@@ -140,7 +140,11 @@ func (h *InvariantsHandlers) SetBankReconciler(r BankReconciler) { h.reconciler 
 // consistent there. This is the only thing in the system that looks outward.
 func (h *InvariantsHandlers) BankReconciliation(w http.ResponseWriter, r *http.Request) {
 	if h.reconciler == nil {
-		http.Error(w, "bank reconciliation is not configured on this server", http.StatusServiceUnavailable)
+		// 501, NOT 503. They are different problems with different owners: this
+		// one means MCP_AI_API_KEY was never set, and reporting it as "the bank
+		// is down" sends the investigation to the bank every single day while
+		// the feature sits switched off.
+		http.Error(w, "bank reconciliation is not configured on this server: MCP_AI_API_KEY is not set", http.StatusNotImplemented)
 		return
 	}
 

@@ -149,21 +149,29 @@ func TestFiguresByProviderIDLeavesOutWhatItCannotRead(t *testing.T) {
 	c := NewClient("chave")
 	c.baseURL = srv.URL
 
-	owed, kinds, err := c.FiguresByProviderID()
+	figures, err := c.FiguresByProviderID()
 
 	if err != nil {
 		t.Fatalf("FiguresByProviderID: %v", err)
 	}
-	if _, present := owed["sem-saldo"]; present {
-		t.Error("an unreadable account was entered as a number")
+	// Present, but WITHOUT a number. Absent would read as "the bank never
+	// mentioned it" and a zero would read as "it owes nothing"; both are wrong,
+	// and only one of them is loud.
+	bad, ok := figures["sem-saldo"]
+	if !ok {
+		t.Fatal("the account with no readable figure vanished from the answer")
 	}
-	if v := owed["bom"]; v < 718.35 || v > 718.37 {
-		t.Errorf("owed = %v, want 718.36", v)
+	if bad.HasAmount {
+		t.Errorf("an unreadable account came back with a figure: %+v", bad)
+	}
+	good := figures["bom"]
+	if !good.HasAmount || good.Amount < 718.35 || good.Amount > 718.37 {
+		t.Errorf("figure = %+v, want 718.36", good)
 	}
 	// The kind survives even for the account with no readable figure: pointing a
 	// card at a checking account is worth naming either way.
-	if kinds["sem-saldo"] != "BANK" || kinds["bom"] != "BANK" {
-		t.Errorf("kinds = %v, want both BANK", kinds)
+	if bad.Kind != "BANK" || good.Kind != "BANK" {
+		t.Errorf("kinds = %q / %q, want both BANK", bad.Kind, good.Kind)
 	}
 }
 
@@ -172,7 +180,7 @@ func TestFiguresByProviderIDLeavesOutWhatItCannotRead(t *testing.T) {
 func TestFiguresByProviderIDReportsWhatEachAccountIs(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"ok":true,"result":{"results":[
-			{"id":"conta","type":"BANK","balance":"0.51"},
+			{"id":"conta","type":"BANK","name":"Conta","bank":"Nubank","balance":"0.51"},
 			{"id":"cartao","type":"CREDIT","balance":"0","creditData":{"creditLimit":"1000.00","availableCreditLimit":"634.50"}}
 		]}}`))
 	}))
@@ -180,16 +188,21 @@ func TestFiguresByProviderIDReportsWhatEachAccountIs(t *testing.T) {
 	c := NewClient("chave")
 	c.baseURL = srv.URL
 
-	owed, kinds, err := c.FiguresByProviderID()
+	figures, err := c.FiguresByProviderID()
 
 	if err != nil {
 		t.Fatalf("FiguresByProviderID: %v", err)
 	}
-	if kinds["conta"] != "BANK" || kinds["cartao"] != "CREDIT" {
-		t.Errorf("kinds = %v, want conta BANK and cartao CREDIT", kinds)
+	if figures["conta"].Kind != "BANK" || figures["cartao"].Kind != "CREDIT" {
+		t.Errorf("kinds = %+v", figures)
 	}
-	if v := owed["cartao"]; v < 365.49 || v > 365.51 {
+	if v := figures["cartao"].Amount; v < 365.49 || v > 365.51 {
 		t.Errorf("card owed = %v, want 365.50", v)
+	}
+	// And what the provider CALLS them, so a mapping error can be read instead
+	// of inferred from a figure that merely looks wrong.
+	if figures["conta"].Name != "Conta" || figures["conta"].Institution != "Nubank" {
+		t.Errorf("name/institution = %q / %q", figures["conta"].Name, figures["conta"].Institution)
 	}
 }
 

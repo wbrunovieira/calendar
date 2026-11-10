@@ -130,13 +130,20 @@ func TestBankReconciliationAnswers503WhenTheBankCannotBeReached(t *testing.T) {
 	}
 }
 
-func TestBankReconciliationAnswers503WhenItIsNotConfigured(t *testing.T) {
+// Not configured and bank-unreachable are DIFFERENT problems with different
+// owners, so they cannot share a status code: the cron would otherwise blame the
+// bank every day for a key that was never set, and the feature would sit
+// switched off behind a warning that sounds like someone else's fault.
+func TestBankReconciliationAnswers501WhenItIsNotConfigured(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	(&InvariantsHandlers{}).BankReconciliation(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
 
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want 503 — nothing was compared", rec.Code)
+	if rec.Code != http.StatusNotImplemented {
+		t.Errorf("status = %d, want 501 — the key is not set, the bank is not down", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "MCP_AI_API_KEY") {
+		t.Errorf("body = %q, want it to name the missing key", rec.Body.String())
 	}
 }
 

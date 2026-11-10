@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
 )
 
 const defaultBaseURL = "https://api.mcp.ai/api/openfinance"
@@ -32,19 +34,26 @@ func NewClient(apiKey string) *Client {
 	return &Client{
 		apiKey:  apiKey,
 		baseURL: defaultBaseURL,
-		// Under the server's 15s WriteTimeout, deliberately. A longer budget here
-		// does not buy patience — it buys a response write killed mid-flight, so
-		// the caller sees an aborted connection instead of the 503 this design
-		// promises.
-		http: &http.Client{Timeout: 12 * time.Second},
+		// 8s, well under the server's 15s WriteTimeout — not 12s, which left no
+		// room for the rest of the request. WriteTimeout is armed when the request
+		// header is read, so it covers the WHOLE handler: this call, plus listing
+		// our accounts, plus a credit-usage read per card (its invoices and every
+		// transaction on them). Spend 12s here and the response can be killed
+		// mid-write, which reaches the caller as an aborted connection rather than
+		// the 503 this design promises — and the daily check reads it as "no
+		// answer" instead of "the bank is down".
+		http: &http.Client{Timeout: 8 * time.Second},
 	}
 }
 
 // Account is one account as the bank reports it.
 type Account struct {
-	ID      string `json:"id"`
-	Type    string `json:"type"`
-	Name    string `json:"name"`
+	ID   string `json:"id"`
+	Type string `json:"type"`
+	Name string `json:"name"`
+	// Bank is the institution's brand, which the provider tags on every row when
+	// the listing spans connections. Carried so a mapping error can be READ.
+	Bank    string `json:"bank"`
 	Balance string `json:"balance"`
 	Credit  *struct {
 		CreditLimit          string `json:"creditLimit"`
@@ -173,30 +182,29 @@ func truncate(s string, n int) string {
 }
 
 // FiguresByProviderID adapts the client to what the reconciliation needs, keyed
-// by the provider id our own accounts store: what each account is worth, and
-// what the provider says each account IS.
+// by the provider id our own accounts store: what each account is worth, what
+// the provider says it IS, and what it is called.
 //
-// Both come back from ONE call on purpose. Asking twice would either cost a
-// second round trip or leave the second answer served from state left behind by
-// the first, which is a stale read waiting to happen.
+// All of it comes back from ONE call, as ONE value per account. Parallel maps
+// would let the amount and the kind disagree about which account they describe,
+// and asking twice would either cost a second round trip or serve the second
+// answer from state left behind by the first.
 //
-// An account the provider answers for but cannot put a figure on is LEFT OUT of
-// the amounts rather than entered as zero. Zero reads as "this account owes
-// nothing", which is a lie that reconciles — and the comparison treats an absent
-// key as an unanswered account, which is the truth. Its KIND is still reported:
-// a transposed mapping is worth naming even when the figure is unreadable.
-func (c *Client) FiguresByProviderID() (map[string]float64, map[string]string, error) {
+// An account the provider answers for but cannot put a figure on is reported
+// with HasAmount false rather than a zero. Zero reads as "this account owes
+// nothing", which is a lie that reconciles; the comparison treats it as
+// unanswered, which is the truth. Its kind and name are still reported — a
+// transposed mapping is worth naming even when the figure is unreadable.
+func (c *Client) FiguresByProviderID() (map[string]bankaccount.ProviderFigure, error) {
 	accounts, err := c.ListAccounts()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	owed := make(map[string]float64, len(accounts))
-	kinds := make(map[string]string, len(accounts))
+	figures := make(map[string]bankaccount.ProviderFigure, len(accounts))
 	for _, a := range accounts {
-		kinds[a.ID] = a.Type
-		if v, ok := a.Owed(); ok {
-			owed[a.ID] = v
-		}
+		f := bankaccount.ProviderFigure{Kind: a.Type, Name: a.Name, Institution: a.Bank}
+		f.Amount, f.HasAmount = a.Owed()
+		figures[a.ID] = f
 	}
-	return owed, kinds, nil
+	return figures, nil
 }
