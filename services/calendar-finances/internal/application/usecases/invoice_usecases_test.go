@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -1851,4 +1852,26 @@ func (f *fakeTransactionRepoWithInvoice) CancelStatus(txn *transaction.Transacti
 
 func (f *fakeTransactionRepoWithInvoice) SumLivePaymentsByInvoiceID(string) (float64, error) {
 	return 0, nil
+}
+
+// Paying a converted bill is refused, and the refusal has to say why: "invalid
+// input" tells the operator their amount was wrong, when what is wrong is that
+// nobody owes this bill at all.
+func TestPayInvoiceExplainsWhyAConvertedBillIsRefused(t *testing.T) {
+	bill := &invoice.Invoice{
+		ID: "inv", BankAccountID: "card", Amount: 1000, Status: invoice.StatusClosed,
+		ReferenceDate: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
+		OpeningDate:   time.Date(2026, 9, 10, 0, 0, 0, 0, time.UTC),
+		ClosingDate:   time.Date(2026, 10, 9, 0, 0, 0, 0, time.UTC),
+		DueDate:       time.Date(2026, 10, 14, 0, 0, 0, 0, time.UTC),
+	}
+	if err := bill.Refinance("credito", bill.DueDate); err != nil {
+		t.Fatalf("Refinance: %v", err)
+	}
+
+	if err := bill.Pay(1000, bill.DueDate); err == nil {
+		t.Fatal("expected a converted bill to refuse payment")
+	} else if !strings.Contains(err.Error(), "debt conversion") {
+		t.Errorf("reason = %q, want it to name the conversion", err.Error())
+	}
 }

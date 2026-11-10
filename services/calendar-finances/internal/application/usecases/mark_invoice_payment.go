@@ -57,6 +57,11 @@ var (
 	ErrWouldLowerRecordedPayment = refuse("that would reduce what the bill records as paid")
 	// ErrCardCannotFundAPayment rejects a transfer whose source is itself a card.
 	ErrCardCannotFundAPayment = refuse("a credit card cannot fund the payment of a bill")
+	// ErrInvoiceAlreadyConverted rejects settling a bill the bank already settled
+	// by converting it into instalments. Recording a payment there writes
+	// paid_amount alongside refinanced_amount on one row — the same bill settled
+	// twice, by two different mechanisms.
+	ErrInvoiceAlreadyConverted = refuse("that bill was already settled by a debt conversion; release it first")
 )
 
 // amountTolerance is one cent: the sums are money, rounded to cents on both sides.
@@ -195,6 +200,12 @@ func (uc *MarkInvoicePaymentUseCase) mark(transactionID, invoiceID string) error
 		// leave the status untouched and AmountRemaining reporting 0 for a cycle
 		// that is still collecting charges.
 		return ErrInvoiceStillOpen
+	}
+	// Before checkRestatable: a converted bill is refused for being converted, not
+	// for a total that happens to disagree. The reason the caller is given has to
+	// be the reason that matters.
+	if inv.Status == invoice.StatusRefinanced {
+		return ErrInvoiceAlreadyConverted
 	}
 
 	// The bill the row currently SETTLES, if a different one. Re-pointing has to take

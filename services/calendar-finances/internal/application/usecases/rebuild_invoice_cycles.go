@@ -493,7 +493,7 @@ func overlapBetween(aFrom, aTo, bFrom, bTo time.Time) time.Duration {
 // wasEverSettled reports whether money was already recorded against this bill. A
 // settled bill is not reshaped as routine maintenance.
 func wasEverSettled(inv *invoice.Invoice) bool {
-	if inv.Status == invoice.StatusPaid || inv.Status == invoice.StatusPartiallyPaid {
+	if inv.IsSettled() || inv.Status == invoice.StatusPartiallyPaid {
 		return true
 	}
 	return inv.PaidAmount != nil && *inv.PaidAmount > 0

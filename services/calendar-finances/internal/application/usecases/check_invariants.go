@@ -38,7 +38,13 @@ const (
 	// A PAID invoice's total cannot be brought back in line: POST
 	// /invoices/{id}/recalculate refuses PAID. An OPEN or CLOSED one can, by
 	// that same route, so it is a real finding and is reported without a note.
-	notePaidInvoiceFrozen = "a paid invoice total can no longer be recalculated"
+	notePaidInvoiceFrozen = "this bill is settled; recalculating it would overwrite the statement figure"
+	// noteChargesAfterConversion is NOT a reason to look away. A converted bill
+	// owes nothing by design, so new charges on it would otherwise vanish: not
+	// from amountRemaining, not from credit-usage, not from here. Naming them and
+	// failing the check is what sends them to a person, who can release the bill
+	// and deal with the charge properly.
+	noteChargesAfterConversion = "charges landed on this bill after it was converted into instalments; release it to settle them"
 )
 
 // AccountInvariant is one account whose stored balance differs from the balance
@@ -64,7 +70,13 @@ type InvoiceInvariant struct {
 	StoredAmount   float64 `json:"storedAmount"`
 	ComputedAmount float64 `json:"computedAmount"`
 	Drift          float64 `json:"drift"`
-	Note           string  `json:"note,omitempty"`
+	// UnconvertedDrift is what a converted bill has been billed BEYOND what the
+	// conversion settled. It is carried separately because such a charge raises
+	// the stored total and the lines together, so `drift` is zero and the payload
+	// would otherwise say the numbers agree while failing the check. This endpoint
+	// is the only place that money is visible at all.
+	UnconvertedDrift float64 `json:"unconvertedDrift,omitempty"`
+	Note             string  `json:"note,omitempty"`
 }
 
 // CycleInvariant is a pair of invoices on one card whose periods overlap, or a gap
@@ -448,7 +460,17 @@ func (uc *CheckInvariantsUseCase) checkInvoiceTotals(
 
 		computed = round2(computed)
 		drift := round2(inv.Amount - computed)
-		if drift == 0 {
+		// A charge landing on a converted bill raises BOTH the stored total and
+		// the lines, so there is no ordinary drift and this loop used to skip the
+		// bill entirely. That is the whole difficulty: the one case nothing else
+		// reports is also the one this check would not look at.
+		// Against the LINES, not only the stored total: this PR made the refresh
+		// skip a settled bill, so a charge landing after a conversion shows up in
+		// `computed` while `Amount` still reads the pre-charge figure. Measuring
+		// the stored one alone reported zero and the bill was excused as frozen —
+		// the one event nothing else reports, waved through.
+		unconverted := round2(inv.UnconvertedDriftAgainst(computed))
+		if drift == 0 && unconverted == 0 {
 			continue
 		}
 
@@ -458,21 +480,31 @@ func (uc *CheckInvariantsUseCase) checkInvoiceTotals(
 		// of its transactions is the signature of a duplicated or lost charge.
 		// Only PAID is frozen, because that route refuses it.
 		note := ""
-		if inv.Status == invoice.StatusPaid {
+		if inv.IsSettled() {
 			note = notePaidInvoiceFrozen
+		}
+		// A converted bill that has been charged SINCE the conversion is a live
+		// problem, not a frozen total: the charges are real, nothing else reports
+		// them, and the operator has a route (release, then settle).
+		if unconverted > 0 {
+			note = noteChargesAfterConversion
 		}
 
 		result.InvoiceDrifts = append(result.InvoiceDrifts, InvoiceInvariant{
-			InvoiceID:      inv.ID,
-			BankAccountID:  inv.BankAccountID,
-			ReferenceDate:  inv.ReferenceDate.Format("2006-01"),
-			Status:         string(inv.Status),
-			StoredAmount:   round2(inv.Amount),
-			ComputedAmount: computed,
-			Drift:          drift,
-			Note:           note,
+			InvoiceID:        inv.ID,
+			BankAccountID:    inv.BankAccountID,
+			ReferenceDate:    inv.ReferenceDate.Format("2006-01"),
+			Status:           string(inv.Status),
+			StoredAmount:     round2(inv.Amount),
+			ComputedAmount:   computed,
+			Drift:            drift,
+			UnconvertedDrift: unconverted,
+			Note:             note,
 		})
-		if note == "" {
+		// The frozen note excuses a drift nobody can act on. Charges after a
+		// conversion are the opposite: real, invisible everywhere else, and with a
+		// route out — release the bill and settle them.
+		if note == "" || note == noteChargesAfterConversion {
 			result.OK = false
 		}
 	}

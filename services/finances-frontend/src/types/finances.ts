@@ -340,7 +340,13 @@ export interface BudgetSummaryItem {
   remaining: number;
 }
 
-export type InvoiceStatus = 'OPEN' | 'CLOSED' | 'PAID' | 'PARTIALLY_PAID';
+/**
+ * REFINANCED means the bank cleared the balance and charged it again as future
+ * instalments. The bill is settled and nothing was paid — a distinction the UI
+ * has to keep, because the instalments are separate transactions and showing the
+ * debt in both places counts it twice.
+ */
+export type InvoiceStatus = 'OPEN' | 'CLOSED' | 'PAID' | 'PARTIALLY_PAID' | 'REFINANCED';
 
 export interface Invoice {
   id: string;
@@ -357,6 +363,11 @@ export interface Invoice {
   paidAmount?: number;
   /** What is still owed. Derived by the API on every read, never stored. */
   amountRemaining?: number;
+  /** The credit the bank posted when it converted this bill into instalments. */
+  refinancedBy?: string;
+  refinancedAt?: string;
+  /** What the bill owed at the moment of conversion. */
+  refinancedAmount?: number;
   createdAt: string;
   updatedAt: string;
 }

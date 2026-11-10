@@ -40,7 +40,16 @@ export function getCardUsage(
  * money that is no longer owed.
  */
 export function amountLeftOn(invoice: Invoice): number {
+  // Before the derived field, not after: the API answers 0 for a converted bill,
+  // so the REFINANCED branch below is only ever reached by a payload that
+  // predates amountRemaining. Keeping the order honest costs nothing and stops
+  // the comment there from describing an unreachable decision.
+  if (invoice.status === 'REFINANCED') return 0;
   if (typeof invoice.amountRemaining === 'number') return Math.max(0, invoice.amountRemaining);
+  // A charge that lands on a converted cycle afterwards is NOT shown as debt
+  // either — it surfaces as drift in /health/invariants, for a person to release
+  // the bill and settle it. Debt nobody can pay would be worse than debt nobody
+  // sees, and neither Pagar nor the API accepts a converted bill.
   const paid = invoice.paidAmount ?? (invoice.status === 'PAID' ? invoice.amount : 0);
   return Math.max(0, invoice.amount - paid);
 }
@@ -52,8 +61,8 @@ export function amountLeftOn(invoice: Invoice): number {
  * partially paid bill in the "owes everything" case and counted money that had
  * already left the checking account.
  *
- * A bill marked PAID with no paidAmount recorded owes nothing — the status is the
- * only evidence there is. Everything else defaults to nothing paid yet, which also
+ * A bill marked PAID or REFINANCED with no paidAmount recorded owes nothing — the
+ * status is the only evidence there is. Everything else defaults to nothing paid yet, which also
  * covers legacy rows where a partial payment was stored as PAID.
  */
 export function outstandingOn(invoices: Invoice[]): number {

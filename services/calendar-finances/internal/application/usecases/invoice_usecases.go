@@ -745,7 +745,7 @@ func (uc *UpdateInvoiceUseCase) Execute(invoiceID string, input UpdateInvoiceInp
 	// across two cycles and the settled total stops describing anything. The DUE DATE
 	// decides nothing -- it is what the statement says -- and refusing it made every
 	// wrong due date permanent, with no route to fix it short of editing the column.
-	if inv.Status == invoice.StatusPaid && (input.ClosingDate != nil || input.OpeningDate != nil) {
+	if inv.IsSettled() && (input.ClosingDate != nil || input.OpeningDate != nil) {
 		return nil, ErrInvoiceAlreadyPaid
 	}
 
@@ -960,6 +960,12 @@ func (uc *PayInvoiceUseCaseV2) pay(input PayInvoiceInput) (*invoice.Invoice, err
 	if payErr != nil {
 		if inv.IsPaid() {
 			return nil, ErrInvoiceAlreadyPaid
+		}
+		// A bill the bank converted into instalments is refused for that reason,
+		// said out loud. Collapsing it into "invalid input" tells the operator
+		// their amount was wrong, when what is wrong is that nobody owes this.
+		if inv.Status == invoice.StatusRefinanced {
+			return nil, fmt.Errorf("%w: %s", ErrInvalidInput, payErr.Error())
 		}
 		return nil, ErrInvalidInput
 	}

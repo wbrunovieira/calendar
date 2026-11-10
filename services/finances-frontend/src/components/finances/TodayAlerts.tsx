@@ -5,6 +5,7 @@ import Link from 'next/link';
 import type { Transaction, RecurringTransaction, Invoice, BankAccount, Category } from '@/types/finances';
 import { formatCurrency } from '@/utils/format';
 import { amountLeftOn } from '@/utils/creditCard';
+import InvoicePaymentConfirm from './InvoicePaymentConfirm';
 import { findPendingRecurrings } from '@/utils/pendingAlerts';
 
 interface TodayAlertsProps {
@@ -426,28 +427,17 @@ export default function TodayAlerts({
                   </div>
                 </div>
                 {onPayInvoice && payingInvoiceDates[invoice.id] !== undefined && (
-                  <div className="flex items-center gap-2 pt-1 border-t border-white/10">
-                    <span className="text-white/60 text-xs">Pago em</span>
-                    <input
-                      type="date"
-                      value={payingInvoiceDates[invoice.id]}
-                      onChange={(e) => setPayingInvoiceDates((prev) => ({ ...prev, [invoice.id]: e.target.value }))}
-                      className="px-2 py-1 bg-white/10 border border-white/20 rounded-lg text-white text-xs focus:outline-none focus:ring-1 focus:ring-red-400"
-                    />
-                    <button
-                      onClick={() => handlePayInvoice(invoice.id, amountLeftOn(invoice))}
-                      disabled={!!loadingAction}
-                      className="px-3 py-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white text-xs rounded-lg transition-colors"
-                    >
-                      {loadingAction === invoice.id ? 'Pagando...' : 'Confirmar'}
-                    </button>
-                    <button
-                      onClick={() => setPayingInvoiceDates((prev) => { const n = { ...prev }; delete n[invoice.id]; return n; })}
-                      className="text-white/40 hover:text-white/70 text-xs"
-                    >
-                      cancelar
-                    </button>
-                  </div>
+                  <InvoicePaymentConfirm
+                    invoice={invoice}
+                    card={account}
+                    accounts={accounts}
+                    paidAt={payingInvoiceDates[invoice.id]}
+                    onPaidAtChange={(v) => setPayingInvoiceDates((prev) => ({ ...prev, [invoice.id]: v }))}
+                    onConfirm={(amount) => handlePayInvoice(invoice.id, amount)}
+                    onCancel={() => setPayingInvoiceDates((prev) => { const n = { ...prev }; delete n[invoice.id]; return n; })}
+                    busy={loadingAction === invoice.id}
+                    accent="red"
+                  />
                 )}
               </div>
             ))}
@@ -597,28 +587,17 @@ export default function TodayAlerts({
                   </div>
                 </div>
                 {onPayInvoice && payingInvoiceDates[invoice.id] !== undefined && (
-                  <div className="flex items-center gap-2 pt-1 border-t border-white/10">
-                    <span className="text-white/60 text-xs">Pago em</span>
-                    <input
-                      type="date"
-                      value={payingInvoiceDates[invoice.id]}
-                      onChange={(e) => setPayingInvoiceDates((prev) => ({ ...prev, [invoice.id]: e.target.value }))}
-                      className="px-2 py-1 bg-white/10 border border-white/20 rounded-lg text-white text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400"
-                    />
-                    <button
-                      onClick={() => handlePayInvoice(invoice.id, amountLeftOn(invoice))}
-                      disabled={!!loadingAction}
-                      className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-600 text-white text-xs rounded-lg transition-colors"
-                    >
-                      {loadingAction === invoice.id ? 'Pagando...' : 'Confirmar'}
-                    </button>
-                    <button
-                      onClick={() => setPayingInvoiceDates((prev) => { const n = { ...prev }; delete n[invoice.id]; return n; })}
-                      className="text-white/40 hover:text-white/70 text-xs"
-                    >
-                      cancelar
-                    </button>
-                  </div>
+                  <InvoicePaymentConfirm
+                    invoice={invoice}
+                    card={account}
+                    accounts={accounts}
+                    paidAt={payingInvoiceDates[invoice.id]}
+                    onPaidAtChange={(v) => setPayingInvoiceDates((prev) => ({ ...prev, [invoice.id]: v }))}
+                    onConfirm={(amount) => handlePayInvoice(invoice.id, amount)}
+                    onCancel={() => setPayingInvoiceDates((prev) => { const n = { ...prev }; delete n[invoice.id]; return n; })}
+                    busy={loadingAction === invoice.id}
+                    accent="emerald"
+                  />
                 )}
               </div>
             ))}

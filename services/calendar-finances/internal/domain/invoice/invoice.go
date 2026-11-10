@@ -20,6 +20,11 @@ const (
 	// settled. Without it, a partial payment marked the bill PAID and the
 	// remaining debt vanished from the ledger.
 	StatusPartiallyPaid Status = "PARTIALLY_PAID"
+	// StatusRefinanced means the bank cleared the outstanding balance and charged
+	// it again as future instalments. The bill is settled and NO money was paid —
+	// a distinction the ledger has to keep, because recording it as a payment
+	// debits an account that nothing left.
+	StatusRefinanced Status = "REFINANCED"
 )
 
 // paymentTolerance absorbs float dust so that instalments summing to the total
@@ -40,8 +45,18 @@ type Invoice struct {
 	Status          Status     `json:"status"`
 	PaidAt          *time.Time `json:"paidAt,omitempty"`
 	PaidAmount      *float64   `json:"paidAmount,omitempty"`
-	CreatedAt       time.Time  `json:"createdAt"`
-	UpdatedAt       time.Time  `json:"updatedAt"`
+	// RefinancedBy is the credit the bank posted when it converted this bill into
+	// instalments. Naming the transaction is what lets the conversion be audited
+	// later against the instalment plan it produced.
+	RefinancedBy *string    `json:"refinancedBy,omitempty"`
+	RefinancedAt *time.Time `json:"refinancedAt,omitempty"`
+	// RefinancedAmount is what the bill owed at the moment of conversion. Recorded
+	// rather than recomputed: Amount is restated whenever the cycle's lines change,
+	// so anything derived from it drifts away from what the bank credited — and
+	// this figure is what caps a single credit across more than one request.
+	RefinancedAmount *float64  `json:"refinancedAmount,omitempty"`
+	CreatedAt        time.Time `json:"createdAt"`
+	UpdatedAt        time.Time `json:"updatedAt"`
 }
 
 // CreateParams contains the parameters to create a new invoice
@@ -148,6 +163,13 @@ func (i *Invoice) Pay(paidAmount float64, paidAt time.Time) error {
 	if i.Status == StatusPaid {
 		return errors.New("invoice is already paid")
 	}
+	// A converted bill is settled and nobody owes it. Paying it writes a real
+	// debit for debt the bank already cleared, and leaves the row unrecoverable:
+	// PAID with the conversion record still on it, which release refuses (not
+	// REFINANCED) and Reopen refuses (not CLOSED). Release it first.
+	if i.Status == StatusRefinanced {
+		return errors.New("this bill was settled by a debt conversion; release it before paying")
+	}
 	if paidAmount <= 0 {
 		return errors.New("paid amount must be greater than zero")
 	}
@@ -169,6 +191,109 @@ func (i *Invoice) Pay(paidAmount float64, paidAt time.Time) error {
 	return nil
 }
 
+// Refinance settles the bill by debt conversion: the bank credits what is still
+// owed and charges the same money again as instalments on later cycles.
+//
+// It deliberately leaves PaidAmount and PaidAt alone. A partial payment that
+// really happened stays in the record, and the part nobody paid is not dressed
+// up as having been paid — the instalments carry it, and they are transactions
+// of their own.
+func (i *Invoice) Refinance(transactionID string, at time.Time) error {
+	if transactionID == "" {
+		return errors.New("refinancing requires the transaction that converted the debt")
+	}
+	if i.Status == StatusOpen {
+		return errors.New("an open cycle is still collecting charges and has no balance to convert")
+	}
+	if i.Status == StatusRefinanced {
+		return errors.New("invoice is already refinanced")
+	}
+	if i.AmountRemaining() == 0 {
+		return errors.New("invoice owes nothing to convert")
+	}
+
+	converted := i.AmountRemaining()
+	i.Status = StatusRefinanced
+	i.RefinancedBy = &transactionID
+	i.RefinancedAt = &at
+	i.RefinancedAmount = &converted
+	i.touch()
+	return nil
+}
+
+// ReleaseRefinancing undoes a conversion, putting the debt back where it was.
+//
+// Marking one is a human judgement and judgements are sometimes wrong; a credit
+// can also be reversed after the fact. Without a way back the bill stays settled
+// forever — re-running the conversion sees it already named by that credit and
+// does nothing, another credit is refused, and Reopen refuses a converted bill.
+//
+// The status it returns to is derived rather than remembered: a bill paid in cash
+// before being converted goes back to PARTIALLY_PAID, because that payment really
+// happened and is still recorded.
+func (i *Invoice) ReleaseRefinancing() error {
+	if i.Status != StatusRefinanced {
+		return errors.New("this bill was not settled by a debt conversion")
+	}
+	i.RefinancedBy = nil
+	i.RefinancedAt = nil
+	i.RefinancedAmount = nil
+	i.Status = StatusClosed
+	i.RederiveStatus()
+	i.touch()
+	return nil
+}
+
+// UnconvertedDrift is what a converted bill has been billed BEYOND what the
+// conversion and any cash payment settled. It should be zero; anything else means
+// charges landed on the cycle after it was converted — a back-dated purchase
+// attaches to a closed cycle, since the lookup by date has no status filter.
+//
+// It is reported rather than owed on purpose. Turning it into AmountRemaining
+// would create debt that Pay refuses and the screen refuses, with no route to
+// settle it; surfacing it as drift sends it to a person, who can release the bill
+// and handle it properly.
+func (i *Invoice) UnconvertedDrift() float64 {
+	return i.UnconvertedDriftAgainst(i.Amount)
+}
+
+// UnconvertedDriftAgainst is the same measure against a total supplied by the
+// caller, normally the sum of the bill's live lines.
+//
+// It takes the HIGHER of the two. The stored total is deliberately not refreshed
+// for a settled bill — reattaching an orphan line skips the recalculation so a
+// statement figure is never overwritten — so a charge that lands afterwards can
+// show up in the lines while `Amount` still reads the pre-charge figure. Measuring
+// against the stored one alone reported zero drift for the very event this exists
+// to catch, and the invariants check then excused the bill as frozen.
+func (i *Invoice) UnconvertedDriftAgainst(billed float64) float64 {
+	if i.Status != StatusRefinanced {
+		return 0
+	}
+	settled := 0.0
+	if i.RefinancedAmount != nil {
+		settled = *i.RefinancedAmount
+	}
+	if i.PaidAmount != nil {
+		settled += *i.PaidAmount
+	}
+	total := i.Amount
+	if billed > total {
+		total = billed
+	}
+	if drift := total - settled; drift > paymentTolerance {
+		return drift
+	}
+	return 0
+}
+
+// IsSettled reports whether the bill still owes anything, by payment or by
+// conversion. Consumers asking "is this debt" want this, not a status compare
+// that silently misses whichever settlement kind was added last.
+func (i *Invoice) IsSettled() bool {
+	return i.Status == StatusPaid || i.Status == StatusRefinanced
+}
+
 // MarshalJSON adds the outstanding debt to the payload. It is DERIVED on every
 // read rather than stored, so it can never drift from Amount and PaidAmount the
 // way a persisted copy would.
@@ -186,6 +311,18 @@ func (i *Invoice) MarshalJSON() ([]byte, error) {
 // AmountRemaining is the debt still owed on this bill. It never goes negative:
 // overpaying settles the bill, it does not create negative debt.
 func (i *Invoice) AmountRemaining() float64 {
+	if i.Status == StatusRefinanced {
+		// A converted bill is settled and owes nothing. The balance moved to the
+		// instalments, which are transactions of their own.
+		//
+		// Reporting debt here instead would be debt with no way to settle it: Pay
+		// refuses a converted bill, and so does the screen. A charge that lands on
+		// a converted cycle afterwards is real and must be seen — but as DRIFT, for
+		// a person to release the bill and deal with it, which is what
+		// UnconvertedDrift and the invariants check are for. Debt nobody can pay is
+		// worse than debt nobody can see.
+		return 0
+	}
 	paid := 0.0
 	if i.PaidAmount != nil {
 		paid = *i.PaidAmount
@@ -222,6 +359,9 @@ func (i *Invoice) Reopen() error {
 	// for something else.
 	if i.PaidAt != nil || (i.PaidAmount != nil && *i.PaidAmount > 0) {
 		return errors.New("a bill that was paid cannot be reopened; correct its transactions instead")
+	}
+	if i.RefinancedBy != nil {
+		return errors.New("a bill converted into instalments cannot be reopened; correct its transactions instead")
 	}
 	i.Status = StatusOpen
 	i.touch()
@@ -280,6 +420,10 @@ type Repository interface {
 	Update(invoice *Invoice) error
 	Delete(id string) error
 	FindOpenPastClosingDate(now time.Time) ([]*Invoice, error)
+	// FindByRefinancedBy returns every bill a given credit has already converted.
+	// Without it the cap can only see the bills named in the request at hand, and
+	// one credit settles unlimited debt by being spent a few bills at a time.
+	FindByRefinancedBy(transactionID string) ([]*Invoice, error)
 }
 
 // RestatePayments sets what a bill has been paid to what its live payment entries
@@ -321,6 +465,14 @@ func (i *Invoice) RestatePayments(total float64) {
 // paid is settled, and a settled bill that later receives a charge owes again.
 func (i *Invoice) RederiveStatus() {
 	if i == nil || i.Status == StatusOpen {
+		return
+	}
+	// A converted bill is settled by something this function cannot see. It runs
+	// off PaidAmount alone, so the real case — 3.292,96 billed, 3.200,00 paid in
+	// cash, the remaining 92,96 converted — lands in the partial branch and brings
+	// the 92,96 back as debt. RefreshTotal calls this on the next charge, edit,
+	// confirm or delete touching the cycle, so the settlement would last minutes.
+	if i.Status == StatusRefinanced {
 		return
 	}
 	paid := 0.0

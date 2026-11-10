@@ -508,3 +508,100 @@ func TestCheckInvariants_APlannedPaymentDoesNotCountAsPaid(t *testing.T) {
 		t.Fatalf("drifts = %+v, want none: a scheduled payment is not a payment", result.PaymentDrifts)
 	}
 }
+
+// A converted bill owes nothing on purpose, which means a charge landing on it
+// afterwards is reported NOWHERE unless this check says so. Marking it with the
+// frozen note — "nothing to do here" — would be the last place it could have
+// been seen.
+//
+// This runs the use case. An earlier version of this test asserted the domain
+// object instead, so deleting the branch in the check left it green.
+func TestCheckInvariants_FlagsChargesLandingOnAConvertedBill(t *testing.T) {
+	converted := 1649.35
+	bill := &invoice.Invoice{
+		ID: "out", BankAccountID: "card", Status: invoice.StatusRefinanced,
+		Amount: 2149.35, RefinancedAmount: &converted, // 500,00 charged afterwards
+		ReferenceDate: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
+	}
+	accounts := &invariantAccountRepo{accounts: []*bankaccount.BankAccount{
+		{ID: "card", Name: "Cartão", Type: bankaccount.AccountTypeCreditCard, IsActive: true},
+	}}
+	txs := &invariantTxRepo{invoiceSums: map[string]float64{"out": 2149.35}}
+	invoices := &invariantInvoiceRepo{byAccount: map[string][]*invoice.Invoice{"card": {bill}}}
+
+	result, err := NewCheckInvariantsUseCase(accounts, txs, invoices).Execute()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The stored total already equals the lines, so there is no ordinary drift —
+	// the only thing that can surface the late charge is the conversion check.
+	if got := bill.UnconvertedDrift(); got < 499.99 || got > 500.01 {
+		t.Fatalf("precondition: drift = %v, want 500", got)
+	}
+	found := false
+	for _, d := range result.InvoiceDrifts {
+		if d.InvoiceID != "out" {
+			continue
+		}
+		found = true
+		if d.Note != noteChargesAfterConversion {
+			t.Errorf("note = %q, want the post-conversion warning", d.Note)
+		}
+		// The magnitude has to travel with the alarm. `drift` is 0 here by
+		// construction — the charge raised the stored total and the lines
+		// together — so without this field the payload says the numbers agree
+		// and never mentions the 500.
+		if d.UnconvertedDrift < 499.99 || d.UnconvertedDrift > 500.01 {
+			t.Errorf("unconvertedDrift = %v, want 500", d.UnconvertedDrift)
+		}
+		if d.Drift != 0 {
+			t.Errorf("drift = %v, want 0 — stored total and lines agree", d.Drift)
+		}
+	}
+	if !found {
+		t.Errorf("the late charge was not reported: %+v", result.InvoiceDrifts)
+	}
+	if result.OK {
+		t.Error("OK = true; a charge nothing else reports has to fail the check")
+	}
+}
+
+// The same real event with a STALE stored total. Attaching an orphan line to a
+// settled bill deliberately skips the refresh, so the charge shows up in the
+// lines while Amount still reads the pre-charge figure — and the first version
+// of this check measured the stored one alone, reported zero drift, and excused
+// the bill as frozen. The one event nothing else reports, waved through.
+func TestCheckInvariants_FlagsALateChargeEvenWhenTheStoredTotalIsStale(t *testing.T) {
+	converted := 1649.35
+	bill := &invoice.Invoice{
+		ID: "out", BankAccountID: "card", Status: invoice.StatusRefinanced,
+		Amount: 1649.35, RefinancedAmount: &converted, // stale: pre-charge
+		ReferenceDate: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
+	}
+	accounts := &invariantAccountRepo{accounts: []*bankaccount.BankAccount{
+		{ID: "card", Name: "Cartão", Type: bankaccount.AccountTypeCreditCard, IsActive: true},
+	}}
+	txs := &invariantTxRepo{invoiceSums: map[string]float64{"out": 2149.35}} // lines carry it
+	invoices := &invariantInvoiceRepo{byAccount: map[string][]*invoice.Invoice{"card": {bill}}}
+
+	result, err := NewCheckInvariantsUseCase(accounts, txs, invoices).Execute()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, d := range result.InvoiceDrifts {
+		if d.InvoiceID != "out" {
+			continue
+		}
+		if d.Note != noteChargesAfterConversion {
+			t.Errorf("note = %q, want the post-conversion warning, not the frozen excuse", d.Note)
+		}
+		if d.UnconvertedDrift < 499.99 || d.UnconvertedDrift > 500.01 {
+			t.Errorf("unconvertedDrift = %v, want 500", d.UnconvertedDrift)
+		}
+	}
+	if result.OK {
+		t.Error("OK = true; a stale total must not excuse a charge nothing else reports")
+	}
+}

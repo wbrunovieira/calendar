@@ -716,11 +716,65 @@ func migrations() []string {
 		// Migration: allow PARTIALLY_PAID on credit card invoices.
 		// A bill paid in parts used to be marked PAID on the first payment, which
 		// erased the outstanding debt from the ledger.
+		//
+		// REFINANCED is listed HERE and not only in the later block that introduced
+		// it. This slice is replayed on every startup, this statement drops and
+		// re-adds the constraint under the same name, and Postgres validates a new
+		// CHECK against the rows already there. Leaving it narrow meant that the
+		// first restart after any bill was converted failed this migration, and
+		// RunMigrations aborts on the first error into log.Fatalf — the service
+		// would not boot again. A widening migration has to widen every statement
+		// that asserts the old width, not just add one that asserts the new one.
 		`DO $$
 		BEGIN
 			ALTER TABLE finance.credit_card_invoices DROP CONSTRAINT IF EXISTS credit_card_invoices_status_check;
 			ALTER TABLE finance.credit_card_invoices ADD CONSTRAINT credit_card_invoices_status_check
-				CHECK (status IN ('OPEN', 'CLOSED', 'PAID', 'PARTIALLY_PAID'));
+				CHECK (status IN ('OPEN', 'CLOSED', 'PAID', 'PARTIALLY_PAID', 'REFINANCED'));
+		END $$`,
+		// Migration: a bill can be settled by DEBT CONVERSION, not only by payment.
+		// The bank credits what is still owed and charges the same money again as
+		// instalments on later cycles. Without a word for it the bill stayed CLOSED
+		// and unpaid forever while the instalments it had become were also recorded,
+		// so one debt was counted twice. REFINANCED is kept distinct from PAID
+		// because no money left any account, and recording it as a payment debits a
+		// balance that nothing moved.
+		`ALTER TABLE finance.credit_card_invoices ADD COLUMN IF NOT EXISTS refinanced_by UUID REFERENCES finance.transactions(id)`,
+		`ALTER TABLE finance.credit_card_invoices ADD COLUMN IF NOT EXISTS refinanced_at TIMESTAMP`,
+		// What the bill owed at the moment of conversion. Recorded rather than
+		// recomputed from amount minus paid_amount, because amount is restated
+		// whenever the cycle's lines change — and this is what caps one credit
+		// across more than one request.
+		`ALTER TABLE finance.credit_card_invoices ADD COLUMN IF NOT EXISTS refinanced_amount NUMERIC(15, 2)`,
+		// Backfill. Rows converted before this column existed read NULL, and a NULL
+		// here makes the bill's whole amount look unconverted: it reports as drift
+		// in the invariants check and loosens the cap that limits one credit. The
+		// value is what the bill owed at conversion, which is amount minus whatever
+		// cash had been paid against it.
+		`UPDATE finance.credit_card_invoices
+		   SET refinanced_amount = GREATEST(amount - COALESCE(paid_amount, 0), 0)
+		 WHERE status = 'REFINANCED' AND refinanced_amount IS NULL`,
+		// And from here on the column is as required as the transaction is: a
+		// conversion of an unknown amount cannot be audited or capped.
+		`DO $$
+		BEGIN
+			ALTER TABLE finance.credit_card_invoices DROP CONSTRAINT IF EXISTS chk_refinanced_has_amount;
+			ALTER TABLE finance.credit_card_invoices ADD CONSTRAINT chk_refinanced_has_amount
+				CHECK (status <> 'REFINANCED' OR refinanced_amount IS NOT NULL);
+		END $$`,
+		`DO $$
+		BEGIN
+			ALTER TABLE finance.credit_card_invoices DROP CONSTRAINT IF EXISTS credit_card_invoices_status_check;
+			ALTER TABLE finance.credit_card_invoices ADD CONSTRAINT credit_card_invoices_status_check
+				CHECK (status IN ('OPEN', 'CLOSED', 'PAID', 'PARTIALLY_PAID', 'REFINANCED'));
+		END $$`,
+		// A converted bill must name the transaction that converted it. A status
+		// without the evidence behind it is the kind of record that cannot be
+		// audited later, which is the whole reason this concept exists.
+		`DO $$
+		BEGIN
+			ALTER TABLE finance.credit_card_invoices DROP CONSTRAINT IF EXISTS chk_refinanced_has_transaction;
+			ALTER TABLE finance.credit_card_invoices ADD CONSTRAINT chk_refinanced_has_transaction
+				CHECK (status <> 'REFINANCED' OR refinanced_by IS NOT NULL);
 		END $$`,
 		// Migration: Create crypto_purchases table for tracking structured purchase data
 		`CREATE TABLE IF NOT EXISTS finance.crypto_purchases (

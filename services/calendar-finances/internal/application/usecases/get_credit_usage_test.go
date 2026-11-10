@@ -247,3 +247,62 @@ func TestGetCreditUsage_SettledBillWithoutPaidAmountOwesNothing(t *testing.T) {
 		t.Errorf("outstanding = %.2f, want 0", usage.Outstanding)
 	}
 }
+
+// The real Mercado Pago card on 11/10/2026. The bank converted the 92,96 left on
+// September and the whole October bill into six instalments of 633,35; those
+// instalments are charges of later cycles and are counted there. Reporting the
+// converted balance here as well is the same debt twice — and this endpoint is
+// what the rest of the system treats as canonical, so the screen read 0,00 while
+// the API still read 1.742,31.
+func TestGetCreditUsage_DoesNotCountABillTheBankConverted(t *testing.T) {
+	paid, convertedSet, convertedOut := 3200.00, 92.96, 1649.35
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"card": card(4400)}}
+	invoiceRepo := &usageInvoiceRepo{list: []*invoice.Invoice{
+		// Partially paid in cash, remainder converted. The cash payment is real and
+		// stays recorded; the 92,96 it left is not debt any more. What the
+		// conversion settled is recorded too — a flat "owes nothing" would swallow
+		// anything billed to the cycle afterwards.
+		{ID: "set", BankAccountID: "card", Status: invoice.StatusRefinanced, PaidAmount: &paid, RefinancedAmount: &convertedSet},
+		{ID: "out", BankAccountID: "card", Status: invoice.StatusRefinanced, RefinancedAmount: &convertedOut},
+		// The instalments the conversion produced, on an open cycle.
+		{ID: "nov", BankAccountID: "card", Status: invoice.StatusOpen},
+	}}
+	txRepo := &usageTxRepo{txs: []*transaction.Transaction{
+		charge("set", 3292.96), charge("out", 1649.35), charge("nov", 633.35),
+	}}
+
+	uc := NewGetCreditUsageUseCase(accountRepo, invoiceRepo, txRepo)
+
+	usage, err := uc.Execute("card")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if usage.Outstanding != 633.35 {
+		t.Errorf("outstanding = %.2f, want 633.35 — only the instalment is still owed", usage.Outstanding)
+	}
+}
+
+// A converted bill owes nothing here, late charge or not: the drift is surfaced
+// by the invariants check, for a person, instead of becoming debt that neither
+// Pay nor the screen will accept.
+func TestGetCreditUsage_DoesNotCountALateChargeOnAConvertedCycleAsDebt(t *testing.T) {
+	converted := 1649.35
+	accountRepo := &fakeAccountRepo{accounts: map[string]*bankaccount.BankAccount{"card": card(4400)}}
+	invoiceRepo := &usageInvoiceRepo{list: []*invoice.Invoice{
+		{ID: "out", BankAccountID: "card", Status: invoice.StatusRefinanced, RefinancedAmount: &converted},
+	}}
+	txRepo := &usageTxRepo{txs: []*transaction.Transaction{
+		charge("out", 1649.35), charge("out", 500),
+	}}
+
+	uc := NewGetCreditUsageUseCase(accountRepo, invoiceRepo, txRepo)
+
+	usage, err := uc.Execute("card")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if usage.Outstanding != 0 {
+		t.Errorf("outstanding = %.2f, want 0 — a settled bill owes nothing here", usage.Outstanding)
+	}
+}

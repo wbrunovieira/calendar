@@ -36,6 +36,10 @@ const getStatusLabel = (status: string) => {
       return { label: 'Parcial', color: 'bg-amber-500/20 text-amber-400' };
     case 'PAID':
       return { label: 'Paga', color: 'bg-green-500/20 text-green-400' };
+    // Settled, but nobody paid it: the bank turned the balance into instalments.
+    // The label has to say which, because the two mean different things for cash.
+    case 'REFINANCED':
+      return { label: 'Parcelada', color: 'bg-violet-500/20 text-violet-300' };
     default:
       return { label: status, color: 'bg-gray-500/20 text-gray-400' };
   }

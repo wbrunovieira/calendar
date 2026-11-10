@@ -79,9 +79,16 @@ func (uc *GetCreditUsageUseCase) outstandingFor(account *bankaccount.BankAccount
 		// only evidence there is. Anything else defaults to nothing paid yet, which
 		// also covers legacy rows where a partial payment was stored as PAID.
 		paid := 0.0
-		if inv.PaidAmount != nil {
+		switch {
+		case inv.Status == invoice.StatusRefinanced:
+			// Converted: settled, owing nothing. The instalments it became are
+			// charges of later cycles and counted there. A charge that lands on the
+			// cycle afterwards is surfaced as drift by the invariants check, not as
+			// debt here — debt nobody can pay would be worse than debt nobody sees.
+			paid = billed
+		case inv.PaidAmount != nil:
 			paid = *inv.PaidAmount
-		} else if inv.Status == invoice.StatusPaid {
+		case inv.Status == invoice.StatusPaid:
 			paid = billed
 		}
 		if remaining := billed - paid; remaining > 0 {

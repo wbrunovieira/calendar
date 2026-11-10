@@ -311,4 +311,30 @@ Input dates are `YYYY-MM-DD`. `nextOccurrence` = when the next one falls (e.g. t
 - **Confirm the category with the user** before posting anything new.
 - **Never adjust an entry just to "match" a balance** — hunt down the missing entry.
 - Credit-card invoice payment: **`POST /invoices/{id}/pay`** (POST, not PUT) already creates the debit (don't post it manually). Body: `{"paidAmount":769.51,"paidAt":"2026-07-05"}` (`paidAt` = `YYYY-MM-DD`). It debits the **account linked to the card** (`linkedAccountId`), so no account needs to be passed. Check it first: `GET /bank-accounts/{cardId}` → `linkedAccountId`. Find the invoice with `GET /invoices?bankAccountId=<cardId>` (the one to pay is the CLOSED one with the month's `dueDate`). `paidAmount` = the amount the bank actually charged.
+- **Fatura parcelada pelo banco ≠ fatura paga.** Quando o banco converte a dívida
+  em parcelas ele posta um crédito ("Crédito por parcelamento da fatura") que zera
+  o saldo e cobra o mesmo dinheiro de novo nos ciclos seguintes. **Ninguém pagou
+  nada** — registrar como pagamento debita uma conta de onde nada saiu.
+  ⚠️ **`/invoices/{id}/pay` NÃO te protege disso.** Ele não tem teto nenhum:
+  `inv.Pay` só recusa valor ≤ 0. Numa fatura CLOSED — exatamente o estado em que
+  você está ao registrar uma conversão — ele aceita, marca a fatura como paga e
+  **cria um TRANSFER de verdade saindo da `linkedAccountId`**: dinheiro que nunca
+  se moveu, contra uma conta que bate ao centavo com o banco.
+  Quem tem teto é `/transactions/{id}/paid-invoice`, e esse recusa a conversão
+  por limitar ao valor de UMA fatura — enquanto a conversão limpa vários ciclos.
+  Use **`POST /invoices/refinance`** com `{"transactionId": "<id do crédito>",
+  "invoiceIds": ["<fatura>", ...]}`. Ele valida que o crédito é CONFIRMED e INCOME
+  no cartão, que as faturas são daquele cartão, e que a soma do que elas devem
+  (incluindo o que esse mesmo crédito já converteu antes) **cabe no crédito**.
+  Devolve 204. A fatura vira `REFINANCED`, `amountRemaining` zera, o pagamento
+  parcial em dinheiro que houver é preservado, e o crédito deixa de ser linha do
+  ciclo em que caiu. **Recusa** se o total da fatura não bater com as linhas dela,
+  se a fatura for o próprio ciclo onde o crédito caiu, ou se a soma do que as
+  faturas devem passar do crédito.
+  Se depois disso cair compra nesse ciclo (lançamento retroativo), ela **não vira
+  dívida** — aparece como deriva no `/health/invariants` com o aviso
+  "charges landed on this bill after it was converted"; o caminho é dar release,
+  resolver, e converter de novo se for o caso.
+  Errou? **`POST /invoices/{id}/release-refinancing`** desfaz e devolve a dívida.
+
 - Reconciliation: compare against the bank statement; when reconciling, Bruno's BRL accounts live at Mercado Pago/Nubank.

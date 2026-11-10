@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/brunovieira/calendar-finances/internal/application/usecases"
 	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
+	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
 	"github.com/gorilla/mux"
 )
 
@@ -27,6 +29,15 @@ type InvoiceHandlers struct {
 	recalculateUC *usecases.RecalculateInvoiceAmountUseCase
 	updateUC      *usecases.UpdateInvoiceUseCase
 	autoCloseUC   *usecases.AutoCloseInvoicesUseCase
+	// refinanceUC is attached after construction, following how the other
+	// cross-cutting collaborators are wired. A nil one fails CLOSED below rather
+	// than silently answering 200 to a request that recorded nothing.
+	refinanceUC *usecases.RefinanceInvoiceUseCase
+}
+
+// SetRefinanceUseCase wires debt conversion.
+func (h *InvoiceHandlers) SetRefinanceUseCase(uc *usecases.RefinanceInvoiceUseCase) {
+	h.refinanceUC = uc
 }
 
 func NewInvoiceHandlers(
@@ -271,4 +282,76 @@ func (h *InvoiceHandlers) RestatePayments(w http.ResponseWriter, r *http.Request
 	}
 
 	respondJSON(w, map[string]any{"data": inv})
+}
+
+// Refinance records that a card credit settled one or more bills by converting
+// their debt into instalments.
+//
+// It is deliberately NOT /invoices/{id}/refinance: one conversion routinely
+// clears several cycles at once, and a per-bill route would make that two
+// requests that can half-succeed, which is the state the use case exists to
+// prevent.
+func (h *InvoiceHandlers) Refinance(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		TransactionID string   `json:"transactionId"`
+		InvoiceIDs    []string `json:"invoiceIds"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "malformed json body", http.StatusBadRequest)
+		return
+	}
+	if h.refinanceUC == nil {
+		http.Error(w, "refinancing is not wired on this server", http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.refinanceUC.Execute(strings.TrimSpace(body.TransactionID), body.InvoiceIDs); err != nil {
+		status, message := mapRefinanceError(err)
+		http.Error(w, message, status)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ReleaseRefinancing undoes the conversion of one bill.
+func (h *InvoiceHandlers) ReleaseRefinancing(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+	if h.refinanceUC == nil {
+		http.Error(w, "refinancing is not wired on this server", http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.refinanceUC.Release(id); err != nil {
+		status, message := mapRefinanceError(err)
+		http.Error(w, message, status)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// mapRefinanceError answers 400 for a refusal the caller can act on, 404 for
+// something that is not there, and 500 with NO driver detail for anything else.
+//
+// The default is what matters. With 500 as the catch-all for a typo, callers
+// that retry on 5xx — n8n and the agents do — replay a request that will never
+// succeed; and a wrapped pq error says more about the database than the caller
+// should see. The sibling route learned this the hard way.
+func mapRefinanceError(err error) (int, string) {
+	switch {
+	case errors.Is(err, usecases.ErrConversionCreditNotFound),
+		errors.Is(err, usecases.ErrConversionBillNotFound),
+		errors.Is(err, usecases.ErrInvoiceNotFound),
+		errors.Is(err, transaction.ErrNotFound):
+		return http.StatusNotFound, err.Error()
+	case errors.Is(err, usecases.ErrPaymentRefused):
+		return http.StatusBadRequest, err.Error()
+	default:
+		// No sniffing of the error text. A driver message that happens to contain
+		// "not found" was coming back as a 404 carrying pq's own words; and the
+		// default says nothing about the database, because what the caller needs
+		// is a status it will not blindly retry.
+		return http.StatusInternalServerError, "could not record the debt conversion"
+	}
 }

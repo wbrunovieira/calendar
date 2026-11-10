@@ -20,13 +20,13 @@ func (r *InvoiceRepository) Create(inv *invoice.Invoice) error {
 	query := `
 		INSERT INTO finance.credit_card_invoices (
 			id, bank_account_id, reference_date, opening_date, closing_date, due_date,
-			amount, status, paid_at, paid_amount, created_at, updated_at
+			amount, status, paid_at, paid_amount, refinanced_by, refinanced_at, refinanced_amount, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 	`
 	_, err := r.db.Exec(query,
 		inv.ID, inv.BankAccountID, inv.ReferenceDate, inv.OpeningDate, inv.ClosingDate, inv.DueDate,
-		inv.Amount, inv.Status, inv.PaidAt, inv.PaidAmount, inv.CreatedAt, inv.UpdatedAt,
+		inv.Amount, inv.Status, inv.PaidAt, inv.PaidAmount, inv.RefinancedBy, inv.RefinancedAt, inv.RefinancedAmount, inv.CreatedAt, inv.UpdatedAt,
 	)
 	return err
 }
@@ -34,14 +34,14 @@ func (r *InvoiceRepository) Create(inv *invoice.Invoice) error {
 func (r *InvoiceRepository) FindByID(id string) (*invoice.Invoice, error) {
 	query := `
 		SELECT id, bank_account_id, reference_date, opening_date, closing_date, due_date,
-			amount, status, paid_at, paid_amount, created_at, updated_at
+			amount, status, paid_at, paid_amount, refinanced_by, refinanced_at, refinanced_amount, created_at, updated_at
 		FROM finance.credit_card_invoices
 		WHERE id = $1
 	`
 	inv := &invoice.Invoice{}
 	err := r.db.QueryRow(query, id).Scan(
 		&inv.ID, &inv.BankAccountID, &inv.ReferenceDate, &inv.OpeningDate, &inv.ClosingDate, &inv.DueDate,
-		&inv.Amount, &inv.Status, &inv.PaidAt, &inv.PaidAmount, &inv.CreatedAt, &inv.UpdatedAt,
+		&inv.Amount, &inv.Status, &inv.PaidAt, &inv.PaidAmount, &inv.RefinancedBy, &inv.RefinancedAt, &inv.RefinancedAmount, &inv.CreatedAt, &inv.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, errors.New("invoice not found")
@@ -55,7 +55,7 @@ func (r *InvoiceRepository) FindByID(id string) (*invoice.Invoice, error) {
 func (r *InvoiceRepository) FindByBankAccountID(bankAccountID string) ([]*invoice.Invoice, error) {
 	query := `
 		SELECT id, bank_account_id, reference_date, opening_date, closing_date, due_date,
-			amount, status, paid_at, paid_amount, created_at, updated_at
+			amount, status, paid_at, paid_amount, refinanced_by, refinanced_at, refinanced_amount, created_at, updated_at
 		FROM finance.credit_card_invoices
 		WHERE bank_account_id = $1
 		-- Ordered by the cycle, not the label: reference_date is only a name and
@@ -73,7 +73,7 @@ func (r *InvoiceRepository) FindByBankAccountID(bankAccountID string) ([]*invoic
 		inv := &invoice.Invoice{}
 		err := rows.Scan(
 			&inv.ID, &inv.BankAccountID, &inv.ReferenceDate, &inv.OpeningDate, &inv.ClosingDate, &inv.DueDate,
-			&inv.Amount, &inv.Status, &inv.PaidAt, &inv.PaidAmount, &inv.CreatedAt, &inv.UpdatedAt,
+			&inv.Amount, &inv.Status, &inv.PaidAt, &inv.PaidAmount, &inv.RefinancedBy, &inv.RefinancedAt, &inv.RefinancedAmount, &inv.CreatedAt, &inv.UpdatedAt,
 		)
 		if err != nil {
 			return nil, err
@@ -86,7 +86,7 @@ func (r *InvoiceRepository) FindByBankAccountID(bankAccountID string) ([]*invoic
 func (r *InvoiceRepository) FindOpenByBankAccountID(bankAccountID string) (*invoice.Invoice, error) {
 	query := `
 		SELECT id, bank_account_id, reference_date, opening_date, closing_date, due_date,
-			amount, status, paid_at, paid_amount, created_at, updated_at
+			amount, status, paid_at, paid_amount, refinanced_by, refinanced_at, refinanced_amount, created_at, updated_at
 		FROM finance.credit_card_invoices
 		WHERE bank_account_id = $1 AND status = 'OPEN'
 		-- Ordered by the cycle, not the label: reference_date is only a name and
@@ -97,7 +97,7 @@ func (r *InvoiceRepository) FindOpenByBankAccountID(bankAccountID string) (*invo
 	inv := &invoice.Invoice{}
 	err := r.db.QueryRow(query, bankAccountID).Scan(
 		&inv.ID, &inv.BankAccountID, &inv.ReferenceDate, &inv.OpeningDate, &inv.ClosingDate, &inv.DueDate,
-		&inv.Amount, &inv.Status, &inv.PaidAt, &inv.PaidAmount, &inv.CreatedAt, &inv.UpdatedAt,
+		&inv.Amount, &inv.Status, &inv.PaidAt, &inv.PaidAmount, &inv.RefinancedBy, &inv.RefinancedAt, &inv.RefinancedAmount, &inv.CreatedAt, &inv.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil // No open invoice found is not an error
@@ -115,7 +115,7 @@ func (r *InvoiceRepository) FindByBankAccountAndDate(bankAccountID string, txDat
 
 	query := `
 		SELECT id, bank_account_id, reference_date, opening_date, closing_date, due_date,
-			amount, status, paid_at, paid_amount, created_at, updated_at
+			amount, status, paid_at, paid_amount, refinanced_by, refinanced_at, refinanced_amount, created_at, updated_at
 		FROM finance.credit_card_invoices
 		WHERE bank_account_id = $1
 			AND opening_date <= $2
@@ -131,7 +131,7 @@ func (r *InvoiceRepository) FindByBankAccountAndDate(bankAccountID string, txDat
 	inv := &invoice.Invoice{}
 	err := r.db.QueryRow(query, bankAccountID, txDateOnly).Scan(
 		&inv.ID, &inv.BankAccountID, &inv.ReferenceDate, &inv.OpeningDate, &inv.ClosingDate, &inv.DueDate,
-		&inv.Amount, &inv.Status, &inv.PaidAt, &inv.PaidAmount, &inv.CreatedAt, &inv.UpdatedAt,
+		&inv.Amount, &inv.Status, &inv.PaidAt, &inv.PaidAmount, &inv.RefinancedBy, &inv.RefinancedAt, &inv.RefinancedAmount, &inv.CreatedAt, &inv.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil // Invoice not found for this date
@@ -146,12 +146,13 @@ func (r *InvoiceRepository) Update(inv *invoice.Invoice) error {
 	query := `
 		UPDATE finance.credit_card_invoices
 		SET bank_account_id = $2, reference_date = $3, opening_date = $4, closing_date = $5, due_date = $6,
-			amount = $7, status = $8, paid_at = $9, paid_amount = $10, updated_at = $11
+			amount = $7, status = $8, paid_at = $9, paid_amount = $10,
+			refinanced_by = $11, refinanced_at = $12, refinanced_amount = $13, updated_at = $14
 		WHERE id = $1
 	`
 	result, err := r.db.Exec(query,
 		inv.ID, inv.BankAccountID, inv.ReferenceDate, inv.OpeningDate, inv.ClosingDate, inv.DueDate,
-		inv.Amount, inv.Status, inv.PaidAt, inv.PaidAmount, inv.UpdatedAt,
+		inv.Amount, inv.Status, inv.PaidAt, inv.PaidAmount, inv.RefinancedBy, inv.RefinancedAt, inv.RefinancedAmount, inv.UpdatedAt,
 	)
 	if err != nil {
 		return err
@@ -172,7 +173,7 @@ func (r *InvoiceRepository) FindOpenPastClosingDate(now time.Time) ([]*invoice.I
 	nowDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	query := `
 		SELECT id, bank_account_id, reference_date, opening_date, closing_date, due_date,
-			amount, status, paid_at, paid_amount, created_at, updated_at
+			amount, status, paid_at, paid_amount, refinanced_by, refinanced_at, refinanced_amount, created_at, updated_at
 		FROM finance.credit_card_invoices
 		WHERE status = 'OPEN' AND closing_date < $1
 		ORDER BY closing_date ASC
@@ -188,7 +189,7 @@ func (r *InvoiceRepository) FindOpenPastClosingDate(now time.Time) ([]*invoice.I
 		inv := &invoice.Invoice{}
 		err := rows.Scan(
 			&inv.ID, &inv.BankAccountID, &inv.ReferenceDate, &inv.OpeningDate, &inv.ClosingDate, &inv.DueDate,
-			&inv.Amount, &inv.Status, &inv.PaidAt, &inv.PaidAmount, &inv.CreatedAt, &inv.UpdatedAt,
+			&inv.Amount, &inv.Status, &inv.PaidAt, &inv.PaidAmount, &inv.RefinancedBy, &inv.RefinancedAt, &inv.RefinancedAmount, &inv.CreatedAt, &inv.UpdatedAt,
 		)
 		if err != nil {
 			return nil, err
@@ -214,4 +215,34 @@ func (r *InvoiceRepository) Delete(id string) error {
 	}
 
 	return nil
+}
+
+// FindByRefinancedBy returns every bill this credit has already converted, so the
+// use case can cap one credit across separate requests rather than only within the
+// batch in front of it.
+func (r *InvoiceRepository) FindByRefinancedBy(transactionID string) ([]*invoice.Invoice, error) {
+	query := `
+		SELECT id, bank_account_id, reference_date, opening_date, closing_date, due_date,
+			amount, status, paid_at, paid_amount, refinanced_by, refinanced_at, refinanced_amount, created_at, updated_at
+		FROM finance.credit_card_invoices
+		WHERE refinanced_by = $1
+	`
+	rows, err := r.db.Query(query, transactionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []*invoice.Invoice
+	for rows.Next() {
+		inv := &invoice.Invoice{}
+		if err := rows.Scan(
+			&inv.ID, &inv.BankAccountID, &inv.ReferenceDate, &inv.OpeningDate, &inv.ClosingDate, &inv.DueDate,
+			&inv.Amount, &inv.Status, &inv.PaidAt, &inv.PaidAmount, &inv.RefinancedBy, &inv.RefinancedAt, &inv.RefinancedAmount, &inv.CreatedAt, &inv.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		list = append(list, inv)
+	}
+	return list, rows.Err()
 }
