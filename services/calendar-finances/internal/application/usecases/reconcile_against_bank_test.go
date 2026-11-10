@@ -514,3 +514,23 @@ func TestSummaryOnACleanRunIsJustTheCoverage(t *testing.T) {
 		t.Errorf("summary = %q", report.Summary)
 	}
 }
+
+// A wrong mapping has to fail the check ON ITS OWN, next to accounts that agree.
+//
+// The first test for this had every account transposed, so nothing was compared
+// and the zero-coverage guard was what turned OK false — the assertion passed
+// while the mismatch branch did nothing. A mutant that deleted `OK = false`
+// there survived.
+func TestReconcileFailsOnAMismatchEvenWhenEverythingElseAgrees(t *testing.T) {
+	report := Reconcile([]AccountSnapshot{
+		{Name: "Mercado Pago", Kind: "CHECKING", ProviderID: "p1", BankKind: "BANK", System: 718.36, Bank: 718.36},
+		{Name: "Cartão trocado", Kind: "CREDIT_CARD", ProviderID: "p2", BankKind: "BANK", System: 10, Bank: 10},
+	})
+
+	if report.Checked != 1 {
+		t.Fatalf("checked = %d, want 1 — the healthy account must still be compared", report.Checked)
+	}
+	if report.OK {
+		t.Error("a wrong mapping passed the check because the other account agreed")
+	}
+}
