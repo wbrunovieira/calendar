@@ -349,6 +349,15 @@ check_ledger() {
     local body code detail issues=""
     body=$(mktemp)
 
+    # Checked HERE, in the main shell, and not where the file is written: the
+    # counter is read through `n=$(bankrec_failures)`, and a command
+    # substitution runs in a SUBSHELL — an add_warning in there appends to a
+    # copy of the array and is thrown away. `touch` rather than a redirection
+    # so the probe cannot truncate the counter it is testing.
+    if ! { touch "$BANKREC_STATE"; } 2>/dev/null; then
+        add_warning "Nao consegui gravar ${BANKREC_STATE}: o contador de dias sem conferir o banco nao avanca, a escalada para ALERTA nunca dispara"
+    fi
+
     # The endpoint builds its own one-line verdict in `summary`, so this reads
     # ONE value instead of re-deriving it. Grepping every "name" out of the
     # payload reported the advisory cards and silently dropped the unanswered
@@ -386,6 +395,12 @@ check_ledger() {
     code=$(fetch_code "${base}/bank-reconciliation")
     case "${code:-000}" in
         200) detail=$(read_summary)
+             if [[ -z "$detail" ]]; then
+                 # 200 with a body this cannot read: the payload shape changed,
+                 # or it came back empty. Either way nobody checked anything,
+                 # and silence here is the whole failure mode.
+                 add_warning "Banco x sistema: respondeu 200 sem resumo legivel (formato mudou?)"
+             fi
              issues="${issues}
   - Banco x sistema: ${detail:-respondeu 200 sem resumo}"
              # An advisory difference does not fail the check — the two sides do
@@ -430,16 +445,43 @@ check_ledger() {
 # A check that dies quietly is worse than no check: on this server a webhook was
 # dead for two months behind exactly this kind of daily low-severity line.
 BANKREC_STATE="${BANKREC_STATE:-/var/log/health-check-bankrec.state}"
+
+# write_state stores "<date> <count>". The grouped redirection is deliberate:
+# `echo x > f 2>/dev/null` does NOT suppress a failure to OPEN f — bash reports
+# that on its own stderr, which in cron goes to mail nobody reads. If the file
+# cannot be written the counter can never grow, so the escalation below would
+# sit on "dia 1" forever: that has to be said out loud, not swallowed.
+write_state() {
+    { echo "$1" > "$BANKREC_STATE"; } 2>/dev/null || true
+}
+
 bankrec_failures() {
+    local today n=0 stored_date="" stored_n=0
+    today=$(date '+%Y-%m-%d')
+
+    if [[ -r "$BANKREC_STATE" ]]; then
+        read -r stored_date stored_n < "$BANKREC_STATE" || true
+        stored_n=$(printf '%s' "${stored_n:-0}" | tr -dc '0-9')
+    fi
+    stored_n=${stored_n:-0}
+
     if [[ "${1:-}" == "0" ]]; then
-        echo 0 > "$BANKREC_STATE" 2>/dev/null || true
+        # A real answer today. The date is cleared along with the count so a
+        # later failure on this same day still counts as day 1.
+        write_state "- 0"
         echo 0
         return
     fi
-    local n=0
-    [[ -r "$BANKREC_STATE" ]] && n=$(tr -dc '0-9' < "$BANKREC_STATE" 2>/dev/null || true)
-    n=$(( ${n:-0} + 1 ))
-    echo "$n" > "$BANKREC_STATE" 2>/dev/null || true
+
+    # DAYS in a row, not runs: several manual runs in one morning used to reach
+    # the alert in minutes, and the message says "dias".
+    if [[ "$stored_date" == "$today" ]]; then
+        n=$stored_n
+        [[ "$n" -eq 0 ]] && n=1
+    else
+        n=$(( stored_n + 1 ))
+    fi
+    write_state "$today $n"
     echo "$n"
 }
 

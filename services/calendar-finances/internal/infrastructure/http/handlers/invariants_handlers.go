@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -99,13 +98,13 @@ func (h *InvariantsHandlers) Check(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	// Marshalled before the status is committed: a 200 with an empty body is
+	// exactly what the daily cron prints as "Invariantes: ok".
+	status := http.StatusOK
 	if !result.OK {
-		w.WriteHeader(http.StatusConflict)
+		status = http.StatusConflict
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"data": result,
-	})
+	respondJSONStatus(w, status, map[string]interface{}{"data": result})
 }
 
 // InvoiceCyclePlan handles GET /api/v1/bank-accounts/{id}/invoice-cycles/plan.
@@ -123,11 +122,11 @@ func (h *InvariantsHandlers) InvoiceCyclePlan(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	status := http.StatusOK
 	if len(plan.Actions) > 0 {
-		w.WriteHeader(http.StatusConflict)
+		status = http.StatusConflict
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{"data": plan})
+	respondJSONStatus(w, status, map[string]interface{}{"data": plan})
 }
 
 // SetBankReconciler wires the comparison against the bank.
@@ -162,9 +161,7 @@ func (h *InvariantsHandlers) BankReconciliation(w http.ResponseWriter, r *http.R
 		// cron has no jq and reads the STATUS CODE. A 200 carrying a divergence
 		// in its body is a finding nobody is told about — which would make this
 		// endpoint decorative on the one consumer it was built for.
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusConflict)
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": report})
+		respondJSONStatus(w, http.StatusConflict, map[string]any{"data": report})
 		return
 	}
 

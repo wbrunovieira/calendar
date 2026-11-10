@@ -43,3 +43,29 @@ func TestRespondJSONWritesTheBodyItPromised(t *testing.T) {
 		t.Errorf("content-type = %q", ct)
 	}
 }
+
+// Same rule for the status-carrying writer: /health/invariants answers 200 or
+// 409 through it, and the cron prints "Invariantes: ok" on a 200. A 200 with an
+// empty body must therefore be impossible.
+func TestRespondJSONStatusRefusesToCommitAStatusForABodyItCouldNotBuild(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	respondJSONStatus(rec, http.StatusConflict, map[string]any{"data": math.Inf(1)})
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500 — the body was never built", rec.Code)
+	}
+}
+
+func TestRespondJSONStatusKeepsTheStatusItWasGiven(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	respondJSONStatus(rec, http.StatusConflict, map[string]any{"data": "divergencia"})
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "divergencia") {
+		t.Errorf("body = %q", rec.Body.String())
+	}
+}
