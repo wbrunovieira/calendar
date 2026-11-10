@@ -103,6 +103,7 @@ var wantRoutes = []string{
 	"GET /api/v1/fiis/market",
 	"GET /api/v1/goals",
 	"GET /api/v1/health/invariants",
+	"GET /api/v1/health/bank-reconciliation",
 	"GET /api/v1/bank-accounts/{id}/invoice-cycles/plan",
 	"POST /api/v1/bank-accounts/{id}/balance-adjustment",
 	"POST /api/v1/bank-accounts/{id}/invoice-cycles/apply",

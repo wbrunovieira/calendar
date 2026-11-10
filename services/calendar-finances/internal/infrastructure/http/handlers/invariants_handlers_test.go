@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/brunovieira/calendar-finances/internal/application/usecases"
@@ -98,5 +100,64 @@ func TestInvariantsCheck_AnswersConflictWhenALedgerDisagrees(t *testing.T) {
 	}
 	if body.Data.AccountDrifts[0].Drift != 87.65 {
 		t.Errorf("drift = %v, want 87.65", body.Data.AccountDrifts[0].Drift)
+	}
+}
+
+// A reconciliation that cannot reach the bank must NOT answer like a clean run.
+// "No divergences" during an outage is exactly the silence this check exists to
+// break, so both the unconfigured and the unreachable case answer 503.
+type stubReconciler struct {
+	report usecases.ReconciliationReport
+	err    error
+}
+
+func (s *stubReconciler) Execute() (usecases.ReconciliationReport, error) {
+	return s.report, s.err
+}
+
+func TestBankReconciliationAnswers503WhenTheBankCannotBeReached(t *testing.T) {
+	h := &InvariantsHandlers{}
+	h.SetBankReconciler(&stubReconciler{err: errors.New("open finance answered 409: not_connected")})
+	rec := httptest.NewRecorder()
+
+	h.BankReconciliation(rec, httptest.NewRequest(http.MethodGet, "/health/bank-reconciliation", nil))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "not_connected") {
+		t.Errorf("body = %q, want the provider's reason", rec.Body.String())
+	}
+}
+
+func TestBankReconciliationAnswers503WhenItIsNotConfigured(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	(&InvariantsHandlers{}).BankReconciliation(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503 — nothing was compared", rec.Code)
+	}
+}
+
+func TestBankReconciliationReportsTheDivergences(t *testing.T) {
+	h := &InvariantsHandlers{}
+	h.SetBankReconciler(&stubReconciler{report: usecases.ReconciliationReport{
+		Checked: 2,
+		Diverged: []usecases.Divergence{{
+			Name: "Cartão Mercado Pago", System: 4743.42, Bank: 4225.97, Difference: 517.45,
+		}},
+	}})
+	rec := httptest.NewRecorder()
+
+	h.BankReconciliation(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	for _, want := range []string{"Cartão Mercado Pago", "517.45", "4225.97"} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("body does not carry %q: %s", want, rec.Body.String())
+		}
 	}
 }

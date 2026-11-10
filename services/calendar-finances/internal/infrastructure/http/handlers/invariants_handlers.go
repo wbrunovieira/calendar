@@ -9,7 +9,16 @@ import (
 	"github.com/brunovieira/calendar-finances/internal/application/usecases"
 )
 
+// BankReconciler compares the ledger against the bank. Attached after
+// construction, like the other cross-cutting collaborators; a nil one answers
+// 503 rather than an empty report, because "no divergences" and "nothing was
+// checked" must never look alike.
+type BankReconciler interface {
+	Execute() (usecases.ReconciliationReport, error)
+}
+
 type InvariantsHandlers struct {
+	reconciler     BankReconciler
 	reattachUC     *usecases.ReattachOrphanInvoiceLinesUseCase
 	checkUseCase   *usecases.CheckInvariantsUseCase
 	rebuildUseCase *usecases.RebuildInvoiceCyclesUseCase
@@ -119,4 +128,30 @@ func (h *InvariantsHandlers) InvoiceCyclePlan(w http.ResponseWriter, r *http.Req
 		w.WriteHeader(http.StatusConflict)
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"data": plan})
+}
+
+// SetBankReconciler wires the comparison against the bank.
+func (h *InvariantsHandlers) SetBankReconciler(r BankReconciler) { h.reconciler = r }
+
+// BankReconciliation compares every connected account against the bank.
+//
+// Separate from /health/invariants on purpose: that one checks the ledger
+// against ITSELF, and a charge filed on the wrong billing cycle is perfectly
+// consistent there. This is the only thing in the system that looks outward.
+func (h *InvariantsHandlers) BankReconciliation(w http.ResponseWriter, r *http.Request) {
+	if h.reconciler == nil {
+		http.Error(w, "bank reconciliation is not configured on this server", http.StatusServiceUnavailable)
+		return
+	}
+
+	report, err := h.reconciler.Execute()
+	if err != nil {
+		// 503, not 500: the ledger is fine, the bank could not be reached. And
+		// never an empty report — a silent clean answer during an outage is the
+		// failure this whole check exists to prevent.
+		http.Error(w, "could not reach the bank: "+err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+
+	respondJSON(w, map[string]any{"data": report})
 }
