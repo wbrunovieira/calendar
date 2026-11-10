@@ -157,7 +157,19 @@ func (h *RecurringTransactionHandlers) Process(w http.ResponseWriter, r *http.Re
 	respondJSON(w, map[string]any{"data": result})
 }
 
+// respondJSON writes a 200 with a JSON body — or a 500, if the body cannot be
+// built.
+//
+// It marshals FIRST on purpose. Streaming the encoder straight to the
+// ResponseWriter commits a 200 before knowing the payload is encodable, and a
+// failure then leaves a 200 with an empty body: the health-check cron reads
+// status codes, so that is a silent green light over nothing.
 func respondJSON(w http.ResponseWriter, payload any) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		http.Error(w, "could not encode the response: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(payload)
+	_, _ = w.Write(body)
 }

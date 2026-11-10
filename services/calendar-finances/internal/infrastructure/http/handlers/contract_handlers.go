@@ -51,8 +51,19 @@ func (h *ContractHandlers) Sync(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, map[string]any{"data": result})
 }
 
+// respondJSONStatus writes a JSON body under the given status — or a 500, if
+// the body cannot be built.
+//
+// It marshals FIRST, for the same reason respondJSON does: committing the status
+// before knowing the payload is encodable leaves a success code with an empty
+// body, and the production health-check cron reads status codes.
 func respondJSONStatus(w http.ResponseWriter, status int, payload any) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		http.Error(w, "could not encode the response: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(payload)
+	_, _ = w.Write(body)
 }

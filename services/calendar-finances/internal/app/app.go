@@ -14,6 +14,7 @@ import (
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/brapi"
 	httpHandlers "github.com/brunovieira/calendar-finances/internal/infrastructure/http/handlers"
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/http/middleware"
+	"github.com/brunovieira/calendar-finances/internal/infrastructure/openfinance"
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/persistence"
 	"github.com/brunovieira/calendar-finances/internal/infrastructure/yahoo"
 	"github.com/gorilla/mux"
@@ -110,9 +111,11 @@ func New(db *sql.DB) (*App, error) {
 		upcomingMaturitiesUC,
 		sellPositionUC,
 	)
-	bankAccountHandler.SetCreditUsageUseCase(
-		usecases.NewGetCreditUsageUseCase(bankAccountRepo, invoiceRepo, transactionRepo),
-	)
+	// Held in a local too: the bank reconciliation below asks this same use case
+	// what a card owes, so the comparison speaks about the number the dashboard
+	// shows instead of inventing a third one.
+	creditUsageUC := usecases.NewGetCreditUsageUseCase(bankAccountRepo, invoiceRepo, transactionRepo)
+	bankAccountHandler.SetCreditUsageUseCase(creditUsageUC)
 
 	// Initialize Category use cases and handlers
 	createCategoryUC := usecases.NewCreateCategoryUseCase(profileRepo, categoryRepo)
@@ -312,6 +315,18 @@ func New(db *sql.DB) (*App, error) {
 	applyCyclePlanUC := usecases.NewApplyInvoiceCyclePlanUseCase(bankAccountRepo, transactionRepo, invoiceRepo)
 	invariantsHandler := httpHandlers.NewInvariantsHandlers(checkInvariantsUC, rebuildCyclesUC, reattachOrphansUC, applyCyclePlanUC)
 	apiRouter.HandleFunc("/health/invariants", invariantsHandler.Check).Methods("GET")
+	// The ledger checked against the BANK, not against itself. Every hole found
+	// in this ledger has been a disagreement with reality that was internally
+	// consistent — a charge on the wrong billing cycle passes every invariant
+	// above. Without the key it stays unwired and the route answers 503, which is
+	// the honest answer: nothing was compared.
+	if key := os.Getenv("MCP_AI_API_KEY"); key != "" {
+		invariantsHandler.SetBankReconciler(usecases.NewBankReconciliationUseCase(
+			bankAccountRepo, openfinance.NewClient(key), creditUsageUC))
+	} else {
+		log.Println("bank reconciliation disabled: MCP_AI_API_KEY is not set")
+	}
+	apiRouter.HandleFunc("/health/bank-reconciliation", invariantsHandler.BankReconciliation).Methods("GET")
 	apiRouter.HandleFunc("/bank-accounts/{id}/invoice-cycles/plan", invariantsHandler.InvoiceCyclePlan).Methods("GET")
 	// Dry run by default; ?apply=true writes. It walks real money.
 	apiRouter.HandleFunc("/bank-accounts/{id}/invoice-cycles/reattach", invariantsHandler.ReattachOrphanInvoiceLines).Methods("POST")
