@@ -152,12 +152,42 @@ func TestBankReconciliationReportsTheDivergences(t *testing.T) {
 
 	h.BankReconciliation(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
+	// 409, not 200. The health-check cron has no jq and reads the status code,
+	// so a 200 carrying the divergence in its body is a finding nobody is told
+	// about. The first version of this test asserted 200 and would have locked
+	// that in.
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 so the cron can see it", rec.Code)
 	}
 	for _, want := range []string{"Cartão Mercado Pago", "517.45", "4225.97"} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Errorf("body does not carry %q: %s", want, rec.Body.String())
 		}
+	}
+}
+
+// A clean run still answers 200, or the cron would alert every day.
+func TestBankReconciliationAnswers200WhenEverythingAgrees(t *testing.T) {
+	h := &InvariantsHandlers{}
+	h.SetBankReconciler(&stubReconciler{report: usecases.ReconciliationReport{OK: true, Checked: 6, Total: 13}})
+	rec := httptest.NewRecorder()
+
+	h.BankReconciliation(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200 on a clean run", rec.Code)
+	}
+}
+
+// A run that compared nothing arrives here with OK=false and must not be 200.
+func TestBankReconciliationDoesNotReport200ForAnEmptyComparison(t *testing.T) {
+	h := &InvariantsHandlers{}
+	h.SetBankReconciler(&stubReconciler{report: usecases.ReconciliationReport{OK: false, Checked: 0, Total: 13}})
+	rec := httptest.NewRecorder()
+
+	h.BankReconciliation(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
+
+	if rec.Code == http.StatusOK {
+		t.Error("a comparison of nothing answered 200")
 	}
 }

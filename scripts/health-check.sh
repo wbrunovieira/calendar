@@ -323,6 +323,64 @@ check_backup() {
     BACKUP_SECTION="Backup: ultimo ha ${age_h}h"
 }
 
+# ── 6. Ledger checks (finances) ───────────────────────────────
+# The two checks that answer "is the money right?", neither of which ran
+# anywhere before: /health/invariants compares the ledger against ITSELF, and
+# /health/bank-reconciliation compares it against the BANK over Open Finance.
+#
+# Both are hit on 127.0.0.1 on purpose: the public route sits behind Authelia,
+# so from outside this box the honest answer is always 302.
+#
+# Status codes carry the verdict, because this cron has no jq (see the notes in
+# backup.sh): 200 clean, 409 a finding, 503 the bank could not be reached.
+check_ledger() {
+    local base="http://127.0.0.1:3335/api/v1/health"
+    local body code issues=""
+    body=$(mktemp)
+
+    # Ledger against itself.
+    code=$(curl -s -o "$body" -w '%{http_code}' --max-time 20 "${base}/invariants" 2>/dev/null || echo "000")
+    case "$code" in
+        200) issues="${issues}
+  - Invariantes: ok" ;;
+        409) add_alert "Invariantes do financeiro: divergencia encontrada"
+             issues="${issues}
+  - Invariantes: DIVERGENCIA" ;;
+        *)   add_warning "Invariantes do financeiro nao responderam (HTTP ${code})"
+             issues="${issues}
+  - Invariantes: sem resposta (${code})" ;;
+    esac
+
+    # Ledger against the bank. A difference here is a finding to investigate, not
+    # an outage — and an unreachable bank is the opposite, so they never share a
+    # severity.
+    code=$(curl -s -o "$body" -w '%{http_code}' --max-time 60 "${base}/bank-reconciliation" 2>/dev/null || echo "000")
+    case "$code" in
+        200) issues="${issues}
+  - Banco x sistema: bate" ;;
+        409) local detail
+             # The endpoint builds the one-line verdict itself, in the `summary`
+             # field, so this reads ONE value instead of re-deriving it. Grepping
+             # every "name" out of the payload (the first version) reported the
+             # advisory cards and silently dropped the unanswered accounts, whose
+             # names live in a plain string array.
+             detail=$(grep -o '"summary":"[^"]*"' "$body" 2>/dev/null | cut -d'"' -f4 || true)
+             add_alert "Banco x sistema: ${detail:-conciliacao com pendencia}"
+             issues="${issues}
+  - Banco x sistema: PENDENCIA${detail:+ — ${detail}}
+    detalhe: curl -s 127.0.0.1:3335/api/v1/health/bank-reconciliation" ;;
+        503) add_warning "Conciliacao bancaria indisponivel (open finance fora, HTTP 503)"
+             issues="${issues}
+  - Banco x sistema: open finance fora" ;;
+        *)   add_warning "Conciliacao bancaria nao respondeu (HTTP ${code})"
+             issues="${issues}
+  - Banco x sistema: sem resposta (${code})" ;;
+    esac
+
+    rm -f "$body"
+    LEDGER_SECTION="Financeiro:${issues}"
+}
+
 # ── 6. Security Checks ────────────────────────────────────────
 check_security() {
     SECURITY_LINES=""
@@ -424,6 +482,8 @@ ${SSL_SECTION}
 
 ${DB_SECTION}
 ${BACKUP_SECTION}
+
+${LEDGER_SECTION}
 
 ${SECURITY_SECTION}"
 
@@ -547,6 +607,7 @@ main() {
     check_ssl
     check_databases
     check_backup
+    check_ledger
     check_security
     format_message
 

@@ -4,10 +4,14 @@ package openfinance
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -28,9 +32,11 @@ func NewClient(apiKey string) *Client {
 	return &Client{
 		apiKey:  apiKey,
 		baseURL: defaultBaseURL,
-		// Generous: the provider refreshes upstream on some calls. The caller is a
-		// daily job, so waiting beats failing.
-		http: &http.Client{Timeout: 90 * time.Second},
+		// Under the server's 15s WriteTimeout, deliberately. A longer budget here
+		// does not buy patience — it buys a response write killed mid-flight, so
+		// the caller sees an aborted connection instead of the 503 this design
+		// promises.
+		http: &http.Client{Timeout: 12 * time.Second},
 	}
 }
 
@@ -68,24 +74,61 @@ func (a Account) Owed() (float64, bool) {
 	return parseAmount(a.Balance)
 }
 
+// parseAmount reads a money string, or refuses.
+//
+// Sscanf was wrong here twice over: it accepts a PREFIX, so "718.36abc" read as
+// 718.36 and the junk vanished, and it read "1.234,56" as 1.234 — a thousandfold
+// error that still reconciles against nothing. It also accepted NaN and Inf,
+// which then break JSON encoding and leave a 200 with an empty body, which a
+// status-code cron reads as healthy.
 func parseAmount(s string) (float64, bool) {
+	s = strings.TrimSpace(s)
 	if s == "" {
 		return 0, false
 	}
-	var f float64
-	if _, err := fmt.Sscanf(s, "%g", &f); err != nil {
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
 		return 0, false
 	}
 	return f, true
 }
 
+// The provider wraps every answer: {"ok":true,"tool":"...","result":<payload>}.
+// The first version of this read `results` from the TOP level, which
+// encoding/json happily satisfies with nothing — unknown fields are ignored, so
+// it returned zero accounts and a nil error. Zero accounts reconciles against
+// anything, so the check would have reported perfect health having compared
+// nothing, every day, which is the exact failure it exists to prevent.
+//
+// Both shapes are accepted: the envelope the REST API uses, and the bare one, so
+// a provider that stops wrapping does not silently empty this out again.
 type listResponse struct {
 	Results []Account `json:"results"`
+	Result  *struct {
+		Results []Account `json:"results"`
+	} `json:"result"`
+}
+
+// accounts returns whichever shape carried them, and says which.
+func (r listResponse) accounts() ([]Account, bool) {
+	if r.Result != nil && len(r.Result.Results) > 0 {
+		return r.Result.Results, true
+	}
+	if len(r.Results) > 0 {
+		return r.Results, true
+	}
+	return nil, false
 }
 
 // ListAccounts returns every account across every linked bank.
 func (c *Client) ListAccounts() ([]Account, error) {
-	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/accounts/list", bytes.NewReader([]byte(`{}`)))
+	return c.ListAccountsContext(context.Background())
+}
+
+// ListAccountsContext is the same call, cancellable: a caller that goes away
+// should not leave this one waiting on the provider.
+func (c *Client) ListAccountsContext(ctx context.Context) ([]Account, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/accounts/list", bytes.NewReader([]byte(`{}`)))
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +155,14 @@ func (c *Client) ListAccounts() ([]Account, error) {
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("reading the open finance payload: %w", err)
 	}
-	return parsed.Results, nil
+	accounts, found := parsed.accounts()
+	if !found {
+		// An answer carrying no accounts is an ERROR, never an empty list. An
+		// empty list compares clean against everything; a changed envelope would
+		// otherwise be indistinguishable from a healthy bank.
+		return nil, fmt.Errorf("open finance returned no accounts; the payload shape may have changed: %s", truncate(string(body), 300))
+	}
+	return accounts, nil
 }
 
 func truncate(s string, n int) string {
@@ -122,23 +172,31 @@ func truncate(s string, n int) string {
 	return s[:n] + "…"
 }
 
-// OwedByProviderID adapts the client to what the reconciliation needs: one
-// number per account, keyed by the id our own accounts store.
+// FiguresByProviderID adapts the client to what the reconciliation needs, keyed
+// by the provider id our own accounts store: what each account is worth, and
+// what the provider says each account IS.
 //
-// An account the provider answers for but cannot put a figure on is LEFT OUT
-// rather than entered as zero. Zero reads as "this account owes nothing", which
-// is a lie that reconciles — and the comparison treats an absent key as an
-// unanswered account, which is the truth.
-func (c *Client) OwedByProviderID() (map[string]float64, error) {
+// Both come back from ONE call on purpose. Asking twice would either cost a
+// second round trip or leave the second answer served from state left behind by
+// the first, which is a stale read waiting to happen.
+//
+// An account the provider answers for but cannot put a figure on is LEFT OUT of
+// the amounts rather than entered as zero. Zero reads as "this account owes
+// nothing", which is a lie that reconciles — and the comparison treats an absent
+// key as an unanswered account, which is the truth. Its KIND is still reported:
+// a transposed mapping is worth naming even when the figure is unreadable.
+func (c *Client) FiguresByProviderID() (map[string]float64, map[string]string, error) {
 	accounts, err := c.ListAccounts()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	owed := make(map[string]float64, len(accounts))
+	kinds := make(map[string]string, len(accounts))
 	for _, a := range accounts {
+		kinds[a.ID] = a.Type
 		if v, ok := a.Owed(); ok {
 			owed[a.ID] = v
 		}
 	}
-	return owed, nil
+	return owed, kinds, nil
 }

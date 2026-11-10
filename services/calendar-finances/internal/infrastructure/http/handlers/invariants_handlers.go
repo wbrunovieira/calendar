@@ -153,5 +153,16 @@ func (h *InvariantsHandlers) BankReconciliation(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	if !report.OK {
+		// 409, matching /health/invariants, because the production health-check
+		// cron has no jq and reads the STATUS CODE. A 200 carrying a divergence
+		// in its body is a finding nobody is told about — which would make this
+		// endpoint decorative on the one consumer it was built for.
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": report})
+		return
+	}
+
 	respondJSON(w, map[string]any{"data": report})
 }

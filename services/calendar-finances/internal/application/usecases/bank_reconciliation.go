@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
 )
@@ -9,7 +10,9 @@ import (
 // BankAccountLister is what the bank side has to provide: every account it can
 // see, keyed by the provider id stored on our own accounts.
 type BankAccountLister interface {
-	OwedByProviderID() (map[string]float64, error)
+	// FiguresByProviderID returns what each account is worth AND what the
+	// provider says each account is (BANK or CREDIT), in one call.
+	FiguresByProviderID() (amounts map[string]float64, kinds map[string]string, err error)
 }
 
 // CardUsageReader answers what a card owes on our side. It is the endpoint the
@@ -50,7 +53,7 @@ func (uc *BankReconciliationUseCase) Execute() (ReconciliationReport, error) {
 		return ReconciliationReport{}, fmt.Errorf("listing accounts: %w", err)
 	}
 
-	owed, err := uc.bank.OwedByProviderID()
+	owed, bankKinds, err := uc.bank.FiguresByProviderID()
 	if err != nil {
 		// Reaching the bank failed. Answering "no divergences" here would make an
 		// outage indistinguishable from a clean day, which is the failure this
@@ -63,9 +66,11 @@ func (uc *BankReconciliationUseCase) Execute() (ReconciliationReport, error) {
 		if !a.IsActive {
 			continue
 		}
-		if a.Type != bankaccount.AccountTypeChecking && a.Type != bankaccount.AccountTypeCreditCard {
-			continue
-		}
+		// Every active account is CONSIDERED, whatever its type. Skipping a type
+		// outright made whole classes of account vanish — neither compared nor
+		// listed as unconnected — while the report claimed to show "3 of 13".
+		// Anything the bank cannot see falls out as not connected, by its own
+		// missing provider id, which is the honest reason.
 
 		s := AccountSnapshot{Name: a.Name, Kind: string(a.Type)}
 		if a.ProviderAccountID != nil {
@@ -75,12 +80,21 @@ func (uc *BankReconciliationUseCase) Execute() (ReconciliationReport, error) {
 		// The system's side. A card is asked through credit-usage so this speaks
 		// about the same number the dashboard shows; a checking account carries
 		// its balance directly.
+		// A card's two sides do not yet measure the same set — see AccountSnapshot
+		// .Advisory. Reported, not alarmed on, until the definition is settled.
+		s.Advisory = a.Type == bankaccount.AccountTypeCreditCard
+
 		if a.Type == bankaccount.AccountTypeCreditCard {
 			usage, uerr := uc.cardUsage.Execute(a.ID)
 			if uerr != nil {
-				return ReconciliationReport{}, fmt.Errorf("reading what card %s owes: %w", a.Name, uerr)
+				// One unreadable card used to abort the whole run and come back as
+				// "could not reach the bank" — losing every healthy account and
+				// blaming a bank that was never contacted for it.
+				s.Unreadable = true
+				log.Printf("reconciliation: reading what card %s owes failed: %v", a.Name, uerr)
+			} else {
+				s.System = usage.Outstanding
 			}
-			s.System = usage.Outstanding
 		} else {
 			s.System = a.CurrentBalance
 		}
@@ -91,6 +105,7 @@ func (uc *BankReconciliationUseCase) Execute() (ReconciliationReport, error) {
 				s.BankMissing = true
 			}
 			s.Bank = v
+			s.BankKind = bankKinds[s.ProviderID]
 		}
 		snapshots = append(snapshots, s)
 	}
