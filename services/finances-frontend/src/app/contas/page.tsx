@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { isCashLike } from '@/utils/accountGroups';
 import AppLayout, { useProfile } from '@/components/layout/AppLayout';
 import BankAccountModal from '@/components/finances/BankAccountModal';
 import CreditCardInfo from '@/components/finances/CreditCardInfo';
@@ -125,7 +126,10 @@ export default function ContasPage() {
 
   const totalsByCurrency = useMemo(() => {
     const totals: Record<string, number> = {};
-    regularAccounts.filter((a) => a.type !== 'CREDIT_CARD').forEach((a) => {
+    // Only money that can be spent. This used to be "everything that is not a
+    // credit card", which quietly counted the LIABILITY accounts — a loan and a
+    // debt to family — as balance.
+    regularAccounts.filter(isCashLike).forEach((a) => {
       const cur = a.currency || 'BRL';
       totals[cur] = (totals[cur] || 0) + a.currentBalance;
     });

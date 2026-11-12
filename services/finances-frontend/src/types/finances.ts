@@ -28,6 +28,10 @@ export type AccountType =
   | 'CASH'
   | 'EXCHANGE'
   | 'WALLET'
+  /** A debt that is not a credit card: a loan, money owed to someone. Balance
+   *  is stored NEGATIVE. The API has always returned it; this union did not
+   *  list it, so these accounts were grouped by whatever the fallback was. */
+  | 'LIABILITY'
   | 'OTHER';
 
 export type InvestmentType =
