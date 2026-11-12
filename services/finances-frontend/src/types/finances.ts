@@ -289,7 +289,13 @@ export interface RecurringTransaction {
   recurrenceRule: string;
   startOn: string;
   endOn?: string;
+  /** The stored date the backend generator keys off. Can be in the PAST: that
+   *  means the turn passed and nothing was generated yet (overdue). */
   nextOccurrence: string;
+  /** The next date the recurrence RULE produces, counted from today. Use this
+   *  to project forward; use nextOccurrence to know the real state. Absent when
+   *  the rule yields nothing (paused, cancelled, ended). */
+  nextByRule?: string;
   status: RecurringStatus;
   reviewOn?: string;
   notes?: string;

@@ -36,12 +36,23 @@ type RecurringTransactionPresenter struct {
 	RecurrenceRule string     `json:"recurrenceRule"`
 	StartOn        time.Time  `json:"startOn"`
 	EndOn          *time.Time `json:"endOn,omitempty"`
-	NextOccurrence time.Time  `json:"nextOccurrence"`
-	Status         string     `json:"status"`
-	ReviewOn       *time.Time `json:"reviewOn,omitempty"`
-	Notes          *string    `json:"notes,omitempty"`
-	CreatedAt      time.Time  `json:"createdAt"`
-	UpdatedAt      time.Time  `json:"updatedAt"`
+	// NextOccurrence is the STORED date: the one the generator keys off
+	// (FindDueRecurring: WHERE status = 'ACTIVE' AND next_occurrence <= now).
+	// It used to be recomputed from the rule before being reported, which made
+	// the field lie about the only thing it names — an advance written through
+	// the API read back as the old date, and an overdue recurrence read as up to
+	// date.
+	NextOccurrence time.Time `json:"nextOccurrence"`
+	// NextByRule is that derived date, kept for the consumers that want it (a
+	// screen projecting future instalments), under its own name and NEXT to the
+	// state rather than on top of it. Absent when the rule yields nothing —
+	// paused, cancelled, or past its end date.
+	NextByRule *time.Time `json:"nextByRule,omitempty"`
+	Status     string     `json:"status"`
+	ReviewOn   *time.Time `json:"reviewOn,omitempty"`
+	Notes      *string    `json:"notes,omitempty"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	UpdatedAt  time.Time  `json:"updatedAt"`
 }
 
 type RecurringTransactionsService struct {
@@ -185,11 +196,12 @@ func (s *RecurringTransactionsService) parseParams(input CreateRecurringTransact
 }
 
 func presentRecurring(entity *recurringtransaction.RecurringTransaction) *RecurringTransactionPresenter {
-	// Calculate the correct next occurrence based on today's date
-	nextOccurrence := entity.CalculateNextOccurrence(time.Now())
-	if nextOccurrence.IsZero() {
-		// If no next occurrence (paused/ended), use the stored value for reference
-		nextOccurrence = entity.NextOccurrence
+	// The derived date is reported BESIDE the state, never in place of it. The
+	// domain answers zero for anything that has no next date — paused,
+	// cancelled, ended — and zero is left out rather than dressed up as a date.
+	var nextByRule *time.Time
+	if byRule := entity.CalculateNextOccurrence(time.Now()); !byRule.IsZero() {
+		nextByRule = &byRule
 	}
 
 	return &RecurringTransactionPresenter{
@@ -204,7 +216,8 @@ func presentRecurring(entity *recurringtransaction.RecurringTransaction) *Recurr
 		RecurrenceRule: entity.RecurrenceRule,
 		StartOn:        entity.StartOn,
 		EndOn:          entity.EndOn,
-		NextOccurrence: nextOccurrence,
+		NextOccurrence: entity.NextOccurrence,
+		NextByRule:     nextByRule,
 		Status:         string(entity.Status),
 		ReviewOn:       entity.ReviewOn,
 		Notes:          entity.Notes,
