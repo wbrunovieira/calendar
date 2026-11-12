@@ -44,7 +44,13 @@ export function scheduleForSave(form: ScheduleForm, editing?: RecurringTransacti
 
   // Changing the frequency is a deliberate reschedule, so the rule is rebuilt.
   // Anything else leaves the stored rule alone, qualifiers included.
-  const frequencyChanged = frequencyOf(editing.recurrenceRule) !== form.frequency;
+  //
+  // A rule whose frequency this does not RECOGNISE is left alone too. The edit
+  // form shows only DAILY/WEEKLY/MONTHLY and collapses anything else to MONTHLY,
+  // so treating "unknown" as "changed" would convert a FREQ=YEARLY recurrence to
+  // monthly the moment someone opened it to fix a typo.
+  const storedFrequency = frequencyOf(editing.recurrenceRule);
+  const frequencyChanged = storedFrequency !== null && storedFrequency !== form.frequency;
 
   return {
     nextOccurrence: dayOnly(editing.nextOccurrence),

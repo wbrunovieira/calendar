@@ -147,3 +147,24 @@ export function computeNetWorth(
     netWorth: available + invested + unclassified - cardDebt - loanDebt,
   };
 }
+
+/**
+ * What a "saldo em contas" total is built from: held, and live.
+ *
+ * By exclusion of what is OWED, never by a positive cash list — an unclassified
+ * type has to stay in the total it is listed under, or it vanishes from the
+ * screen and the number in one move.
+ */
+export function countsTowardHeldTotal(account: BankAccount): boolean {
+  return isLive(account) && !isDebtType(account);
+}
+
+/** That total, per currency. */
+export function sumHeldByCurrency(accounts: BankAccount[]): Record<string, number> {
+  const totals: Record<string, number> = {};
+  for (const account of accounts.filter(countsTowardHeldTotal)) {
+    const currency = account.currency || 'BRL';
+    totals[currency] = (totals[currency] || 0) + account.currentBalance;
+  }
+  return totals;
+}

@@ -28,7 +28,9 @@ const daysBetween = (a: string, b: string): number => {
  *
  * Matches a non-cancelled transaction (CONFIRMED or PLANNED) of the same type +
  * description, on the same account (when the recurring declares one), occurring in
- * the same month as the occurrence (or within 7 days).
+ * the same month as the occurrence (or within 7 days). The date compared is the
+ * transaction's dueOn when it has one, since that is the obligation it settles,
+ * and occurredOn otherwise.
  */
 export const isRecurringSatisfied = (
   rt: RecurringTransaction,
@@ -49,7 +51,12 @@ export const isRecurringSatisfied = (
     const txDesc = tx.description.toLowerCase().trim();
     if (txDesc !== rtDesc) return false;
 
-    const txDate = extractDateStr(tx.occurredOn);
+    // The OBLIGATION date, falling back to when the money moved. Confirming an
+    // overdue recurrence posts the payment dated today and keeps the date it was
+    // due in dueOn — reading only occurredOn, the match misses it across a month
+    // boundary, the row stays on screen with its "Ja paguei" button, and the
+    // obvious next move posts the bill a second time.
+    const txDate = extractDateStr(tx.dueOn || tx.occurredOn);
     if (!txDate || !rtNextDate) return false;
 
     if (txDate.substring(0, 7) === rtNextDate.substring(0, 7)) return true;

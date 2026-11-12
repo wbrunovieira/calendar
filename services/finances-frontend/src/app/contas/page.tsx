@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { isDebtType, isLive } from '@/utils/accountGroups';
+import { sumHeldByCurrency } from '@/utils/accountGroups';
 import AppLayout, { useProfile } from '@/components/layout/AppLayout';
 import BankAccountModal from '@/components/finances/BankAccountModal';
 import CreditCardInfo from '@/components/finances/CreditCardInfo';
@@ -124,20 +124,11 @@ export default function ContasPage() {
     [filteredAccounts, cryptoAccountIds, brokerAccountIds],
   );
 
-  const totalsByCurrency = useMemo(() => {
-    const totals: Record<string, number> = {};
-    // What is HELD, by exclusion of what is owed — not by a positive cash list,
-    // which would drop an unclassified type from the total and the list at once.
-    // It used to exclude only credit cards, so the LIABILITY accounts (a loan
-    // and a debt to family) counted as balance. Deactivated accounts are still
-    // listed on this screen, since it is where accounts are managed, but they do
-    // not count.
-    regularAccounts.filter((a) => isLive(a) && !isDebtType(a)).forEach((a) => {
-      const cur = a.currency || 'BRL';
-      totals[cur] = (totals[cur] || 0) + a.currentBalance;
-    });
-    return totals;
-  }, [regularAccounts]);
+  // Under test in utils/accountGroups: it used to exclude only credit cards, so
+  // the LIABILITY accounts (a loan and a debt to family) counted as balance, and
+  // nothing proved deactivated accounts stayed out of the number the screen
+  // labels "fora do total".
+  const totalsByCurrency = useMemo(() => sumHeldByCurrency(regularAccounts), [regularAccounts]);
 
   const investedByCurrency = useMemo(() => {
     const totals: Record<string, number> = {};

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groupAccounts, sumBalances, debtTotal, isCashLike, isDebtType, computeNetWorth } from './accountGroups';
+import { groupAccounts, sumBalances, debtTotal, isCashLike, isDebtType, computeNetWorth, sumHeldByCurrency } from './accountGroups';
 import type { AccountType, BankAccount } from '@/types/finances';
 
 const account = (name: string, type: AccountType, currentBalance: number, isActive = true): BankAccount =>
@@ -251,5 +251,57 @@ describe('isDebtType', () => {
     expect(isDebtType(account('conta', 'CHECKING', 1))).toBe(false);
     expect(isDebtType(account('cdb', 'INVESTMENT', 1))).toBe(false);
     expect(isDebtType(account('coisa nova', 'FINANCIAMENTO' as AccountType, 1))).toBe(false);
+  });
+});
+
+// The "Saldo em contas" total on the accounts screen. It was built inline in the
+// page, so nothing proved it excluded deactivated accounts — the screen prints
+// "(desativada, fora do total)" next to them, and that label could have started
+// lying without a single test going red.
+describe('sumHeldByCurrency', () => {
+  const withCurrency = (name: string, type: AccountType, balance: number, currency: string, isActive = true) =>
+    ({ id: name, name, type, currentBalance: balance, currency, isActive }) as BankAccount;
+
+  it('totals what is held, per currency', () => {
+    const totals = sumHeldByCurrency([
+      withCurrency('Mercado Pago', 'CHECKING', 447.86, 'BRL'),
+      withCurrency('Dinheiro', 'CASH', 2.5, 'BRL'),
+      withCurrency('Wise EUR', 'CHECKING', 30, 'EUR'),
+    ]);
+
+    expect(totals).toEqual({ BRL: 450.36, EUR: 30 });
+  });
+
+  it('leaves debts out', () => {
+    const totals = sumHeldByCurrency([
+      withCurrency('Mercado Pago', 'CHECKING', 1000, 'BRL'),
+      withCurrency('Emprestimo', 'LIABILITY', -2990.68, 'BRL'),
+      withCurrency('Cartao', 'CREDIT_CARD', -1059.22, 'BRL'),
+    ]);
+
+    expect(totals).toEqual({ BRL: 1000 });
+  });
+
+  it('leaves deactivated accounts out — the label on screen says so', () => {
+    const totals = sumHeldByCurrency([
+      withCurrency('Mercado Pago', 'CHECKING', 1000, 'BRL'),
+      withCurrency('conta morta', 'CHECKING', 99, 'BRL', false),
+    ]);
+
+    expect(totals).toEqual({ BRL: 1000 });
+  });
+
+  // Not a positive cash list: a type nobody classified has to stay counted, or
+  // it disappears from the screen and the total in one move.
+  it('still counts a type it was never taught', () => {
+    const totals = sumHeldByCurrency([
+      withCurrency('coisa nova', 'FINANCIAMENTO' as AccountType, 42, 'BRL'),
+    ]);
+
+    expect(totals).toEqual({ BRL: 42 });
+  });
+
+  it('treats a missing currency as BRL', () => {
+    expect(sumHeldByCurrency([{ id: 'x', name: 'x', type: 'CHECKING', currentBalance: 5 } as BankAccount])).toEqual({ BRL: 5 });
   });
 });

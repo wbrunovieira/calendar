@@ -41,6 +41,20 @@ describe('scheduleForSave on an edit', () => {
     expect(schedule.recurrenceRule).toBe('FREQ=WEEKLY');
   });
 
+  // A rule this helper does not recognise is the strongest possible reason to
+  // leave it alone. The edit form collapses an unknown rule to MONTHLY in its
+  // dropdown, so rebuilding would turn a FREQ=YEARLY recurrence into a monthly
+  // one on the way out — the form would have "changed the frequency" without
+  // anyone touching it.
+  it('leaves a rule it does not understand exactly as it was', () => {
+    const schedule = scheduleForSave(
+      { startOn: '2026-01-20', frequency: 'MONTHLY' },
+      stored({ recurrenceRule: 'FREQ=YEARLY;BYMONTH=1;BYMONTHDAY=20' }),
+    );
+
+    expect(schedule.recurrenceRule).toBe('FREQ=YEARLY;BYMONTH=1;BYMONTHDAY=20');
+  });
+
   it('survives a stored date that is a bare day with no time', () => {
     const schedule = scheduleForSave(
       { startOn: '2026-01-20', frequency: 'MONTHLY' },
