@@ -4,9 +4,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/brunovieira/calendar-health/internal/database"
 	"github.com/brunovieira/calendar-health/internal/infrastructure/http/handlers"
+	"github.com/brunovieira/calendar-health/internal/infrastructure/http/middleware"
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
 )
@@ -43,7 +45,7 @@ func main() {
 	c := cors.New(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:3000", "http://localhost:3004", "https://health.wbdigitalsolutions.com", "https://health.app.localhost"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Content-Type", "Authorization"},
+		AllowedHeaders:   []string{"Content-Type", "Authorization", "X-API-Key"},
 		AllowCredentials: true,
 	})
 
@@ -53,8 +55,15 @@ func main() {
 		port = "3336"
 	}
 
+	// Token check sits inside CORS so preflights and error responses still carry CORS headers.
+	apiToken := os.Getenv("API_TOKEN")
+	if strings.TrimSpace(apiToken) == "" {
+		log.Printf("API_TOKEN not set: API is open")
+	}
+	protected := middleware.APIToken(apiToken, "/api/v1/health")(router)
+
 	// Start server
-	handler := c.Handler(router)
+	handler := c.Handler(protected)
 	log.Printf("Health service starting on port %s", port)
 	if err := http.ListenAndServe(":"+port, handler); err != nil {
 		log.Fatalf("Failed to start server: %v", err)

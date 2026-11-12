@@ -58,6 +58,7 @@ services:
       - "3336:3336"
     environment:
       - PORT=3336
+      - API_TOKEN=${HEALTH_API_TOKEN:-}
       - DATABASE_URL=postgres://calendar:calendar123@postgres:5432/calendar_db?sslmode=disable
     depends_on:
       - postgres

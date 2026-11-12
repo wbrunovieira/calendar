@@ -17,6 +17,9 @@ import {
 } from '@/types/health';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3336/api/v1';
+// Inlined at build time. Temporary: phase 2 of the Authelia removal moves it behind a
+// server-side proxy so it stops shipping in the bundle.
+const API_TOKEN = process.env.NEXT_PUBLIC_HEALTH_API_TOKEN;
 
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -25,6 +28,7 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
+      ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
       ...options?.headers,
     },
   });
