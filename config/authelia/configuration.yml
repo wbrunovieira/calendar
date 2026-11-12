@@ -4,6 +4,12 @@ theme: light
 server:
   address: 'tcp://0.0.0.0:9091'
   asset_path: /config/assets
+  # The session cookie lives on the apex domain, so every app's cookies ride along on
+  # each auth request. The 4096-byte default answers 431, which nginx turns into a 500.
+  # 32k matches nginx's http2_max_field_size.
+  buffers:
+    read: 32768
+    write: 32768
 
 log:
   level: info
