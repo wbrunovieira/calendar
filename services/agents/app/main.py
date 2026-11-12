@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.auth import ApiTokenMiddleware
+
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s: %(message)s")
@@ -31,6 +33,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="agents", lifespan=lifespan)
+
+# Added before CORS so CORS ends up outermost: it answers preflights and still decorates 401s.
+app.add_middleware(ApiTokenMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

@@ -4,6 +4,9 @@ import os
 
 
 class Settings:
+    # Shared token required on every route except /health. Blank = API open.
+    agents_api_token: str = os.getenv("AGENTS_API_TOKEN", "")
+
     # DeepSeek (OpenAI-compatible)
     deepseek_api_key: str = os.getenv("DEEPSEEK_API_KEY", "")
     deepseek_base_url: str = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
@@ -11,6 +14,8 @@ class Settings:
 
     # calendar-finances internal URL (Docker network)
     finances_base_url: str = os.getenv("FINANCES_BASE_URL", "http://calendar-finances:3335")
+    # Sent as a Bearer token once calendar-finances enforces one. Blank = no header.
+    finances_api_token: str = os.getenv("FINANCES_API_TOKEN", "")
 
     # Finance profile IDs
     finance_personal_profile_id: str = os.getenv("FINANCE_PERSONAL_PROFILE_ID", "")

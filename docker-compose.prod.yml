@@ -110,6 +110,10 @@ services:
       - "127.0.0.1:3337:3337"
     environment:
       - PORT=3337
+      # Blank = open (as before). Set to require a Bearer token on every route but /health.
+      - AGENTS_API_TOKEN=${AGENTS_API_TOKEN:-}
+      # Sent to calendar-finances once it enforces a token.
+      - FINANCES_API_TOKEN=${FINANCES_API_TOKEN:-}
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
       - LANGFUSE_HOST=http://langfuse-web:3000
