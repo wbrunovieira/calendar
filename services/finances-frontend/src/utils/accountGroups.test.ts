@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groupAccounts, sumBalances, debtTotal, isCashLike } from './accountGroups';
+import { groupAccounts, sumBalances, debtTotal, isCashLike, isDebtType, computeNetWorth } from './accountGroups';
 import type { AccountType, BankAccount } from '@/types/finances';
 
 const account = (name: string, type: AccountType, currentBalance: number, isActive = true): BankAccount =>
@@ -117,5 +117,139 @@ describe('isCashLike', () => {
 
   it('refuses a type it was never taught instead of assuming it is money', () => {
     expect(isCashLike(account('coisa nova', 'FINANCIAMENTO' as AccountType, -5000))).toBe(false);
+  });
+});
+
+// A deactivated CARD is not like a deactivated account. Its debt outlives the
+// row: `getCardsOutstanding` keys off the card list, so dropping the card drops
+// its unpaid invoice from the total and net worth jumps by exactly that amount,
+// with nothing on screen saying so.
+describe('groupAccounts and deactivated credit cards', () => {
+  it('keeps a deactivated card, because what it owes did not go away', () => {
+    const groups = groupAccounts([
+      account('Cartao antigo', 'CREDIT_CARD', -500, false),
+      account('Cartao atual', 'CREDIT_CARD', -100),
+      account('conta morta', 'CHECKING', 99, false),
+    ]);
+
+    expect(groups.creditCards.map((a) => a.name)).toEqual(['Cartao antigo', 'Cartao atual']);
+    expect(groups.cash).toHaveLength(0);
+  });
+});
+
+describe('computeNetWorth', () => {
+  const invoice = (amount: number) =>
+    [{ id: 'i', bankAccountId: 'c', amount, confirmedAmount: amount, plannedAmount: 0, status: 'OPEN' }] as never;
+
+  // The real home screen, 12/11/2026. The number itself never moved when the
+  // grouping was fixed — only its decomposition — so it is pinned here.
+  it('reproduces the real figures', () => {
+    const groups = groupAccounts([
+      account('Mercado Pago', 'CHECKING', 447.86),
+      account('Nubank', 'CHECKING', 0.51),
+      account('Dinheiro (Caixa)', 'CASH', 2.5),
+      account('Investimentos', 'INVESTMENT', 9391.85),
+      account('Divida com as irmas', 'LIABILITY', -875),
+      account('Emprestimo pessoal Mercado Pago', 'LIABILITY', -2990.68),
+      account('cartoes', 'CREDIT_CARD', 0),
+    ]);
+
+    const parts = computeNetWorth(groups, { cartoes: invoice(5257.1) });
+
+    expect(parts.available).toBeCloseTo(450.87, 2);
+    expect(parts.invested).toBeCloseTo(9391.85, 2);
+    expect(parts.cardDebt).toBeCloseTo(5257.1, 2);
+    expect(parts.loanDebt).toBeCloseTo(3865.68, 2);
+    expect(parts.netWorth).toBeCloseTo(719.94, 2);
+  });
+
+  // The mutation that got through the first time: drop `- loanDebt` and every
+  // test still passed, because the arithmetic lived in the component and the
+  // component had none.
+  it('subtracts loans from net worth', () => {
+    const groups = groupAccounts([
+      account('conta', 'CHECKING', 1000),
+      account('emprestimo', 'LIABILITY', -400),
+    ]);
+
+    expect(computeNetWorth(groups, {}).netWorth).toBeCloseTo(600, 2);
+  });
+
+  it('does not count a debt as money available', () => {
+    const groups = groupAccounts([
+      account('conta', 'CHECKING', 1000),
+      account('emprestimo', 'LIABILITY', -400),
+    ]);
+
+    expect(computeNetWorth(groups, {}).available).toBeCloseTo(1000, 2);
+  });
+
+  // Unclassified money is not available and must not be lost either: it has to
+  // reach the total, and be reported as its own term so the printed equation
+  // adds up.
+  it('counts an unclassified account without calling it available', () => {
+    const groups = groupAccounts([
+      account('conta', 'CHECKING', 100),
+      account('coisa nova', 'FINANCIAMENTO' as AccountType, -50),
+    ]);
+
+    const parts = computeNetWorth(groups, {});
+
+    expect(parts.available).toBeCloseTo(100, 2);
+    expect(parts.unclassified).toBeCloseTo(-50, 2);
+    expect(parts.netWorth).toBeCloseTo(50, 2);
+  });
+
+  it('adds back an overpaid liability instead of pretending it is a debt', () => {
+    const groups = groupAccounts([
+      account('conta', 'CHECKING', 100),
+      account('paguei demais', 'LIABILITY', 120),
+    ]);
+
+    const parts = computeNetWorth(groups, {});
+
+    expect(parts.loanDebt).toBeCloseTo(-120, 2);
+    expect(parts.netWorth).toBeCloseTo(220, 2);
+  });
+
+  it('still subtracts what a deactivated card owes', () => {
+    const groups = groupAccounts([
+      account('conta', 'CHECKING', 1000),
+      account('cartao desativado', 'CREDIT_CARD', 0, false),
+    ]);
+
+    expect(computeNetWorth(groups, { 'cartao desativado': invoice(300) }).netWorth).toBeCloseTo(700, 2);
+  });
+
+  // Every printed term must reach the printed total, or the panel shows an
+  // equation that does not close — which is the bug being fixed, one level up.
+  it('reports terms that add up to the total it reports', () => {
+    const groups = groupAccounts([
+      account('conta', 'CHECKING', 447.86),
+      account('investido', 'INVESTMENT', 9391.85),
+      account('emprestimo', 'LIABILITY', -2990.68),
+      account('coisa nova', 'FINANCIAMENTO' as AccountType, -7),
+      account('cartao', 'CREDIT_CARD', 0),
+    ]);
+
+    const p = computeNetWorth(groups, { cartao: invoice(5257.1) });
+
+    expect(p.available + p.invested + p.unclassified - p.cardDebt - p.loanDebt).toBeCloseTo(p.netWorth, 2);
+  });
+});
+
+// The accounts screen lists everything and totals what is held. It cannot filter
+// by a positive cash list: an unclassified type would vanish from the list AND
+// from the total in one move, which is the regression that replaces this bug.
+describe('isDebtType', () => {
+  it('names what is owed', () => {
+    expect(isDebtType(account('cartao', 'CREDIT_CARD', -100))).toBe(true);
+    expect(isDebtType(account('emprestimo', 'LIABILITY', -100))).toBe(true);
+  });
+
+  it('leaves everything else alone, including a type it was never taught', () => {
+    expect(isDebtType(account('conta', 'CHECKING', 1))).toBe(false);
+    expect(isDebtType(account('cdb', 'INVESTMENT', 1))).toBe(false);
+    expect(isDebtType(account('coisa nova', 'FINANCIAMENTO' as AccountType, 1))).toBe(false);
   });
 });

@@ -775,7 +775,13 @@ func TestAdvancingTheNextOccurrenceIsVisibleWhenReadBack(t *testing.T) {
 		t.Fatalf("creating: %v", err)
 	}
 
-	// The bill for this month was entered by hand, so skip one turn.
+	// The bill for this month was entered by hand, so skip a turn.
+	//
+	// Day 7 against a BYMONTHDAY=20 rule, deliberately: 2026-12-20 would have
+	// been satisfied by the OLD implementation for every day between 21/11 and
+	// 20/12, because the recompute returns that same date in that window. The
+	// test would have gone on passing against the bug it exists to catch, and
+	// only between those dates — the worst kind of green.
 	updated, err := service.Update(created.ID, CreateRecurringTransactionInput{
 		ProfileID:      "profile-1",
 		Type:           "EXPENSE",
@@ -783,19 +789,19 @@ func TestAdvancingTheNextOccurrenceIsVisibleWhenReadBack(t *testing.T) {
 		Description:    "Tim Celular",
 		RecurrenceRule: "FREQ=MONTHLY;BYMONTHDAY=20",
 		StartOn:        "2026-01-20",
-		NextOccurrence: "2026-12-20",
+		NextOccurrence: "2027-03-07",
 		Status:         "ACTIVE",
 	})
 	if err != nil {
 		t.Fatalf("updating: %v", err)
 	}
 
-	if got := updated.NextOccurrence.Format(time.DateOnly); got != "2026-12-20" {
-		t.Errorf("the update answered %s, want 2026-12-20", got)
+	if got := updated.NextOccurrence.Format(time.DateOnly); got != "2027-03-07" {
+		t.Errorf("the update answered %s, want 2027-03-07", got)
 	}
 	list, _ := service.List("profile-1")
-	if got := list[0].NextOccurrence.Format(time.DateOnly); got != "2026-12-20" {
-		t.Errorf("reading back gave %s, want 2026-12-20 — the advance looks like it did not take", got)
+	if got := list[0].NextOccurrence.Format(time.DateOnly); got != "2027-03-07" {
+		t.Errorf("reading back gave %s, want 2027-03-07 — the advance looks like it did not take", got)
 	}
 }
 
