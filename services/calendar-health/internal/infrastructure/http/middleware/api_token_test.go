@@ -41,6 +41,7 @@ func TestAPIToken(t *testing.T) {
 		{"leaves the health check public", token, "/api/v1/health", nil, http.StatusOK},
 		{"does not treat health-like paths as public", token, "/api/v1/health/../profiles", nil, http.StatusUnauthorized},
 		{"does not treat a health prefix as public", token, "/api/v1/healthz", nil, http.StatusUnauthorized},
+		{"does not treat the health path with a trailing slash as public", token, "/api/v1/health/", nil, http.StatusUnauthorized},
 	}
 
 	for _, tt := range tests {
@@ -62,6 +63,14 @@ func TestAPITokenAllowsCORSPreflight(t *testing.T) {
 	req.Header.Set("Access-Control-Request-Method", "GET")
 	if got := serve(t, token, req); got != http.StatusOK {
 		t.Fatalf("preflight status = %d, want 200", got)
+	}
+}
+
+func TestAPITokenRejectsBareOptions(t *testing.T) {
+	// Only real CORS preflights skip the check; a plain OPTIONS is a normal request.
+	req := httptest.NewRequest(http.MethodOptions, "http://x/api/v1/profiles", nil)
+	if got := serve(t, token, req); got != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", got)
 	}
 }
 
