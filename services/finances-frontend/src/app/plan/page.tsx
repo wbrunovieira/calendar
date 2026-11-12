@@ -121,8 +121,10 @@ export default function PlanPage() {
       const recEndOn = r.endOn ? parseLocalDate(r.endOn) : undefined;
       if (recEndOn) recEndOn.setHours(23, 59, 59, 999);
 
-      // Start from nextOccurrence
-      let cur = parseLocalDate(r.nextOccurrence);
+      // Project from the date the RULE gives, not from the stored state: the
+      // stored one can be in the past (a turn that never generated), and this
+      // screen is about what is still to come.
+      let cur = parseLocalDate(r.nextByRule || r.nextOccurrence);
 
       const addDays = (d: Date, n: number) => {
         const c = new Date(d);

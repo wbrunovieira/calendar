@@ -616,43 +616,192 @@ func TestPausedTransactionsShouldNotBeCountedInTotals(t *testing.T) {
 // the status field correctly so the frontend can filter out non-active items.
 // TestListReturnsCalculatedNextOccurrence verifies that the List method
 // returns the calculated next occurrence, not the stored one.
-func TestListReturnsCalculatedNextOccurrence(t *testing.T) {
+// What the API reports as `nextOccurrence` must be the STATE — the stored date
+// the generator actually keys off — and not a date recomputed from the rule.
+//
+// This replaces a test that asserted the opposite. The recompute was there to
+// stop a stale stored date from reaching the UI, but it made the field lie about
+// the only thing it names: on 12/11/2026 the TIM recurrence was deliberately
+// advanced to 20/12 so it would not generate a second entry for a bill paid by
+// hand, the write stored 2026-12-20, and the API went on answering 2026-11-20.
+// Reading it back, the change looked like it had not taken. The derived date is
+// still available, under its own name — see NextByRule.
+func TestListReportsTheStoredNextOccurrenceAndNotARecomputedOne(t *testing.T) {
 	repo := newFakeRecurringRepo()
 	service := NewRecurringTransactionsService(repo)
 
-	// Create a transaction with an old nextOccurrence (in the past)
+	// Day 7 against a BYMONTHDAY=20 rule: a date the rule can never produce, so
+	// this test does not depend on what today happens to be.
+	_, err := service.Create(CreateRecurringTransactionInput{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         99.39,
+		Description:    "Tim Celular",
+		RecurrenceRule: "FREQ=MONTHLY;BYMONTHDAY=20",
+		StartOn:        "2026-01-20",
+		NextOccurrence: "2027-03-07",
+		Status:         "ACTIVE",
+	})
+	if err != nil {
+		t.Fatalf("creating: %v", err)
+	}
+
+	list, err := service.List("profile-1")
+	if err != nil {
+		t.Fatalf("listing: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("got %d items, want 1", len(list))
+	}
+
+	if got := list[0].NextOccurrence.Format(time.DateOnly); got != "2027-03-07" {
+		t.Errorf("nextOccurrence = %s, want the stored 2027-03-07", got)
+	}
+}
+
+// An OVERDUE recurrence has to read as overdue. The recompute always answered
+// with a date today or later, so a recurrence whose turn had passed and which
+// had never generated anything was indistinguishable from one up to date — and
+// the pending-obligations screen keys off exactly `nextOccurrence <= today`.
+func TestListKeepsAPastNextOccurrenceInThePast(t *testing.T) {
+	repo := newFakeRecurringRepo()
+	service := NewRecurringTransactionsService(repo)
+
 	_, err := service.Create(CreateRecurringTransactionInput{
 		ProfileID:      "profile-1",
 		Type:           "EXPENSE",
 		Amount:         191.84,
 		Description:    "Fly with Greg",
-		RecurrenceRule: "FREQ=MONTHLY",
-		StartOn:        "2026-01-01",
-		NextOccurrence: "2026-01-01", // This is in the past (today is Jan 26)
+		RecurrenceRule: "FREQ=MONTHLY;BYMONTHDAY=1",
+		StartOn:        "2020-01-01",
+		NextOccurrence: "2020-01-01",
 		Status:         "ACTIVE",
 	})
 	if err != nil {
-		t.Fatalf("unexpected error creating: %v", err)
+		t.Fatalf("creating: %v", err)
 	}
 
-	list, err := service.List("profile-1")
+	list, _ := service.List("profile-1")
+
+	if got := list[0].NextOccurrence.Format(time.DateOnly); got != "2020-01-01" {
+		t.Errorf("nextOccurrence = %s, want the stored 2020-01-01", got)
+	}
+	if !list[0].NextOccurrence.Before(time.Now()) {
+		t.Error("an overdue recurrence reported a date that is not in the past")
+	}
+}
+
+// The derived date keeps its use — a screen projecting future instalments wants
+// it — but under its own name, next to the state rather than on top of it.
+func TestListAlsoReportsWhatTheRuleWouldSay(t *testing.T) {
+	repo := newFakeRecurringRepo()
+	service := NewRecurringTransactionsService(repo)
+
+	_, err := service.Create(CreateRecurringTransactionInput{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         99.39,
+		Description:    "Tim Celular",
+		RecurrenceRule: "FREQ=MONTHLY;BYMONTHDAY=20",
+		StartOn:        "2026-01-20",
+		NextOccurrence: "2027-03-07",
+		Status:         "ACTIVE",
+	})
 	if err != nil {
-		t.Fatalf("unexpected error listing: %v", err)
+		t.Fatalf("creating: %v", err)
 	}
 
-	if len(list) != 1 {
-		t.Fatalf("expected 1 item, got %d", len(list))
+	list, _ := service.List("profile-1")
+
+	if list[0].NextByRule == nil {
+		t.Fatal("nextByRule is missing: the derived date has consumers, it just cannot sit on the state")
+	}
+	if list[0].NextByRule.Day() != 20 {
+		t.Errorf("nextByRule = %s, want a day the BYMONTHDAY=20 rule produces", list[0].NextByRule.Format(time.DateOnly))
+	}
+	today := time.Now().Truncate(24 * time.Hour)
+	if list[0].NextByRule.Before(today.AddDate(0, 0, -1)) {
+		t.Errorf("nextByRule = %s, want today or later", list[0].NextByRule.Format(time.DateOnly))
+	}
+}
+
+// A paused recurrence has no next date by the rule — the domain answers zero —
+// and that must not be dressed up as one. The state is still reported.
+func TestListOnAPausedRecurrenceReportsTheStateAndNoRuleDate(t *testing.T) {
+	repo := newFakeRecurringRepo()
+	service := NewRecurringTransactionsService(repo)
+
+	_, err := service.Create(CreateRecurringTransactionInput{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         50,
+		Description:    "pausada",
+		RecurrenceRule: "FREQ=MONTHLY;BYMONTHDAY=20",
+		StartOn:        "2026-01-20",
+		NextOccurrence: "2026-11-20",
+		Status:         "PAUSED",
+	})
+	if err != nil {
+		t.Fatalf("creating: %v", err)
 	}
 
-	item := list[0]
+	list, _ := service.List("profile-1")
 
-	// The nextOccurrence should be calculated based on today's date
-	// Since today is Jan 26, and the recurrence is monthly starting Jan 1,
-	// the next occurrence should be Feb 1 (not Jan 1)
-	today := time.Now()
-	if item.NextOccurrence.Before(today) && item.Status == "ACTIVE" {
-		t.Errorf("nextOccurrence %v should not be before today %v for active transaction",
-			item.NextOccurrence, today)
+	if got := list[0].NextOccurrence.Format(time.DateOnly); got != "2026-11-20" {
+		t.Errorf("nextOccurrence = %s, want the stored 2026-11-20", got)
+	}
+	if list[0].NextByRule != nil {
+		t.Errorf("nextByRule = %v, want none: a paused recurrence has no next date", list[0].NextByRule)
+	}
+}
+
+// The bug as it actually happened: advance the date through the API, read it
+// back, and be told the old one.
+func TestAdvancingTheNextOccurrenceIsVisibleWhenReadBack(t *testing.T) {
+	repo := newFakeRecurringRepo()
+	service := NewRecurringTransactionsService(repo)
+
+	created, err := service.Create(CreateRecurringTransactionInput{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         109.99,
+		Description:    "Tim Celular",
+		RecurrenceRule: "FREQ=MONTHLY;BYMONTHDAY=20",
+		StartOn:        "2026-01-20",
+		NextOccurrence: "2026-11-20",
+		Status:         "ACTIVE",
+	})
+	if err != nil {
+		t.Fatalf("creating: %v", err)
+	}
+
+	// The bill for this month was entered by hand, so skip a turn.
+	//
+	// Day 7 against a BYMONTHDAY=20 rule, deliberately: 2026-12-20 would have
+	// been satisfied by the OLD implementation for every day between 21/11 and
+	// 20/12, because the recompute returns that same date in that window. The
+	// test would have gone on passing against the bug it exists to catch, and
+	// only between those dates — the worst kind of green.
+	updated, err := service.Update(created.ID, CreateRecurringTransactionInput{
+		ProfileID:      "profile-1",
+		Type:           "EXPENSE",
+		Amount:         99.39,
+		Description:    "Tim Celular",
+		RecurrenceRule: "FREQ=MONTHLY;BYMONTHDAY=20",
+		StartOn:        "2026-01-20",
+		NextOccurrence: "2027-03-07",
+		Status:         "ACTIVE",
+	})
+	if err != nil {
+		t.Fatalf("updating: %v", err)
+	}
+
+	if got := updated.NextOccurrence.Format(time.DateOnly); got != "2027-03-07" {
+		t.Errorf("the update answered %s, want 2027-03-07", got)
+	}
+	list, _ := service.List("profile-1")
+	if got := list[0].NextOccurrence.Format(time.DateOnly); got != "2027-03-07" {
+		t.Errorf("reading back gave %s, want 2027-03-07 — the advance looks like it did not take", got)
 	}
 }
 

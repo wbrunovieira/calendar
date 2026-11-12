@@ -2,6 +2,7 @@
 
 import { formatCurrency } from '@/utils/format';
 import type { BankAccount } from '@/types/finances';
+import { isDebtType, countsTowardHeldTotal } from '@/utils/accountGroups';
 
 interface SummaryCardsProps {
   regularAccounts: BankAccount[];
@@ -16,7 +17,13 @@ export default function SummaryCards({
   totalsByCurrency,
   investedByCurrency,
 }: SummaryCardsProps) {
-  const nonCreditCards = regularAccounts.filter((a) => a.type !== 'CREDIT_CARD');
+  // Split, not lumped: the total above counts only what can be spent, so a debt
+  // listed under it has to be visibly apart or the two disagree on screen.
+  // Same rule as the total above, so the list and the number cannot disagree:
+  // everything held is listed, and `countsTowardHeldTotal` decides which of them
+  // the number includes.
+  const heldAccounts = regularAccounts.filter((a) => !isDebtType(a));
+  const debtAccounts = regularAccounts.filter((a) => a.type === 'LIABILITY');
   const creditCards = regularAccounts.filter((a) => a.type === 'CREDIT_CARD');
 
   return (
@@ -32,12 +39,26 @@ export default function SummaryCards({
           )}
         </div>
         <div className="mt-2 space-y-1">
-          {nonCreditCards.map((a) => (
+          {heldAccounts.map((a) => (
             <div key={a.id} className="flex items-center justify-between text-xs">
-              <span className="text-white/40 truncate mr-2">{a.name}</span>
+              <span className={`truncate mr-2 ${countsTowardHeldTotal(a) ? 'text-white/40' : 'text-white/25'}`}>
+                {a.name}
+                {!countsTowardHeldTotal(a) && <span className="text-[10px] ml-1">(desativada, fora do total)</span>}
+              </span>
               <span className="text-white/60 font-medium shrink-0">{formatCurrency(a.currentBalance, a.currency)}</span>
             </div>
           ))}
+          {debtAccounts.length > 0 && (
+            <div className="pt-2 mt-1 border-t border-white/10 space-y-1">
+              <p className="text-white/30 text-[10px] uppercase tracking-wide">Dividas (fora do saldo)</p>
+              {debtAccounts.map((a) => (
+                <div key={a.id} className="flex items-center justify-between text-xs">
+                  <span className="text-white/40 truncate mr-2">{a.name}</span>
+                  <span className="text-rose-400 font-medium shrink-0">{formatCurrency(a.currentBalance, a.currency)}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
       {investmentAccounts.length > 0 && (

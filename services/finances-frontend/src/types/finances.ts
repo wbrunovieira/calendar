@@ -28,6 +28,10 @@ export type AccountType =
   | 'CASH'
   | 'EXCHANGE'
   | 'WALLET'
+  /** A debt that is not a credit card: a loan, money owed to someone. Balance
+   *  is stored NEGATIVE. The API has always returned it; this union did not
+   *  list it, so these accounts were grouped by whatever the fallback was. */
+  | 'LIABILITY'
   | 'OTHER';
 
 export type InvestmentType =
@@ -289,7 +293,13 @@ export interface RecurringTransaction {
   recurrenceRule: string;
   startOn: string;
   endOn?: string;
+  /** The stored date the backend generator keys off. Can be in the PAST: that
+   *  means the turn passed and nothing was generated yet (overdue). */
   nextOccurrence: string;
+  /** The next date the recurrence RULE produces, counted from today. Use this
+   *  to project forward; use nextOccurrence to know the real state. Absent when
+   *  the rule yields nothing (paused, cancelled, ended). */
+  nextByRule?: string;
   status: RecurringStatus;
   reviewOn?: string;
   notes?: string;

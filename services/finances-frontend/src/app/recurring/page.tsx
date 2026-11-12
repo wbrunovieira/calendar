@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { scheduleForSave } from '@/utils/recurringSchedule';
 import Link from 'next/link';
 import AppLayout, { useProfile } from '@/components/layout/AppLayout';
 import { useToast } from '@/components/ui/Toast';
@@ -56,6 +57,9 @@ export default function RecurringPage() {
   const [formData, setFormData] = useState<FormData>(defaultForm());
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // The row as STORED. The save path is a full replace, so the schedule has to
+  // come from here and not be rebuilt out of the form — see scheduleForSave.
+  const [editingItem, setEditingItem] = useState<RecurringTransaction | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -135,12 +139,14 @@ export default function RecurringPage() {
       endOn: item.endOn ? item.endOn.slice(0, 10) : '',
       notes: item.notes || '',
     });
+    setEditingItem(item);
     setModalOpen(true);
   };
 
   const closeModal = () => {
     setModalOpen(false);
     setEditingId(null);
+    setEditingItem(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -149,7 +155,13 @@ export default function RecurringPage() {
 
     setSaving(true);
     try {
-      const recurrenceRule = `FREQ=${formData.frequency}`;
+      // Keyed off the stored row alone. Passing `editingId ? editingItem ?? …`
+      // would fall back to the create branch if the two ever disagreed, and the
+      // create branch is what rewrote the schedule.
+      const { nextOccurrence, recurrenceRule } = scheduleForSave(
+        { startOn: formData.startOn, frequency: formData.frequency },
+        editingItem ?? undefined,
+      );
       const payload = {
         profileId: selectedProfileId,
         bankAccountId: formData.bankAccountId || undefined,
@@ -161,7 +173,7 @@ export default function RecurringPage() {
         recurrenceRule,
         startOn: formData.startOn,
         endOn: formData.endOn || undefined,
-        nextOccurrence: formData.startOn,
+        nextOccurrence,
         notes: formData.notes || undefined,
       };
 
@@ -229,8 +241,10 @@ export default function RecurringPage() {
       await api.patch(`/recurring-transactions/${pausingItem.id}/status`, { status: 'PAUSED' });
 
       if (reviewOnDate) {
-        const freq = pausingItem.recurrenceRule.includes('DAILY') ? 'DAILY'
-          : pausingItem.recurrenceRule.includes('WEEKLY') ? 'WEEKLY' : 'MONTHLY';
+        // Full replace, like the edit form: the stored rule goes back verbatim.
+        // Rebuilding it as FREQ=<freq> dropped BYMONTHDAY, which silently moved
+        // the recurrence to the day of startOn — the same defect the edit path
+        // had, in the other PUT on this page.
         const updatePayload = {
           profileId: pausingItem.profileId,
           bankAccountId: pausingItem.bankAccountId || undefined,
@@ -239,7 +253,7 @@ export default function RecurringPage() {
           amount: pausingItem.amount,
           currency: pausingItem.currency,
           description: pausingItem.description,
-          recurrenceRule: `FREQ=${freq}`,
+          recurrenceRule: pausingItem.recurrenceRule,
           startOn: pausingItem.startOn.slice(0, 10),
           endOn: pausingItem.endOn ? pausingItem.endOn.slice(0, 10) : undefined,
           nextOccurrence: pausingItem.nextOccurrence.slice(0, 10),

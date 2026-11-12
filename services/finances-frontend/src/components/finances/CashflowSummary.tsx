@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import type { BankAccount, Transaction, Invoice } from '@/types/finances';
 import { formatCurrency } from '@/utils/format';
 import { summarizeCashflow } from '@/utils/cashflow';
-import { getCardsOutstanding } from '@/utils/creditCard';
+import { groupAccounts, computeNetWorth } from '@/utils/accountGroups';
 
 interface CashflowSummaryProps {
   transactions: Transaction[];
@@ -43,17 +43,27 @@ export default function CashflowSummary({ transactions, accounts, currentInvoice
 
   const cf = useMemo(() => summarizeCashflow(transactions, accounts), [transactions, accounts]);
 
-  // Separate accounts by type
-  const regularAccounts = accounts.filter(
-    (acc) => acc.type !== 'CREDIT_CARD' && acc.type !== 'INVESTMENT'
+  // Grouped by what each account MEANS. A debt is never counted as money
+  // available: see utils/accountGroups.
+  const { cash, liabilities, creditCards, investments, unclassified } = useMemo(
+    () => groupAccounts(accounts),
+    [accounts]
   );
-  const creditCards = accounts.filter((acc) => acc.type === 'CREDIT_CARD');
-  const investments = accounts.filter((acc) => acc.type === 'INVESTMENT');
 
-  const availableBalance = regularAccounts.reduce((total, acc) => total + acc.currentBalance, 0);
-  const creditCardDebt = getCardsOutstanding(creditCards, invoicesByAccount);
-  const investmentTotal = investments.reduce((total, acc) => total + acc.currentBalance, 0);
-  const netWorth = availableBalance + investmentTotal - creditCardDebt;
+  // The arithmetic lives in accountGroups, under test. It used to be inline
+  // here, where a deleted `- loanDebt` and a liability folded back into
+  // "available" both passed the whole suite.
+  const {
+    available: availableBalance,
+    invested: investmentTotal,
+    unclassified: unclassifiedTotal,
+    cardDebt: creditCardDebt,
+    loanDebt,
+    netWorth,
+  } = useMemo(
+    () => computeNetWorth({ cash, liabilities, creditCards, investments, unclassified }, invoicesByAccount),
+    [cash, liabilities, creditCards, investments, unclassified, invoicesByAccount]
+  );
 
   const staleInvestments = investments.filter((acc) => {
     const d = daysSince(acc.updatedAt);
@@ -61,7 +71,7 @@ export default function CashflowSummary({ transactions, accounts, currentInvoice
   }).length;
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
       {/* Entradas */}
       <div className="bg-white/5 border border-white/10 rounded-2xl p-5 backdrop-blur-sm">
         <div className="flex items-center gap-2 mb-2">
@@ -94,14 +104,14 @@ export default function CashflowSummary({ transactions, accounts, currentInvoice
         <p className="text-white/50 text-xs mt-1">{cf.expenseCount} confirmadas</p>
       </div>
 
-      {/* Saldo Disponivel (contas correntes, poupanca, dinheiro) */}
+      {/* Disponivel: SO o que da pra gastar hoje. Dividas moram no proprio card. */}
       <div className="bg-white/5 border border-white/10 rounded-2xl p-5 backdrop-blur-sm">
         <div className="flex items-center gap-2 mb-2">
           <span className="text-lg">🏦</span>
           <span className="text-white/70 text-sm">Disponivel</span>
         </div>
         <div className="space-y-1 mb-2">
-          {regularAccounts.map((acc) => (
+          {cash.map((acc) => (
             <div key={acc.id} className="flex justify-between text-sm">
               <span className="text-white/60 truncate mr-2">{acc.name}</span>
               <span className={acc.currentBalance >= 0 ? 'text-white/80' : 'text-rose-400'}>
@@ -117,8 +127,35 @@ export default function CashflowSummary({ transactions, accounts, currentInvoice
               {formatCurrency(availableBalance)}
             </span>
           </div>
+          {unclassified.length > 0 && (
+            <p className="text-amber-400 text-[11px] mt-1">
+              ⚠️ {unclassified.length} conta(s) de tipo desconhecido, {formatCurrency(unclassifiedTotal)} — fora deste total
+            </p>
+          )}
         </div>
       </div>
+
+      {/* Dividas que nao sao cartao: emprestimos, dinheiro devido a alguem */}
+      {liabilities.length > 0 && (
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-5 backdrop-blur-sm">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-lg">📉</span>
+            <span className="text-white/70 text-sm">Dividas</span>
+          </div>
+          <div className={`text-2xl font-bold ${loanDebt > 0 ? 'text-rose-400' : 'text-white'}`}>
+            {formatCurrency(loanDebt)}
+          </div>
+          <div className="mt-2 space-y-0.5 text-xs">
+            {liabilities.map((acc) => (
+              <div key={acc.id} className="flex justify-between">
+                <span className="text-white/50 truncate mr-2">{acc.name}</span>
+                <span className="text-white/70">{formatCurrency(-acc.currentBalance)}</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-white/40 text-[11px] mt-1">fora das faturas de cartao</p>
+        </div>
+      )}
 
       {/* Cartoes de Credito */}
       <div className="bg-white/5 border border-white/10 rounded-2xl p-5 backdrop-blur-sm">
@@ -157,13 +194,17 @@ export default function CashflowSummary({ transactions, accounts, currentInvoice
       {showPatrimonio && (
         <PatrimonioModal
           onClose={() => setShowPatrimonio(false)}
-          regularAccounts={regularAccounts}
+          cash={cash}
+          liabilities={liabilities}
           investments={investments}
           creditCards={creditCards}
           currentInvoices={currentInvoices}
+          unclassified={unclassified}
+          unclassifiedTotal={unclassifiedTotal}
           availableBalance={availableBalance}
           investmentTotal={investmentTotal}
           creditCardDebt={creditCardDebt}
+          loanDebt={loanDebt}
           netWorth={netWorth}
         />
       )}
@@ -173,25 +214,33 @@ export default function CashflowSummary({ transactions, accounts, currentInvoice
 
 interface PatrimonioModalProps {
   onClose: () => void;
-  regularAccounts: BankAccount[];
+  cash: BankAccount[];
+  liabilities: BankAccount[];
   investments: BankAccount[];
   creditCards: BankAccount[];
   currentInvoices: Record<string, Invoice>;
+  unclassified: BankAccount[];
+  unclassifiedTotal: number;
   availableBalance: number;
   investmentTotal: number;
   creditCardDebt: number;
+  loanDebt: number;
   netWorth: number;
 }
 
 function PatrimonioModal({
   onClose,
-  regularAccounts,
+  cash,
+  liabilities,
   investments,
   creditCards,
   currentInvoices,
+  unclassified,
+  unclassifiedTotal,
   availableBalance,
   investmentTotal,
   creditCardDebt,
+  loanDebt,
   netWorth,
 }: PatrimonioModalProps) {
   const sortedInvestments = [...investments].sort((a, b) => b.currentBalance - a.currentBalance);
@@ -217,7 +266,7 @@ function PatrimonioModal({
 
         {/* Disponivel */}
         <Section title="Disponivel" total={availableBalance} color="text-white">
-          {regularAccounts.map((acc) => (
+          {cash.map((acc) => (
             <Row key={acc.id} label={acc.name} value={acc.currentBalance} />
           ))}
         </Section>
@@ -249,9 +298,28 @@ function PatrimonioModal({
           ))}
         </Section>
 
+        {unclassified.length > 0 && (
+          <Section title="Tipo desconhecido" total={unclassifiedTotal} color="text-amber-400">
+            {unclassified.map((acc) => (
+              <Row key={acc.id} label={acc.name} value={acc.currentBalance} />
+            ))}
+          </Section>
+        )}
+
+        {liabilities.length > 0 && (
+          <Section title="Dividas (emprestimos)" total={-loanDebt} color="text-rose-400">
+            {liabilities.map((acc) => (
+              <Row key={acc.id} label={acc.name} value={acc.currentBalance} />
+            ))}
+          </Section>
+        )}
+
         <div className="border-t border-white/10 mt-3 pt-3 text-xs text-white/50">
-          Disponivel {formatCurrency(availableBalance)} + Investido {formatCurrency(investmentTotal)} −
-          Faturas {formatCurrency(creditCardDebt)} = <span className="text-white/80 font-medium">{formatCurrency(netWorth)}</span>
+          Disponivel {formatCurrency(availableBalance)} + Investido {formatCurrency(investmentTotal)}
+          {unclassifiedTotal !== 0 && <> + Desconhecido {formatCurrency(unclassifiedTotal)}</>} −
+          Faturas {formatCurrency(creditCardDebt)}
+          {loanDebt !== 0 && <> − Dividas {formatCurrency(loanDebt)}</>} ={' '}
+          <span className="text-white/80 font-medium">{formatCurrency(netWorth)}</span>
         </div>
       </div>
     </div>

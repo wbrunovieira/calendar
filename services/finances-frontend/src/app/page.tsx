@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { getLocalDateString } from '@/utils/format';
+import { datesForConfirmedPayment } from '@/utils/confirmRecurring';
 import AppLayout, { useProfile } from '@/components/layout/AppLayout';
 import TransactionForm from '@/components/finances/TransactionForm';
 import TransactionsTable from '@/components/finances/TransactionsTable';
@@ -437,9 +439,7 @@ export default function FinancesPage() {
         currency: recurring.currency,
         description: recurring.description,
         notes: recurring.notes,
-        occurredOn: recurring.nextOccurrence.includes('T')
-          ? recurring.nextOccurrence.split('T')[0]
-          : recurring.nextOccurrence,
+        ...datesForConfirmedPayment(recurring.nextOccurrence, getLocalDateString()),
       };
 
       await api.post('/transactions', transactionData);

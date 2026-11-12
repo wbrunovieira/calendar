@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findPendingRecurrings } from './pendingAlerts';
+import { findPendingRecurrings, isRecurringSatisfied } from './pendingAlerts';
 import type { Transaction, RecurringTransaction } from '@/types/finances';
 
 const TODAY = '2026-06-25';
@@ -93,5 +93,54 @@ describe('findPendingRecurrings', () => {
       TODAY,
     );
     expect(result).toHaveLength(1);
+  });
+});
+
+// Confirming an overdue recurrence has to CLEAR it, or the row stays on screen
+// with its green "Ja paguei" button and the obvious next move is to press it
+// again — two CONFIRMED expenses for one bill.
+//
+// The payment is dated TODAY (money moved today) while the obligation belongs to
+// the month it was due, so matching on occurredOn alone cannot see it across a
+// month boundary. The obligation date is carried in dueOn, which is what the
+// match has to read. TodayAlerts already resolves PLANNED rows this way.
+describe('an overdue recurrence confirmed today', () => {
+  const tim = recurring({
+    description: 'Tim Celular',
+    nextOccurrence: '2026-10-20',
+    recurrenceRule: 'FREQ=MONTHLY;BYMONTHDAY=20',
+  });
+
+  it('stops being pending once the payment is posted', () => {
+    const paidToday = tx({
+      description: 'Tim Celular',
+      status: 'CONFIRMED',
+      occurredOn: '2026-11-12',
+      dueOn: '2026-10-20',
+    });
+
+    expect(isRecurringSatisfied(tim, [paidToday])).toBe(true);
+  });
+
+  it('is still pending when nothing was posted for it', () => {
+    const somethingElse = tx({
+      description: 'Outra coisa',
+      status: 'CONFIRMED',
+      occurredOn: '2026-11-12',
+      dueOn: '2026-10-20',
+    });
+
+    expect(isRecurringSatisfied(tim, [somethingElse])).toBe(false);
+  });
+
+  // Entries posted by hand carry no dueOn; they must keep matching as before.
+  it('still matches a payment that carries no obligation date', () => {
+    const byHand = tx({
+      description: 'Tim Celular',
+      status: 'CONFIRMED',
+      occurredOn: '2026-10-22',
+    });
+
+    expect(isRecurringSatisfied(tim, [byHand])).toBe(true);
   });
 });
