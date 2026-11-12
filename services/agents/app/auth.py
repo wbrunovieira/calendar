@@ -5,8 +5,10 @@ Accepted forms: ``Authorization: Bearer <token>`` or ``X-API-Key: <token>``.
 Exceptions:
 - ``/health`` stays public for the health checks;
 - CORS preflights pass (the CORS middleware sits outside this one and answers them);
-- a blank ``AGENTS_API_TOKEN`` leaves the API open. That is deliberate: this ships before
+- a blank ``AGENTS_API_TOKEN`` leaves the API open (logged as a warning at startup). That is deliberate: this ships before
   the callers (n8n, the CRM) send the token, and enforcement starts once it is set.
+
+The token must be ASCII (e.g. ``openssl rand -hex 32``): headers are read as latin-1.
 """
 
 from __future__ import annotations
@@ -34,7 +36,8 @@ class ApiTokenMiddleware:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
+        # Everything but lifespan is checked, so a websocket route added later is covered too.
+        if scope["type"] == "lifespan":
             await self.app(scope, receive, send)
             return
 
@@ -47,6 +50,10 @@ class ApiTokenMiddleware:
         provided = _extract_token(dict(scope["headers"]))
         # compare_digest runs in constant time, so a wrong token can't be guessed from timing.
         if not provided or not hmac.compare_digest(provided.encode(), expected.encode()):
+            if scope["type"] == "websocket":
+                # Closing before accept makes the server answer the handshake with 403.
+                await send({"type": "websocket.close", "code": 1008})
+                return
             response = JSONResponse(
                 {"detail": "Invalid or missing API token"},
                 status_code=401,

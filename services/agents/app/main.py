@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth import ApiTokenMiddleware
+from app.config import settings
 
 load_dotenv()
 
@@ -28,6 +29,9 @@ async def lifespan(app: FastAPI):
         app.state.compiled_graph = None
         app.state.langgraph_available = False
         logger.exception("Failed to compile LangGraph")
+
+    if not settings.agents_api_token.strip():
+        logger.warning("AGENTS_API_TOKEN not set: the agents API is open")
 
     yield
 

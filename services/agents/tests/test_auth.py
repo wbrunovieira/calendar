@@ -71,6 +71,19 @@ def test_health_check_stays_public(token):
         assert started.get("/health").status_code == 200
 
 
+def test_health_with_trailing_slash_is_not_public(token):
+    assert client.get("/health/", follow_redirects=False).status_code == 401
+
+
+def test_websocket_without_token_is_rejected(token):
+    from starlette.websockets import WebSocketDisconnect
+
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with client.websocket_connect("/ws"):
+            pass
+    assert exc.value.code == 1008
+
+
 def test_docs_are_not_public(token):
     assert client.get("/docs").status_code == 401
     assert client.get("/openapi.json").status_code == 401
@@ -125,6 +138,17 @@ async def test_finances_client_sends_token_when_configured(monkeypatch):
     rec = _Recorder()
     with _patched_client(rec):
         await finances.get_bank_accounts("p1")
+    assert rec.headers["authorization"] == "Bearer fin-tok"
+
+
+@pytest.mark.asyncio
+async def test_finances_client_sends_token_when_creating_a_transaction(monkeypatch):
+    from app.clients import finances
+
+    monkeypatch.setattr(settings, "finances_api_token", "fin-tok")
+    rec = _Recorder()
+    with _patched_client(rec):
+        await finances.create_transaction({"amount": 1})
     assert rec.headers["authorization"] == "Bearer fin-tok"
 
 
