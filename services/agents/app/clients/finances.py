@@ -5,8 +5,15 @@ import httpx
 from app.config import settings
 
 
+def _client(timeout: float = 10) -> httpx.AsyncClient:
+    headers = {}
+    if settings.finances_api_token.strip():
+        headers["Authorization"] = f"Bearer {settings.finances_api_token.strip()}"
+    return httpx.AsyncClient(base_url=settings.finances_base_url, timeout=timeout, headers=headers)
+
+
 async def get_bank_accounts(profile_id: str) -> list[dict]:
-    async with httpx.AsyncClient(base_url=settings.finances_base_url, timeout=10) as client:
+    async with _client() as client:
         resp = await client.get("/api/v1/bank-accounts", params={"profileId": profile_id})
         resp.raise_for_status()
         body = resp.json()
@@ -17,7 +24,7 @@ async def get_categories(profile_id: str, category_type: str | None = None) -> l
     params: dict[str, str] = {"profileId": profile_id}
     if category_type:
         params["type"] = category_type
-    async with httpx.AsyncClient(base_url=settings.finances_base_url, timeout=10) as client:
+    async with _client() as client:
         resp = await client.get("/api/v1/categories", params=params)
         resp.raise_for_status()
         body = resp.json()
@@ -25,7 +32,7 @@ async def get_categories(profile_id: str, category_type: str | None = None) -> l
 
 
 async def create_transaction(payload: dict) -> dict:
-    async with httpx.AsyncClient(base_url=settings.finances_base_url, timeout=10) as client:
+    async with _client() as client:
         resp = await client.post("/api/v1/transactions", json=payload)
         if resp.status_code >= 400:
             error_body = resp.text.strip()

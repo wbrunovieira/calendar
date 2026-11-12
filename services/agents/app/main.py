@@ -7,6 +7,9 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.auth import ApiTokenMiddleware
+from app.config import settings
+
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s: %(message)s")
@@ -27,10 +30,16 @@ async def lifespan(app: FastAPI):
         app.state.langgraph_available = False
         logger.exception("Failed to compile LangGraph")
 
+    if not settings.agents_api_token.strip():
+        logger.warning("AGENTS_API_TOKEN not set: the agents API is open")
+
     yield
 
 
 app = FastAPI(title="agents", lifespan=lifespan)
+
+# Added before CORS so CORS ends up outermost: it answers preflights and still decorates 401s.
+app.add_middleware(ApiTokenMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
