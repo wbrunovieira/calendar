@@ -72,23 +72,47 @@ func (c *CardOutstanding) OwedNow(account *bankaccount.BankAccount, on time.Time
 		return 0, err
 	}
 	issued := issuedInvoices(invoices, on)
-	return c.sum(account, func(inv *invoice.Invoice) bool { return issued[inv.ID] })
+	// The bills are passed down rather than fetched again: this used to query the
+	// repository twice per card, on a read path that already costs one round trip
+	// per bill.
+	return c.sumOf(account, invoices, func(inv *invoice.Invoice) bool { return issued[inv.ID] })
+}
+
+// dayIn reduces an instant to the calendar day it falls on in `loc`, so two
+// values that were never in the same zone can be compared as dates.
+func dayIn(t time.Time, loc *time.Location) time.Time {
+	y, m, d := t.In(loc).Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 }
 
 // issuedInvoices names the bills that exist for the holder at `on`: every cycle
 // already closed, plus the single earliest one still open. Anything later has
 // not been billed and cannot be paid.
+//
+// Both sides are reduced to a SAO PAULO calendar day first. `ClosingDate` comes
+// from a Postgres `date` and arrives as midnight UTC — which is 21:00 of the
+// previous day in Brazil — while `on` is a live instant. Comparing them raw
+// flipped the open cycle one evening early: measured on the fixture below,
+// 20:59 BRT answered 1.358,65 and 21:00 BRT answered 2.297,20, a whole
+// instalment cycle, for three hours, once a month per card.
+//
+// That is the same window as the bug this file's sibling fix is named after,
+// reintroduced in a function written in the same change. Hence the explicit
+// location here too.
 func issuedInvoices(invoices []*invoice.Invoice, on time.Time) map[string]bool {
+	today := dayIn(on, issuerLocation)
 	issued := make(map[string]bool, len(invoices))
 	var current *invoice.Invoice
+	var currentDay time.Time
 	for _, inv := range invoices {
-		if !inv.ClosingDate.After(on) {
+		closing := dayIn(inv.ClosingDate, time.UTC)
+		if !closing.After(today) {
 			issued[inv.ID] = true
 			continue
 		}
 		// The open cycle is the nearest closing date still ahead.
-		if current == nil || inv.ClosingDate.Before(current.ClosingDate) {
-			current = inv
+		if current == nil || closing.Before(currentDay) {
+			current, currentDay = inv, closing
 		}
 	}
 	if current != nil {
@@ -102,6 +126,10 @@ func (c *CardOutstanding) sum(account *bankaccount.BankAccount, counts func(*inv
 	if err != nil {
 		return 0, err
 	}
+	return c.sumOf(account, invoices, counts)
+}
+
+func (c *CardOutstanding) sumOf(account *bankaccount.BankAccount, invoices []*invoice.Invoice, counts func(*invoice.Invoice) bool) (float64, error) {
 
 	outstanding := 0.0
 	invoiced := make(map[string]bool, len(invoices))

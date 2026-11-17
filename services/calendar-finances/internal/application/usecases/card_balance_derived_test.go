@@ -303,3 +303,87 @@ func TestListWithNoProfileAlsoDerivesTheCardBalance(t *testing.T) {
 		}
 	}
 }
+
+// The cycle boundary must turn at midnight in SAO PAULO, not at midnight UTC.
+//
+// `ClosingDate` comes from a Postgres `date` and arrives as midnight UTC, which
+// is 21:00 of the previous day in Brazil. Compared raw against a live instant,
+// the open cycle flipped one evening early and a whole instalment cycle joined
+// "owed now": 1.358,65 at 20:59 BRT, 2.297,20 at 21:00. Three hours, once a
+// month, per card — the very window the rest of this change exists to close,
+// reintroduced by the function that closed it.
+func TestTheCycleBoundaryTurnsAtMidnightInSaoPaulo(t *testing.T) {
+	repo, invoices, txs, _ := cardWithAnInstalmentPlan()
+	outstanding := NewCardOutstanding(invoices, txs)
+	// A fatura de dezembro fecha em 09/12 (midnight UTC vindo do banco).
+	casos := []struct {
+		nome  string
+		agora time.Time
+		quer  float64
+	}{
+		// 08/12 20:59 BRT == 08/12 23:59 UTC: vespera, ciclo ainda aberto.
+		{"vespera 20:59 BRT", time.Date(2026, 12, 8, 23, 59, 0, 0, time.UTC), 1358.65},
+		// 08/12 21:00 BRT == 09/12 00:00 UTC: ainda e dia 8 no Brasil.
+		{"vespera 21:00 BRT", time.Date(2026, 12, 9, 0, 0, 0, 0, time.UTC), 1358.65},
+		{"vespera 23:59 BRT", time.Date(2026, 12, 9, 2, 59, 0, 0, time.UTC), 1358.65},
+		// 09/12 00:01 BRT == 09/12 03:01 UTC: virou o dia do fechamento.
+		{"dia do fechamento 00:01 BRT", time.Date(2026, 12, 9, 3, 1, 0, 0, time.UTC), 2297.20},
+	}
+
+	for _, c := range casos {
+		owed, err := outstanding.OwedNow(repo.accounts["card"], c.agora)
+		if err != nil {
+			t.Fatalf("%s: %v", c.nome, err)
+		}
+		if owed < c.quer-0.01 || owed > c.quer+0.01 {
+			t.Errorf("%s: owed now = %.2f, want %.2f", c.nome, owed, c.quer)
+		}
+	}
+}
+
+// A CONFIRMED instalment already sitting on a FUTURE bill must not be dragged in
+// by the unlinked-charges pass. Every bill marks its charges as invoiced, even
+// one that does not count towards this total — the line that does it is the
+// newest in the file and had no test under it.
+func TestAConfirmedInstalmentOnAFutureBillIsNotCountedTwice(t *testing.T) {
+	repo, invoices, txs, hoje := cardWithAnInstalmentPlan()
+	for _, tx := range txs.txs {
+		if tx.ID == "c" { // a parcela de janeiro
+			tx.Status = transaction.StatusConfirmed
+		}
+	}
+
+	owed, err := NewCardOutstanding(invoices, txs).OwedNow(repo.accounts["card"], hoje)
+	if err != nil {
+		t.Fatalf("OwedNow: %v", err)
+	}
+
+	if owed < 1358.64 || owed > 1358.66 {
+		t.Errorf("owed now = %.2f, want 1358.65 — a confirmed instalment on January's bill leaked in", owed)
+	}
+}
+
+// And the bills are fetched ONCE per answer. The read path already pays a round
+// trip per bill; asking for the list twice doubled the cheapest part of it.
+func TestOwedNowReadsTheBillsOnlyOnce(t *testing.T) {
+	repo, invoices, txs, hoje := cardWithAnInstalmentPlan()
+	contador := &countingInvoiceRepo{usageInvoiceRepo: invoices}
+
+	if _, err := NewCardOutstanding(contador, txs).OwedNow(repo.accounts["card"], hoje); err != nil {
+		t.Fatalf("OwedNow: %v", err)
+	}
+
+	if contador.chamadas != 1 {
+		t.Errorf("FindByBankAccountID chamado %d vezes, want 1", contador.chamadas)
+	}
+}
+
+type countingInvoiceRepo struct {
+	*usageInvoiceRepo
+	chamadas int
+}
+
+func (r *countingInvoiceRepo) FindByBankAccountID(id string) ([]*invoice.Invoice, error) {
+	r.chamadas++
+	return r.usageInvoiceRepo.FindByBankAccountID(id)
+}
