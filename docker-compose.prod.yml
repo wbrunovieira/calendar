@@ -424,6 +424,9 @@ services:
       DATABASE_URL: postgresql://${LANGFUSE_POSTGRES_USER:-langfuse}:${LANGFUSE_POSTGRES_PASSWORD}@langfuse-postgres:5432/${LANGFUSE_POSTGRES_DB:-langfuse_db}
       NEXTAUTH_URL: https://calendar-langfuse.wbdigitalsolutions.com
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET}
+      # Only the existing account. Without Authelia in front, open sign-up would let anyone in
+      # to read the agents' traces.
+      AUTH_DISABLE_SIGNUP: "true"
       SALT: ${LANGFUSE_SALT}
       ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY}
       CLICKHOUSE_URL: http://langfuse-clickhouse:8123
