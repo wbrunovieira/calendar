@@ -144,7 +144,11 @@ type CheckInvariantsResult struct {
 	CycleDrifts       []CycleInvariant       `json:"cycleDrifts"`
 	InstallmentDrifts []InstallmentInvariant `json:"installmentDrifts"`
 	PaymentDrifts     []PaymentInvariant     `json:"paymentDrifts"`
-	OK                bool                   `json:"ok"`
+	// TransferDrifts is money with only one side: a transfer that lands nowhere,
+	// or a cross-profile pair missing its other leg. Always actionable — there is
+	// no design reason for a movement to be half-written.
+	TransferDrifts []TransferInvariant `json:"transferDrifts"`
+	OK             bool                `json:"ok"`
 }
 
 type CheckInvariantsUseCase struct {
@@ -180,6 +184,7 @@ func (uc *CheckInvariantsUseCase) Execute() (*CheckInvariantsResult, error) {
 		CycleDrifts:       []CycleInvariant{},
 		InstallmentDrifts: []InstallmentInvariant{},
 		PaymentDrifts:     []PaymentInvariant{},
+		TransferDrifts:    []TransferInvariant{},
 		OK:                true,
 	}
 
@@ -207,7 +212,58 @@ func (uc *CheckInvariantsUseCase) Execute() (*CheckInvariantsResult, error) {
 		}
 	}
 
+	if err := uc.checkTransferLegs(accounts, result); err != nil {
+		return nil, err
+	}
+
 	return result, nil
+}
+
+// checkTransferLegs asks whether money that left an account arrived anywhere.
+//
+// It walks every profile that owns an account, because a cross-profile pair has
+// one leg in each book and a check that looked at one profile at a time would
+// see every pair as half-written.
+func (uc *CheckInvariantsUseCase) checkTransferLegs(
+	accounts []*bankaccount.BankAccount,
+	result *CheckInvariantsResult,
+) error {
+	byID := make(map[string]*bankaccount.BankAccount, len(accounts))
+	profiles := make([]string, 0, 4)
+	seen := map[string]bool{}
+	for _, a := range accounts {
+		byID[a.ID] = a
+		if !seen[a.ProfileID] {
+			seen[a.ProfileID] = true
+			profiles = append(profiles, a.ProfileID)
+		}
+	}
+
+	rows := make([]*transaction.Transaction, 0, 256)
+	known := map[string]bool{}
+	for _, profileID := range profiles {
+		// IncludeReversed so a deliberately reversed pair is recognised as settled
+		// on neither side instead of reported as half-written.
+		txs, err := uc.txRepo.List(transaction.ListFilter{ProfileID: profileID, IncludeReversed: true})
+		if err != nil {
+			return err
+		}
+		for _, t := range txs {
+			if known[t.ID] {
+				continue
+			}
+			known[t.ID] = true
+			rows = append(rows, t)
+		}
+	}
+
+	found := checkTransfers(rows, byID)
+	if len(found.TransferDrifts) == 0 {
+		return nil
+	}
+	result.TransferDrifts = append(result.TransferDrifts, found.TransferDrifts...)
+	result.OK = false
+	return nil
 }
 
 // checkPaymentsAgainstBills reports a bill whose live payments exceed its value.

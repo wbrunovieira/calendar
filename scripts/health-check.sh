@@ -410,7 +410,10 @@ check_ledger() {
     # ONE value instead of re-deriving it. Grepping every "name" out of the
     # payload reported the advisory cards and silently dropped the unanswered
     # accounts, whose names live in a plain string array.
-    read_summary() { grep -o '"summary":"[^"]*"' "$body" 2>/dev/null | cut -d'"' -f4 || true; }
+    # O espaco opcional nao e teorico: Go gera JSON compacto, mas qualquer
+    # proxy ou mudanca que formate a resposta faria o grep devolver vazio em
+    # silencio, e a linha diria "sem resumo" com o resumo na tela.
+    read_summary() { grep -oE '"summary":[[:space:]]*"[^"]*"' "$body" 2>/dev/null | cut -d'"' -f4 || true; }
 
     # fetch_code writes the body to $body and echoes the status code — or 000
     # when curl could not FINISH, which includes a 200 whose body was cut off
@@ -428,9 +431,17 @@ check_ledger() {
     case "${code:-000}" in
         200) issues="${issues}
   - Invariantes: ok" ;;
-        409) add_alert "Invariantes do financeiro: divergencia encontrada"
+        409) local quantos
+             # Sem jq: conta quantas pernas soltas o relatorio nomeou. Dinheiro
+             # com um lado so e a unica categoria que nunca tem explicacao de
+             # desenho, entao ela vai no texto do alerta.
+             quantos=$(grep -oE '"transferDrifts":[[:space:]]*\[[^]]*\]' "$body" 2>/dev/null | grep -o '"transactionId"' | wc -l | tr -d ' ' || true)
+             # Vazio quando nao ha nenhuma: "0 com uma perna so" e ruido que
+             # ensina a ignorar a linha.
+             [[ "${quantos:-0}" -gt 0 ]] || quantos=""
+             add_alert "Invariantes do financeiro: divergencia encontrada${quantos:+ (${quantos} com uma perna so)}"
              issues="${issues}
-  - Invariantes: DIVERGENCIA
+  - Invariantes: DIVERGENCIA${quantos:+ — ${quantos} movimento(s) com uma perna so}
     detalhe: curl -s ${base}/invariants" ;;
         *)   add_warning "Invariantes do financeiro nao responderam (HTTP ${code:-000})"
              issues="${issues}

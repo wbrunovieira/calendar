@@ -35,6 +35,13 @@ func (f *invariantsTxRepo) CalculateBalanceByBankAccountID(string) (float64, err
 	return f.balance, nil
 }
 
+// This fixture has one account and no rows, so an empty list is the truth here
+// rather than a convenience: the transfer check has nothing to walk. Tests about
+// one-sided money live next to that check, over real rows.
+func (f *invariantsTxRepo) List(transaction.ListFilter) ([]*transaction.Transaction, error) {
+	return nil, nil
+}
+
 type invariantsInvoiceRepo struct{ invoice.Repository }
 
 func newInvariantsHandlerFor(stored, ledger float64) *InvariantsHandlers {
