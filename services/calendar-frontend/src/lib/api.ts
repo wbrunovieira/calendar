@@ -4,10 +4,9 @@ import type { Event, Category, CategoryType, HabitStats, FlexibleHabitProgress, 
  * API client for calendar backend
  */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3334';
-// The backend requires this token once configured. It ships in the browser bundle, so it is a
-// gateway key (keeps anonymous traffic out), not a secret — the frontend itself sits behind Authelia.
-const API_TOKEN = process.env.NEXT_PUBLIC_API_TOKEN;
+// Same-origin proxy (app/api/backend) that forwards to calendar-core and adds the API token on
+// the server, so the token never reaches the browser.
+const API_URL = '/api/backend';
 
 /**
  * Base fetch wrapper with error handling
@@ -20,7 +19,6 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
       ...options,
       headers: {
         'Content-Type': 'application/json',
-        ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
         ...options?.headers,
       },
     });
