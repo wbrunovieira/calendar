@@ -238,6 +238,7 @@ services:
       - CALENDAR_API_TOKEN=${API_TOKEN:-}
     depends_on:
       - calendar-health
+      - calendar-core
     networks:
       - calendar-network
     restart: unless-stopped

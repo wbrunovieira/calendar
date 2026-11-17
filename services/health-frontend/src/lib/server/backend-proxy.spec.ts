@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { proxyToBackend } from './backend-proxy';
+import { calendarBackendFromEnv, healthBackendFromEnv, proxyToBackend } from './backend-proxy';
 
 const config = { baseUrl: 'http://calendar-core:3334', token: 'srv-token' };
 
@@ -201,3 +201,35 @@ describe('proxyToBackend write protection (CSRF)', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe('proxyToBackend with a base path (calendar-health /api/v1)', () => {
+  const health = { baseUrl: 'http://calendar-health:3336/api/v1/', token: 't' };
+
+  it('keeps the base path', async () => {
+    await proxyToBackend(new Request('https://x/api/health-backend/profiles?a=1'), ['profiles'], health);
+    expect(lastCall().url).toBe('http://calendar-health:3336/api/v1/profiles?a=1');
+  });
+
+  it('cannot climb above the base path', async () => {
+    expect((await proxyToBackend(new Request('https://x/y'), ['..', 'admin'], health)).status).toBe(400);
+    await proxyToBackend(new Request('https://x/y'), ['%2e%2e', 'admin'], health);
+    expect(lastCall().url).toBe('http://calendar-health:3336/api/v1/%252e%252e/admin');
+  });
+});
+
+describe('backend config from env', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('reads calendar-health URL and trimmed token', () => {
+    vi.stubEnv('HEALTH_API_URL', 'http://calendar-health:3336/api/v1');
+    vi.stubEnv('HEALTH_API_TOKEN', '  h-tok  ');
+    expect(healthBackendFromEnv()).toEqual({ baseUrl: 'http://calendar-health:3336/api/v1', token: 'h-tok' });
+  });
+
+  it('reads calendar-core URL and token, defaulting to local dev', () => {
+    vi.stubEnv('CALENDAR_API_URL', '');
+    vi.stubEnv('CALENDAR_API_TOKEN', '');
+    expect(calendarBackendFromEnv()).toEqual({ baseUrl: 'http://localhost:3334', token: '' });
+  });
+});
+
