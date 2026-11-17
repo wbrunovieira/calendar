@@ -600,7 +600,7 @@ func TestCreateTransaction_TheCurrencyIsTheAccountsOrItIsRefused(t *testing.T) {
 	base := CreateTransactionInput{
 		ProfileID: testProfile, BankAccountID: testAccount, CategoryID: confirmedStr(testCat),
 		Type: "EXPENSE", Amount: 40, Description: "Assinatura",
-		OccurredOn: time.Now().Format("2006-01-02"),
+		OccurredOn: clientDay(0),
 	}
 
 	t.Run("an empty currency takes the account's, not BRL", func(t *testing.T) {
@@ -645,7 +645,7 @@ func TestCreateTransaction_EveryPathTakesTheAccountsCurrency(t *testing.T) {
 		if _, err := uc.Execute(CreateTransactionInput{
 			ProfileID: testProfile, BankAccountID: testAccount, CategoryID: confirmedStr(testCat),
 			Type: "EXPENSE", Amount: 90, Description: "Curso em 3x",
-			OccurredOn: time.Now().Format("2006-01-02"), InstallmentTotal: &total,
+			OccurredOn: clientDay(0), InstallmentTotal: &total,
 		}); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -678,7 +678,7 @@ func TestCreateTransaction_EveryPathTakesTheAccountsCurrency(t *testing.T) {
 			ProfileID: testProfile, BankAccountID: testAccount, DestinationAccountID: confirmedStr(testDest),
 			CategoryID: confirmedStr(testCat), DestinationCategoryID: confirmedStr(testCatInc),
 			Type: "TRANSFER", Amount: 100, Description: "Aporte",
-			OccurredOn: time.Now().Format("2006-01-02"),
+			OccurredOn: clientDay(0),
 		}); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -712,7 +712,7 @@ func TestCreateTransaction_ATransferCannotCrossCurrencies(t *testing.T) {
 	_, err := uc.Execute(CreateTransactionInput{
 		ProfileID: testProfile, BankAccountID: testAccount, DestinationAccountID: confirmedStr(testDest),
 		Type: "TRANSFER", Amount: 1000, Currency: "BRL", Description: "Wise BRL -> EUR",
-		OccurredOn: time.Now().Format("2006-01-02"),
+		OccurredOn: clientDay(0),
 	})
 	if !errors.Is(err, ErrCurrencyMismatch) {
 		t.Fatalf("got %v, want ErrCurrencyMismatch", err)

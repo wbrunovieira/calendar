@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groupAccounts, sumBalances, debtTotal, isCashLike, isDebtType, computeNetWorth, sumHeldByCurrency } from './accountGroups';
+import { groupAccounts, sumBalances, debtTotal, isCashLike, isDebtType, computeNetWorth, sumHeldByCurrency, cashOnHand } from './accountGroups';
 import type { AccountType, BankAccount } from '@/types/finances';
 
 const account = (name: string, type: AccountType, currentBalance: number, isActive = true): BankAccount =>
@@ -303,5 +303,37 @@ describe('sumHeldByCurrency', () => {
 
   it('treats a missing currency as BRL', () => {
     expect(sumHeldByCurrency([{ id: 'x', name: 'x', type: 'CHECKING', currentBalance: 5 } as BankAccount])).toEqual({ BRL: 5 });
+  });
+});
+
+// "Saldo atual" on the planning screen is CASH. It summed every account of the
+// profile, credit cards included, which was tolerable only while a card's
+// balance was a stale number close to zero. With the balance derived from the
+// bills it becomes real debt, so the screen would have subtracted what is owed
+// from what is available and called the result "saldo".
+describe('cashOnHand', () => {
+  it('adds up only what can be spent', () => {
+    const total = cashOnHand([
+      account('Mercado Pago', 'CHECKING', 448.08),
+      account('Dinheiro', 'CASH', 2.5),
+      account('Cartao MP', 'CREDIT_CARD', -1358.65),
+      account('CDB', 'INVESTMENT', 3043.87),
+      account('Emprestimo', 'LIABILITY', -2990.68),
+    ]);
+
+    expect(total).toBeCloseTo(450.58, 2);
+  });
+
+  it('leaves deactivated accounts out', () => {
+    expect(
+      cashOnHand([
+        account('viva', 'CHECKING', 100),
+        account('morta', 'CHECKING', 99, false),
+      ])
+    ).toBeCloseTo(100, 2);
+  });
+
+  it('is zero, not NaN, with nothing to add', () => {
+    expect(cashOnHand([])).toBe(0);
   });
 });

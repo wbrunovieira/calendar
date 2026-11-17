@@ -29,14 +29,34 @@ func (r *usageTxRepo) List(filter transaction.ListFilter) ([]*transaction.Transa
 	return r.txs, nil
 }
 
-// Mirrors the real repository: the bill is worth what its transactions say, not what
-// the invoice row's amount column happens to hold.
+// Mirrors the real repository, which is not what this used to do.
+//
+// The SQL is:
+//
+//	SELECT COALESCE(SUM(CASE WHEN type = 'INCOME' THEN -amount ELSE amount END), 0)
+//	FROM finance.transactions
+//	WHERE invoice_id = $1 AND status NOT IN ('CANCELLED', 'REVERSED')
+//
+// So PLANNED counts and an INCOME line SUBTRACTS. The fake counted CONFIRMED
+// only and added every row regardless of type, which meant every test about what
+// a card owes ran in a world where future instalments did not exist and a refund
+// raised the bill. Production does the opposite on both counts — and that gap is
+// exactly what hid the fact that a card's balance was reporting everything
+// committed rather than what is owed now.
 func (r *usageTxRepo) SumByInvoiceID(invoiceID string) (float64, error) {
 	total := 0.0
 	for _, tx := range r.txs {
-		if tx.InvoiceID != nil && *tx.InvoiceID == invoiceID && tx.Status == transaction.StatusConfirmed {
-			total += tx.Amount
+		if tx.InvoiceID == nil || *tx.InvoiceID != invoiceID {
+			continue
 		}
+		if tx.Status == transaction.StatusCancelled || tx.Status == transaction.StatusReversed {
+			continue
+		}
+		if tx.Type == transaction.TypeIncome {
+			total -= tx.Amount
+			continue
+		}
+		total += tx.Amount
 	}
 	return total, nil
 }

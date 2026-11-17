@@ -38,6 +38,10 @@ services:
     env_file:
       - ./services/calendar-finances/.env
     environment:
+      # Sem isto o container roda em UTC e o dia do servidor vira
+      # 'amanha' as 21h BRT: lancamento datado de hoje passa a contar como
+      # historico e pula a validacao de saldo e de limite.
+      - TZ=America/Sao_Paulo
       - PORT=3335
       - DATABASE_URL=postgres://calendar:calendar123@postgres:5432/calendar_db?sslmode=disable
       - FINANCE_BUSINESS_PROFILE_ID=${FINANCE_BUSINESS_PROFILE_ID:-}

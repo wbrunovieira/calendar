@@ -18,9 +18,16 @@ func NewListBankAccountsUseCase(repo bankaccount.Repository, outstanding *CardOu
 }
 
 func (uc *ListBankAccountsUseCase) Execute(profileID string) ([]*bankaccount.BankAccount, error) {
-	accounts, err := uc.repo.FindByProfileID(profileID)
+	// Branch BEFORE querying. Calling FindByProfileID("") sends an empty string
+	// to a uuid column and Postgres answers `invalid input syntax for type uuid`,
+	// which the old shape then overwrote along with the result — on the unfiltered
+	// path every main screen uses.
+	var accounts []*bankaccount.BankAccount
+	var err error
 	if profileID == "" {
 		accounts, err = uc.repo.FindAll()
+	} else {
+		accounts, err = uc.repo.FindByProfileID(profileID)
 	}
 	if err != nil {
 		return nil, err

@@ -168,3 +168,16 @@ export function sumHeldByCurrency(accounts: BankAccount[]): Record<string, numbe
   }
   return totals;
 }
+
+/**
+ * What can be spent today, across these accounts.
+ *
+ * Cards are excluded because their balance is DEBT, and investments and loans
+ * because they are not at hand. The planning screen used to add every account of
+ * the profile, which only looked right while a card's balance was a stale figure
+ * near zero; once it is derived from the bills, that total subtracts what is
+ * owed from what is available and labels the result "Saldo atual".
+ */
+export function cashOnHand(accounts: BankAccount[]): number {
+  return sumBalances(groupAccounts(accounts).cash);
+}

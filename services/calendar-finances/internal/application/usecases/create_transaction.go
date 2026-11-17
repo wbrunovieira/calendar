@@ -650,16 +650,23 @@ func parseDate(value string) (time.Time, error) {
 // isHistoricalDate answers whether this transaction belongs to a day that has
 // already passed. Historical rows skip balance and credit-limit validation.
 //
-// It compares CALENDAR DAYS, and takes `now` instead of reading the clock, so a
-// test can pin the hour. It used to be `time.Now().Truncate(24 * time.Hour)`,
-// which snaps to a UTC midnight rather than the local one: the server runs in
-// America/Sao_Paulo, so from 21:00 local the truncated "today" was already
-// tomorrow and a purchase dated today counted as the past. The guards against
-// spending over the limit were therefore off for three hours every evening, and
-// three tests in this package failed only when run at night.
+// "Today" is the day in SAO PAULO, named explicitly — not the server's local
+// day, and not UTC.
+//
+// It was `time.Now().Truncate(24 * time.Hour)`, which snaps to a UTC midnight.
+// The first fix compared calendar days in the server's own zone, which looked
+// right and was not: the calendar-finances container has no TZ set, so
+// time.Local is UTC there. The dates arrive from a browser in Brazil, so from
+// 21:00 BRT the server's day was already tomorrow and a purchase dated today
+// counted as the past — and historical rows skip the guards. Measured: a
+// CONFIRMED R$ 800 expense accepted on an account holding R$ 100.
+//
+// `now` is an argument so the hour can be pinned in a test, and the location is
+// explicit so the answer does not depend on how the container was started. The
+// TZ was added to the compose file as well; this does not rely on it.
 func isHistoricalDate(date, now time.Time) bool {
 	dy, dm, dd := date.Date()
-	ny, nm, nd := now.Date()
+	ny, nm, nd := now.In(issuerLocation).Date()
 	day := time.Date(dy, dm, dd, 0, 0, 0, 0, time.UTC)
 	today := time.Date(ny, nm, nd, 0, 0, 0, 0, time.UTC)
 	return day.Before(today)

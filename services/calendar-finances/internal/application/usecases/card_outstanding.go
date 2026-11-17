@@ -1,6 +1,8 @@
 package usecases
 
 import (
+	"time"
+
 	"github.com/brunovieira/calendar-finances/internal/domain/bankaccount"
 	"github.com/brunovieira/calendar-finances/internal/domain/invoice"
 	"github.com/brunovieira/calendar-finances/internal/domain/transaction"
@@ -35,7 +37,7 @@ func (c *CardOutstanding) Apply(accounts []*bankaccount.BankAccount) error {
 		if account == nil || !account.IsCreditCard() {
 			continue
 		}
-		owed, err := c.For(account)
+		owed, err := c.OwedNow(account, time.Now())
 		if err != nil {
 			return err
 		}
@@ -44,7 +46,58 @@ func (c *CardOutstanding) Apply(accounts []*bankaccount.BankAccount) error {
 	return nil
 }
 
+// For is everything the card has COMMITTED: every unpaid bill, future
+// instalment cycles included. It is what the available limit is made of, because
+// that is what the issuer reserves — the bank counts a January instalment
+// against today's limit.
 func (c *CardOutstanding) For(account *bankaccount.BankAccount) (float64, error) {
+	return c.sum(account, func(*invoice.Invoice) bool { return true })
+}
+
+// OwedNow is what the card owes TODAY: bills already issued — those whose cycle
+// has closed, plus the one currently accumulating — and nothing from cycles that
+// have not opened yet.
+//
+// It exists because the two questions have different answers and were sharing a
+// name. `SumByInvoiceID` counts PLANNED rows, and an instalment plan writes one
+// PLANNED charge per future bill, so a card's balance was reporting the whole
+// plan as if it were due. On the Mercado Pago card that is 4.502,45 committed
+// against 1.358,65 actually owed — and the planning screens subtract the balance
+// from today's cash.
+//
+// Decided with the owner on 16/11/2026, together with issue #1277.
+func (c *CardOutstanding) OwedNow(account *bankaccount.BankAccount, on time.Time) (float64, error) {
+	invoices, err := c.invoiceRepo.FindByBankAccountID(account.ID)
+	if err != nil {
+		return 0, err
+	}
+	issued := issuedInvoices(invoices, on)
+	return c.sum(account, func(inv *invoice.Invoice) bool { return issued[inv.ID] })
+}
+
+// issuedInvoices names the bills that exist for the holder at `on`: every cycle
+// already closed, plus the single earliest one still open. Anything later has
+// not been billed and cannot be paid.
+func issuedInvoices(invoices []*invoice.Invoice, on time.Time) map[string]bool {
+	issued := make(map[string]bool, len(invoices))
+	var current *invoice.Invoice
+	for _, inv := range invoices {
+		if !inv.ClosingDate.After(on) {
+			issued[inv.ID] = true
+			continue
+		}
+		// The open cycle is the nearest closing date still ahead.
+		if current == nil || inv.ClosingDate.Before(current.ClosingDate) {
+			current = inv
+		}
+	}
+	if current != nil {
+		issued[current.ID] = true
+	}
+	return issued
+}
+
+func (c *CardOutstanding) sum(account *bankaccount.BankAccount, counts func(*invoice.Invoice) bool) (float64, error) {
 	invoices, err := c.invoiceRepo.FindByBankAccountID(account.ID)
 	if err != nil {
 		return 0, err
@@ -53,7 +106,13 @@ func (c *CardOutstanding) For(account *bankaccount.BankAccount) (float64, error)
 	outstanding := 0.0
 	invoiced := make(map[string]bool, len(invoices))
 	for _, inv := range invoices {
+		// Every bill marks its charges as invoiced, even one that does not count
+		// towards this total: a future instalment is already on a bill, so it must
+		// not be picked up again by the unlinked-charges pass below.
 		invoiced[inv.ID] = true
+		if !counts(inv) {
+			continue
+		}
 
 		// The invoice's `amount` column is not the source of truth: it is written on
 		// creation as zero and only refreshed by a manual endpoint, so in production

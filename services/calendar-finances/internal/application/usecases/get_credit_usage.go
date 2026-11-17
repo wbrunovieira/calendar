@@ -21,8 +21,10 @@ var ErrNotACreditCard = refuse("account is not a credit card")
 // than it is, which is the very bug this replaces.
 type GetCreditUsageUseCase struct {
 	accountRepo bankaccount.Repository
-	invoiceRepo invoice.Repository
-	txRepo      transaction.Repository
+	// outstanding is the shared owner of the derivation. Built once and held, not
+	// constructed per call: "one owner" has to be one instance, or the sentence
+	// is only true by coincidence.
+	outstanding *CardOutstanding
 }
 
 func NewGetCreditUsageUseCase(
@@ -30,7 +32,7 @@ func NewGetCreditUsageUseCase(
 	invoiceRepo invoice.Repository,
 	txRepo transaction.Repository,
 ) *GetCreditUsageUseCase {
-	return &GetCreditUsageUseCase{accountRepo: accountRepo, invoiceRepo: invoiceRepo, txRepo: txRepo}
+	return &GetCreditUsageUseCase{accountRepo: accountRepo, outstanding: NewCardOutstanding(invoiceRepo, txRepo)}
 }
 
 func (uc *GetCreditUsageUseCase) Execute(accountID string) (*bankaccount.CreditUsage, error) {
@@ -42,7 +44,9 @@ func (uc *GetCreditUsageUseCase) Execute(accountID string) (*bankaccount.CreditU
 		return nil, ErrNotACreditCard
 	}
 
-	outstanding, err := NewCardOutstanding(uc.invoiceRepo, uc.txRepo).For(account)
+	// The COMMITTED total, not what is owed now: the issuer reserves a future
+	// instalment against today's limit, so that is what availability is made of.
+	outstanding, err := uc.outstanding.For(account)
 	if err != nil {
 		return nil, err
 	}

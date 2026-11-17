@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { cashOnHand } from '@/utils/accountGroups';
 import Link from 'next/link';
 import AppLayout, { useProfile } from '@/components/layout/AppLayout';
 import { useToast } from '@/components/ui/Toast';
@@ -185,8 +186,11 @@ export default function PlanPage() {
     return { items, totals };
   }, [recurrings, startDate, endDate]);
 
+  // Cash only. A card's balance is debt derived from its bills, so adding it
+  // here subtracted what is owed from what is available under the label
+  // "Saldo atual".
   const totalBalance = useMemo(
-    () => accounts.filter((a) => a.profileId === selectedProfileId).reduce((sum, a) => sum + a.currentBalance, 0),
+    () => cashOnHand(accounts.filter((a) => a.profileId === selectedProfileId)),
     [accounts, selectedProfileId]
   );
 

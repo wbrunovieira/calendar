@@ -86,7 +86,7 @@ func TestCreateTransaction_RestatesTheBillTotalOfANewCharge(t *testing.T) {
 		Amount:        135.90,
 		Currency:      "BRL",
 		Description:   "Padaria Pamequita",
-		OccurredOn:    time.Now().Format("2006-01-02"),
+		OccurredOn:    clientDay(0),
 		Status:        &status,
 	})
 	if err != nil {
@@ -118,7 +118,7 @@ func TestCreateTransaction_RestatesTheBillWhenTheLineIsACredit(t *testing.T) {
 	charge, err := uc.Execute(CreateTransactionInput{
 		ProfileID: testProfile, BankAccountID: testCC, CategoryID: strPtr(testCat),
 		Type: "EXPENSE", Amount: 200, Currency: "BRL", Description: "Compra",
-		OccurredOn: time.Now().Format("2006-01-02"), Status: &status,
+		OccurredOn: clientDay(0), Status: &status,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -127,7 +127,7 @@ func TestCreateTransaction_RestatesTheBillWhenTheLineIsACredit(t *testing.T) {
 	if _, err := uc.Execute(CreateTransactionInput{
 		ProfileID: testProfile, BankAccountID: testCC, CategoryID: strPtr(testCatInc),
 		Type: "INCOME", Amount: 50, Currency: "BRL", Description: "Estorno",
-		OccurredOn: time.Now().Format("2006-01-02"), Status: &status,
+		OccurredOn: clientDay(0), Status: &status,
 	}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestCreateTransaction_RestatesEveryBillAnInstalmentPlanTouches(t *testing.T
 	if _, err := uc.Execute(CreateTransactionInput{
 		ProfileID: testProfile, BankAccountID: testCC, CategoryID: strPtr(testCat),
 		Type: "EXPENSE", Amount: 300, Currency: "BRL", Description: "Parcelado",
-		OccurredOn: time.Now().Format("2006-01-02"), Status: &status,
+		OccurredOn: clientDay(0), Status: &status,
 		InstallmentTotal: &total,
 	}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -194,7 +194,7 @@ func TestCreateTransaction_ACheckingChargeRestatesNoBill(t *testing.T) {
 	if _, err := uc.Execute(CreateTransactionInput{
 		ProfileID: testProfile, BankAccountID: testAccount, CategoryID: strPtr(testCat),
 		Type: "EXPENSE", Amount: 10, Currency: "BRL", Description: "Pipoca",
-		OccurredOn: time.Now().Format("2006-01-02"), Status: &status,
+		OccurredOn: clientDay(0), Status: &status,
 	}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestCreateTransaction_ARestatementRefusalDoesNotFailTheCharge(t *testing.T)
 	txn, err := uc.Execute(CreateTransactionInput{
 		ProfileID: testProfile, BankAccountID: testCC, CategoryID: strPtr(testCat),
 		Type: "EXPENSE", Amount: 42, Currency: "BRL", Description: "Compra",
-		OccurredOn: time.Now().Format("2006-01-02"), Status: &status,
+		OccurredOn: clientDay(0), Status: &status,
 	})
 	if err != nil {
 		t.Fatalf("the charge was written; a failed restatement must not undo that: %v", err)
@@ -345,7 +345,7 @@ func TestCreateTransaction_RestatesEveryBillWhenInstalmentsRunInsideAUnitOfWork(
 	if _, err := uc.Execute(CreateTransactionInput{
 		ProfileID: testProfile, BankAccountID: testCC, CategoryID: strPtr(testCat),
 		Type: "EXPENSE", Amount: 300, Currency: "BRL", Description: "Parcelado",
-		OccurredOn: time.Now().Format("2006-01-02"), Status: &status,
+		OccurredOn: clientDay(0), Status: &status,
 		InstallmentTotal: &total,
 	}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -421,7 +421,7 @@ func TestCreateTransaction_RestatesTheBillEvenWhenALaterStepFails(t *testing.T) 
 		ProfileID: testProfile, BankAccountID: testCC, CategoryID: strPtr(testCat),
 		DestinationAccountID: &destID, DestinationCategoryID: &destCat,
 		Type: "TRANSFER", Amount: 500, Currency: "BRL", Description: "Pagamento",
-		OccurredOn: time.Now().Format("2006-01-02"), Status: &status,
+		OccurredOn: clientDay(0), Status: &status,
 	})
 	if err == nil {
 		t.Fatal("this test needs the step after the write to fail; it did not")
@@ -789,7 +789,7 @@ func TestCreateTransaction_AnOrdinaryChargeDoesNotWriteToTheCorrectionsTrail(t *
 	txn, err := uc.Execute(CreateTransactionInput{
 		ProfileID: testProfile, BankAccountID: testCC, CategoryID: strPtr(testCat),
 		Type: "EXPENSE", Amount: 135.90, Currency: "BRL", Description: "Padaria",
-		OccurredOn: time.Now().Format("2006-01-02"), Status: &status,
+		OccurredOn: clientDay(0), Status: &status,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
