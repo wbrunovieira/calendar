@@ -267,7 +267,7 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 	// Only validate balance for CONFIRMED transactions that are not historical
 	// Historical transactions (date < today) already happened, so balance validation doesn't apply
 	isPlanned := input.Status == nil || strings.ToUpper(*input.Status) == string(transaction.StatusPlanned)
-	isHistorical := isHistoricalDate(occurredOn)
+	isHistorical := isHistoricalDate(occurredOn, time.Now())
 	if !isPlanned && !isHistorical {
 		if err := validateBalances(account, typeValue, input.Amount); err != nil {
 			return nil, err
@@ -647,9 +647,22 @@ func parseDate(value string) (time.Time, error) {
 // isHistoricalDate checks if the given date is before today.
 // Historical transactions (past dates) should skip balance validation
 // since they already happened.
-func isHistoricalDate(date time.Time) bool {
-	today := time.Now().Truncate(24 * time.Hour)
-	return date.Before(today)
+// isHistoricalDate answers whether this transaction belongs to a day that has
+// already passed. Historical rows skip balance and credit-limit validation.
+//
+// It compares CALENDAR DAYS, and takes `now` instead of reading the clock, so a
+// test can pin the hour. It used to be `time.Now().Truncate(24 * time.Hour)`,
+// which snaps to a UTC midnight rather than the local one: the server runs in
+// America/Sao_Paulo, so from 21:00 local the truncated "today" was already
+// tomorrow and a purchase dated today counted as the past. The guards against
+// spending over the limit were therefore off for three hours every evening, and
+// three tests in this package failed only when run at night.
+func isHistoricalDate(date, now time.Time) bool {
+	dy, dm, dd := date.Date()
+	ny, nm, nd := now.Date()
+	day := time.Date(dy, dm, dd, 0, 0, 0, 0, time.UTC)
+	today := time.Date(ny, nm, nd, 0, 0, 0, 0, time.UTC)
+	return day.Before(today)
 }
 
 // createInstallments creates multiple transactions for installment purchases.
