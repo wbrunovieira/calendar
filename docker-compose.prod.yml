@@ -182,6 +182,11 @@ services:
       # Server-side proxy target and token (runtime, never inlined into the browser bundle).
       - CALENDAR_API_URL=http://calendar-core:3334
       - CALENDAR_API_TOKEN=${API_TOKEN:-}
+      # Own login (password + TOTP). Blank AUTH_SESSION_SECRET = login off (Authelia still in front).
+      # Generate with `npm run auth:setup` in services/calendar-frontend.
+      - AUTH_SESSION_SECRET=${AUTH_SESSION_SECRET:-}
+      - AUTH_PASSWORD_HASH=${AUTH_PASSWORD_HASH:-}
+      - AUTH_TOTP_SECRET=${AUTH_TOTP_SECRET:-}
     depends_on:
       - calendar-core
     networks:

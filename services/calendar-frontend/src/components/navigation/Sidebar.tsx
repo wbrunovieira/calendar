@@ -303,8 +303,18 @@ export default function Sidebar({ className = '', onToggle }: SidebarProps) {
       {/* Footer with collapsed indicator */}
       {!isCollapsed && (
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-white/10">
-          <div className="text-white/50 text-xs text-center">
-            v1.0.0
+          <div className="flex items-center justify-between text-white/50 text-xs">
+            <span>v1.0.0</span>
+            <button
+              type="button"
+              onClick={async () => {
+                await fetch('/api/auth/logout', { method: 'POST' });
+                window.location.assign('/login');
+              }}
+              className="hover:text-white transition-colors"
+            >
+              Sair
+            </button>
           </div>
         </div>
       )}

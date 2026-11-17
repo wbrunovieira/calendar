@@ -74,6 +74,17 @@ The browser never talks to calendar-core directly: it calls `/api/backend/*` on 
 route handler in `src/app/api/backend/[...path]` forwards the request and adds the token on the
 server. Both variables are server-only, so the token is not part of the JS bundle.
 
+## Login
+
+`src/middleware.ts` requires a session on every page and API route except `/login`. Logging in
+takes the password and a 6-digit code from an authenticator app (TOTP); the session is a signed,
+host-only `__Host-session` cookie (30 days by default, `AUTH_SESSION_DAYS`). Failed logins are
+throttled per IP and overall, and a TOTP code works only once.
+
+Set it up with `npm run auth:setup`, which prints `AUTH_PASSWORD_HASH`, `AUTH_TOTP_SECRET`,
+`AUTH_SESSION_SECRET` and an `otpauth://` URI for the authenticator app. With no
+`AUTH_SESSION_SECRET` the login is off. Changing `AUTH_SESSION_SECRET` signs every session out.
+
 ## API Integration
 
 The frontend connects to the backend via the API client in `src/lib/api.ts`.

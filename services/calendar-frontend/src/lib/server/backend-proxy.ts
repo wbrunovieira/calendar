@@ -13,6 +13,8 @@
  * host) and, when they carry a body, a JSON content type, which no plain HTML form can produce.
  */
 
+import { isSameOriginRequest } from './same-origin';
+
 export interface BackendConfig {
   baseUrl: string;
   token: string;
@@ -42,20 +44,6 @@ function isSafePath(path: string[]): boolean {
   return path.length > 0 && path.every((s) => s !== '' && s !== '.' && s !== '..' && !s.includes('/'));
 }
 
-function isSameOriginWrite(req: Request): boolean {
-  const site = req.headers.get('sec-fetch-site');
-  if (site) return site === 'same-origin';
-
-  const origin = req.headers.get('origin');
-  if (!origin) return false;
-  const host = req.headers.get('host') ?? new URL(req.url).host;
-  try {
-    return new URL(origin).host === host;
-  } catch {
-    return false;
-  }
-}
-
 export async function proxyToBackend(
   req: Request,
   path: string[],
@@ -80,7 +68,7 @@ export async function proxyToBackend(
   const isWrite = !READ_METHODS.has(req.method);
   let body: ArrayBuffer | undefined;
   if (isWrite) {
-    if (!isSameOriginWrite(req)) {
+    if (!isSameOriginRequest(req)) {
       return json(403, { message: 'Cross-origin write rejected' });
     }
     if (Number(req.headers.get('content-length') ?? 0) > MAX_BODY_BYTES) {
