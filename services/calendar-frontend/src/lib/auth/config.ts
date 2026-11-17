@@ -9,6 +9,8 @@ export interface AuthConfig {
   sessionTtlMs: number;
   /** Secure, `__Host-` cookie. Off only for plain-http local dev. */
   secureCookie: boolean;
+  /** AUTH_REQUIRED=true: a missing login config closes the app (503) instead of opening it. */
+  required: boolean;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -23,6 +25,7 @@ export function authConfigFromEnv(env: Record<string, string | undefined> = proc
     totpSecret: (env.AUTH_TOTP_SECRET ?? '').trim(),
     sessionTtlMs: (Number.isFinite(days) && days > 0 ? days : 30) * DAY_MS,
     secureCookie: env.AUTH_INSECURE_COOKIE !== 'true',
+    required: (env.AUTH_REQUIRED ?? '').trim().toLowerCase() === 'true',
   };
 }
 
@@ -44,7 +47,9 @@ let warned = false;
 export function warnAboutAuthConfig(config: AuthConfig): void {
   if (warned) return;
   warned = true;
-  if (!config.enabled) {
+  if (!config.enabled && config.required) {
+    console.error('[auth] AUTH_REQUIRED=true but AUTH_SESSION_SECRET is not set: every request gets 503');
+  } else if (!config.enabled) {
     console.warn('[auth] AUTH_SESSION_SECRET not set: login is OFF and the app is open');
   } else if (!isLoginConfigured(config)) {
     console.error(

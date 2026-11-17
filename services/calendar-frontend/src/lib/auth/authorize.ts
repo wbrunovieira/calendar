@@ -1,7 +1,11 @@
 import type { AuthConfig } from './config';
 import { verifySession } from './session';
 
-export type AuthDecision = { action: 'allow' } | { action: 'redirect'; location: string } | { action: 'unauthorized' };
+export type AuthDecision =
+  | { action: 'allow' }
+  | { action: 'redirect'; location: string }
+  | { action: 'unauthorized' }
+  | { action: 'unavailable' };
 
 /** Exact paths reachable without a session. */
 const PUBLIC_PATHS = new Set(['/login', '/api/auth/login']);
@@ -14,7 +18,8 @@ export async function authorize(input: {
   config: AuthConfig;
 }): Promise<AuthDecision> {
   const { pathname, search = '', cookie, now, config } = input;
-  if (!config.enabled || PUBLIC_PATHS.has(pathname)) return { action: 'allow' };
+  if (!config.enabled) return config.required ? { action: 'unavailable' } : { action: 'allow' };
+  if (PUBLIC_PATHS.has(pathname)) return { action: 'allow' };
   if (await verifySession(config.sessionSecret, cookie, now)) return { action: 'allow' };
   if (pathname.startsWith('/api/')) return { action: 'unauthorized' };
   return { action: 'redirect', location: `/login?next=${encodeURIComponent(pathname + search)}` };

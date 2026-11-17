@@ -161,3 +161,28 @@ async def test_finances_client_sends_no_auth_when_unconfigured(monkeypatch):
     with _patched_client(rec):
         await finances.get_categories("p1")
     assert "authorization" not in rec.headers
+
+
+# ── Fail closed when AUTH_REQUIRED ──────────────────────────
+
+
+def test_refuses_to_start_when_required_and_token_missing(monkeypatch):
+    monkeypatch.setattr(settings, "auth_required", True)
+    monkeypatch.setattr(settings, "agents_api_token", "  ")
+    with pytest.raises(RuntimeError, match="AGENTS_API_TOKEN"):
+        with TestClient(app):
+            pass
+
+
+def test_starts_when_required_and_token_set(monkeypatch):
+    monkeypatch.setattr(settings, "auth_required", True)
+    monkeypatch.setattr(settings, "agents_api_token", TOKEN)
+    with TestClient(app) as started:
+        assert started.get("/health").status_code == 200
+
+
+@pytest.mark.parametrize("raw,expected", [("true", True), (" TRUE ", True), ("false", False), ("", False), ("1", False)])
+def test_auth_required_flag_parsing(raw, expected):
+    from app.config import parse_flag
+
+    assert parse_flag(raw) is expected

@@ -12,6 +12,7 @@ const config: AuthConfig = {
   totpSecret: 'JBSWY3DPEHPK3PXP',
   sessionTtlMs: 60_000,
   secureCookie: true,
+  required: false,
 };
 
 const valid = () => createSession(config.sessionSecret, { now: NOW, ttlMs: 60_000 });
@@ -20,6 +21,15 @@ describe('authorize', () => {
   it('lets everything through when auth is not configured', async () => {
     expect(await authorize({ pathname: '/', cookie: undefined, now: NOW, config: { ...config, enabled: false } }))
       .toEqual({ action: 'allow' });
+  });
+
+  it('fails closed (503) when auth is required but not configured', async () => {
+    expect(
+      await authorize({ pathname: '/', cookie: undefined, now: NOW, config: { ...config, enabled: false, required: true } }),
+    ).toEqual({ action: 'unavailable' });
+    expect(
+      await authorize({ pathname: '/login', cookie: undefined, now: NOW, config: { ...config, enabled: false, required: true } }),
+    ).toEqual({ action: 'unavailable' });
   });
 
   it('allows a valid session', async () => {

@@ -34,6 +34,8 @@ services:
       # Shared API token. Empty → API stays open (safe rollout). Set it to enforce auth on every
       # route except the health check. The frontends receive the same value as a build arg.
       - API_TOKEN=${API_TOKEN:-}
+      # true = refuse to run open when the token/login is missing (set once Authelia is gone).
+      - AUTH_REQUIRED=${AUTH_REQUIRED:-false}
     depends_on:
       postgres:
         condition: service_healthy
@@ -90,6 +92,8 @@ services:
       - PORT=3336
       # Blank = API open (behind Authelia, as before). Set it to enforce a Bearer token.
       - API_TOKEN=${HEALTH_API_TOKEN:-}
+      # true = refuse to run open when the token/login is missing (set once Authelia is gone).
+      - AUTH_REQUIRED=${AUTH_REQUIRED:-false}
       - DATABASE_URL=postgres://${DB_USER:-calendar}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-calendar_db}?sslmode=disable
     depends_on:
       postgres:
@@ -114,6 +118,8 @@ services:
       - PORT=3337
       # Blank = open (as before). Set to require a Bearer token on every route but /health.
       - AGENTS_API_TOKEN=${AGENTS_API_TOKEN:-}
+      # true = refuse to run open when the token/login is missing (set once Authelia is gone).
+      - AUTH_REQUIRED=${AUTH_REQUIRED:-false}
       # Sent to calendar-finances once it enforces a token.
       - FINANCES_API_TOKEN=${FINANCES_API_TOKEN:-}
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
@@ -188,6 +194,8 @@ services:
       - AUTH_PASSWORD_HASH=${AUTH_PASSWORD_HASH:-}
       - AUTH_TOTP_SECRET=${AUTH_TOTP_SECRET:-}
       - AUTH_SESSION_DAYS=${AUTH_SESSION_DAYS:-30}
+      # true = refuse to run open when the token/login is missing (set once Authelia is gone).
+      - AUTH_REQUIRED=${AUTH_REQUIRED:-false}
     depends_on:
       - calendar-core
     networks:
@@ -248,6 +256,8 @@ services:
       - AUTH_PASSWORD_HASH=${AUTH_PASSWORD_HASH:-}
       - AUTH_TOTP_SECRET=${AUTH_TOTP_SECRET:-}
       - AUTH_SESSION_DAYS=${AUTH_SESSION_DAYS:-30}
+      # true = refuse to run open when the token/login is missing (set once Authelia is gone).
+      - AUTH_REQUIRED=${AUTH_REQUIRED:-false}
     depends_on:
       - calendar-health
       - calendar-core

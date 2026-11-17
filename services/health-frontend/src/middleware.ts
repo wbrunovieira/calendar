@@ -15,6 +15,9 @@ export async function middleware(req: NextRequest) {
   });
 
   if (decision.action === 'allow') return NextResponse.next();
+  if (decision.action === 'unavailable') {
+    return new NextResponse('Login não configurado', { status: 503 });
+  }
   if (decision.action === 'unauthorized') {
     return NextResponse.json({ message: 'Não autenticado' }, { status: 401 });
   }
