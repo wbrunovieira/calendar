@@ -3,17 +3,6 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-ARG NEXT_PUBLIC_API_URL=http://localhost:3336
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-# calendar-health API token, inlined at build time (blank = API without token).
-ARG NEXT_PUBLIC_HEALTH_API_TOKEN=
-ENV NEXT_PUBLIC_HEALTH_API_TOKEN=$NEXT_PUBLIC_HEALTH_API_TOKEN
-# calendar-core (settings page lists calendars). URL + API token, inlined at build time.
-ARG NEXT_PUBLIC_CALENDAR_API_URL=http://localhost:3334
-ENV NEXT_PUBLIC_CALENDAR_API_URL=$NEXT_PUBLIC_CALENDAR_API_URL
-ARG NEXT_PUBLIC_CALENDAR_API_TOKEN=
-ENV NEXT_PUBLIC_CALENDAR_API_TOKEN=$NEXT_PUBLIC_CALENDAR_API_TOKEN
-
 COPY package*.json ./
 RUN npm ci
 

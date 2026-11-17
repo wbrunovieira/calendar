@@ -16,19 +16,15 @@ import {
   ExerciseFormData,
 } from '@/types/health';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3336/api/v1';
-// Inlined at build time. Temporary: phase 2 of the Authelia removal moves it behind a
-// server-side proxy so it stops shipping in the bundle.
-const API_TOKEN = process.env.NEXT_PUBLIC_HEALTH_API_TOKEN;
+// Same-origin proxy (app/api/health-backend) that forwards to calendar-health and adds the API
+// token on the server, so the token never reaches the browser.
+const API_BASE = '/api/health-backend';
 
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
-    // Carry the Authelia session cookie — same reason as the finances client.
-    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
       ...options?.headers,
     },
   });

@@ -224,11 +224,6 @@ services:
     build:
       context: ./services/health-frontend
       dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: https://calendar-health.wbdigitalsolutions.com/api/v1
-        NEXT_PUBLIC_HEALTH_API_TOKEN: ${HEALTH_API_TOKEN:-}
-        NEXT_PUBLIC_CALENDAR_API_URL: https://calendar-api.wbdigitalsolutions.com
-        NEXT_PUBLIC_CALENDAR_API_TOKEN: ${API_TOKEN:-}
     container_name: health-frontend
     logging: *default-logging
     ports:
@@ -236,6 +231,11 @@ services:
     environment:
       - NODE_ENV=production
       - TZ=America/Sao_Paulo
+      # Server-side proxy targets and tokens (runtime, never inlined into the browser bundle).
+      - HEALTH_API_URL=http://calendar-health:3336/api/v1
+      - HEALTH_API_TOKEN=${HEALTH_API_TOKEN:-}
+      - CALENDAR_API_URL=http://calendar-core:3334
+      - CALENDAR_API_TOKEN=${API_TOKEN:-}
     depends_on:
       - calendar-health
     networks:
