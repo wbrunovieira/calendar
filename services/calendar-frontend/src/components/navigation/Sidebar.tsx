@@ -308,7 +308,7 @@ export default function Sidebar({ className = '', onToggle }: SidebarProps) {
             <button
               type="button"
               onClick={async () => {
-                await fetch('/api/auth/logout', { method: 'POST' });
+                await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
                 window.location.assign('/login');
               }}
               className="hover:text-white transition-colors"

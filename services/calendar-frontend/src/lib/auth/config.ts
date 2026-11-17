@@ -26,6 +26,33 @@ export function authConfigFromEnv(env: Record<string, string | undefined> = proc
   };
 }
 
+export const MIN_SESSION_SECRET_LENGTH = 32;
+
+/** Everything a login needs. A half-filled config keeps the app locked (middleware on) but says why. */
+export function isLoginConfigured(config: AuthConfig): boolean {
+  return (
+    config.enabled &&
+    config.sessionSecret.length >= MIN_SESSION_SECRET_LENGTH &&
+    config.passwordHash !== '' &&
+    config.totpSecret !== ''
+  );
+}
+
+let warned = false;
+
+/** Logs once per process when the login is off or misconfigured, so it doesn't go unnoticed. */
+export function warnAboutAuthConfig(config: AuthConfig): void {
+  if (warned) return;
+  warned = true;
+  if (!config.enabled) {
+    console.warn('[auth] AUTH_SESSION_SECRET not set: login is OFF and the app is open');
+  } else if (!isLoginConfigured(config)) {
+    console.error(
+      '[auth] login misconfigured (need AUTH_SESSION_SECRET >= 32 chars, AUTH_PASSWORD_HASH, AUTH_TOTP_SECRET): nobody can log in',
+    );
+  }
+}
+
 export function sessionCookieName(config: Pick<AuthConfig, 'secureCookie'>): string {
   // `__Host-` makes the browser enforce Secure, Path=/ and no Domain: the cookie stays on this
   // exact host and never rides along to sibling subdomains.

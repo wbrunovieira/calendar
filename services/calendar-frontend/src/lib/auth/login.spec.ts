@@ -113,6 +113,27 @@ describe('login handler', () => {
     },
   );
 
+  it('evaluates concurrent attempts one at a time, so a burst cannot outrun the limiter', async () => {
+    const results = await Promise.all(Array.from({ length: 12 }, () => login({ password: 'nope', code: '123456' })));
+    const statuses = results.map((r) => r.status);
+    expect(statuses.filter((s) => s === 401)).toHaveLength(3);
+    expect(statuses.filter((s) => s === 429)).toHaveLength(9);
+  });
+
+  it('accepts a TOTP code only once even when two logins race', async () => {
+    const code = await totpAt(SECRET_B32, NOW);
+    const [a, b] = await Promise.all([
+      login({ password: 'hunter2-but-longer', code }),
+      login({ password: 'hunter2-but-longer', code }),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([200, 401]);
+  });
+
+  it('answers 503, not 500, when the session secret is too short', async () => {
+    handler = createLoginHandler({ config: () => ({ ...config, sessionSecret: 'short' }), limiter, now: () => clock });
+    expect((await login({ password: 'hunter2-but-longer', code: await totpAt(SECRET_B32, NOW) })).status).toBe(503);
+  });
+
   it('refuses to log in when auth is not configured', async () => {
     handler = createLoginHandler({ config: () => ({ ...config, enabled: false }), limiter, now: () => clock });
     expect((await login({ password: 'hunter2-but-longer', code: await totpAt(SECRET_B32, NOW) })).status).toBe(503);

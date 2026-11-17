@@ -1,12 +1,14 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { authorize } from '@/lib/auth/authorize';
-import { authConfigFromEnv, sessionCookieName } from '@/lib/auth/config';
+import { authConfigFromEnv, sessionCookieName, warnAboutAuthConfig } from '@/lib/auth/config';
 
 // Every page and API route needs a session, except /login and the login endpoint (see authorize).
 export async function middleware(req: NextRequest) {
   const config = authConfigFromEnv();
+  warnAboutAuthConfig(config);
   const decision = await authorize({
     pathname: req.nextUrl.pathname,
+    search: req.nextUrl.search,
     cookie: req.cookies.get(sessionCookieName(config))?.value,
     now: Date.now(),
     config,
@@ -22,5 +24,6 @@ export async function middleware(req: NextRequest) {
 export const config = {
   // Node runtime: env vars are read when the request comes in, not inlined at build time.
   runtime: 'nodejs',
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|icon.svg|apple-icon.svg).*)'],
+  // Skips Next's build assets and the exact icon files; anchored so `/icon.svg-x` is still checked.
+  matcher: ['/((?!_next/static/|_next/image$|favicon\\.ico$|icon\\.svg$|apple-icon\\.svg$).*)'],
 };

@@ -10,6 +10,7 @@
 import { randomBytes, scrypt as scryptCb } from 'node:crypto';
 import { promisify } from 'node:util';
 import { createInterface } from 'node:readline';
+import { pathToFileURL } from 'node:url';
 
 const scrypt = promisify(scryptCb);
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -68,4 +69,4 @@ async function main() {
   console.log(`otpauth://totp/${label}?secret=${totpSecret}&issuer=WB%20Digital&algorithm=SHA1&digits=6&period=30`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

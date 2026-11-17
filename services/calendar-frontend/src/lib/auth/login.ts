@@ -1,5 +1,5 @@
 import type { AuthConfig } from './config';
-import { sessionCookieName } from './config';
+import { isLoginConfigured, sessionCookieName } from './config';
 import { verifyPassword } from './password';
 import type { LoginRateLimiter } from './rate-limit';
 import { createSession } from './session';
@@ -33,10 +33,19 @@ function clientKey(req: Request): string {
 export function createLoginHandler(deps: Deps) {
   // Last TOTP step that logged in: a code works once, even inside its 30 s window.
   let lastUsedStep = -1;
+  // Attempts run one at a time. Otherwise a burst would all pass the limiter check before any
+  // failure is recorded (and race the replay guard), and parallel scrypt runs would pin the CPU.
+  let queue: Promise<unknown> = Promise.resolve();
 
-  return async function handleLogin(req: Request): Promise<Response> {
+  return function handleLogin(req: Request): Promise<Response> {
+    const run = queue.then(() => attempt(req));
+    queue = run.catch(() => undefined);
+    return run;
+  };
+
+  async function attempt(req: Request): Promise<Response> {
     const config = deps.config();
-    if (!config.enabled || !config.passwordHash || !config.totpSecret) {
+    if (!isLoginConfigured(config)) {
       return json(503, { message: 'Login não configurado' });
     }
     if (!isSameOriginRequest(req)) return json(403, { message: 'Origem não permitida' });
@@ -80,5 +89,5 @@ export function createLoginHandler(deps: Deps) {
       ...(config.secureCookie ? ['Secure'] : []),
     ].join('; ');
     return json(200, { ok: true }, { 'set-cookie': cookie });
-  };
+  }
 }

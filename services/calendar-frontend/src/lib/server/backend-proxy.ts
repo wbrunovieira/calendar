@@ -7,8 +7,8 @@
  * session cookie) and any client-supplied credentials stay on this side.
  *
  * Because the proxy attaches a credential the browser doesn't hold, a write must provably come
- * from this app's own pages: the session cookie is scoped to the parent domain, so a page on any
- * sibling subdomain would otherwise be able to post here with it (CSRF). Writes therefore need
+ * from this app's own pages, or another site could make the browser post here with its session
+ * cookie (CSRF). Sibling subdomains are same-site, so SameSite=Lax alone doesn't stop them. Writes therefore need
  * `Sec-Fetch-Site: same-origin` (or, from browsers that don't send it, an Origin matching the
  * host) and, when they carry a body, a JSON content type, which no plain HTML form can produce.
  */

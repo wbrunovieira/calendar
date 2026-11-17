@@ -1,6 +1,6 @@
 /**
  * Stateless session token: base64url(JSON payload) + "." + base64url(HMAC-SHA256).
- * Web Crypto only, so the middleware (edge runtime) can verify it.
+ * Web Crypto only, so it runs the same in the middleware, route handlers and tests.
  */
 
 export interface SessionPayload {
@@ -9,7 +9,7 @@ export interface SessionPayload {
   exp: number;
 }
 
-const MIN_SECRET_LENGTH = 32;
+import { MIN_SESSION_SECRET_LENGTH as MIN_SECRET_LENGTH } from './config';
 const encoder = new TextEncoder();
 
 function toBase64Url(bytes: Uint8Array): string {

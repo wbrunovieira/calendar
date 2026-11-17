@@ -32,6 +32,11 @@ describe('authorize', () => {
       .toEqual({ action: 'redirect', location: '/login?next=%2Fhabits' });
   });
 
+  it('keeps the query string in the login redirect', async () => {
+    expect(await authorize({ pathname: '/habits', search: '?tab=todo', cookie: undefined, now: NOW, config }))
+      .toEqual({ action: 'redirect', location: '/login?next=%2Fhabits%3Ftab%3Dtodo' });
+  });
+
   it('answers 401 for API calls without a session', async () => {
     expect(await authorize({ pathname: '/api/backend/events', cookie: undefined, now: NOW, config }))
       .toEqual({ action: 'unauthorized' });
@@ -67,6 +72,11 @@ describe('safeNextPath', () => {
     ['https://evil.com', '/'],
     ['javascript:alert(1)', '/'],
     ['habits', '/'],
+    ['/\t/evil.com', '/'],
+    ['/\n/evil.com', '/'],
+    ['/\r/evil.com', '/'],
+    ['/%09/evil.com', '/%09/evil.com'],
+    ['/habits#x', '/habits#x'],
   ])('%j -> %j', (input, expected) => {
     expect(safeNextPath(input)).toBe(expected);
   });
