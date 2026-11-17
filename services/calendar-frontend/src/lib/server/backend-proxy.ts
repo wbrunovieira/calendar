@@ -7,11 +7,13 @@
  * session cookie) and any client-supplied credentials stay on this side.
  *
  * Because the proxy attaches a credential the browser doesn't hold, a write must provably come
- * from this app's own pages: the session cookie is scoped to the parent domain, so a page on any
- * sibling subdomain would otherwise be able to post here with it (CSRF). Writes therefore need
+ * from this app's own pages, or another site could make the browser post here with its session
+ * cookie (CSRF). Sibling subdomains are same-site, so SameSite=Lax alone doesn't stop them. Writes therefore need
  * `Sec-Fetch-Site: same-origin` (or, from browsers that don't send it, an Origin matching the
  * host) and, when they carry a body, a JSON content type, which no plain HTML form can produce.
  */
+
+import { isSameOriginRequest } from './same-origin';
 
 export interface BackendConfig {
   baseUrl: string;
@@ -42,20 +44,6 @@ function isSafePath(path: string[]): boolean {
   return path.length > 0 && path.every((s) => s !== '' && s !== '.' && s !== '..' && !s.includes('/'));
 }
 
-function isSameOriginWrite(req: Request): boolean {
-  const site = req.headers.get('sec-fetch-site');
-  if (site) return site === 'same-origin';
-
-  const origin = req.headers.get('origin');
-  if (!origin) return false;
-  const host = req.headers.get('host') ?? new URL(req.url).host;
-  try {
-    return new URL(origin).host === host;
-  } catch {
-    return false;
-  }
-}
-
 export async function proxyToBackend(
   req: Request,
   path: string[],
@@ -80,7 +68,7 @@ export async function proxyToBackend(
   const isWrite = !READ_METHODS.has(req.method);
   let body: ArrayBuffer | undefined;
   if (isWrite) {
-    if (!isSameOriginWrite(req)) {
+    if (!isSameOriginRequest(req)) {
       return json(403, { message: 'Cross-origin write rejected' });
     }
     if (Number(req.headers.get('content-length') ?? 0) > MAX_BODY_BYTES) {
