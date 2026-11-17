@@ -1,0 +1,113 @@
+// @vitest-environment node
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { proxyToBackend } from './backend-proxy';
+
+const config = { baseUrl: 'http://calendar-core:3334', token: 'srv-token' };
+
+let fetchMock: ReturnType<typeof vi.fn>;
+
+beforeEach(() => {
+  fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  }));
+  vi.stubGlobal('fetch', fetchMock);
+});
+
+afterEach(() => vi.unstubAllGlobals());
+
+function lastCall(): { url: string; init: RequestInit & { headers: Headers } } {
+  const [url, init] = fetchMock.mock.calls.at(-1)!;
+  return { url: String(url), init: { ...init, headers: new Headers(init.headers) } };
+}
+
+describe('proxyToBackend', () => {
+  it('forwards the path and query string to the backend', async () => {
+    const req = new Request('https://calendar.example.com/api/backend/events?calendarId=c1&eventType=TODO');
+    await proxyToBackend(req, ['events'], config);
+    expect(lastCall().url).toBe('http://calendar-core:3334/events?calendarId=c1&eventType=TODO');
+  });
+
+  it('adds the server-side token as a Bearer header', async () => {
+    await proxyToBackend(new Request('https://x/api/backend/events'), ['events'], config);
+    expect(lastCall().init.headers.get('authorization')).toBe('Bearer srv-token');
+  });
+
+  it('sends no Authorization header when no token is configured', async () => {
+    await proxyToBackend(new Request('https://x/api/backend/events'), ['events'], { ...config, token: '' });
+    expect(lastCall().init.headers.has('authorization')).toBe(false);
+  });
+
+  it('never forwards the browser cookies or a client-supplied Authorization', async () => {
+    const req = new Request('https://x/api/backend/events', {
+      headers: { cookie: 'authelia_session=abc', authorization: 'Bearer evil', 'x-api-key': 'evil' },
+    });
+    await proxyToBackend(req, ['events'], config);
+    const headers = lastCall().init.headers;
+    expect(headers.has('cookie')).toBe(false);
+    expect(headers.has('x-api-key')).toBe(false);
+    expect(headers.get('authorization')).toBe('Bearer srv-token');
+  });
+
+  it('forwards method, JSON body and content type', async () => {
+    const body = JSON.stringify({ title: 'Academia', startTime: '07:00' });
+    const req = new Request('https://x/api/backend/events/e1', {
+      method: 'PUT',
+      body,
+      headers: { 'content-type': 'application/json' },
+    });
+    await proxyToBackend(req, ['events', 'e1'], config);
+    const { init } = lastCall();
+    expect(init.method).toBe('PUT');
+    expect(init.headers.get('content-type')).toBe('application/json');
+    expect(new TextDecoder().decode(init.body as ArrayBuffer)).toBe(body);
+  });
+
+  it('sends no body on GET', async () => {
+    await proxyToBackend(new Request('https://x/api/backend/events'), ['events'], config);
+    expect(lastCall().init.body).toBeUndefined();
+  });
+
+  it('encodes path segments', async () => {
+    await proxyToBackend(new Request('https://x/api/backend/events/a%20b'), ['events', 'a b'], config);
+    expect(lastCall().url).toBe('http://calendar-core:3334/events/a%20b');
+  });
+
+  it.each([[['..', 'admin']], [['events', '.']], [['events', '']], [['a/b']]])(
+    'rejects path traversal and empty segments (%j)',
+    async (path) => {
+      const res = await proxyToBackend(new Request('https://x/api/backend/x'), path, config);
+      expect(res.status).toBe(400);
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('passes the backend status and body back', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('{"message":"nope"}', {
+      status: 404,
+      headers: { 'content-type': 'application/json' },
+    }));
+    const res = await proxyToBackend(new Request('https://x/api/backend/events/zz'), ['events', 'zz'], config);
+    expect(res.status).toBe(404);
+    expect(res.headers.get('content-type')).toBe('application/json');
+    expect(await res.json()).toEqual({ message: 'nope' });
+  });
+
+  it('returns 204 with no body', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const res = await proxyToBackend(new Request('https://x/api/backend/events/e1', { method: 'DELETE' }), ['events', 'e1'], config);
+    expect(res.status).toBe(204);
+    expect(await res.text()).toBe('');
+  });
+
+  it('answers 502 when the backend is unreachable', async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'));
+    const res = await proxyToBackend(new Request('https://x/api/backend/events'), ['events'], config);
+    expect(res.status).toBe(502);
+  });
+
+  it('does not follow backend redirects', async () => {
+    await proxyToBackend(new Request('https://x/api/backend/events'), ['events'], config);
+    expect(lastCall().init.redirect).toBe('manual');
+  });
+});

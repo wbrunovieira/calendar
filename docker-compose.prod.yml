@@ -172,9 +172,6 @@ services:
     build:
       context: ./services/calendar-frontend
       dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: https://calendar-api.wbdigitalsolutions.com
-        NEXT_PUBLIC_API_TOKEN: ${API_TOKEN:-}
     container_name: calendar-frontend
     logging: *default-logging
     ports:
@@ -182,6 +179,9 @@ services:
     environment:
       - NODE_ENV=production
       - TZ=America/Sao_Paulo
+      # Server-side proxy target and token (runtime, never inlined into the browser bundle).
+      - CALENDAR_API_URL=http://calendar-core:3334
+      - CALENDAR_API_TOKEN=${API_TOKEN:-}
     depends_on:
       - calendar-core
     networks:

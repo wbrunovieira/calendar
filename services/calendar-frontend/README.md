@@ -66,8 +66,13 @@ calendar-frontend/
 Copy `.env.example` to `.env.local` and configure:
 
 ```bash
-NEXT_PUBLIC_API_URL=http://localhost:3334
+CALENDAR_API_URL=http://localhost:3334
+CALENDAR_API_TOKEN=            # must match calendar-core API_TOKEN, if set
 ```
+
+The browser never talks to calendar-core directly: it calls `/api/backend/*` on this app, and the
+route handler in `src/app/api/backend/[...path]` forwards the request and adds the token on the
+server. Both variables are server-only, so the token is not part of the JS bundle.
 
 ## API Integration
 
