@@ -46,8 +46,18 @@ type fakeAccountRepo struct {
 }
 
 func (f *fakeAccountRepo) Create(*bankaccount.BankAccount) error { return nil }
-func (f *fakeAccountRepo) FindByProfileID(string) ([]*bankaccount.BankAccount, error) {
-	return nil, nil
+
+// Returns the seeded accounts of that profile. It used to answer nil — the same
+// defect the note on FindAll just below describes: a test exercising a read path
+// through this method examined nothing and passed on an empty list.
+func (f *fakeAccountRepo) FindByProfileID(profileID string) ([]*bankaccount.BankAccount, error) {
+	out := make([]*bankaccount.BankAccount, 0, len(f.accounts))
+	for _, a := range f.accounts {
+		if a.ProfileID == profileID {
+			out = append(out, a)
+		}
+	}
+	return out, nil
 }
 
 // Returns what was seeded. A fake that answers nil to FindAll makes any

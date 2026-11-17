@@ -85,8 +85,10 @@ func New(db *sql.DB) (*App, error) {
 
 	// Initialize Bank Account use cases and handlers
 	createBankAccountUC := usecases.NewCreateBankAccountUseCase(bankAccountRepo)
-	listBankAccountsUC := usecases.NewListBankAccountsUseCase(bankAccountRepo)
-	getBankAccountUC := usecases.NewGetBankAccountUseCase(bankAccountRepo)
+	// One owner for a card's balance: both read paths derive it from the bills.
+	cardOutstanding := usecases.NewCardOutstanding(invoiceRepo, transactionRepo)
+	listBankAccountsUC := usecases.NewListBankAccountsUseCase(bankAccountRepo, cardOutstanding)
+	getBankAccountUC := usecases.NewGetBankAccountUseCase(bankAccountRepo, cardOutstanding)
 	updateBankAccountUC := usecases.NewUpdateBankAccountUseCase(bankAccountRepo)
 	deleteBankAccountUC := usecases.NewDeleteBankAccountUseCase(bankAccountRepo)
 	reorderBankAccountsUC := usecases.NewReorderBankAccountsUseCase(bankAccountRepo)
