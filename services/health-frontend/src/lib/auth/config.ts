@@ -48,8 +48,8 @@ let warned = false;
 export function warnAboutAuthConfig(config: AuthConfig): void {
   if (warned) return;
   warned = true;
-  if (!config.enabled && config.required) {
-    console.error('[auth] AUTH_REQUIRED=true but AUTH_SESSION_SECRET is not set: every request gets 503');
+  if (config.required && !isLoginConfigured(config)) {
+    console.error('[auth] AUTH_REQUIRED=true but the login is not fully configured: every request gets 503');
   } else if (!config.enabled) {
     console.warn('[auth] AUTH_SESSION_SECRET not set: login is OFF and the app is open');
   } else if (!isLoginConfigured(config)) {

@@ -66,13 +66,17 @@ ENDPOINTS=(
     "Projects|https://projects.wbdigitalsolutions.com/|302"
 )
 
-# Routes that must refuse an anonymous request: "label|url". Any 2xx means the route is
-# open to the internet (missing token, login switched off, gateway gone) and raises an alert.
+# Routes that must refuse an anonymous request: "label|url". Closed means 401/403 (APIs) or
+# 302/307 (pages sent to a login). Anything else alerts: a 2xx is an open door, and so is a 405
+# on a POST-only route (the route ran instead of the auth check), or a 404 from a probe that
+# drifted and no longer proves anything.
 AUTH_REQUIRED_ROUTES=(
     "Calendar API|https://calendar-api.wbdigitalsolutions.com/calendars"
     "Finances API|https://calendar-finances.wbdigitalsolutions.com/api/v1/bank-accounts"
     "Health API|https://calendar-health.wbdigitalsolutions.com/api/v1/profiles"
     "Agents API|https://agents.wbdigitalsolutions.com/openapi.json"
+    # Second agents vhost (n8n's), not behind Authelia: POST-only, so 405 = open, 401 = closed.
+    "Agents API (n8n)|https://calendar-agents.wbdigitalsolutions.com/agents/transaction"
     "Calendar UI|https://calendar.wbdigitalsolutions.com/habits"
     "Calendar proxy|https://calendar.wbdigitalsolutions.com/api/backend/calendars"
     "Finances UI|https://finances.wbdigitalsolutions.com/"
@@ -222,25 +226,31 @@ check_endpoints() {
     fi
 }
 
-# Anonymous requests must be refused. A 2xx is an open door; 000 (no answer) is already
-# reported by check_endpoints, so it isn't double-counted here.
+# Anonymous requests must be refused. 000 (no answer) can't prove anything either way, so
+# those are listed as unverified rather than counted as closed.
 check_auth_required() {
-    local open=0 total=${#AUTH_REQUIRED_ROUTES[@]} issues=""
+    local closed=0 unverified=0 total=${#AUTH_REQUIRED_ROUTES[@]} issues="" skipped=""
     for entry in "${AUTH_REQUIRED_ROUTES[@]}"; do
         IFS='|' read -r label url <<< "$entry"
         local code
         code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$url" 2>/dev/null || true)
-        if [[ "$code" == 2* ]]; then
-            open=$((open + 1))
-            add_alert "${label}: ABERTO sem autenticacao (HTTP ${code})"
-            issues="${issues}
-  - ${label}: ${code}"
-        fi
+        case "$code" in
+            401|403|302|307) closed=$((closed + 1)) ;;
+            000|"")
+                unverified=$((unverified + 1))
+                skipped="${skipped}
+  - ${label}: sem resposta" ;;
+            *)
+                add_alert "${label}: ABERTO sem autenticacao (HTTP ${code})"
+                issues="${issues}
+  - ${label}: ${code}" ;;
+        esac
     done
-    if [[ "$open" -eq 0 ]]; then
-        AUTH_SECTION="Autenticacao: ${total}/${total} rotas fechadas"
+    local open=$((total - closed - unverified))
+    if [[ "$open" -eq 0 && "$unverified" -eq 0 ]]; then
+        AUTH_SECTION="Autenticacao: ${closed}/${total} rotas fechadas"
     else
-        AUTH_SECTION="Autenticacao: ${open} rota(s) ABERTA(S)${issues}"
+        AUTH_SECTION="Autenticacao: ${closed}/${total} fechadas, ${open} ABERTA(S), ${unverified} nao verificada(s)${issues}${skipped}"
     fi
 }
 

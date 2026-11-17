@@ -32,6 +32,28 @@ describe('authorize', () => {
     ).toEqual({ action: 'unavailable' });
   });
 
+  it('fails closed when required and the secret is too short or a piece is missing', async () => {
+    for (const broken of [
+      { sessionSecret: 's'.repeat(31) },
+      { passwordHash: '' },
+      { totpSecret: '' },
+    ]) {
+      const decision = await authorize({
+        pathname: '/',
+        cookie: await valid(),
+        now: NOW,
+        config: { ...config, ...broken, required: true },
+      });
+      expect(decision).toEqual({ action: 'unavailable' });
+    }
+  });
+
+  it('works normally when required and fully configured', async () => {
+    expect(
+      await authorize({ pathname: '/', cookie: await valid(), now: NOW, config: { ...config, required: true } }),
+    ).toEqual({ action: 'allow' });
+  });
+
   it('allows a valid session', async () => {
     expect(await authorize({ pathname: '/habits', cookie: await valid(), now: NOW, config }))
       .toEqual({ action: 'allow' });

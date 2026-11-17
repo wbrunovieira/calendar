@@ -14,6 +14,11 @@ import (
 )
 
 func main() {
+	// Before touching the DB, so a misconfiguration is the first (and only) thing in the log.
+	if err := middleware.CheckTokenConfigured(os.Getenv("AUTH_REQUIRED"), os.Getenv("API_TOKEN")); err != nil {
+		log.Fatal(err)
+	}
+
 	// Get database URL from environment
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
@@ -57,9 +62,6 @@ func main() {
 
 	// Token check sits inside CORS so preflights and error responses still carry CORS headers.
 	apiToken := os.Getenv("API_TOKEN")
-	if err := middleware.CheckTokenConfigured(os.Getenv("AUTH_REQUIRED"), apiToken); err != nil {
-		log.Fatal(err)
-	}
 	if strings.TrimSpace(apiToken) == "" {
 		log.Printf("API_TOKEN not set: API is open")
 	}
