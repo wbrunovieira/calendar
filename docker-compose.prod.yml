@@ -242,6 +242,12 @@ services:
       - HEALTH_API_TOKEN=${HEALTH_API_TOKEN:-}
       - CALENDAR_API_URL=http://calendar-core:3334
       - CALENDAR_API_TOKEN=${API_TOKEN:-}
+      # Same login as calendar-frontend (one password, one authenticator entry); the cookie is
+      # host-only, so each app still has its own session.
+      - AUTH_SESSION_SECRET=${AUTH_SESSION_SECRET:-}
+      - AUTH_PASSWORD_HASH=${AUTH_PASSWORD_HASH:-}
+      - AUTH_TOTP_SECRET=${AUTH_TOTP_SECRET:-}
+      - AUTH_SESSION_DAYS=${AUTH_SESSION_DAYS:-30}
     depends_on:
       - calendar-health
       - calendar-core

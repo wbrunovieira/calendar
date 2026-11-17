@@ -35,6 +35,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
                 <p className="text-white/60 text-sm">Treinos, atividades e performance</p>
               </div>
             </div>
+            <div className="flex items-center">
             <a
               href="http://localhost:3002"
               className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all border border-white/20"
@@ -44,6 +45,17 @@ export default function AppLayout({ children }: AppLayoutProps) {
               </svg>
               <span className="text-sm font-semibold">Voltar ao Calendar</span>
             </a>
+            <button
+              type="button"
+              onClick={async () => {
+                await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
+                window.location.assign('/login');
+              }}
+              className="ml-2 px-3 py-2 text-sm text-white/70 hover:text-white transition-colors"
+            >
+              Sair
+            </button>
+            </div>
           </div>
           <nav className="mt-4 flex flex-wrap gap-2">
             {navItems.map((item) => {
