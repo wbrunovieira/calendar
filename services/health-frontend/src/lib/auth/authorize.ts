@@ -1,7 +1,12 @@
 import type { AuthConfig } from './config';
+import { isLoginConfigured } from './config';
 import { verifySession } from './session';
 
-export type AuthDecision = { action: 'allow' } | { action: 'redirect'; location: string } | { action: 'unauthorized' };
+export type AuthDecision =
+  | { action: 'allow' }
+  | { action: 'redirect'; location: string }
+  | { action: 'unauthorized' }
+  | { action: 'unavailable' };
 
 /** Exact paths reachable without a session. */
 const PUBLIC_PATHS = new Set(['/login', '/api/auth/login']);
@@ -14,7 +19,11 @@ export async function authorize(input: {
   config: AuthConfig;
 }): Promise<AuthDecision> {
   const { pathname, search = '', cookie, now, config } = input;
-  if (!config.enabled || PUBLIC_PATHS.has(pathname)) return { action: 'allow' };
+  // Required means a complete, strong config, not just a secret: a short secret would sign weak
+  // sessions, and a missing hash or TOTP secret makes the login unusable anyway.
+  if (config.required && !isLoginConfigured(config)) return { action: 'unavailable' };
+  if (!config.enabled) return { action: 'allow' };
+  if (PUBLIC_PATHS.has(pathname)) return { action: 'allow' };
   if (await verifySession(config.sessionSecret, cookie, now)) return { action: 'allow' };
   if (pathname.startsWith('/api/')) return { action: 'unauthorized' };
   return { action: 'redirect', location: `/login?next=${encodeURIComponent(pathname + search)}` };

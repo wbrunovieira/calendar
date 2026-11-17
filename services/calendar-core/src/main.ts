@@ -1,8 +1,10 @@
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { assertApiTokenConfigured } from './common/auth/require-api-token';
 
 async function bootstrap() {
+  assertApiTokenConfigured();
   const app = await NestFactory.create(AppModule);
 
   // OpenAPI docs — UI at /docs, spec JSON at /docs-json. Kept public (the ApiTokenGuard exempts

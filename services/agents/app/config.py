@@ -3,7 +3,15 @@ from __future__ import annotations
 import os
 
 
+def parse_flag(value: str | None) -> bool:
+    """Loose boolean env flag: a stray "TRUE " still counts, so a fail-closed switch stays closed."""
+    return (value or "").strip().lower() == "true"
+
+
 class Settings:
+    # With AUTH_REQUIRED=true (once nothing else guards the API) a blank AGENTS_API_TOKEN stops
+    # the app at startup instead of leaving it open.
+    auth_required: bool = parse_flag(os.getenv("AUTH_REQUIRED"))
     # Shared token required on every route except /health. Blank = API open.
     agents_api_token: str = os.getenv("AGENTS_API_TOKEN", "")
 

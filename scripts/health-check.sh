@@ -51,18 +51,37 @@ EXPECTED_CONTAINERS=(
     wb-project-manager
 )
 
-# Endpoints: "label|url|expected_http_code"
+# Endpoints: "label|url|expected_http_codes" (comma-separated)
 ENDPOINTS=(
     "Calendar API|https://calendar-api.wbdigitalsolutions.com/|200"
     "Finances API|https://calendar-finances.wbdigitalsolutions.com/|200"
     "Health API|https://calendar-health.wbdigitalsolutions.com/api/v1/health|200"
     "Agents API|https://agents.wbdigitalsolutions.com/health|200"
-    "Calendar UI|https://calendar.wbdigitalsolutions.com/|302"
-    "Finances UI|https://finances.wbdigitalsolutions.com/|302"
-    "Health UI|https://health.wbdigitalsolutions.com/|302"
+    # 302 = Authelia login, 307 = the app's own login (after Authelia is removed)
+    "Calendar UI|https://calendar.wbdigitalsolutions.com/|302,307"
+    "Finances UI|https://finances.wbdigitalsolutions.com/|302,307"
+    "Health UI|https://health.wbdigitalsolutions.com/|302,307"
     "Langfuse|https://calendar-langfuse.wbdigitalsolutions.com/|302"
     "Authelia|http://127.0.0.1:9092/api/health|200"
     "Projects|https://projects.wbdigitalsolutions.com/|302"
+)
+
+# Routes that must refuse an anonymous request: "label|url". Closed means 401/403 (APIs) or
+# 302/307 (pages sent to a login). Anything else alerts: a 2xx is an open door, and so is a 405
+# on a POST-only route (the route ran instead of the auth check), or a 404 from a probe that
+# drifted and no longer proves anything.
+AUTH_REQUIRED_ROUTES=(
+    "Calendar API|https://calendar-api.wbdigitalsolutions.com/calendars"
+    "Finances API|https://calendar-finances.wbdigitalsolutions.com/api/v1/bank-accounts"
+    "Health API|https://calendar-health.wbdigitalsolutions.com/api/v1/profiles"
+    "Agents API|https://agents.wbdigitalsolutions.com/openapi.json"
+    # Second agents vhost (n8n's), not behind Authelia: POST-only, so 405 = open, 401 = closed.
+    "Agents API (n8n)|https://calendar-agents.wbdigitalsolutions.com/agents/transaction"
+    "Calendar UI|https://calendar.wbdigitalsolutions.com/habits"
+    "Calendar proxy|https://calendar.wbdigitalsolutions.com/api/backend/calendars"
+    "Finances UI|https://finances.wbdigitalsolutions.com/"
+    "Health UI|https://health.wbdigitalsolutions.com/activities"
+    "Health proxy|https://health.wbdigitalsolutions.com/api/health-backend/profiles"
 )
 
 # SSL domains to check
@@ -87,7 +106,7 @@ WARNINGS=()
 # unset one would kill the script before format_message and send nothing at all.
 LEDGER_SECTION="Financeiro: nao verificado"
 HOST_SECTION=""; CONTAINER_SECTION=""; ENDPOINT_SECTION=""
-SSL_SECTION=""; DB_SECTION=""; BACKUP_SECTION=""; SECURITY_SECTION=""
+SSL_SECTION=""; DB_SECTION=""; BACKUP_SECTION=""; SECURITY_SECTION=""; AUTH_SECTION=""
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"; }
 add_alert()   { ALERTS+=("$1"); }
@@ -188,9 +207,10 @@ check_endpoints() {
 
     for entry in "${ENDPOINTS[@]}"; do
         IFS='|' read -r label url expected <<< "$entry"
-        CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$url" 2>/dev/null || echo "000")
+        # curl prints 000 itself when it can't connect; `|| true` only keeps set -e quiet.
+        CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$url" 2>/dev/null || true)
 
-        if [[ "$CODE" == "$expected" ]]; then
+        if [[ ",${expected}," == *",${CODE},"* ]]; then
             EP_OK=$((EP_OK + 1))
         else
             add_alert "${label}: fora do ar (HTTP ${CODE})"
@@ -203,6 +223,34 @@ check_endpoints() {
         ENDPOINT_SECTION="Sites: ${EP_OK}/${EP_TOTAL} respondendo"
     else
         ENDPOINT_SECTION="Sites: ${EP_OK}/${EP_TOTAL} respondendo${EP_ISSUES}"
+    fi
+}
+
+# Anonymous requests must be refused. 000 (no answer) can't prove anything either way, so
+# those are listed as unverified rather than counted as closed.
+check_auth_required() {
+    local closed=0 unverified=0 total=${#AUTH_REQUIRED_ROUTES[@]} issues="" skipped=""
+    for entry in "${AUTH_REQUIRED_ROUTES[@]}"; do
+        IFS='|' read -r label url <<< "$entry"
+        local code
+        code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$url" 2>/dev/null || true)
+        case "$code" in
+            401|403|302|307) closed=$((closed + 1)) ;;
+            000|"")
+                unverified=$((unverified + 1))
+                skipped="${skipped}
+  - ${label}: sem resposta" ;;
+            *)
+                add_alert "${label}: ABERTO sem autenticacao (HTTP ${code})"
+                issues="${issues}
+  - ${label}: ${code}" ;;
+        esac
+    done
+    local open=$((total - closed - unverified))
+    if [[ "$open" -eq 0 && "$unverified" -eq 0 ]]; then
+        AUTH_SECTION="Autenticacao: ${closed}/${total} rotas fechadas"
+    else
+        AUTH_SECTION="Autenticacao: ${closed}/${total} fechadas, ${open} ABERTA(S), ${unverified} nao verificada(s)${issues}${skipped}"
     fi
 }
 
@@ -593,6 +641,7 @@ ${HOST_SECTION}
 ${CONTAINER_SECTION}
 
 ${ENDPOINT_SECTION}
+${AUTH_SECTION}
 
 ${SSL_SECTION}
 
@@ -720,6 +769,7 @@ main() {
     collect_host
     collect_containers
     check_endpoints
+    check_auth_required
     check_ssl
     check_databases
     check_backup

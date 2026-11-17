@@ -12,6 +12,7 @@ const config: AuthConfig = {
   totpSecret: 'JBSWY3DPEHPK3PXP',
   sessionTtlMs: 60_000,
   secureCookie: true,
+  required: false,
 };
 
 const valid = () => createSession(config.sessionSecret, { now: NOW, ttlMs: 60_000 });
@@ -20,6 +21,37 @@ describe('authorize', () => {
   it('lets everything through when auth is not configured', async () => {
     expect(await authorize({ pathname: '/', cookie: undefined, now: NOW, config: { ...config, enabled: false } }))
       .toEqual({ action: 'allow' });
+  });
+
+  it('fails closed (503) when auth is required but not configured', async () => {
+    expect(
+      await authorize({ pathname: '/', cookie: undefined, now: NOW, config: { ...config, enabled: false, required: true } }),
+    ).toEqual({ action: 'unavailable' });
+    expect(
+      await authorize({ pathname: '/login', cookie: undefined, now: NOW, config: { ...config, enabled: false, required: true } }),
+    ).toEqual({ action: 'unavailable' });
+  });
+
+  it('fails closed when required and the secret is too short or a piece is missing', async () => {
+    for (const broken of [
+      { sessionSecret: 's'.repeat(31) },
+      { passwordHash: '' },
+      { totpSecret: '' },
+    ]) {
+      const decision = await authorize({
+        pathname: '/',
+        cookie: await valid(),
+        now: NOW,
+        config: { ...config, ...broken, required: true },
+      });
+      expect(decision).toEqual({ action: 'unavailable' });
+    }
+  });
+
+  it('works normally when required and fully configured', async () => {
+    expect(
+      await authorize({ pathname: '/', cookie: await valid(), now: NOW, config: { ...config, required: true } }),
+    ).toEqual({ action: 'allow' });
   });
 
   it('allows a valid session', async () => {

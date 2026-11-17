@@ -19,6 +19,7 @@ beforeAll(async () => {
     totpSecret: SECRET_B32,
     sessionTtlMs: 30 * 24 * 3600 * 1000,
     secureCookie: true,
+    required: false,
   };
 });
 

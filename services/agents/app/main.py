@@ -31,6 +31,8 @@ async def lifespan(app: FastAPI):
         logger.exception("Failed to compile LangGraph")
 
     if not settings.agents_api_token.strip():
+        if settings.auth_required:
+            raise RuntimeError("AUTH_REQUIRED=true but AGENTS_API_TOKEN is empty: refusing to start with an open API")
         logger.warning("AGENTS_API_TOKEN not set: the agents API is open")
 
     yield
