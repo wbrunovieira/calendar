@@ -46,8 +46,18 @@ type fakeAccountRepo struct {
 }
 
 func (f *fakeAccountRepo) Create(*bankaccount.BankAccount) error { return nil }
-func (f *fakeAccountRepo) FindByProfileID(string) ([]*bankaccount.BankAccount, error) {
-	return nil, nil
+
+// Returns the seeded accounts of that profile. It used to answer nil — the same
+// defect the note on FindAll just below describes: a test exercising a read path
+// through this method examined nothing and passed on an empty list.
+func (f *fakeAccountRepo) FindByProfileID(profileID string) ([]*bankaccount.BankAccount, error) {
+	out := make([]*bankaccount.BankAccount, 0, len(f.accounts))
+	for _, a := range f.accounts {
+		if a.ProfileID == profileID {
+			out = append(out, a)
+		}
+	}
+	return out, nil
 }
 
 // Returns what was seeded. A fake that answers nil to FindAll makes any
@@ -678,7 +688,7 @@ func TestCreateTransactionUseCaseCreditLimitExceeded(t *testing.T) {
 	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 	confirmedStatus := "CONFIRMED"
 	// Use today's date so balance validation runs (historical dates skip validation)
-	today := time.Now().Format("2006-01-02")
+	today := clientDay(0)
 	input := CreateTransactionInput{
 		ProfileID:     profileID,
 		BankAccountID: accountID,
@@ -1267,7 +1277,7 @@ func TestCreateTransactionConfirmedValidatesBalance(t *testing.T) {
 
 	// CONFIRMED status should validate balance (use today's date, historical dates skip validation)
 	confirmedStatus := "CONFIRMED"
-	today := time.Now().Format("2006-01-02")
+	today := clientDay(0)
 	input := CreateTransactionInput{
 		ProfileID:     profileID,
 		BankAccountID: accountID,
@@ -1520,7 +1530,7 @@ func TestCreateTransaction_HistoricalConfirmed_ShouldSkipBalanceValidation(t *te
 	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 
 	// Yesterday's date (historical)
-	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	yesterday := clientDay(-1)
 	confirmedStatus := "CONFIRMED"
 
 	input := CreateTransactionInput{
@@ -1592,7 +1602,7 @@ func TestCreateTransaction_TodayConfirmed_ShouldValidateBalance(t *testing.T) {
 	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 
 	// Today's date
-	today := time.Now().Format("2006-01-02")
+	today := clientDay(0)
 	confirmedStatus := "CONFIRMED"
 
 	input := CreateTransactionInput{
@@ -1660,7 +1670,7 @@ func TestCreateTransaction_FutureConfirmed_ShouldValidateBalance(t *testing.T) {
 	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 
 	// Tomorrow's date
-	tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+	tomorrow := clientDay(1)
 	confirmedStatus := "CONFIRMED"
 
 	input := CreateTransactionInput{
@@ -1731,7 +1741,7 @@ func TestCreateTransaction_ConfirmedExpense_ShouldDecreaseBalance(t *testing.T) 
 	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 
 	confirmedStatus := "CONFIRMED"
-	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	yesterday := clientDay(-1)
 
 	input := CreateTransactionInput{
 		ProfileID:     profileID,
@@ -1805,7 +1815,7 @@ func TestCreateTransaction_ConfirmedIncome_ShouldIncreaseBalance(t *testing.T) {
 	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 
 	confirmedStatus := "CONFIRMED"
-	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	yesterday := clientDay(-1)
 
 	input := CreateTransactionInput{
 		ProfileID:     profileID,
@@ -1879,7 +1889,7 @@ func TestCreateTransaction_PlannedTransaction_ShouldNotUpdateBalance(t *testing.
 	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 
 	plannedStatus := "PLANNED"
-	tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+	tomorrow := clientDay(1)
 
 	input := CreateTransactionInput{
 		ProfileID:     profileID,
@@ -1978,7 +1988,7 @@ func TestCreateTransaction_CreditCardExpense_ShouldNotUpdateBalance(t *testing.T
 	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 
 	confirmedStatus := "CONFIRMED"
-	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	yesterday := clientDay(-1)
 
 	input := CreateTransactionInput{
 		ProfileID:     profileID,
@@ -2059,7 +2069,7 @@ func TestCreateTransaction_CreditCardIncome_ShouldNotUpdateBalance(t *testing.T)
 	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 
 	confirmedStatus := "CONFIRMED"
-	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	yesterday := clientDay(-1)
 
 	input := CreateTransactionInput{
 		ProfileID:     profileID,
@@ -2129,7 +2139,7 @@ func TestDeleteTransaction_ConfirmedExpense_ShouldRestoreBalance(t *testing.T) {
 	// Create a confirmed expense
 	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 	confirmedStatus := "CONFIRMED"
-	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	yesterday := clientDay(-1)
 
 	txn, err := createUC.Execute(CreateTransactionInput{
 		ProfileID:     profileID,
@@ -2214,7 +2224,7 @@ func TestDeleteTransaction_ConfirmedIncome_ShouldReverseBalance(t *testing.T) {
 
 	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 	confirmedStatus := "CONFIRMED"
-	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	yesterday := clientDay(-1)
 
 	txn, err := createUC.Execute(CreateTransactionInput{
 		ProfileID:     profileID,
@@ -2289,7 +2299,7 @@ func TestDeleteTransaction_PlannedTransaction_ShouldNotChangeBalance(t *testing.
 	invoiceRepo := &fakeInvoiceRepo{}
 
 	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
-	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	yesterday := clientDay(-1)
 
 	// PLANNED is the default status (no Status field passed)
 	txn, err := createUC.Execute(CreateTransactionInput{
@@ -2375,7 +2385,7 @@ func TestDeleteTransaction_CreditCard_ShouldNotChangeBalance(t *testing.T) {
 
 	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 	confirmedStatus := "CONFIRMED"
-	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	yesterday := clientDay(-1)
 
 	txn, err := createUC.Execute(CreateTransactionInput{
 		ProfileID:     profileID,
@@ -2482,7 +2492,7 @@ func TestCreateTransaction_ConfirmedTransfer_ShouldCreditDestination(t *testing.
 	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 
 	confirmedStatus := "CONFIRMED"
-	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	yesterday := clientDay(-1)
 
 	input := CreateTransactionInput{
 		ProfileID:            profileID,
@@ -2574,7 +2584,7 @@ func TestCreateTransaction_PlannedTransfer_ShouldNotUpdateAnyBalance(t *testing.
 
 	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 
-	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	yesterday := clientDay(-1)
 
 	input := CreateTransactionInput{
 		ProfileID:            profileID,
@@ -2662,7 +2672,7 @@ func TestDeleteTransaction_ConfirmedTransfer_ShouldReverseBothAccounts(t *testin
 	// Create a confirmed transfer
 	createUC := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 	confirmedStatus := "CONFIRMED"
-	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	yesterday := clientDay(-1)
 
 	txn, err := createUC.Execute(CreateTransactionInput{
 		ProfileID:            profileID,
@@ -2765,7 +2775,7 @@ func TestUpdateTransactionStatus_TransferConfirm_ShouldCreditDestination(t *test
 
 	useCase := NewUpdateTransactionStatusUseCase(txRepo, accountRepo, nil)
 
-	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	yesterday := clientDay(-1)
 	_, err := useCase.Execute("tx-transfer-1", UpdateTransactionStatusInput{
 		Status:     "CONFIRMED",
 		OccurredOn: &yesterday,
@@ -2948,7 +2958,7 @@ func TestCreateTransaction_CrossProfileTransfer_ShouldCreatePairedTransactions(t
 	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 
 	confirmedStatus := "CONFIRMED"
-	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	yesterday := clientDay(-1)
 
 	input := CreateTransactionInput{
 		ProfileID:             profileWB,
@@ -3059,7 +3069,7 @@ func TestCreateTransaction_CrossProfileTransfer_RequiresDestinationCategory(t *t
 	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 
 	confirmedStatus := "CONFIRMED"
-	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	yesterday := clientDay(-1)
 
 	input := CreateTransactionInput{
 		ProfileID:            profileWB,
@@ -3110,7 +3120,7 @@ func TestCreateTransaction_SameProfileTransfer_StillWorksAsBefore(t *testing.T) 
 	useCase := NewCreateTransactionUseCase(profileRepo, accountRepo, categoryRepo, txRepo, invoiceRepo, nil, nil)
 
 	confirmedStatus := "CONFIRMED"
-	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	yesterday := clientDay(-1)
 
 	input := CreateTransactionInput{
 		ProfileID:            profileID,
@@ -3278,7 +3288,7 @@ func TestUpdateTransactionStatus_CrossProfileConfirm_ShouldUpdateBoth(t *testing
 
 	useCase := NewUpdateTransactionStatusUseCase(txRepo, accountRepo, nil)
 
-	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	yesterday := clientDay(-1)
 	_, err := useCase.Execute(sourceTxID, UpdateTransactionStatusInput{
 		Status:     "CONFIRMED",
 		OccurredOn: &yesterday,
@@ -3338,7 +3348,7 @@ func TestCreateTransaction_CrossProfilePlanned_ShouldNotUpdateBalances(t *testin
 	destAccountID := destID
 	catExpense := "cat-expense"
 	catIncome := "cat-income"
-	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	yesterday := clientDay(-1)
 
 	_, err := useCase.Execute(CreateTransactionInput{
 		ProfileID:             profileWB,

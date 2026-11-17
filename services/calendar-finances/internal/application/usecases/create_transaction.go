@@ -267,7 +267,7 @@ func (uc *CreateTransactionUseCase) Execute(input CreateTransactionInput) (*tran
 	// Only validate balance for CONFIRMED transactions that are not historical
 	// Historical transactions (date < today) already happened, so balance validation doesn't apply
 	isPlanned := input.Status == nil || strings.ToUpper(*input.Status) == string(transaction.StatusPlanned)
-	isHistorical := isHistoricalDate(occurredOn)
+	isHistorical := isHistoricalDate(occurredOn, time.Now())
 	if !isPlanned && !isHistorical {
 		if err := validateBalances(account, typeValue, input.Amount); err != nil {
 			return nil, err
@@ -647,9 +647,29 @@ func parseDate(value string) (time.Time, error) {
 // isHistoricalDate checks if the given date is before today.
 // Historical transactions (past dates) should skip balance validation
 // since they already happened.
-func isHistoricalDate(date time.Time) bool {
-	today := time.Now().Truncate(24 * time.Hour)
-	return date.Before(today)
+// isHistoricalDate answers whether this transaction belongs to a day that has
+// already passed. Historical rows skip balance and credit-limit validation.
+//
+// "Today" is the day in SAO PAULO, named explicitly — not the server's local
+// day, and not UTC.
+//
+// It was `time.Now().Truncate(24 * time.Hour)`, which snaps to a UTC midnight.
+// The first fix compared calendar days in the server's own zone, which looked
+// right and was not: the calendar-finances container has no TZ set, so
+// time.Local is UTC there. The dates arrive from a browser in Brazil, so from
+// 21:00 BRT the server's day was already tomorrow and a purchase dated today
+// counted as the past — and historical rows skip the guards. Measured: a
+// CONFIRMED R$ 800 expense accepted on an account holding R$ 100.
+//
+// `now` is an argument so the hour can be pinned in a test, and the location is
+// explicit so the answer does not depend on how the container was started. The
+// TZ was added to the compose file as well; this does not rely on it.
+func isHistoricalDate(date, now time.Time) bool {
+	dy, dm, dd := date.Date()
+	ny, nm, nd := now.In(issuerLocation).Date()
+	day := time.Date(dy, dm, dd, 0, 0, 0, 0, time.UTC)
+	today := time.Date(ny, nm, nd, 0, 0, 0, 0, time.UTC)
+	return day.Before(today)
 }
 
 // createInstallments creates multiple transactions for installment purchases.

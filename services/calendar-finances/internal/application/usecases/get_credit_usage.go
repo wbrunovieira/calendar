@@ -21,8 +21,10 @@ var ErrNotACreditCard = refuse("account is not a credit card")
 // than it is, which is the very bug this replaces.
 type GetCreditUsageUseCase struct {
 	accountRepo bankaccount.Repository
-	invoiceRepo invoice.Repository
-	txRepo      transaction.Repository
+	// outstanding is the shared owner of the derivation. Built once and held, not
+	// constructed per call: "one owner" has to be one instance, or the sentence
+	// is only true by coincidence.
+	outstanding *CardOutstanding
 }
 
 func NewGetCreditUsageUseCase(
@@ -30,7 +32,7 @@ func NewGetCreditUsageUseCase(
 	invoiceRepo invoice.Repository,
 	txRepo transaction.Repository,
 ) *GetCreditUsageUseCase {
-	return &GetCreditUsageUseCase{accountRepo: accountRepo, invoiceRepo: invoiceRepo, txRepo: txRepo}
+	return &GetCreditUsageUseCase{accountRepo: accountRepo, outstanding: NewCardOutstanding(invoiceRepo, txRepo)}
 }
 
 func (uc *GetCreditUsageUseCase) Execute(accountID string) (*bankaccount.CreditUsage, error) {
@@ -42,80 +44,13 @@ func (uc *GetCreditUsageUseCase) Execute(accountID string) (*bankaccount.CreditU
 		return nil, ErrNotACreditCard
 	}
 
-	outstanding, err := uc.outstandingFor(account)
+	// The COMMITTED total, not what is owed now: the issuer reserves a future
+	// instalment against today's limit, so that is what availability is made of.
+	outstanding, err := uc.outstanding.For(account)
 	if err != nil {
 		return nil, err
 	}
 
 	usage := account.CreditUsageFor(outstanding)
 	return &usage, nil
-}
-
-func (uc *GetCreditUsageUseCase) outstandingFor(account *bankaccount.BankAccount) (float64, error) {
-	invoices, err := uc.invoiceRepo.FindByBankAccountID(account.ID)
-	if err != nil {
-		return 0, err
-	}
-
-	outstanding := 0.0
-	invoiced := make(map[string]bool, len(invoices))
-	for _, inv := range invoices {
-		invoiced[inv.ID] = true
-
-		// The invoice's `amount` column is not the source of truth: it is written on
-		// creation as zero and only refreshed by a manual endpoint, so in production
-		// every open and closed bill still reads 0 there. Every other read path
-		// recomputes it from the transactions, and so does this one.
-		billed, err := uc.txRepo.SumByInvoiceID(inv.ID)
-		if err != nil {
-			return 0, err
-		}
-
-		// What is owed is always billed minus paid, whatever the status. Branching on
-		// status instead put PARTIALLY_PAID in the "owes everything" case and counted
-		// money that had already left the checking account.
-		//
-		// A settled bill with no recorded paidAmount owes nothing: the status is the
-		// only evidence there is. Anything else defaults to nothing paid yet, which
-		// also covers legacy rows where a partial payment was stored as PAID.
-		paid := 0.0
-		switch {
-		case inv.Status == invoice.StatusRefinanced:
-			// Converted: settled, owing nothing. The instalments it became are
-			// charges of later cycles and counted there. A charge that lands on the
-			// cycle afterwards is surfaced as drift by the invariants check, not as
-			// debt here — debt nobody can pay would be worse than debt nobody sees.
-			paid = billed
-		case inv.PaidAmount != nil:
-			paid = *inv.PaidAmount
-		case inv.Status == invoice.StatusPaid:
-			paid = billed
-		}
-		if remaining := billed - paid; remaining > 0 {
-			outstanding += remaining
-		}
-	}
-
-	// A charge that never joined an invoice is still owed — the bill it belongs to
-	// simply does not know about it yet.
-	// The repository requires a profile: without it every call fails and the endpoint
-	// answers 500, which is exactly what shipped when the tests used a fake that
-	// ignored the filter.
-	txs, err := uc.txRepo.List(transaction.ListFilter{
-		ProfileID:     account.ProfileID,
-		BankAccountID: &account.ID,
-	})
-	if err != nil {
-		return 0, err
-	}
-	for _, tx := range txs {
-		if tx.Type != transaction.TypeExpense || tx.Status != transaction.StatusConfirmed {
-			continue
-		}
-		if tx.InvoiceID == nil || !invoiced[*tx.InvoiceID] {
-			outstanding += tx.Amount
-		}
-	}
-
-	return outstanding, nil
 }

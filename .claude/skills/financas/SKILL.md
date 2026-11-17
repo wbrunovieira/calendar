@@ -306,6 +306,40 @@ Input dates are `YYYY-MM-DD`. `nextOccurrence` = when the next one falls (e.g. t
 - Noisy SSH: `-o LogLevel=ERROR` plus `2>/dev/null` on the curl leaves just the JSON.
 - Mercado Pago interest (checking account) is posted as daily INCOME entries "rendimento da conta", category Rendimentos `ee4c3034-...`. Weekends sometimes have none.
 
+## Segregação PF/PJ — regra fechada em 16/11/2026 (issue #1356)
+
+Origem: parecer de contador sênior, que classificou isto como **"o risco MAIS SÉRIO
+aqui, maior que qualquer decisão técnica"** — confusão patrimonial expõe
+desconsideração da personalidade jurídica e questionamento de distribuição de lucros.
+
+**Dinheiro do sócio entrando na empresa é MÚTUO**, não "aporte" genérico. Categoria
+`Mutuo de socio (recebido)` (`471dcf49-1cec-47de-8f18-d1c199acdb5d`, INCOME, WB). É
+passivo: a empresa deve de volta, e devolver **não** é distribuição de lucro.
+Decidido pelo Bruno em 16/11/2026. Os 8 lançamentos históricos (R$ 5.180,58) já
+foram reclassificados.
+
+**Despesa da empresa paga no cartão/conta PESSOAL passa SEMPRE pela conta corrente
+de sócio** (`7fb941b2-fa56-47b0-b61a-13aac7ba438a`, WB). Dois lançamentos:
+1. pessoal: EXPENSE na conta/cartão que pagou, categoria `Empréstimos`
+   (`d359a66d-ef40-430a-b8d8-89ae9bfcfb80`);
+2. WB: INCOME `Mutuo de socio (recebido)` na conta corrente de sócio + EXPENSE da
+   natureza real (ex. `Servidores/Hosting`) na mesma conta — líquido zero nela, e o
+   custo aparece no resultado da empresa.
+
+**NUNCA inventar uma conta bancária** para representar isso. O erro antigo foi criar
+uma "Mercado Pago WB" que não existia; a conta corrente de sócio é o lugar certo.
+
+**Não reescrever histórico para arrumar tipificação.** Há checkpoints de fechamento
+mensal (`finance.balance_checkpoints`, 227 em 16/11/2026, meses fechados de maio a
+outubro). Trocar **categoria** via `PUT /transactions/{id}` não move saldo e é
+seguro — conferido lançamento a lançamento. Transformar INCOME em TRANSFER, não:
+isso reescreveria mês fechado.
+
+**Limite conhecido:** a conta corrente de sócio **não carrega o saldo vivo** que o
+contador pediu, porque o dinheiro entrou de verdade no Nubank Jurídica e o sistema
+não tem partida dobrada. O valor devido ao Bruno é medido somando a categoria
+mútuo. Saldo vivo de verdade depende da refundação do razão (#1288/#1350).
+
 ## Rules (project memory)
 - **Writes only via the API** (it recalculates balance/invoice). Direct SQL: reads or category labels only.
 - **Confirm the category with the user** before posting anything new.

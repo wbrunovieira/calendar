@@ -27,9 +27,16 @@ type BankAccount struct {
 	Name           string      `json:"name"`
 	Type           AccountType `json:"type"`
 	InitialBalance float64     `json:"initialBalance"`
-	CurrentBalance float64     `json:"currentBalance"`
-	Currency       string      `json:"currency"`
-	IsActive       bool        `json:"isActive"`
+	// CurrentBalance is the stored balance. For a CREDIT CARD it is NOT the source
+	// of truth: what a card owes is derived from its bills on every read, by
+	// usecases.CardOutstanding, and that derived figure is what the read paths
+	// report here (negative for money owed). The stored column only ever moved
+	// when a bill was paid, so between bills it stood still while purchases
+	// happened — measured on one card: stored -455,70 against 371,50 really owed.
+	// Decided in issue #1277 (16/11/2026). Do not read it directly for a card.
+	CurrentBalance float64 `json:"currentBalance"`
+	Currency       string  `json:"currency"`
+	IsActive       bool    `json:"isActive"`
 
 	// Optional fields
 	BankName        *string  `json:"bankName,omitempty"`
